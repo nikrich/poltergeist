@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.jannik.ghostbrain.claudemd</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python</string>
+        <string>-m</string>
+        <string>ghostbrain.profile.claude_md</string>
+        <string>--all</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/jannik/development/nikrich/ghost-brain</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <!-- Daily at 02:00 local time. SPEC §10.2. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>2</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/jannik/development/nikrich/ghost-brain/logs/claudemd.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/jannik/development/nikrich/ghost-brain/logs/claudemd.err</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>VAULT_PATH</key>
+        <string>/Users/jannik/ghostbrain/vault</string>
+    </dict>
+</dict>
+</plist>

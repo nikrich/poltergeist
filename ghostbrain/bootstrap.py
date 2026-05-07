@@ -102,12 +102,16 @@ gmail:
     # "sanlam.co.za": sanlam
     {}
 
-# Claude Code project paths → context. Phase 3.
+# Claude Code project paths → context. Longest-prefix match wins.
+# Used by ghostbrain.profile.claude_md to pick the right context profile.
 claude_code:
   project_paths:
-    # "/Users/jannik/development/sanlam-": sanlam
-    # "/Users/jannik/development/codeship-": codeship
-    # "/Users/jannik/development/reducedrecipes": reducedrecipes
+    # TODO(jannik): adjust these to your actual development tree.
+    # Examples:
+    # "~/development/sft-capstone-hive": sanlam
+    # "~/development/sanlam-digisure": sanlam
+    # "~/development/nikrich": codeship
+    # "~/development/reducedrecipes": reducedrecipes
     {}
 
 # Fallback when no rule matches. Worker sends low-confidence events to review queue.
@@ -128,13 +132,87 @@ llm:
 
 worker:
   poll_interval_seconds: 5
+
+profile:
+  # Roots scanned by `ghostbrain-claude-md --all`. Each direct child that looks
+  # like a project (package.json / pyproject.toml / .git / etc.) gets a
+  # CLAUDE.md regenerated.
+  project_roots:
+    - ~/code
+    - ~/development
 """,
     "90-meta/prompts/router.md": "# Router prompt\n\nDefined in Phase 3 (SPEC §6.1).\n",
     "90-meta/prompts/extractor.md": "# Extractor prompt\n\nDefined in Phase 3 (SPEC §6.2).\n",
     "90-meta/prompts/profile-updater.md": "# Profile updater prompt\n\nDefined in Phase 6 (SPEC §6.3).\n",
     "90-meta/prompts/digest.md": "# Digest prompt\n\nDefined in Phase 5 (SPEC §6.4).\n",
     "90-meta/prompts/classifier.md": "# Classifier prompt\n\nUsed for fine-grained classification. Defined later.\n",
-    "80-profile/_index.md": "# Profile index\n\nHand-written in Phase 2.\n",
+    "80-profile/_index.md": """\
+# Profile index
+
+The profile layer is the source of truth for who the user is, how they work,
+and what they're working on. The CLAUDE.md generator stitches these files
+together per project so every Claude Code session starts with this context.
+
+Files:
+- `working-style.md` — how decisions get made, communication style.
+- `preferences.md` — tools, languages, formatting, what NOT to do.
+- `current-projects.md` — active work, organized by H2 sections per context
+  (`## sanlam`, `## codeship`, `## reducedrecipes`, `## personal`). The
+  generator filters this to the matching context for each project.
+- `_recent.md` — short-lived layer maintained by the daily worker (Phase 6).
+- `_proposed/YYYY-MM-DD.jsonl` — auto-detected diffs awaiting review.
+
+Edit working-style / preferences / current-projects by hand. The other two
+files are managed by ghostbrain.
+""",
+    "80-profile/working-style.md": """\
+# Working style
+
+<!-- Hand-write this. Replace placeholders below. -->
+
+## Decision style
+- TODO(jannik): how you want to be presented with options vs decided answers.
+
+## Communication preferences
+- TODO(jannik): tone, terseness, what to never do (e.g. "no emoji").
+
+## Workflow
+- TODO(jannik): TDD / commit cadence / how PRs should be sized.
+""",
+    "80-profile/preferences.md": """\
+# Preferences
+
+<!-- Hand-write this. -->
+
+## Tools
+- TODO(jannik): preferred editor, shell, package managers.
+
+## Languages
+- TODO(jannik): which languages and idioms you actually use day-to-day.
+
+## What I don't want
+- TODO(jannik): patterns to avoid, words/phrases that grate.
+""",
+    "80-profile/current-projects.md": """\
+# Current projects
+
+<!-- Use H2 headings to separate per-context sections. The generator filters
+this file to the H2 matching the project's context. Keep section names
+exactly: sanlam / codeship / reducedrecipes / personal. -->
+
+## sanlam
+- TODO(jannik): active Sanlam initiatives.
+
+## codeship
+- TODO(jannik): active Codeship clients/products.
+
+## reducedrecipes
+- TODO(jannik): ReducedRecipes priorities.
+
+## personal
+- TODO(jannik): hobby projects, life threads worth context.
+""",
+    "80-profile/_recent.md": "<!-- Auto-managed by ghostbrain (Phase 6). Do not hand-edit. -->\n",
     "60-dashboards/all.md": "# All contexts dashboard\n\nDataview queries land in Phase 4.\n",
 }
 

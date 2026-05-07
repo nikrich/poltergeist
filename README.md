@@ -10,7 +10,7 @@ Then start with **Phase 1** in Section 9. Each phase has explicit acceptance cri
 
 ## Status
 
-Phase: **1 — Foundation complete**
+Phase: **2 — Profile foundation complete**
 
 ## Tech Stack
 
@@ -85,6 +85,39 @@ launchctl load ~/Library/LaunchAgents/com.jannik.ghostbrain.worker.plist
 
 Stop it with `launchctl unload ~/Library/LaunchAgents/com.jannik.ghostbrain.worker.plist`.
 
+## Profile and CLAUDE.md generation (Phase 2)
+
+The profile lives in `~/ghostbrain/vault/80-profile/`. Edit these by hand:
+
+- `working-style.md` — how you work, decision style, communication preferences.
+- `preferences.md` — tools, languages, what you don't want.
+- `current-projects.md` — active work, **with H2 headings per context**
+  (`## sanlam`, `## codeship`, `## reducedrecipes`, `## personal`). The
+  generator filters this file by heading.
+- Per-context profile in `~/ghostbrain/vault/20-contexts/{ctx}/_profile.md`.
+
+Routing is in `~/ghostbrain/vault/90-meta/routing.yaml` under `claude_code.project_paths`.
+Longest-prefix match wins.
+
+### Regenerate per-project CLAUDE.md
+
+```bash
+# One project:
+ghostbrain-claude-md ~/code/some-project
+
+# All projects under configured roots (~/code and ~/development by default):
+ghostbrain-claude-md --all
+```
+
+### Schedule nightly regen
+
+```bash
+cp orchestration/launchd/com.jannik.ghostbrain.claudemd.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.jannik.ghostbrain.claudemd.plist
+```
+
+Runs daily at 02:00.
+
 ## Verifying Phase 1
 
 ```bash
@@ -134,6 +167,8 @@ ghost-brain/
 │   ├── bootstrap.py                   # vault tree creator (idempotent)
 │   ├── connectors/
 │   │   └── _base.py                   # base Connector class
+│   ├── profile/
+│   │   └── claude_md.py               # per-project CLAUDE.md generator
 │   └── worker/
 │       ├── main.py                    # run loop (Phase 1 stub pipeline)
 │       └── audit.py                   # JSONL audit log writer
