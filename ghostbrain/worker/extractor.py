@@ -26,21 +26,32 @@ log = logging.getLogger("ghostbrain.worker.extractor")
 
 ARTIFACT_TYPES = ("spec", "decision", "code", "prompt", "unresolved")
 
+# NOTE: `claude -p --json-schema` only accepts object roots — array roots
+# fail with "tools.N.custom.input_schema.type: Input should be 'object'".
+# We wrap the array in an `items` envelope; the LLM sees this as a single
+# field, the extractor unwraps after parsing.
 EXTRACTOR_JSON_SCHEMA: dict[str, Any] = {
-    "type": "array",
-    "maxItems": 20,
-    "items": {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["type", "title", "content"],
-        "properties": {
-            "type": {"type": "string", "enum": list(ARTIFACT_TYPES)},
-            "title": {"type": "string", "maxLength": 200},
-            "content": {"type": "string"},
-            "tags": {
-                "type": "array",
-                "items": {"type": "string"},
-                "maxItems": 8,
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["items"],
+    "properties": {
+        "items": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["type", "title", "content"],
+                "properties": {
+                    "type": {"type": "string", "enum": list(ARTIFACT_TYPES)},
+                    "title": {"type": "string", "maxLength": 200},
+                    "content": {"type": "string"},
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "maxItems": 8,
+                    },
+                },
             },
         },
     },
@@ -80,13 +91,24 @@ def extract(
             json_schema=EXTRACTOR_JSON_SCHEMA,
             budget_usd=1.0,  # extractor tends to be larger; relax cap
         )
-        items = result.as_json()
+        envelope = result.as_json()
     except llm.LLMError as e:
         log.warning("extractor LLM failed for parent=%s: %s", parent_note_id, e)
         return []
 
+    # Schema wraps the array in `{"items": [...]}` — see EXTRACTOR_JSON_SCHEMA.
+    if isinstance(envelope, dict) and "items" in envelope:
+        items = envelope["items"]
+    elif isinstance(envelope, list):
+        # Tolerant fallback: caller didn't use schema, returned raw array.
+        items = envelope
+    else:
+        log.warning("extractor returned unexpected shape for parent=%s: %r",
+                    parent_note_id, envelope)
+        return []
+
     if not isinstance(items, list):
-        log.warning("extractor returned non-list for parent=%s: %r",
+        log.warning("extractor `items` field not a list for parent=%s: %r",
                     parent_note_id, items)
         return []
 

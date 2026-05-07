@@ -92,7 +92,8 @@ _EXTRACTOR_PROMPT = """\
 session note. -->
 
 RESPOND WITH JSON ONLY. NO PROSE. NO MARKDOWN FENCES. NO PREAMBLE.
-Your entire response must be a single JSON array (possibly empty: `[]`).
+Your entire response must be a single JSON object of the form:
+`{"items": [...]}` where `items` is an array (possibly empty: `{"items": []}`).
 
 Extract any of the following that are clearly present and durable.
 **Be conservative** — it is correct to return `[]` for short, exploratory,
@@ -108,11 +109,13 @@ Categories:
 Do NOT extract: generic facts, questions answered inline, tool-call output,
 or text that was rewritten/discarded later in the session.
 
-Each array element has shape:
-`{"type": "...", "title": "...", "content": "...", "tags": []}`
+Output shape:
+`{"items": [{"type": "...", "title": "...", "content": "...", "tags": []}, ...]}`
 
 `type` is one of the five above. `title` ≤ 12 words.
 `content` is the full markdown content. `tags` is an array of strings.
+
+Return `{"items": []}` if nothing meaningful is present.
 
 Conversation excerpt:
 {{content}}

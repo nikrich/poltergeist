@@ -21,10 +21,12 @@ def test_writes_artifacts_for_each_extracted_item(vault: Path) -> None:
     from ghostbrain.worker import extractor
 
     payload = (
-        '[{"type":"decision","title":"Use claude -p subprocess",'
+        '{"items": ['
+        '{"type":"decision","title":"Use claude -p subprocess",'
         '"content":"Decided because Max OAuth covers it.","tags":["llm"]},'
         '{"type":"spec","title":"Worker queue spec",'
-        '"content":"Filesystem queue with atomic rename.","tags":[]}]'
+        '"content":"Filesystem queue with atomic rename.","tags":[]}'
+        ']}'
     )
 
     with patch("ghostbrain.worker.extractor.llm.run",
@@ -51,7 +53,7 @@ def test_empty_array_writes_nothing(vault: Path) -> None:
     from ghostbrain.worker import extractor
 
     with patch("ghostbrain.worker.extractor.llm.run",
-               return_value=_llm_result("[]")):
+               return_value=_llm_result('{"items": []}')):
         paths = extractor.extract(
             "trivial chat", context="codeship",
             parent_note_id="p", parent_note_path=None,
@@ -63,8 +65,10 @@ def test_invalid_artifact_types_filtered(vault: Path) -> None:
     from ghostbrain.worker import extractor
 
     payload = (
-        '[{"type":"unknown-type","title":"X","content":"Y"},'
-        '{"type":"decision","title":"Real decision","content":"Real content"}]'
+        '{"items": ['
+        '{"type":"unknown-type","title":"X","content":"Y"},'
+        '{"type":"decision","title":"Real decision","content":"Real content"}'
+        ']}'
     )
     with patch("ghostbrain.worker.extractor.llm.run",
                return_value=_llm_result(payload)):
@@ -73,6 +77,22 @@ def test_invalid_artifact_types_filtered(vault: Path) -> None:
             parent_note_id="p", parent_note_path=None,
         )
     # Only the valid item is written.
+    assert len(paths) == 1
+
+
+def test_extractor_handles_raw_array_fallback(vault: Path) -> None:
+    """Tolerant: if the LLM returns a raw array (no envelope), still works."""
+    from ghostbrain.worker import extractor
+
+    payload = (
+        '[{"type":"decision","title":"X","content":"Y"}]'
+    )
+    with patch("ghostbrain.worker.extractor.llm.run",
+               return_value=_llm_result(payload)):
+        paths = extractor.extract(
+            "excerpt", context="codeship",
+            parent_note_id="p", parent_note_path=None,
+        )
     assert len(paths) == 1
 
 
