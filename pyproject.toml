@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ghostbrain"
+version = "0.1.0"
+description = "Personal second-brain automation for Obsidian"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "Jannik", email = "jannik@codeship.tech" },
+]
+dependencies = [
+    "anthropic>=0.40.0",
+    "watchdog>=4.0.0",
+    "pyyaml>=6.0",
+    "python-frontmatter>=1.1.0",
+    "python-dotenv>=1.0.0",
+    "jinja2>=3.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.5",
+]
+
+[project.scripts]
+ghostbrain-bootstrap = "ghostbrain.bootstrap:main"
+ghostbrain-worker = "ghostbrain.worker.main:main"
+
+[tool.setuptools.packages.find]
+include = ["ghostbrain*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

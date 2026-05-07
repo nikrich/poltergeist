@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.jannik.ghostbrain.worker</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python</string>
+        <string>-m</string>
+        <string>ghostbrain.worker.main</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/jannik/development/nikrich/ghost-brain</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/jannik/development/nikrich/ghost-brain/logs/worker.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/jannik/development/nikrich/ghost-brain/logs/worker.err</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>VAULT_PATH</key>
+        <string>/Users/jannik/ghostbrain/vault</string>
+        <!-- TODO(jannik): set ANTHROPIC_API_KEY here once Phase 3 lands.
+             For now the Phase 1 worker does not call the LLM. -->
+    </dict>
+</dict>
+</plist>
