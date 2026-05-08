@@ -81,10 +81,35 @@ def _build_frontmatter(
     }
     if event.get("sourceUrl"):
         front["sourceUrl"] = event["sourceUrl"]
+    if event.get("title"):
+        front["title"] = event["title"]
     if md.get("projectPath"):
         front["projectPath"] = md["projectPath"]
     if decision.secondary_contexts:
         front["secondaryContexts"] = decision.secondary_contexts
+
+    # Per-source useful metadata bubbled to top-level frontmatter so Dataview
+    # queries and the digest's _load_today_calendar can reach them without
+    # walking the nested rawData.
+    source = event.get("source")
+    if source == "calendar":
+        for key in ("start", "end", "isAllDay", "location", "organizer",
+                    "provider", "account"):
+            if md.get(key) is not None:
+                front[key] = md[key]
+    elif source == "jira":
+        for key in ("key", "status", "priority", "project"):
+            if md.get(key):
+                front[key] = md[key]
+    elif source == "github":
+        for key in ("repo", "number", "state"):
+            if md.get(key) is not None:
+                front[key] = md[key]
+    elif source == "confluence":
+        for key in ("space", "version"):
+            if md.get(key) is not None:
+                front[key] = md[key]
+
     return front
 
 
@@ -129,6 +154,8 @@ def _context_target_dir(context: str, source: str, type_: str) -> Path:
         return base / "slack"
     if source == "gmail":
         return base / "gmail"
+    if source == "calendar":
+        return base / "calendar"
     return base / source
 
 

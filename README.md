@@ -7,12 +7,12 @@ your tools (Claude Code & Desktop, GitHub, Jira, Confluence, Slack, Gmail,
 Teams, Calendar) into an Obsidian vault, classifies and summarizes it with
 an LLM, and serves it back as a daily digest.
 
-> **Status: alpha.** Phases 1–7 of the
+> **Status: alpha.** Phases 1–7 + 11 (Calendar) of the
 > [build sequence](./spec/SPEC.md#section-9--build-sequence-phased) are
 > complete: foundation, profile, Claude Code capture, GitHub, daily
-> digest, profile auto-update, Jira + Confluence. Slack, Gmail, Calendar,
-> Teams, metrics are next. The system is designed to be incrementally
-> adopted phase by phase.
+> digest, profile auto-update, Jira + Confluence, Google Calendar.
+> Slack, Gmail, Teams, metrics are next. The system is designed to be
+> incrementally adopted phase by phase.
 
 ## Why
 
@@ -345,6 +345,61 @@ Notes land at `<vault>/20-contexts/<ctx>/jira/tickets/<KEY>.md` and
 bodies are stored verbatim. If your Atlassian tickets/pages contain PII
 or sensitive data, the vault has it too. Vault is local-only by default;
 think before pushing it to a git remote.
+
+## Calendar (Phase 11)
+
+Polls your Google Calendar(s) hourly. Today's events appear in the
+morning digest's `## Today` section.
+
+### One-time setup
+
+1. Create a Google Cloud project at <https://console.cloud.google.com/projectcreate>
+   (name: ghostbrain). Enable the **Google Calendar API**.
+2. Configure the **OAuth consent screen** as External, fill basic
+   metadata, add yourself as a test user.
+3. Create an **OAuth client ID** (type: "Desktop app"). Download the
+   JSON to `~/.ghostbrain/state/google_oauth_client.json` and
+   `chmod 600`.
+4. Configure your accounts in `<vault>/90-meta/routing.yaml`:
+   ```yaml
+   calendar:
+     google:
+       accounts:
+         you@gmail.com: personal
+         you@workspace.com: work
+   ```
+5. Run the consent flow once per account:
+   ```bash
+   ghostbrain-calendar-auth google you@gmail.com
+   ghostbrain-calendar-auth google you@workspace.com
+   ```
+   Each opens a browser; refresh tokens land at
+   `~/.ghostbrain/state/google_calendar.<slug>.token`.
+
+### Run
+
+```bash
+ghostbrain-calendar-fetch [--dry-run]
+```
+
+Or schedule via launchd:
+
+```bash
+launchctl load ~/Library/LaunchAgents/com.ghostbrain.calendar.plist
+```
+
+Polls every hour. Events land at
+`<vault>/20-contexts/<ctx>/calendar/<file>.md`. The daily digest's
+`## Today` section reads them by `start` frontmatter.
+
+### Caveat: refresh-token expiry
+
+Google External-app + Test mode expires refresh tokens after ~7 days.
+For long-term use either:
+- Publish your OAuth consent screen (button on the consent screen page).
+  Calendar.readonly scope may not require formal verification for
+  single-user personal apps.
+- Re-run `ghostbrain-calendar-auth google <email>` weekly.
 
 ## Profile auto-update (Phase 6)
 

@@ -55,6 +55,7 @@ CONTEXT_SUBDIRS: tuple[str, ...] = (
     "github/repos",
     "jira/tickets",
     "confluence",
+    "calendar",
     "slack",
     "gmail",
     "projects",
@@ -192,6 +193,12 @@ Structure (omit any section that has no content):
 
 [Only if events landed in needs_review. Skip otherwise.]
 
+## Today
+
+[Render only when "Today's calendar" appears in input. List meetings
+chronologically: "HH:MM–HH:MM Title (context)" per bullet. Omit
+if no calendar data.]
+
 ## <Context name>
 
 [One section per context with activity. 2-4 bullets max.]
@@ -305,6 +312,14 @@ gmail:
   sender_domains:
     # "sanlam.co.za": sanlam
     {}
+
+# Calendar accounts → context. One block per provider.
+calendar:
+  google:
+    accounts:
+      # TODO: "you@gmail.com": personal
+      # TODO: "you@workspace.com": work
+      {}
 
 # Claude Code project paths → context. Longest-prefix match wins.
 # Used by ghostbrain.profile.claude_md to pick the right context profile.

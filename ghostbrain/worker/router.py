@@ -152,6 +152,27 @@ def _fast_route(event: dict, routing: dict) -> RoutingDecision | None:
                     method="path",
                 )
 
+    if source == "calendar":
+        provider = metadata.get("provider")
+        account = metadata.get("account")
+        if provider and account:
+            ctx = (
+                ((routing.get("calendar") or {}).get(provider) or {})
+                .get("accounts", {})
+                .get(account)
+            )
+            if ctx:
+                log.info("path-routed event=%s ctx=%s calendar=%s/%s",
+                         event.get("id"), ctx, provider, account)
+                return RoutingDecision(
+                    context=ctx,
+                    confidence=1.0,
+                    reasoning=(
+                        f"matched calendar.{provider}.accounts rule for {account}"
+                    ),
+                    method="path",
+                )
+
     return None
 
 

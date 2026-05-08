@@ -49,6 +49,19 @@ class CapturedNote:
 
 
 @dataclasses.dataclass
+class CalendarItem:
+    """One upcoming calendar event surfaced to the digest."""
+
+    context: str
+    title: str
+    start: str       # ISO8601 or YYYY-MM-DD (all-day)
+    end: str
+    is_all_day: bool
+    location: str
+    organizer: str
+
+
+@dataclasses.dataclass
 class DigestInput:
     """Structured payload handed to the LLM."""
 
@@ -58,6 +71,7 @@ class DigestInput:
     by_context: dict[str, list[CapturedNote]]
     health: dict[str, Any]
     review_queue_ids: list[str]
+    today_calendar: list[CalendarItem] = dataclasses.field(default_factory=list)
 
 
 def build_digest_input(target_date: date) -> DigestInput:
@@ -81,6 +95,8 @@ def build_digest_input(target_date: date) -> DigestInput:
         if e.get("context") == "needs_review"
     ]
 
+    today_calendar = list(_load_today_calendar(target_date))
+
     return DigestInput(
         digest_date=target_date.isoformat(),
         day_name=target_date.strftime("%A"),
@@ -88,18 +104,33 @@ def build_digest_input(target_date: date) -> DigestInput:
         by_context=dict(by_context),
         health=health,
         review_queue_ids=[i for i in review_queue_ids if i],
+        today_calendar=today_calendar,
     )
 
 
 def render_input_for_prompt(d: DigestInput) -> str:
     """Render the structured input as plain text the LLM digests."""
-    if not d.notes and not d.review_queue_ids:
+    if not d.notes and not d.review_queue_ids and not d.today_calendar:
         return f"Date: {d.digest_date}\n\nNo events captured.\n"
 
     parts: list[str] = [
         f"Digest date: {d.day_name}, {d.digest_date}",
         "",
     ]
+
+    if d.today_calendar:
+        parts.append(f"Today's calendar ({len(d.today_calendar)} item(s)):")
+        for item in d.today_calendar:
+            when = (
+                f"all-day {item.start}"
+                if item.is_all_day
+                else f"{_short_time(item.start)}–{_short_time(item.end)}"
+            )
+            location = f" @ {item.location}" if item.location else ""
+            parts.append(
+                f"  [{item.context}] {when} {item.title}{location}"
+            )
+        parts.append("")
 
     if d.review_queue_ids:
         parts.append(f"Needs review (count {len(d.review_queue_ids)}):")
@@ -129,6 +160,53 @@ def render_input_for_prompt(d: DigestInput) -> str:
         parts.append(f"  {k}: {v}")
 
     return "\n".join(parts)
+
+
+def _short_time(iso: str) -> str:
+    """Trim an ISO datetime to HH:MM for digest display, leave date strings alone."""
+    if not iso or "T" not in iso:
+        return iso
+    # 2026-05-09T10:00:00+02:00 → 10:00
+    return iso.split("T", 1)[1][:5]
+
+
+def _load_today_calendar(target_date: date) -> list[CalendarItem]:
+    """Walk every ``20-contexts/*/calendar/*.md`` and surface events that
+    start on ``target_date``."""
+    contexts_root = vault_path() / "20-contexts"
+    if not contexts_root.exists():
+        return []
+
+    today_str = target_date.isoformat()
+    items: list[CalendarItem] = []
+
+    for ctx_dir in sorted(contexts_root.iterdir()):
+        if not ctx_dir.is_dir():
+            continue
+        cal_dir = ctx_dir / "calendar"
+        if not cal_dir.exists():
+            continue
+        for path in cal_dir.glob("*.md"):
+            try:
+                note = frontmatter.load(path)
+            except Exception:  # noqa: BLE001
+                continue
+            meta = note.metadata
+            start = str(meta.get("start") or "")
+            if not start.startswith(today_str):
+                continue
+            items.append(CalendarItem(
+                context=str(meta.get("context") or ctx_dir.name),
+                title=str(meta.get("title") or path.stem),
+                start=start,
+                end=str(meta.get("end") or start),
+                is_all_day=bool(meta.get("isAllDay")),
+                location=str(meta.get("location") or ""),
+                organizer=str(meta.get("organizer") or ""),
+            ))
+
+    items.sort(key=lambda i: (not i.is_all_day, i.start))
+    return items
 
 
 def generate_digest(target_date: date | None = None) -> Path:
