@@ -247,14 +247,18 @@ Tone:
 
 ## Wikilinks — IMPORTANT
 
-The input below renders many items as `<title> -> [[vault/path]]`. When
-you mention an item in your bullets, **always** include the wikilink so
-the user can click through. Never paste a raw event_id, file path, or
-artifact slug as plain text — use the `[[wikilink]]` form.
+The input below renders many items as `<title> -> [[vault/path|alias]]`.
+The `|alias` portion is what Obsidian renders to the user — it keeps the
+bullet visually compact while the long path resolves the link reliably.
+
+**Copy each wikilink VERBATIM into your output.** Keep the `[[path|alias]]`
+form exactly — do not drop the `|alias` segment, do not rewrite the path,
+do not invent new links. If you're not sure which link applies, omit the
+link rather than guessing.
 
 Two specific rules:
 - For "Needs your decision", emit one bullet per review item formatted
-  as `- [[wikilink]] (source, confidence)` — no event_id in the bullet.
+  as `- [[path|alias]] (source, confidence)` — no event_id in the bullet.
 - For per-context bullets, when summarising N items into one line, pick
   the most representative wikilink and append it after the bullet text.
   Don't list every link inline; the goal is one click-through per

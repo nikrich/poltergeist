@@ -12,6 +12,7 @@ import argparse
 import dataclasses
 import json
 import logging
+import re
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -393,9 +394,19 @@ def render_input_for_prompt(d: DigestInput) -> str:
     return "\n".join(parts)
 
 
+_TIMESTAMP_PREFIX_RE = re.compile(r"^\d{8}T\d{6}-")
+_DISPLAY_MAX_CHARS = 40
+
+
 def _wikilink_for_path(absolute_or_rel: str) -> str:
-    """Return ``[[20-contexts/...]]`` for a path inside the vault, or ``""``
-    if the path is empty or outside the vault."""
+    """Return ``[[vault/path|short-alias]]`` for a path inside the vault.
+
+    The alias keeps the rendered bullet compact while preserving the full
+    path as the link target so Obsidian resolves it unambiguously. We
+    derive the alias from the file stem, stripping the ``YYYYMMDDTHHMMSS-``
+    timestamp prefix that ingestion adds and truncating long slugs with
+    an ellipsis.
+    """
     if not absolute_or_rel:
         return ""
     p = Path(absolute_or_rel)
@@ -405,7 +416,16 @@ def _wikilink_for_path(absolute_or_rel: str) -> str:
         if p.is_absolute():
             return ""
         rel = p
-    return f"[[{rel.with_suffix('').as_posix()}]]"
+    target = rel.with_suffix("").as_posix()
+    alias = _shorten_for_display(rel.stem)
+    return f"[[{target}|{alias}]]"
+
+
+def _shorten_for_display(stem: str) -> str:
+    cleaned = _TIMESTAMP_PREFIX_RE.sub("", stem)
+    if len(cleaned) > _DISPLAY_MAX_CHARS:
+        cleaned = cleaned[: _DISPLAY_MAX_CHARS - 1].rstrip("-_") + "…"
+    return cleaned or stem
 
 
 def _short_time(iso: str) -> str:
