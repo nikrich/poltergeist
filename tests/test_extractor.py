@@ -107,3 +107,50 @@ def test_llm_error_returns_empty_list(vault: Path) -> None:
             parent_note_id="p", parent_note_path=None,
         )
     assert paths == []
+
+
+def test_transcript_profile_routes_to_calendar_artifacts(vault: Path) -> None:
+    """When called with the transcript profile, artifacts land under
+    20-contexts/<ctx>/calendar/artifacts/<type>/ and carry source=recorder."""
+    from ghostbrain.worker import extractor
+
+    payload = (
+        '{"items": ['
+        '{"type":"action_item","title":"Alex: send RBAC spec",'
+        '"content":"Alex committed to sending the updated RBAC spec.",'
+        '"tags":["rbac"]},'
+        '{"type":"decision","title":"Defer SIMI integration",'
+        '"content":"Group agreed to defer SIMI integration.","tags":[]}'
+        ']}'
+    )
+
+    with patch("ghostbrain.worker.extractor.llm.run",
+               return_value=_llm_result(payload)):
+        paths = extractor.extract(
+            "raw transcript text",
+            context="sanlam",
+            parent_note_id="t1",
+            parent_note_path=vault / "20-contexts" / "sanlam" / "calendar"
+            / "transcripts" / "trustflow.md",
+            prompt_name="transcript-extractor.md",
+            artifact_root=("calendar", "artifacts"),
+            source="recorder",
+        )
+
+    assert len(paths) == 2
+    cal_dir = vault / "20-contexts" / "sanlam" / "calendar" / "artifacts"
+    assert (cal_dir / "action_items").exists()
+    assert (cal_dir / "decisions").exists()
+    items = list((cal_dir / "action_items").glob("*.md"))
+    assert items, "action_item artifact not written"
+    note = frontmatter.load(items[0])
+    assert note["artifactType"] == "action_item"
+    assert note["source"] == "recorder"
+
+
+def test_transcript_extractor_prompt_seed_resolves(vault: Path) -> None:
+    """The transcript-extractor prompt must exist after bootstrap so the
+    linker can find it at runtime."""
+    prompt = vault / "90-meta" / "prompts" / "transcript-extractor.md"
+    assert prompt.exists()
+    assert "{{content}}" in prompt.read_text(encoding="utf-8")

@@ -97,11 +97,55 @@ def link_transcript(
 
     log.info("transcript linked: %s → parent=%s",
              out_path, parent.path if parent else "(no match)")
+
+    _extract_transcript_artifacts(
+        body=body,
+        context=ctx,
+        parent_note_id=artifact_id,
+        parent_note_path=out_path,
+    )
+
     return LinkResult(
         transcript_note=out_path,
         parent_event_path=parent.path if parent else None,
         matched_title=title if parent else None,
     )
+
+
+def _extract_transcript_artifacts(
+    *,
+    body: str,
+    context: str,
+    parent_note_id: str,
+    parent_note_path: Path,
+) -> None:
+    """Run the transcript extractor against the transcript text and write
+    decisions/action items/unresolved questions under
+    ``<ctx>/calendar/artifacts/<type>/``. Best-effort — extractor failures
+    are logged but never break the linker."""
+    try:
+        from ghostbrain.worker import extractor
+    except Exception as e:  # noqa: BLE001
+        log.warning("extractor import failed; skipping transcript extraction: %s", e)
+        return
+
+    try:
+        paths = extractor.extract(
+            body,
+            context=context,
+            parent_note_id=parent_note_id,
+            parent_note_path=parent_note_path,
+            prompt_name="transcript-extractor.md",
+            artifact_root=("calendar", "artifacts"),
+            source="recorder",
+        )
+    except Exception as e:  # noqa: BLE001
+        log.warning("transcript extractor failed for %s: %s", parent_note_path, e)
+        return
+
+    if paths:
+        log.info("extracted %d artifact(s) from transcript %s",
+                 len(paths), parent_note_path)
 
 
 # ---------------------------------------------------------------------------

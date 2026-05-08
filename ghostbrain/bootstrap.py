@@ -50,12 +50,18 @@ CONTEXT_SUBDIRS: tuple[str, ...] = (
     "claude/artifacts/prompts",
     "claude/artifacts/code",
     "claude/artifacts/unresolved",
+    "claude/artifacts/action_items",
     "github/prs",
     "github/issues",
     "github/repos",
     "jira/tickets",
     "confluence",
     "calendar",
+    "calendar/transcripts",
+    "calendar/artifacts/decisions",
+    "calendar/artifacts/action_items",
+    "calendar/artifacts/unresolved",
+    "calendar/artifacts/specs",
     "slack",
     "gmail",
     "projects",
@@ -120,6 +126,64 @@ Output shape:
 Return `{"items": []}` if nothing meaningful is present.
 
 Conversation excerpt:
+{{content}}
+"""
+
+_TRANSCRIPT_EXTRACTOR_PROMPT = """\
+<!-- Transcript extractor prompt. Used by ghostbrain.recorder.linker after a
+meeting transcript is written to <ctx>/calendar/transcripts/. Tuned for
+spoken meeting content, not written sessions. -->
+
+RESPOND WITH JSON ONLY. NO PROSE. NO MARKDOWN FENCES. NO PREAMBLE.
+Your entire response must be a single JSON object of the form:
+`{"items": [...]}` where `items` is an array (possibly empty: `{"items": []}`).
+
+You are reading a raw automatic transcript of a real meeting. Speakers are
+not labelled. Audio is imperfect — expect homophones, broken sentences,
+filler words, and tangents. Be **conservative**: only surface things that
+are clearly stated, not inferred.
+
+Categories to extract (in priority order):
+
+1. `decision` — an explicit decision the group reached, with the stated
+   reason if present. Phrases like "we'll go with X", "let's use Y",
+   "agreed, we're not doing Z". Skip vague leanings.
+
+2. `action_item` — a concrete commitment to do something. Capture the
+   owner if named, the action, and a deadline if stated. Phrases like
+   "I'll send the spec by Friday", "Alex will follow up with legal",
+   "we need to update the dashboard before launch". Skip generic
+   intent ("we should think about X") unless an owner accepted it.
+
+3. `unresolved` — open questions or blockers raised but not resolved
+   in the meeting. "We still don't know how X handles Y", "depends on
+   when finance signs off". Capture enough context that a future reader
+   understands what's blocking what.
+
+4. `spec` — only when the meeting walked through a real specification
+   (architecture review, API contract, requirements doc). Most meetings
+   have none. Default to skipping.
+
+Do NOT extract: small talk, status updates already in tickets, repeated
+restatements, tangents abandoned mid-sentence, or anything the audio is
+too garbled to quote with confidence.
+
+Output shape:
+`{"items": [{"type": "...", "title": "...", "content": "...", "tags": []}, ...]}`
+
+`title` ≤ 12 words, written in the user's voice (e.g.
+"Decision: ditch SIMI integration for MVP"). For action_item, include
+the owner in the title when known: "Alex: send updated RBAC spec to legal".
+`content` is full markdown — quote the relevant phrasing from the
+transcript when it sharpens the artifact, then add one line of context
+naming the meeting topic and any constraint mentioned.
+`tags` is an array of short strings — use them for cross-meeting threads
+(e.g. ["rbac", "compliance"]).
+
+Return `{"items": []}` for short, low-signal, or chatty meetings. Empty is
+the right answer most of the time.
+
+Transcript:
 {{content}}
 """
 
@@ -398,6 +462,7 @@ recorder:
 """,
     "90-meta/prompts/router.md": _ROUTER_PROMPT,
     "90-meta/prompts/extractor.md": _EXTRACTOR_PROMPT,
+    "90-meta/prompts/transcript-extractor.md": _TRANSCRIPT_EXTRACTOR_PROMPT,
     "90-meta/prompts/profile-updater.md": _PROFILE_UPDATER_PROMPT,
     "90-meta/prompts/digest.md": _DIGEST_PROMPT,
     "90-meta/prompts/classifier.md": "# Classifier prompt\n\nUsed for fine-grained classification. Defined later.\n",

@@ -32,7 +32,10 @@ log = logging.getLogger("ghostbrain.semantic.refresh")
 
 DEFAULT_TOP_K = 5
 DEFAULT_MIN_SIMILARITY = 0.45
-SKIP_DIR_PARTS = ("transcripts",)  # don't index — too long, dominate
+# Body text gets capped in _extract_text_and_context, so transcripts no
+# longer dominate; we index them so meeting content participates in
+# cross-context linking. Audio files and other non-markdown live elsewhere.
+SKIP_DIR_PARTS: tuple[str, ...] = ()
 
 
 @dataclasses.dataclass

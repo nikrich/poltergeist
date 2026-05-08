@@ -94,27 +94,27 @@ def test_refresh_writes_related_frontmatter(vault: Path, index_dir: Path) -> Non
     assert all(r.startswith("[[") and r.endswith("]]") for r in related)
 
 
-def test_refresh_skips_transcripts_dir(vault: Path, index_dir: Path) -> None:
+def test_refresh_indexes_transcripts(vault: Path, index_dir: Path) -> None:
+    """Transcripts now participate in semantic indexing so meeting content
+    gets cross-context backlinks. The 8000-char body cap in
+    refresh._extract_text_and_context keeps long transcripts from
+    dominating the embedding space."""
     from ghostbrain.semantic.refresh import refresh
 
     sanlam_cal = vault / "20-contexts" / "sanlam" / "calendar" / "transcripts"
     sanlam_cal.mkdir(parents=True, exist_ok=True)
-    _write_note(sanlam_cal / "skip-me.md", "Transcript", "noisy text", "sanlam")
+    _write_note(sanlam_cal / "include-me.md", "Transcript", "noisy text", "sanlam")
     _write_note(
         vault / "20-contexts" / "sanlam" / "calendar" / "keep.md",
         "Calendar event", "real meeting", "sanlam",
     )
 
-    result = refresh(
-        top_k=3, min_similarity=0.4, embedder=FakeEmbedder(),
-    )
-    # Transcript dir contributes ≥1 to skipped count, regardless of bootstrap.
-    assert result.skipped >= 1
-    # Verify the transcript wasn't embedded — its keep-counterpart was.
+    refresh(top_k=3, min_similarity=0.4, embedder=FakeEmbedder())
+
     from ghostbrain.semantic.index import load
     idx = load()
     assert any("/calendar/keep.md" in k for k in idx.entries)
-    assert not any("transcripts/" in k for k in idx.entries)
+    assert any("transcripts/" in k for k in idx.entries)
 
 
 def test_refresh_skips_unchanged_on_second_run(vault: Path, index_dir: Path) -> None:

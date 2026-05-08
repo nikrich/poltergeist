@@ -1,9 +1,12 @@
-"""Extract specs/decisions/code/prompts/unresolved questions from a session
-and write each as its own artifact note.
+"""Extract specs/decisions/code/prompts/unresolved/action items from a source
+text and write each as its own artifact note.
 
-Uses the extractor prompt at ``vault/90-meta/prompts/extractor.md``. Returns
-the list of artifact paths written. If the LLM returns nothing
-extractable — common for short or chatty sessions — we return [] and that's
+Two prompts ship: ``extractor.md`` (Claude Code sessions) and
+``transcript-extractor.md`` (meeting transcripts). Callers select via
+``prompt_name`` and route output via ``artifact_root``.
+
+Returns the list of artifact paths written. If the LLM returns nothing
+extractable — common for short or chatty sources — we return [] and that's
 fine.
 """
 
@@ -24,7 +27,9 @@ from ghostbrain.paths import vault_path
 
 log = logging.getLogger("ghostbrain.worker.extractor")
 
-ARTIFACT_TYPES = ("spec", "decision", "code", "prompt", "unresolved")
+ARTIFACT_TYPES = (
+    "spec", "decision", "code", "prompt", "unresolved", "action_item",
+)
 
 # NOTE: `claude -p --json-schema` only accepts object roots — array roots
 # fail with "tools.N.custom.input_schema.type: Input should be 'object'".
@@ -73,12 +78,23 @@ def extract(
     parent_note_id: str,
     parent_note_path: Path | None,
     config: dict | None = None,
+    prompt_name: str = "extractor.md",
+    artifact_root: tuple[str, ...] = ("claude", "artifacts"),
+    source: str = "claude-code",
 ) -> list[Path]:
-    """Run the extractor LLM and persist each artifact. Returns paths written."""
+    """Run the extractor LLM and persist each artifact. Returns paths written.
+
+    ``prompt_name`` selects which prompt file under ``vault/90-meta/prompts/``
+    to use. ``artifact_root`` is the path tuple under
+    ``20-contexts/<ctx>/`` where artifact subfolders land — defaults match
+    the Claude Code session pipeline. ``source`` is written to each
+    artifact's frontmatter and lets downstream tooling distinguish between
+    e.g. session-derived and meeting-derived artifacts.
+    """
     if not excerpt.strip():
         return []
 
-    prompt_template = _read_prompt("extractor.md")
+    prompt_template = _read_prompt(prompt_name)
     prompt = prompt_template.replace("{{content}}", excerpt)
 
     config = config or {}
@@ -134,6 +150,8 @@ def extract(
             context=context,
             parent_note_id=parent_note_id,
             parent_note_path=parent_note_path,
+            artifact_root=artifact_root,
+            source=source,
         )
         written.append(path)
 
@@ -148,11 +166,15 @@ def _write_artifact(
     context: str,
     parent_note_id: str,
     parent_note_path: Path | None,
+    artifact_root: tuple[str, ...],
+    source: str,
 ) -> Path:
     artifact_id = str(uuid.uuid4())
     ts = datetime.now(timezone.utc).isoformat()
     folder = _ARTIFACT_FOLDERS[artifact.type]
-    target_dir = vault_path() / "20-contexts" / context / "claude" / "artifacts" / folder
+    target_dir = (
+        vault_path() / "20-contexts" / context / Path(*artifact_root) / folder
+    )
     target_dir.mkdir(parents=True, exist_ok=True)
 
     front: dict[str, Any] = {
@@ -160,7 +182,7 @@ def _write_artifact(
         "context": context,
         "type": "artifact",
         "artifactType": artifact.type,
-        "source": "claude-code",
+        "source": source,
         "created": ts,
         "ingestedAt": ts,
         "parent": _wikilink_for(parent_note_path) if parent_note_path else parent_note_id,
@@ -211,4 +233,5 @@ _ARTIFACT_FOLDERS: dict[str, str] = {
     "code": "code",
     "prompt": "prompts",
     "unresolved": "unresolved",
+    "action_item": "action_items",
 }
