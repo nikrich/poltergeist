@@ -3,10 +3,8 @@ import { TopBar } from '../components/TopBar';
 import { Btn } from '../components/Btn';
 import { Lucide } from '../components/Lucide';
 import { Toggle } from '../components/Toggle';
-import { Pill } from '../components/Pill';
 import { Ghost } from '../components/Ghost';
 import { useSettings } from '../stores/settings';
-import { stub } from '../stores/toast';
 import { HOTKEYS, format as formatShortcut } from '../lib/shortcuts';
 import type {
   FolderStructure,
@@ -307,44 +305,20 @@ function HotkeySettings() {
 function AccountSettings() {
   return (
     <div>
-      <SectionHeader title="account" sub="theo · ghostbrain pro" />
-      <div className="mb-4 flex items-center gap-[14px] rounded-r10 border border-hairline bg-vellum p-4">
-        {/* intentional fixed color: account-initial avatar reads dark on the always-bright neon plate */}
-        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-neon text-18 font-semibold text-[#0E0F12]">
-          T
+      <SectionHeader title="account" sub="ghostbrain runs locally — no account needed for now." />
+      <div className="rounded-lg border border-hairline bg-vellum p-6">
+        <div className="flex items-start gap-3">
+          <Lucide name="info" size={16} color="var(--ink-2)" className="mt-1" />
+          <div className="flex-1 leading-[1.4]">
+            <div className="text-13 font-medium text-ink-0">no sign-in yet</div>
+            <p className="mt-1 text-12 text-ink-2">
+              ghostbrain is local-first. accounts, sync, and the pro tier are coming in a future
+              release. for now, everything runs on your machine and the vault on disk is the only
+              source of truth.
+            </p>
+          </div>
         </div>
-        <div className="flex-1 leading-[1.3]">
-          <div className="text-14 font-medium text-ink-0">theo</div>
-          <div className="font-mono text-11 text-ink-2">theo@ghostbrain.app</div>
-        </div>
-        <Pill tone="neon">pro</Pill>
       </div>
-      <SettingRow
-        label="plan"
-        sub="pro · $8/month · renews jun 1"
-        control={
-          <Btn variant="secondary" size="sm" onClick={() => stub(3)}>
-            manage
-          </Btn>
-        }
-      />
-      <SettingRow
-        label="connected devices"
-        sub="this mac · iphone (last seen 2h ago)"
-        control={
-          <Btn variant="ghost" size="sm" onClick={() => stub(3)}>
-            view all
-          </Btn>
-        }
-      />
-      <SettingRow
-        label="sign out"
-        control={
-          <Btn variant="danger" size="sm" onClick={() => stub(3)}>
-            sign out
-          </Btn>
-        }
-      />
     </div>
   );
 }
