@@ -36,6 +36,15 @@ Electron app for ghostbrain (macOS + Windows). Slice 1 — shell only, no Python
 - macOS uses `hiddenInset` traffic lights; Windows uses native frame
 - Cross-platform: ⌘ on Mac, Ctrl on Windows in hotkey display
 
+## Known light-mode considerations
+
+Most colors flip via CSS variables in `colors_and_type.css` (`:root` vs
+`[data-theme="light"]`), so light mode is functional. Intentional fixed colors
+— deep cool ink text on neon/oxblood buttons and brand accent fills (neon,
+oxblood, moss) — stay the same in both themes by design. A manual visual
+walkthrough of all six screens in light mode is recommended before shipping
+to verify contrast at small font sizes (eyebrows, mono captions, pill text).
+
 ## Slice 1 known TODOs (intentional)
 
 These are deferred to later slices, not bugs:
