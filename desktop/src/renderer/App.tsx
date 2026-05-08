@@ -9,6 +9,7 @@ import { TodayScreen } from './screens/today';
 import { ConnectorsScreen } from './screens/connectors';
 import { MeetingsScreen } from './screens/meetings';
 import { CaptureScreen } from './screens/capture';
+import { VaultScreen } from './screens/vault';
 
 function ScreenStub({ name }: { name: string }) {
   return (
@@ -52,7 +53,8 @@ export default function App() {
           {active === 'connectors' && <ConnectorsScreen />}
           {active === 'meetings' && <MeetingsScreen />}
           {active === 'capture' && <CaptureScreen />}
-          {active !== 'today' && active !== 'connectors' && active !== 'meetings' && active !== 'capture' && <ScreenStub name={active} />}
+          {active === 'vault' && <VaultScreen />}
+          {active === 'settings' && <ScreenStub name={active} />}
         </main>
       </div>
       <StatusBar />
