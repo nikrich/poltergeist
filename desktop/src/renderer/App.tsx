@@ -5,6 +5,7 @@ import { WindowChrome } from './components/WindowChrome';
 import { Sidebar } from './components/Sidebar';
 import { StatusBar } from './components/StatusBar';
 import { Toaster } from './components/Toaster';
+import { TodayScreen } from './screens/today';
 
 function ScreenStub({ name }: { name: string }) {
   return (
@@ -44,7 +45,7 @@ export default function App() {
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         <Sidebar />
         <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <ScreenStub name={active} />
+          {active === 'today' ? <TodayScreen /> : <ScreenStub name={active} />}
         </main>
       </div>
       <StatusBar />

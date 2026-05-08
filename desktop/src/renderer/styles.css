@@ -12,7 +12,7 @@
 
 @font-face {
   font-family: 'Google Sans Flex';
-  src: url('../../fonts/GoogleSansFlex-VariableFont_GRAD_ROND_opsz_slnt_wdth_wght.ttf')
+  src: url('/fonts/GoogleSansFlex-VariableFont_GRAD_ROND_opsz_slnt_wdth_wght.ttf')
     format('truetype-variations');
   font-weight: 100 1000;
   font-style: oblique -15deg 0deg;
