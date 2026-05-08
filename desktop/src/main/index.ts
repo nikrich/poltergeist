@@ -35,12 +35,9 @@ function createWindow() {
 }
 
 ipcMain.handle('gb:settings:getAll', () => settings.getAll());
-ipcMain.handle(
-  'gb:settings:set',
-  (_e, key: keyof Settings, value: Settings[keyof Settings]) => {
-    settings.setKey(key, value as never);
-  },
-);
+ipcMain.handle('gb:settings:set', (_e, key: keyof Settings, value: Settings[keyof Settings]) => {
+  settings.setKey(key, value as never);
+});
 ipcMain.handle('gb:dialogs:pickVaultFolder', () => pickVaultFolder());
 ipcMain.handle('gb:shell:openPath', (_e, p: string) => shell.openPath(p));
 

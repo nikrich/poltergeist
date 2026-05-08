@@ -19,9 +19,7 @@ export function Lucide({ name, size = 16, color, style, className }: Props) {
     const camel = name.replace(/(^|-)(\w)/g, (_, __, c: string) =>
       c.toUpperCase(),
     ) as keyof typeof lucide.icons;
-    const node = lucide.icons[camel] as
-      | Array<[string, Record<string, string>]>
-      | undefined;
+    const node = lucide.icons[camel] as Array<[string, Record<string, string>]> | undefined;
     if (!Array.isArray(node)) return;
 
     while (host.firstChild) host.removeChild(host.firstChild);

@@ -23,5 +23,4 @@ export const useToasts = create<ToastState>((set, get) => ({
   dismiss: (id) => set({ toasts: get().toasts.filter((t) => t.id !== id) }),
 }));
 
-export const stub = (slice: number) =>
-  useToasts.getState().push(`wired in Slice ${slice}`);
+export const stub = (slice: number) => useToasts.getState().push(`wired in Slice ${slice}`);

@@ -21,8 +21,8 @@ export function StatusBar() {
       }}
     >
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-        <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--neon)' }} />
-        6 connectors live
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--neon)' }} />6
+        connectors live
       </span>
       <span>·</span>
       <span>2,489 indexed</span>
@@ -31,7 +31,14 @@ export function StatusBar() {
       {phase === 'recording' && (
         <>
           <span>·</span>
-          <span style={{ color: 'var(--oxblood)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          <span
+            style={{
+              color: 'var(--oxblood)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+            }}
+          >
             <span
               style={{
                 width: 6,

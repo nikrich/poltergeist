@@ -85,8 +85,7 @@ export function ConnectorsScreen() {
                   fontSize: 11,
                   padding: '4px 10px',
                   borderRadius: 4,
-                  background:
-                    filter === f ? 'rgba(197,255,61,0.16)' : 'transparent',
+                  background: filter === f ? 'rgba(197,255,61,0.16)' : 'transparent',
                   color: filter === f ? 'var(--neon)' : 'var(--ink-1)',
                   border: `1px solid ${
                     filter === f ? 'rgba(197,255,61,0.30)' : 'var(--hairline-2)'
@@ -179,11 +178,7 @@ function ConnectorRow({ c, selected, onClick }: ConnectorRowProps) {
         padding: '12px 14px',
         borderRadius: 6,
         cursor: 'pointer',
-        background: selected
-          ? 'var(--bg-vellum)'
-          : hover
-            ? 'var(--bg-vellum)'
-            : 'transparent',
+        background: selected ? 'var(--bg-vellum)' : hover ? 'var(--bg-vellum)' : 'transparent',
         border: `1px solid ${selected ? 'var(--hairline-2)' : 'transparent'}`,
         opacity: c.state === 'off' ? 0.65 : 1,
       }}
@@ -198,9 +193,7 @@ function ConnectorRow({ c, selected, onClick }: ConnectorRowProps) {
         }}
       />
       <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
-        <span style={{ fontSize: 13, color: 'var(--ink-0)', fontWeight: 500 }}>
-          {c.name}
-        </span>
+        <span style={{ fontSize: 13, color: 'var(--ink-0)', fontWeight: 500 }}>{c.name}</span>
         <span
           style={{
             fontFamily: 'var(--font-mono)',
@@ -435,7 +428,7 @@ function ConnectorDetail({ c }: ConnectorDetailProps) {
                   lineHeight: 1.4,
                 }}
               >
-                github stopped accepting our token 2 days ago. one click and it's quiet again.
+                github stopped accepting our token 2 days ago. one click and it&rsquo;s quiet again.
               </div>
             </div>
           </div>

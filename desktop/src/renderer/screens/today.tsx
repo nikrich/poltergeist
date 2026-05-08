@@ -27,6 +27,7 @@ export function TodayScreen() {
   // mock array stays pristine; only the renderer knows about CTAs.
   const agendaCtas: React.ReactNode[] = [
     <Btn
+      key="record"
       variant="primary"
       size="sm"
       icon={<Lucide name="mic" size={12} color="#0E0F12" />}
@@ -35,12 +36,13 @@ export function TodayScreen() {
       record
     </Btn>,
     <Btn
+      key="more"
       variant="ghost"
       size="sm"
       icon={<Lucide name="more-horizontal" size={12} />}
       onClick={() => stub(3)}
     />,
-    <Pill tone="moss">
+    <Pill key="recorded" tone="moss">
       <Lucide name="check" size={9} /> recorded
     </Pill>,
   ];
@@ -114,8 +116,7 @@ export function TodayScreen() {
               right: -80,
               width: 360,
               height: 360,
-              background:
-                'radial-gradient(circle, rgba(197,255,61,0.10) 0%, transparent 60%)',
+              background: 'radial-gradient(circle, rgba(197,255,61,0.10) 0%, transparent 60%)',
               pointerEvents: 'none',
             }}
           />
@@ -498,9 +499,7 @@ function ConnectorPulse({ name, state, count }: ConnectorPulseData) {
           }}
         />
       </div>
-      <div style={{ fontSize: 10, color: 'var(--ink-1)', textTransform: 'lowercase' }}>
-        {name}
-      </div>
+      <div style={{ fontSize: 10, color: 'var(--ink-1)', textTransform: 'lowercase' }}>{name}</div>
       <div
         style={{
           fontFamily: 'var(--font-mono)',
@@ -522,11 +521,7 @@ function CaptureItem({ source, title, snippet, from }: CaptureLatelyItem) {
       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-        <img
-          src={`/assets/connectors/${source}.svg`}
-          alt=""
-          style={{ width: 12, height: 12 }}
-        />
+        <img src={`/assets/connectors/${source}.svg`} alt="" style={{ width: 12, height: 12 }} />
         <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-0)' }}>{title}</span>
         <span
           style={{
@@ -548,7 +543,7 @@ function CaptureItem({ source, title, snippet, from }: CaptureLatelyItem) {
           lineHeight: 1.4,
         }}
       >
-        "{snippet}"
+        &ldquo;{snippet}&rdquo;
       </div>
     </div>
   );

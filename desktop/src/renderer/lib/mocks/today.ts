@@ -1,22 +1,42 @@
 export interface AgendaItem {
-  time: string; dur: string; title: string; with: string[];
+  time: string;
+  dur: string;
+  title: string;
+  with: string[];
   status: 'upcoming' | 'recorded';
 }
 export interface ActivityRow {
-  source: string; verb: string; subject: string; time: string;
+  source: string;
+  verb: string;
+  subject: string;
+  time: string;
 }
 export interface ConnectorPulse {
-  name: string; state: 'on' | 'off' | 'err'; count: string;
+  name: string;
+  state: 'on' | 'off' | 'err';
+  count: string;
 }
 export interface CaptureLatelyItem {
-  source: string; title: string; snippet: string; from: string;
+  source: string;
+  title: string;
+  snippet: string;
+  from: string;
 }
 export interface Suggestion {
-  icon: string; title: string; body: string; accent?: boolean;
+  icon: string;
+  title: string;
+  body: string;
+  accent?: boolean;
 }
 
 export const AGENDA: AgendaItem[] = [
-  { time: '11:00', dur: '30m', title: 'Design crit · onboarding v3', with: ['mira', 'jules', 'sam'], status: 'upcoming' },
+  {
+    time: '11:00',
+    dur: '30m',
+    title: 'Design crit · onboarding v3',
+    with: ['mira', 'jules', 'sam'],
+    status: 'upcoming',
+  },
   { time: '14:30', dur: '60m', title: 'Weekly with Theo', with: ['theo'], status: 'upcoming' },
   { time: '09:00', dur: '20m', title: 'standup', with: ['team'], status: 'recorded' },
 ];
@@ -41,20 +61,48 @@ export const CONNECTOR_PULSES: ConnectorPulse[] = [
 ];
 
 export const CAUGHT_LATELY: CaptureLatelyItem[] = [
-  { source: 'gmail', title: 're: design crit moved', snippet: 'works for me — moving the 11am to thursday next week.', from: 'theo · 8:14am' },
-  { source: 'slack', title: '#product-feedback', snippet: 'users keep asking for keyboard shortcuts on the meetings view. ranked it as p1.', from: 'mira · 8:01am' },
-  { source: 'linear', title: 'GHO-241 closed', snippet: 'recording auto-pause when system sleeps. shipped in 1.4.2.', from: 'jules · 7:48am' },
+  {
+    source: 'gmail',
+    title: 're: design crit moved',
+    snippet: 'works for me — moving the 11am to thursday next week.',
+    from: 'theo · 8:14am',
+  },
+  {
+    source: 'slack',
+    title: '#product-feedback',
+    snippet: 'users keep asking for keyboard shortcuts on the meetings view. ranked it as p1.',
+    from: 'mira · 8:01am',
+  },
+  {
+    source: 'linear',
+    title: 'GHO-241 closed',
+    snippet: 'recording auto-pause when system sleeps. shipped in 1.4.2.',
+    from: 'jules · 7:48am',
+  },
 ];
 
 export const SUGGESTIONS: Suggestion[] = [
-  { icon: 'link', title: 'connect drive', body: '3 mentions of shared docs in slack this week — none are indexed.' },
-  { icon: 'user-plus', title: 'follow up with @sam', body: 'last reply from sam was 9 days ago. on a thread you starred.' },
-  { icon: 'sparkles', title: 'weekly digest is ready', body: 'summary of 24 captured threads, ready to drop into your daily note.', accent: true },
+  {
+    icon: 'link',
+    title: 'connect drive',
+    body: '3 mentions of shared docs in slack this week — none are indexed.',
+  },
+  {
+    icon: 'user-plus',
+    title: 'follow up with @sam',
+    body: 'last reply from sam was 9 days ago. on a thread you starred.',
+  },
+  {
+    icon: 'sparkles',
+    title: 'weekly digest is ready',
+    body: 'summary of 24 captured threads, ready to drop into your daily note.',
+    accent: true,
+  },
 ];
 
 export const STATS = {
-  captured:  { label: 'captured',  value: '241',   delta: '+38 vs yest' },
-  meetings:  { label: 'meetings',  value: '2',     delta: 'next in 23m' },
-  followups: { label: 'followups', value: '8',     delta: '3 overdue' },
-  vaultSize: { label: 'vault size',value: '2,489', delta: 'notes' },
+  captured: { label: 'captured', value: '241', delta: '+38 vs yest' },
+  meetings: { label: 'meetings', value: '2', delta: 'next in 23m' },
+  followups: { label: 'followups', value: '8', delta: '3 overdue' },
+  vaultSize: { label: 'vault size', value: '2,489', delta: 'notes' },
 };

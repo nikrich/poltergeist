@@ -9,14 +9,7 @@ import { useSettings } from '../stores/settings';
 import { stub } from '../stores/toast';
 import { HOTKEYS, format as formatShortcut } from '../lib/shortcuts';
 
-type SectionId =
-  | 'display'
-  | 'vault'
-  | 'privacy'
-  | 'meeting'
-  | 'hotkeys'
-  | 'account'
-  | 'about';
+type SectionId = 'display' | 'vault' | 'privacy' | 'meeting' | 'hotkeys' | 'account' | 'about';
 
 const SECTIONS: Array<{ id: SectionId; label: string; icon: string }> = [
   { id: 'display', label: 'display', icon: 'sun' },
@@ -127,10 +120,7 @@ function VaultSettings() {
   };
   return (
     <div>
-      <SectionHeader
-        title="vault"
-        sub="where ghostbrain writes everything it catches."
-      />
+      <SectionHeader title="vault" sub="where ghostbrain writes everything it catches." />
       <SettingRow
         label="vault path"
         sub={vaultPath}
@@ -215,10 +205,7 @@ function PrivacySettings() {
 function MeetingSettings() {
   return (
     <div>
-      <SectionHeader
-        title="meetings"
-        sub="how ghostbrain records, transcribes, and summarizes."
-      />
+      <SectionHeader title="meetings" sub="how ghostbrain records, transcribes, and summarizes." />
       <SettingRow
         label="auto-record from calendar"
         sub="meetings tagged ⏺ in your calendar are auto-recorded"
@@ -325,9 +312,7 @@ function AccountSettings() {
           T
         </div>
         <div style={{ flex: 1, lineHeight: 1.3 }}>
-          <div style={{ fontSize: 14, color: 'var(--ink-0)', fontWeight: 500 }}>
-            theo
-          </div>
+          <div style={{ fontSize: 14, color: 'var(--ink-0)', fontWeight: 500 }}>theo</div>
           <div
             style={{
               fontFamily: 'var(--font-mono)',
@@ -405,8 +390,7 @@ function AboutSettings() {
               color: 'var(--ink-2)',
             }}
           >
-            0.1.0 · build {new Date().toISOString().slice(0, 10)} ·{' '}
-            {window.gb.platform}
+            0.1.0 · build {new Date().toISOString().slice(0, 10)} · {window.gb.platform}
           </div>
           <div
             style={{
@@ -417,7 +401,7 @@ function AboutSettings() {
               marginTop: 8,
             }}
           >
-            "a friendly poltergeist on your shoulder."
+            &ldquo;a friendly poltergeist on your shoulder.&rdquo;
           </div>
         </div>
       </div>
@@ -445,9 +429,7 @@ function SettingRow({
       }}
     >
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 13, color: 'var(--ink-0)', fontWeight: 500 }}>
-          {label}
-        </div>
+        <div style={{ fontSize: 13, color: 'var(--ink-0)', fontWeight: 500 }}>{label}</div>
         {sub && (
           <div
             style={{
@@ -482,11 +464,7 @@ function SectionHeader({ title, sub }: { title: string; sub?: string }) {
       >
         {title}
       </h2>
-      {sub && (
-        <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--ink-2)' }}>
-          {sub}
-        </p>
-      )}
+      {sub && <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--ink-2)' }}>{sub}</p>}
     </header>
   );
 }
@@ -522,11 +500,7 @@ function SectionRow({
         marginBottom: 2,
       }}
     >
-      <Lucide
-        name={icon}
-        size={14}
-        color={active ? 'var(--neon)' : 'var(--ink-2)'}
-      />
+      <Lucide name={icon} size={14} color={active ? 'var(--neon)' : 'var(--ink-2)'} />
       {label}
     </div>
   );
@@ -560,8 +534,7 @@ function Segmented<T extends string>({
             borderRadius: 4,
             border: 'none',
             cursor: 'pointer',
-            background:
-              value === o.value ? 'rgba(197,255,61,0.16)' : 'transparent',
+            background: value === o.value ? 'rgba(197,255,61,0.16)' : 'transparent',
             color: value === o.value ? 'var(--neon)' : 'var(--ink-1)',
             fontFamily: 'var(--font-mono)',
             fontSize: 11,

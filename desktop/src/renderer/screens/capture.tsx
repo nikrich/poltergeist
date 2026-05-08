@@ -27,9 +27,7 @@ export function CaptureScreen() {
   const [selected, setSelected] = useState<number>(1);
   const [filter, setFilter] = useState<string>('all');
   const item = CAPTURE_ITEMS.find((c) => c.id === selected);
-  const filtered = CAPTURE_ITEMS.filter(
-    (c) => filter === 'all' || c.source === filter,
-  );
+  const filtered = CAPTURE_ITEMS.filter((c) => filter === 'all' || c.source === filter);
   const unread = CAPTURE_ITEMS.filter((c) => c.unread).length;
 
   return (
@@ -78,18 +76,11 @@ export function CaptureScreen() {
           flexShrink: 0,
         }}
       >
-        <button
-          onClick={() => setFilter('all')}
-          style={chipStyle(filter === 'all')}
-        >
+        <button onClick={() => setFilter('all')} style={chipStyle(filter === 'all')}>
           all
         </button>
         {SOURCES.map((s) => (
-          <button
-            key={s}
-            onClick={() => setFilter(s)}
-            style={chipStyle(filter === s)}
-          >
+          <button key={s} onClick={() => setFilter(s)} style={chipStyle(filter === s)}>
             <img
               src={`/assets/connectors/${s}.svg`}
               alt=""
@@ -152,9 +143,7 @@ function CaptureRow({ c, selected, onClick }: CaptureRowProps) {
         cursor: 'pointer',
         marginBottom: 2,
         background: selected ? 'var(--bg-vellum)' : 'transparent',
-        borderLeft: selected
-          ? '2px solid var(--neon)'
-          : '2px solid transparent',
+        borderLeft: selected ? '2px solid var(--neon)' : '2px solid transparent',
       }}
     >
       <span
@@ -166,11 +155,7 @@ function CaptureRow({ c, selected, onClick }: CaptureRowProps) {
           justifySelf: 'center',
         }}
       />
-      <img
-        src={`/assets/connectors/${c.source}.svg`}
-        alt=""
-        style={{ width: 13, height: 13 }}
-      />
+      <img src={`/assets/connectors/${c.source}.svg`} alt="" style={{ width: 13, height: 13 }} />
       <div style={{ minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
           <span
@@ -244,11 +229,7 @@ function CaptureDetail({ c }: CaptureDetailProps) {
           marginBottom: 14,
         }}
       >
-        <img
-          src={`/assets/connectors/${c.source}.svg`}
-          alt=""
-          style={{ width: 18, height: 18 }}
-        />
+        <img src={`/assets/connectors/${c.source}.svg`} alt="" style={{ width: 18, height: 18 }} />
         <span
           style={{
             fontFamily: 'var(--font-mono)',
@@ -295,7 +276,7 @@ function CaptureDetail({ c }: CaptureDetailProps) {
           lineHeight: 1.55,
         }}
       >
-        "{c.snippet}"
+        &ldquo;{c.snippet}&rdquo;
       </p>
 
       <div style={{ marginTop: 24 }}>
@@ -311,10 +292,7 @@ function CaptureDetail({ c }: CaptureDetailProps) {
             gap: 10,
           }}
         >
-          <Catch
-            icon="check-square"
-            text="action: ping mira about thursday"
-          />
+          <Catch icon="check-square" text="action: ping mira about thursday" />
           <Catch icon="link" text="ref: design crit · onboarding v3" />
           <Catch icon="user" text="people: theo, mira" />
         </div>

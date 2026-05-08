@@ -25,11 +25,7 @@ export function MeetingsScreen() {
     <div style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-paper)' }}>
       <TopBar
         title="meetings"
-        subtitle={
-          phase === 'recording'
-            ? '· recording in progress'
-            : '47 in vault · 2 today'
-        }
+        subtitle={phase === 'recording' ? '· recording in progress' : '47 in vault · 2 today'}
         right={
           <div style={{ display: 'flex', gap: 8 }}>
             <Btn
@@ -92,8 +88,7 @@ function PreMeeting({ onStart }: PreMeetingProps) {
             right: -100,
             width: 400,
             height: 400,
-            background:
-              'radial-gradient(circle, rgba(197,255,61,0.08) 0%, transparent 60%)',
+            background: 'radial-gradient(circle, rgba(197,255,61,0.08) 0%, transparent 60%)',
             pointerEvents: 'none',
           }}
         />
@@ -127,19 +122,11 @@ function PreMeeting({ onStart }: PreMeetingProps) {
             }}
           >
             <span>
-              <Lucide
-                name="calendar"
-                size={11}
-                style={{ marginRight: 5, verticalAlign: -2 }}
-              />{' '}
+              <Lucide name="calendar" size={11} style={{ marginRight: 5, verticalAlign: -2 }} />{' '}
               today · 11:00 — 11:30
             </span>
             <span>
-              <Lucide
-                name="map-pin"
-                size={11}
-                style={{ marginRight: 5, verticalAlign: -2 }}
-              />{' '}
+              <Lucide name="map-pin" size={11} style={{ marginRight: 5, verticalAlign: -2 }} />{' '}
               google meet
             </span>
           </div>
@@ -180,12 +167,7 @@ function PreMeeting({ onStart }: PreMeetingProps) {
                     color: 'var(--ink-1)',
                   }}
                 >
-                  <Lucide
-                    name="check"
-                    size={11}
-                    color="var(--neon)"
-                    style={{ marginTop: 4 }}
-                  />
+                  <Lucide name="check" size={11} color="var(--neon)" style={{ marginTop: 4 }} />
                   <span>{line}</span>
                 </li>
               ))}
@@ -242,24 +224,14 @@ function PreMeeting({ onStart }: PreMeetingProps) {
 
           <div style={{ marginTop: 8 }}>
             <Eyebrow style={{ marginBottom: 8 }}>audio source</Eyebrow>
-            <AudioSource
-              icon="mic"
-              label="MacBook Pro Microphone"
-              sub="default · 48 kHz"
-              active
-            />
+            <AudioSource icon="mic" label="MacBook Pro Microphone" sub="default · 48 kHz" active />
             <AudioSource
               icon="volume-2"
               label="System audio (loopback)"
               sub="capture both sides of meet"
               active
             />
-            <AudioSource
-              icon="bluetooth"
-              label="AirPods Pro"
-              sub="not connected"
-              active={false}
-            />
+            <AudioSource icon="bluetooth" label="AirPods Pro" sub="not connected" active={false} />
           </div>
 
           <div style={{ marginTop: 8 }}>
@@ -299,9 +271,7 @@ function ParticipantRow({ name, role, color }: Participant) {
       >
         {name[0]}
       </div>
-      <span style={{ fontSize: 12, color: 'var(--ink-0)', flex: 1 }}>
-        {name}
-      </span>
+      <span style={{ fontSize: 12, color: 'var(--ink-0)', flex: 1 }}>{name}</span>
       <span
         style={{
           fontFamily: 'var(--font-mono)',
@@ -338,11 +308,7 @@ function AudioSource({ icon, label, sub, active }: AudioSourceProps) {
         opacity: active ? 1 : 0.55,
       }}
     >
-      <Lucide
-        name={icon}
-        size={13}
-        color={active ? 'var(--neon)' : 'var(--ink-2)'}
-      />
+      <Lucide name={icon} size={13} color={active ? 'var(--neon)' : 'var(--ink-2)'} />
       <div style={{ flex: 1, lineHeight: 1.2 }}>
         <div style={{ fontSize: 12, color: 'var(--ink-0)' }}>{label}</div>
         <div
@@ -366,10 +332,7 @@ interface WaveformProps {
 
 function Waveform({ live = false }: WaveformProps) {
   const bars = 48;
-  const heights = useMemo(
-    () => Array.from({ length: bars }, () => 0.2 + Math.random() * 0.8),
-    [],
-  );
+  const heights = useMemo(() => Array.from({ length: bars }, () => 0.2 + Math.random() * 0.8), []);
   return (
     <div
       style={{
@@ -392,9 +355,7 @@ function Waveform({ live = false }: WaveformProps) {
             background: live ? 'var(--neon)' : 'var(--ink-3)',
             opacity: live ? 0.5 + h * 0.5 : 0.4 + h * 0.4,
             borderRadius: 1,
-            animation: live
-              ? `gb-wave 1.${i % 9}s ease-in-out infinite alternate`
-              : 'none',
+            animation: live ? `gb-wave 1.${i % 9}s ease-in-out infinite alternate` : 'none',
           }}
         />
       ))}
@@ -501,11 +462,7 @@ function ActiveRecording({ startedAt, onStop }: ActiveRecordingProps) {
           <Btn
             variant="record"
             size="md"
-            icon={
-              <span
-                style={{ width: 9, height: 9, background: '#0E0F12' }}
-              />
-            }
+            icon={<span style={{ width: 9, height: 9, background: '#0E0F12' }} />}
             onClick={onStop}
           >
             stop
@@ -514,9 +471,7 @@ function ActiveRecording({ startedAt, onStop }: ActiveRecordingProps) {
       </div>
 
       {/* live transcript + side rail */}
-      <div
-        style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 16 }}
-      >
+      <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 16 }}>
         <Panel
           title="live transcript"
           subtitle="diarized · 4 speakers"
@@ -691,14 +646,8 @@ function ActiveRecording({ startedAt, onStop }: ActiveRecordingProps) {
           </Panel>
 
           <Panel title="ghost catches" subtitle="auto-extracted · live">
-            <Catch
-              icon="check-square"
-              text="split connector picker out from vault setup"
-            />
-            <Catch
-              icon="alert-circle"
-              text="minimum one connected = soft requirement"
-            />
+            <Catch icon="check-square" text="split connector picker out from vault setup" />
+            <Catch icon="alert-circle" text="minimum one connected = soft requirement" />
             <Catch icon="link" text="ref: GHO-241, GHO-247" />
           </Panel>
         </div>
@@ -737,12 +686,7 @@ function PostMeeting({ onClose }: PostMeetingProps) {
           </Pill>
           <Pill tone="fog">just now</Pill>
           <div style={{ flex: 1 }} />
-          <Btn
-            variant="ghost"
-            size="sm"
-            icon={<Lucide name="x" size={13} />}
-            onClick={onClose}
-          />
+          <Btn variant="ghost" size="sm" icon={<Lucide name="x" size={13} />} onClick={onClose} />
         </div>
 
         <h2
@@ -795,17 +739,15 @@ function PostMeeting({ onClose }: PostMeetingProps) {
                 lineHeight: 1.5,
               }}
             >
-              "the third onboarding screen is doing too much. split the
-              connector picker out, but require at least one connected before
-              showing the dashboard — otherwise the welcome state is empty."
+              &ldquo;the third onboarding screen is doing too much. split the connector picker out,
+              but require at least one connected before showing the dashboard — otherwise the
+              welcome state is empty.&rdquo;
             </p>
             <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>
               <Btn
                 variant="primary"
                 size="sm"
-                icon={
-                  <Lucide name="file-down" size={13} color="#0E0F12" />
-                }
+                icon={<Lucide name="file-down" size={13} color="#0E0F12" />}
                 onClick={() => stub(4)}
               >
                 save to vault
@@ -838,10 +780,7 @@ function PostMeeting({ onClose }: PostMeetingProps) {
             }}
           >
             <Eyebrow style={{ marginBottom: 10 }}>action items · 3</Eyebrow>
-            <Action
-              who="jules"
-              text="split connector picker into its own screen"
-            />
+            <Action who="jules" text="split connector picker into its own screen" />
             <Action who="mira" text="document 'min one connected' rule" />
             <Action who="you" text="redo welcome state mock by friday" />
           </div>

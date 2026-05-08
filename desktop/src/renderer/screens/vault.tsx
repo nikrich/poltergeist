@@ -10,7 +10,9 @@ export function VaultScreen() {
     window.gb.shell.openPath(vaultPath);
   };
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--bg-paper)' }}>
+    <div
+      style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--bg-paper)' }}
+    >
       <TopBar title="vault" subtitle="opens in your file manager" />
       <div
         style={{
@@ -45,7 +47,8 @@ export function VaultScreen() {
             maxWidth: 380,
           }}
         >
-          ghostbrain doesn't replace your editor — it feeds the vault. open it to see everything as markdown.
+          ghostbrain doesn&rsquo;t replace your editor — it feeds the vault. open it to see
+          everything as markdown.
         </p>
         <Btn
           variant="primary"

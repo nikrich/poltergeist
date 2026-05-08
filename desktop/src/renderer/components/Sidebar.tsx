@@ -43,15 +43,17 @@ export function Sidebar() {
   const phase = useMeeting((s) => s.phase);
   return (
     <aside
-      style={{
-        width: 220,
-        flexShrink: 0,
-        background: 'var(--bg-paper)',
-        borderRight: '1px solid var(--hairline)',
-        display: 'flex',
-        flexDirection: 'column',
-        WebkitAppRegion: 'drag',
-      } as React.CSSProperties}
+      style={
+        {
+          width: 220,
+          flexShrink: 0,
+          background: 'var(--bg-paper)',
+          borderRight: '1px solid var(--hairline)',
+          display: 'flex',
+          flexDirection: 'column',
+          WebkitAppRegion: 'drag',
+        } as React.CSSProperties
+      }
     >
       {isMac && <div style={{ height: 36, flexShrink: 0 }} />}
 
@@ -84,12 +86,14 @@ export function Sidebar() {
       </div>
 
       <nav
-        style={{
-          padding: '12px 8px',
-          flex: 1,
-          overflowY: 'auto',
-          WebkitAppRegion: 'no-drag',
-        } as React.CSSProperties}
+        style={
+          {
+            padding: '12px 8px',
+            flex: 1,
+            overflowY: 'auto',
+            WebkitAppRegion: 'no-drag',
+          } as React.CSSProperties
+        }
       >
         <Eyebrow style={{ padding: '6px 10px' }}>workspace</Eyebrow>
         {NAV_ITEMS.map((item) => (
@@ -114,14 +118,16 @@ export function Sidebar() {
       </nav>
 
       <div
-        style={{
-          padding: '10px 14px',
-          borderTop: '1px solid var(--hairline)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          WebkitAppRegion: 'no-drag',
-        } as React.CSSProperties}
+        style={
+          {
+            padding: '10px 14px',
+            borderTop: '1px solid var(--hairline)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            WebkitAppRegion: 'no-drag',
+          } as React.CSSProperties
+        }
       >
         <div
           style={{
@@ -183,11 +189,7 @@ function NavRow({
         padding: '7px 10px',
         borderRadius: 6,
         cursor: 'pointer',
-        background: active
-          ? 'rgba(197,255,61,0.12)'
-          : hover
-            ? 'var(--bg-vellum)'
-            : 'transparent',
+        background: active ? 'rgba(197,255,61,0.12)' : hover ? 'var(--bg-vellum)' : 'transparent',
         color: active ? 'var(--ink-0)' : 'var(--ink-1)',
         fontSize: 13,
         fontWeight: active ? 500 : 400,

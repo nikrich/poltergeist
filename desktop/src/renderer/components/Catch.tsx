@@ -19,12 +19,7 @@ export function Catch({ icon, text }: Props) {
         lineHeight: 1.4,
       }}
     >
-      <Lucide
-        name={icon}
-        size={12}
-        color="var(--neon)"
-        style={{ marginTop: 3 }}
-      />
+      <Lucide name={icon} size={12} color="var(--neon)" style={{ marginTop: 3 }} />
       <span>{text}</span>
     </div>
   );

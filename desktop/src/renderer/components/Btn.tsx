@@ -27,7 +27,11 @@ const variants = (hover: boolean): Record<Variant, { bg: string; fg: string; bor
     fg: 'var(--ink-0)',
     border: 'var(--hairline-2)',
   },
-  ghost: { bg: hover ? 'var(--bg-vellum)' : 'transparent', fg: 'var(--ink-1)', border: 'transparent' },
+  ghost: {
+    bg: hover ? 'var(--bg-vellum)' : 'transparent',
+    fg: 'var(--ink-1)',
+    border: 'transparent',
+  },
   danger: {
     bg: hover ? 'rgba(255,107,90,0.20)' : 'rgba(255,107,90,0.12)',
     fg: 'var(--oxblood)',
