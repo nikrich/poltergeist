@@ -129,6 +129,54 @@ Conversation excerpt:
 {{content}}
 """
 
+_GMAIL_RELEVANCE_PROMPT = """\
+<!-- Gmail relevance gate. Used by ghostbrain.connectors.gmail to decide
+whether a thread should be ingested into the vault. Anything the gate
+rejects is dropped silently — it never lands in the inbox. -->
+
+RESPOND WITH JSON ONLY. NO PROSE. NO MARKDOWN FENCES. NO PREAMBLE.
+Your entire response must be a single JSON object exactly matching:
+`{"relevant": true|false, "reason": "<one short sentence>"}`
+
+You are gating which emails enter a personal knowledge system for a
+software engineer working across these contexts:
+
+- **sanlam** — Sanlam Digital (financial services, ASCP, claims, RBAC,
+  policy admin, funeral product, Confluence specs, Jira tickets,
+  capstone team, regulatory work).
+- **codeship** — codeship.tech client services and Codeship's own
+  product work (multiple clients, AI infra, contract delivery).
+- **reducedrecipes** — ReducedRecipes app/site (recipes, social
+  publishing, Cloudflare).
+- **personal** — personal projects (HungryGhost, Slenderware,
+  IndieGlue, Greenlight, hobby code, real-life logistics that need
+  follow-up).
+
+Mark `relevant: true` ONLY when the thread is plausibly worth surfacing
+in a daily digest of work + life follow-ups.
+
+NOT relevant (set `relevant: false`):
+- Marketing emails, newsletters, mass promotions, sales pitches.
+- Generic digests (Quora, Medium stats, ProductHunt, daily.dev,
+  LinkedIn job alerts, Splice, Humble Bundle).
+- Service emails already covered by another connector (GitHub PR
+  notifications, Calendar event reminders, npm token housekeeping).
+- Routine billing statements ("your invoice is ready", usage recaps).
+- Anything you'd normally archive without reading.
+
+Be conservative on dropping but decisive on noise: when in real doubt,
+prefer `relevant: true` so signal is never silently swallowed. The
+user can always tighten the denylist after reviewing.
+
+`reason` is one short sentence (≤ 120 chars) the user can read in the
+audit log to understand the decision.
+
+Email to evaluate:
+
+{{content}}
+"""
+
+
 _TRANSCRIPT_EXTRACTOR_PROMPT = """\
 <!-- Transcript extractor prompt. Used by ghostbrain.recorder.linker after a
 meeting transcript is written to <ctx>/calendar/transcripts/. Tuned for
@@ -410,8 +458,12 @@ slack:
     {}
 
 # Gmail accounts + routing. The connector polls each account in
-# `gmail.accounts`; the router uses `gmail.sender_domains` (strongest
-# signal) and `gmail.label_prefixes` (fallback) to route threads.
+# `gmail.accounts`; threads are filtered by:
+#   1. `denylist_domains` — drop matching senders before any cost.
+#   2. `relevance_gate` — LLM (Haiku) drops everything that isn't
+#      worth surfacing for the user's contexts.
+# Surviving threads are then routed using `sender_domains` (strongest
+# signal) or `label_prefixes` (fallback).
 gmail:
   accounts:
     # TODO: add Gmail accounts you want to ingest. Run
@@ -421,6 +473,12 @@ gmail:
     #     monitored_labels: ["sanlam/policies", "codeship"]
     #     unread_lookback_hours: 24
     {}
+  # Drop these senders entirely before they reach the LLM gate.
+  # Supports exact (`humblebundle.com`) and subdomain (`*.humblebundle.com`).
+  denylist_domains: []
+  # Toggle the LLM relevance gate (Haiku). Set false to disable; the
+  # denylist still applies.
+  relevance_gate: true
   label_prefixes:
     # "sanlam/": sanlam
     {}
@@ -500,6 +558,7 @@ recorder:
     "90-meta/prompts/router.md": _ROUTER_PROMPT,
     "90-meta/prompts/extractor.md": _EXTRACTOR_PROMPT,
     "90-meta/prompts/transcript-extractor.md": _TRANSCRIPT_EXTRACTOR_PROMPT,
+    "90-meta/prompts/gmail-relevance.md": _GMAIL_RELEVANCE_PROMPT,
     "90-meta/prompts/profile-updater.md": _PROFILE_UPDATER_PROMPT,
     "90-meta/prompts/digest.md": _DIGEST_PROMPT,
     "90-meta/prompts/classifier.md": "# Classifier prompt\n\nUsed for fine-grained classification. Defined later.\n",

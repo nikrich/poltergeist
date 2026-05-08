@@ -48,7 +48,12 @@ def main() -> None:
     state.mkdir(parents=True, exist_ok=True)
 
     connector = GmailConnector(
-        config={"accounts": accounts},
+        config={
+            "accounts": accounts,
+            "denylist_domains": gmail_cfg.get("denylist_domains") or [],
+            "relevance_gate": gmail_cfg.get("relevance_gate", True),
+            "relevance_model": gmail_cfg.get("relevance_model"),
+        },
         queue_dir=queue,
         state_dir=state,
     )

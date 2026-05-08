@@ -109,6 +109,11 @@ def _build_frontmatter(
         for key in ("space", "version"):
             if md.get(key) is not None:
                 front[key] = md[key]
+    elif source == "gmail":
+        for key in ("from_address", "from_domain", "labels", "is_unread",
+                    "thread_id", "account", "msg_count"):
+            if md.get(key) is not None:
+                front[key] = md[key]
 
     return front
 

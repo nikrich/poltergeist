@@ -255,9 +255,12 @@ def test_fetch_one_account_normalizes_threads(
     fake_service.users().threads().get.side_effect = _get
 
     c = GmailConnector(
-        config={"accounts": {"me@example.com": {
-            "monitored_labels": ["sanlam"],
-        }}},
+        config={
+            "accounts": {"me@example.com": {
+                "monitored_labels": ["sanlam"],
+            }},
+            "relevance_gate": False,   # this test predates the gate
+        },
         queue_dir=tmp_path / "q",
         state_dir=tmp_path / "s",
         service=fake_service,
@@ -329,6 +332,186 @@ def test_router_falls_through_to_llm_when_no_gmail_rule_matches() -> None:
         "label_prefixes": {"sanlam/": "sanlam"},
     }}
     assert _fast_route(event, routing) is None
+
+
+def test_denylist_exact_domain_match() -> None:
+    from ghostbrain.connectors.gmail.connector import _is_denied
+    ev = {"metadata": {"from_domain": "humblebundle.com"}}
+    assert _is_denied(ev, ["humblebundle.com"]) is True
+    assert _is_denied(ev, ["uber.com"]) is False
+
+
+def test_denylist_subdomain_wildcard() -> None:
+    from ghostbrain.connectors.gmail.connector import _is_denied
+    ev = {"metadata": {"from_domain": "mailer.humblebundle.com"}}
+    assert _is_denied(ev, ["*.humblebundle.com"]) is True
+    # The bare base must NOT match without wildcard:
+    ev2 = {"metadata": {"from_domain": "humblebundle.com"}}
+    assert _is_denied(ev2, ["*.humblebundle.com"]) is True  # tail equality
+    assert _is_denied({"metadata": {"from_domain": "evil.com"}},
+                      ["*.humblebundle.com"]) is False
+
+
+def test_denylist_case_insensitive() -> None:
+    from ghostbrain.connectors.gmail.connector import _is_denied
+    ev = {"metadata": {"from_domain": "Humblebundle.COM"}}
+    assert _is_denied(ev, ["humblebundle.com"]) is True
+
+
+def test_denylist_empty_short_circuits() -> None:
+    from ghostbrain.connectors.gmail.connector import _is_denied
+    ev = {"metadata": {"from_domain": "anything.com"}}
+    assert _is_denied(ev, []) is False
+    assert _is_denied(ev, [""]) is False
+
+
+def test_fetch_filters_denylist_before_relevance_gate(
+    tmp_path: Path,
+    fake_service: MagicMock,
+) -> None:
+    from ghostbrain.connectors.gmail import GmailConnector
+
+    fake_service.users().threads().list().execute.return_value = {
+        "threads": [{"id": "keep"}, {"id": "drop"}],
+    }
+
+    def _get(*, userId, id, format):  # noqa: N803, A002
+        if id == "drop":
+            return MagicMock(execute=MagicMock(return_value=_make_thread(
+                thread_id=id, from_addr="promo@humblebundle.com",
+            )))
+        return MagicMock(execute=MagicMock(return_value=_make_thread(
+            thread_id=id, from_addr="alex@sanlam.co.za",
+        )))
+    fake_service.users().threads().get.side_effect = _get
+
+    relevance_calls: list[str] = []
+
+    def fake_gate(ev: dict) -> tuple[bool, str]:
+        relevance_calls.append(ev["id"])
+        return True, "ok"
+
+    c = GmailConnector(
+        config={
+            "accounts": {"me@example.com": {}},
+            "denylist_domains": ["*.humblebundle.com"],
+            "relevance_gate": True,
+        },
+        queue_dir=tmp_path / "q",
+        state_dir=tmp_path / "s",
+        service=fake_service,
+        relevance_gate=fake_gate,
+    )
+
+    events = c.fetch(datetime.now(timezone.utc))
+    ids = [e["id"] for e in events]
+    assert "gmail:thread:keep" in ids
+    assert "gmail:thread:drop" not in ids
+    # Denylist runs BEFORE the LLM gate — only the surviving thread
+    # gets the LLM call.
+    assert relevance_calls == ["gmail:thread:keep"]
+
+
+def test_relevance_gate_drops_when_not_relevant(
+    tmp_path: Path,
+    fake_service: MagicMock,
+) -> None:
+    from ghostbrain.connectors.gmail import GmailConnector
+
+    fake_service.users().threads().list().execute.return_value = {
+        "threads": [{"id": "marketing"}, {"id": "real"}],
+    }
+
+    def _get(*, userId, id, format):  # noqa: N803, A002
+        return MagicMock(execute=MagicMock(return_value=_make_thread(
+            thread_id=id, from_addr=f"sender-{id}@example.com",
+        )))
+    fake_service.users().threads().get.side_effect = _get
+
+    def fake_gate(ev: dict) -> tuple[bool, str]:
+        return ("real" in ev["id"], "marketing" if "marketing" in ev["id"] else "looks like work")
+
+    c = GmailConnector(
+        config={
+            "accounts": {"me@example.com": {}},
+            "denylist_domains": [],
+            "relevance_gate": True,
+        },
+        queue_dir=tmp_path / "q",
+        state_dir=tmp_path / "s",
+        service=fake_service,
+        relevance_gate=fake_gate,
+    )
+
+    events = c.fetch(datetime.now(timezone.utc))
+    assert len(events) == 1
+    assert events[0]["id"] == "gmail:thread:real"
+    assert events[0]["metadata"]["relevanceReason"] == "looks like work"
+
+
+def test_relevance_gate_keeps_event_when_gate_errors(
+    tmp_path: Path,
+    fake_service: MagicMock,
+) -> None:
+    """Conservative behavior — LLM errors must not silently drop signal."""
+    from ghostbrain.connectors.gmail import GmailConnector
+
+    fake_service.users().threads().list().execute.return_value = {
+        "threads": [{"id": "x"}],
+    }
+    fake_service.users().threads().get().execute.return_value = _make_thread(
+        thread_id="x", from_addr="alex@sanlam.co.za",
+    )
+
+    def angry_gate(ev: dict) -> tuple[bool, str]:
+        raise RuntimeError("LLM exploded")
+
+    c = GmailConnector(
+        config={
+            "accounts": {"me@example.com": {}},
+            "relevance_gate": True,
+        },
+        queue_dir=tmp_path / "q",
+        state_dir=tmp_path / "s",
+        service=fake_service,
+        relevance_gate=angry_gate,
+    )
+
+    events = c.fetch(datetime.now(timezone.utc))
+    assert len(events) == 1
+
+
+def test_relevance_gate_disabled_keeps_everything(
+    tmp_path: Path,
+    fake_service: MagicMock,
+) -> None:
+    from ghostbrain.connectors.gmail import GmailConnector
+
+    fake_service.users().threads().list().execute.return_value = {
+        "threads": [{"id": "a"}, {"id": "b"}],
+    }
+    fake_service.users().threads().get().execute.return_value = _make_thread()
+
+    sentinel: list[str] = []
+
+    def should_not_fire(_: dict) -> tuple[bool, str]:
+        sentinel.append("called")
+        return True, ""
+
+    c = GmailConnector(
+        config={
+            "accounts": {"me@example.com": {}},
+            "relevance_gate": False,
+        },
+        queue_dir=tmp_path / "q",
+        state_dir=tmp_path / "s",
+        service=fake_service,
+        relevance_gate=should_not_fire,
+    )
+
+    events = c.fetch(datetime.now(timezone.utc))
+    assert len(events) == 2
+    assert sentinel == [], "relevance gate should NOT fire when disabled"
 
 
 def test_router_sender_domain_beats_label_prefix() -> None:

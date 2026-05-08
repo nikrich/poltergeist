@@ -30,6 +30,17 @@ log = logging.getLogger("ghostbrain.connectors.gmail")
 DEFAULT_UNREAD_LOOKBACK_HOURS = 24
 DEFAULT_MAX_THREADS_PER_RUN = 50
 DEFAULT_BODY_CAP_CHARS = 4000
+DEFAULT_RELEVANCE_MODEL = "haiku"
+
+GMAIL_RELEVANCE_SCHEMA: dict = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["relevant", "reason"],
+    "properties": {
+        "relevant": {"type": "boolean"},
+        "reason": {"type": "string", "maxLength": 200},
+    },
+}
 
 
 @dataclasses.dataclass
@@ -55,10 +66,20 @@ class GmailConnector(Connector):
         state_dir: Path,
         *,
         service=None,
+        relevance_gate=None,
     ) -> None:
         super().__init__(config, queue_dir, state_dir)
         self.accounts: list[GmailAccountConfig] = list(_parse_accounts(config))
+        self.denylist: list[str] = [
+            d.lower() for d in (config.get("denylist_domains") or [])
+        ]
+        self.relevance_enabled = bool(config.get("relevance_gate", True))
+        self.relevance_model = str(
+            config.get("relevance_model") or DEFAULT_RELEVANCE_MODEL
+        )
         self._service_override = service  # for tests
+        # ``relevance_gate`` test override returns (relevant: bool, reason: str)
+        self._relevance_override = relevance_gate
 
     def health_check(self) -> bool:
         if not self.accounts:
@@ -84,9 +105,55 @@ class GmailConnector(Connector):
             except Exception as e:  # noqa: BLE001
                 log.warning("gmail fetch failed for %s: %s", acc.email, e)
 
-        log.info("gmail fetch: %d thread(s) across %d account(s)",
-                 len(events), len(self.accounts))
+        raw_count = len(events)
+        events = [e for e in events if not _is_denied(e, self.denylist)]
+        denied = raw_count - len(events)
+
+        if self.relevance_enabled:
+            events, dropped_by_llm = self._apply_relevance_gate(events)
+        else:
+            dropped_by_llm = 0
+
+        log.info(
+            "gmail fetch: %d kept (%d denylisted, %d dropped by LLM gate, "
+            "%d initial)",
+            len(events), denied, dropped_by_llm, raw_count,
+        )
         return events
+
+    def _apply_relevance_gate(
+        self, events: list[dict],
+    ) -> tuple[list[dict], int]:
+        """Run an LLM relevance check per thread; drop the irrelevant ones.
+
+        Returns ``(kept, dropped_count)``. Failures are conservative:
+        when the LLM call errors, we keep the event so noise removal
+        never silently swallows real signal.
+        """
+        if not events:
+            return events, 0
+
+        gate = self._relevance_override or _default_relevance_gate(
+            self.relevance_model,
+        )
+        kept: list[dict] = []
+        dropped = 0
+        for ev in events:
+            try:
+                relevant, reason = gate(ev)
+            except Exception as e:  # noqa: BLE001
+                log.warning("gmail relevance gate errored for %s: %s — keeping",
+                            ev.get("id"), e)
+                kept.append(ev)
+                continue
+            if relevant:
+                ev.setdefault("metadata", {})["relevanceReason"] = reason
+                kept.append(ev)
+            else:
+                dropped += 1
+                log.info("gmail dropped by relevance gate id=%s reason=%s",
+                         ev.get("id"), reason)
+        return kept, dropped
 
     def normalize(self, raw: dict) -> dict:
         # `_fetch_account` produces normalized events directly.
@@ -129,6 +196,83 @@ class GmailConnector(Connector):
 # ---------------------------------------------------------------------------
 # Pure helpers (heavily tested with mocks)
 # ---------------------------------------------------------------------------
+
+
+def _is_denied(event: dict, denylist: list[str]) -> bool:
+    """Match an event's sender domain against the denylist.
+
+    Patterns:
+    - ``humblebundle.com`` — exact domain match
+    - ``*.humblebundle.com`` — match any subdomain
+    - ``mailer.humblebundle.com`` — exact subdomain match
+
+    The match is case-insensitive and tested against the normalized
+    ``metadata.from_domain`` we extracted at parse time.
+    """
+    if not denylist:
+        return False
+    domain = ((event.get("metadata") or {}).get("from_domain") or "").lower()
+    if not domain:
+        return False
+    for pattern in denylist:
+        pat = pattern.strip().lower()
+        if not pat:
+            continue
+        if pat.startswith("*."):
+            tail = pat[2:]
+            if domain == tail or domain.endswith("." + tail):
+                return True
+        else:
+            if domain == pat:
+                return True
+    return False
+
+
+def _default_relevance_gate(model: str):
+    """Build the default LLM-backed relevance check.
+
+    The closure captures the prompt template and the model name. It
+    returns ``(relevant: bool, reason: str)`` per event and is
+    swappable for a fake in tests.
+    """
+    from ghostbrain.llm import client as llm
+    from ghostbrain.paths import vault_path
+
+    prompt_path = vault_path() / "90-meta" / "prompts" / "gmail-relevance.md"
+    if not prompt_path.exists():
+        raise FileNotFoundError(
+            "missing prompt gmail-relevance.md; re-run `ghostbrain-bootstrap`"
+        )
+    template = prompt_path.read_text(encoding="utf-8")
+
+    def gate(event: dict) -> tuple[bool, str]:
+        excerpt = _build_relevance_excerpt(event)
+        prompt = template.replace("{{content}}", excerpt)
+        result = llm.run(
+            prompt,
+            model=model,
+            json_schema=GMAIL_RELEVANCE_SCHEMA,
+            budget_usd=0.05,
+        )
+        payload = result.as_json()
+        return bool(payload.get("relevant")), str(payload.get("reason") or "")
+
+    return gate
+
+
+def _build_relevance_excerpt(event: dict) -> str:
+    md = event.get("metadata") or {}
+    parts = [
+        f"From: {md.get('from') or md.get('from_address') or ''}",
+        f"Subject: {event.get('title') or ''}",
+        f"Labels: {', '.join(md.get('labels') or [])}",
+        f"Snippet: {md.get('snippet') or ''}",
+    ]
+    body = (event.get("body") or "")[:1000]
+    if body:
+        parts.append("")
+        parts.append(body)
+    return "\n".join(parts)
 
 
 def _parse_accounts(config: dict) -> Iterable[GmailAccountConfig]:
