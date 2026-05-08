@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Lucide } from './Lucide';
 import { Ghost } from './Ghost';
 import { Eyebrow } from './Eyebrow';
@@ -26,14 +25,8 @@ const VAULT_FOLDERS = [
 function RecordingDot() {
   return (
     <span
-      style={{
-        width: 8,
-        height: 8,
-        borderRadius: '50%',
-        background: 'var(--oxblood)',
-        boxShadow: '0 0 0 0 rgba(255,107,90,0.6)',
-        animation: 'gb-pulse 1.4s ease-out infinite',
-      }}
+      className="h-2 w-2 rounded-full bg-oxblood"
+      style={{ animation: 'gb-pulse 1.4s ease-out infinite' }}
     />
   );
 }
@@ -43,55 +36,28 @@ export function Sidebar() {
   const phase = useMeeting((s) => s.phase);
   return (
     <aside
-      style={{
-        width: 220,
-        flexShrink: 0,
-        background: 'var(--bg-paper)',
-        borderRight: '1px solid var(--hairline)',
-        display: 'flex',
-        flexDirection: 'column',
-        WebkitAppRegion: 'drag',
-      }}
+      className="flex w-[220px] flex-shrink-0 flex-col border-r border-hairline bg-paper"
+      style={{ WebkitAppRegion: 'drag' }}
     >
-      {isMac && <div style={{ height: 36, flexShrink: 0 }} />}
+      {isMac && <div className="h-9 flex-shrink-0" />}
 
-      <div style={{ padding: '14px 14px 8px', display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div className="flex items-center gap-[10px] px-[14px] pb-2 pt-[14px]">
         <Ghost size={20} floating />
-        <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1 }}>
-          <span
-            style={{
-              fontFamily: 'var(--font-display)',
-              fontSize: 16,
-              fontWeight: 600,
-              color: 'var(--ink-0)',
-              letterSpacing: '-0.02em',
-            }}
-          >
+        <div className="flex flex-col leading-[1.1]">
+          <span className="font-display text-16 font-semibold tracking-tight-xx text-ink-0">
             ghostbrain
           </span>
-          <span
-            style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: 9,
-              color: 'var(--ink-2)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.12em',
-            }}
-          >
+          <span className="font-mono text-9 uppercase tracking-eyebrow text-ink-2">
             v 0.1.0 · haunting
           </span>
         </div>
       </div>
 
       <nav
-        style={{
-          padding: '12px 8px',
-          flex: 1,
-          overflowY: 'auto',
-          WebkitAppRegion: 'no-drag',
-        }}
+        className="gb-sidenav flex-1 overflow-y-auto px-2 py-3"
+        style={{ WebkitAppRegion: 'no-drag' }}
       >
-        <Eyebrow style={{ padding: '6px 10px' }}>workspace</Eyebrow>
+        <Eyebrow className="px-[10px] py-[6px]">workspace</Eyebrow>
         {NAV_ITEMS.map((item) => (
           <NavRow
             key={item.id}
@@ -107,52 +73,24 @@ export function Sidebar() {
             }
           />
         ))}
-        <Eyebrow style={{ padding: '6px 10px', marginTop: 16 }}>vault</Eyebrow>
+        <Eyebrow className="mt-4 px-[10px] py-[6px]">vault</Eyebrow>
         {VAULT_FOLDERS.map((f) => (
           <VaultRow key={f.label} {...f} />
         ))}
       </nav>
 
       <div
-        style={{
-          padding: '10px 14px',
-          borderTop: '1px solid var(--hairline)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          WebkitAppRegion: 'no-drag',
-        }}
+        className="flex items-center gap-2 border-t border-hairline px-[14px] py-[10px]"
+        style={{ WebkitAppRegion: 'no-drag' }}
       >
-        <div
-          style={{
-            width: 26,
-            height: 26,
-            borderRadius: 4,
-            background: 'var(--bg-fog)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-          }}
-        >
+        <div className="flex h-[26px] w-[26px] flex-shrink-0 items-center justify-center rounded-sm bg-fog">
           <Lucide name="hard-drive" size={13} color="var(--ink-1)" />
         </div>
-        <div style={{ flex: 1, minWidth: 0, lineHeight: 1.2 }}>
-          <div
-            style={{
-              fontSize: 11,
-              color: 'var(--ink-0)',
-              fontWeight: 500,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
+        <div className="min-w-0 flex-1 leading-[1.2]">
+          <div className="overflow-hidden text-ellipsis whitespace-nowrap text-11 font-medium text-ink-0">
             ~/ghostbrain/vault
           </div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--ink-2)' }}>
-            local · synced
-          </div>
+          <div className="font-mono text-9 text-ink-2">local · synced</div>
         </div>
       </div>
     </aside>
@@ -170,79 +108,38 @@ function NavRow({
   onClick: () => void;
   badge: React.ReactNode;
 }) {
-  const [hover, setHover] = useState(false);
   return (
-    <div
+    <button
+      type="button"
       onClick={onClick}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        padding: '7px 10px',
-        borderRadius: 6,
-        cursor: 'pointer',
-        background: active ? 'rgba(197,255,61,0.12)' : hover ? 'var(--bg-vellum)' : 'transparent',
-        color: active ? 'var(--ink-0)' : 'var(--ink-1)',
-        fontSize: 13,
-        fontWeight: active ? 500 : 400,
-        position: 'relative',
-        transition: 'background 120ms',
-      }}
+      className={`gb-navrow relative flex w-full items-center gap-[10px] rounded-r6 px-[10px] py-[7px] text-left text-13 transition-colors duration-[120ms] ${
+        active ? 'bg-neon/12 font-medium text-ink-0' : 'font-normal text-ink-1 hover:bg-vellum'
+      }`}
     >
       {active && (
-        <div
-          style={{
-            position: 'absolute',
-            left: -8,
-            top: 6,
-            bottom: 6,
-            width: 2,
-            background: 'var(--neon)',
-            borderRadius: 2,
-          }}
-        />
+        <span className="absolute -left-2 bottom-[6px] top-[6px] w-[2px] rounded-sm bg-neon" />
       )}
       <Lucide name={item.icon} size={15} color={active ? 'var(--neon)' : 'var(--ink-2)'} />
-      <span style={{ flex: 1 }}>{item.label}</span>
+      <span className="flex-1">{item.label}</span>
       {badge &&
         (typeof badge === 'string' ? (
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-2)' }}>
-            {badge}
-          </span>
+          <span className="font-mono text-10 text-ink-2">{badge}</span>
         ) : (
           badge
         ))}
-    </div>
+    </button>
   );
 }
 
 function VaultRow({ icon, label, count }: { icon: string; label: string; count: number }) {
-  const [hover, setHover] = useState(false);
   return (
-    <div
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        padding: '5px 10px',
-        borderRadius: 4,
-        cursor: 'pointer',
-        background: hover ? 'var(--bg-vellum)' : 'transparent',
-        fontSize: 12,
-        color: 'var(--ink-1)',
-      }}
+    <button
+      type="button"
+      className="flex w-full items-center gap-2 rounded-sm px-[10px] py-[5px] text-left text-12 text-ink-1 transition-colors duration-[120ms] hover:bg-vellum"
     >
       <Lucide name={icon} size={12} color="var(--ink-3)" />
-      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {label}
-      </span>
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--ink-3)' }}>
-        {count}
-      </span>
-    </div>
+      <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{label}</span>
+      <span className="font-mono text-9 text-ink-3">{count}</span>
+    </button>
   );
 }
