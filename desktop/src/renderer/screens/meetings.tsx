@@ -5,6 +5,7 @@ import { Lucide } from '../components/Lucide';
 import { Pill } from '../components/Pill';
 import { Eyebrow } from '../components/Eyebrow';
 import { Panel } from '../components/Panel';
+import { Catch } from '../components/Catch';
 import { useMeeting } from '../stores/meeting';
 import { stub } from '../stores/toast';
 import {
@@ -702,36 +703,6 @@ function ActiveRecording({ startedAt, onStop }: ActiveRecordingProps) {
           </Panel>
         </div>
       </div>
-    </div>
-  );
-}
-
-interface CatchProps {
-  icon: string;
-  text: string;
-}
-
-function Catch({ icon, text }: CatchProps) {
-  return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: 8,
-        padding: '8px 6px',
-        borderRadius: 4,
-        fontSize: 12,
-        color: 'var(--ink-0)',
-        lineHeight: 1.4,
-      }}
-    >
-      <Lucide
-        name={icon}
-        size={12}
-        color="var(--neon)"
-        style={{ marginTop: 3 }}
-      />
-      <span>{text}</span>
     </div>
   );
 }
