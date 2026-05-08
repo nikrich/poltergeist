@@ -29,6 +29,10 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.5",
 ]
+semantic = [
+    "sentence-transformers>=2.7",
+    "numpy>=1.26",
+]
 
 [project.scripts]
 ghostbrain-bootstrap = "ghostbrain.bootstrap:main"
@@ -45,6 +49,7 @@ ghostbrain-calendar-auth = "ghostbrain.connectors.calendar.auth_cli:main"
 ghostbrain-transcribe = "ghostbrain.recorder.main:main"
 ghostbrain-recorder = "ghostbrain.recorder.daemon_cli:main"
 ghostbrain-metrics = "ghostbrain.metrics.main:main"
+ghostbrain-semantic-refresh = "ghostbrain.semantic.main:main"
 
 [tool.setuptools.packages.find]
 include = ["ghostbrain*"]

@@ -23,6 +23,8 @@ def vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         "ghostbrain.metrics.staleness",
         "ghostbrain.metrics.checkins",
         "ghostbrain.metrics.snapshot",
+        "ghostbrain.semantic.index",
+        "ghostbrain.semantic.refresh",
         "ghostbrain.worker.audit",
         "ghostbrain.worker.note_generator",
         "ghostbrain.worker.router",
