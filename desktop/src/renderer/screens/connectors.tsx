@@ -312,11 +312,7 @@ function ConnectorDetail({ c }: ConnectorDetailProps) {
         </DetailBlock>
 
         <DetailBlock label="filters">
-          <div className="flex flex-col gap-2">
-            <Toggle label="ignore promotional & social" on={true} />
-            <Toggle label="skip messages older than 90 days" on={false} />
-            <Toggle label="extract action items" on={true} />
-          </div>
+          <ConnectorFilterToggles />
         </DetailBlock>
 
         {c.state !== 'off' && (
@@ -332,6 +328,19 @@ function ConnectorDetail({ c }: ConnectorDetailProps) {
         )}
       </div>
     </aside>
+  );
+}
+
+function ConnectorFilterToggles() {
+  const [ignorePromo, setIgnorePromo] = useState(true);
+  const [skipOld, setSkipOld] = useState(false);
+  const [extractActions, setExtractActions] = useState(true);
+  return (
+    <div className="flex flex-col gap-2">
+      <Toggle label="ignore promotional & social" on={ignorePromo} onChange={setIgnorePromo} />
+      <Toggle label="skip messages older than 90 days" on={skipOld} onChange={setSkipOld} />
+      <Toggle label="extract action items" on={extractActions} onChange={setExtractActions} />
+    </div>
   );
 }
 

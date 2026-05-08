@@ -8,6 +8,12 @@ import { Ghost } from '../components/Ghost';
 import { useSettings } from '../stores/settings';
 import { stub } from '../stores/toast';
 import { HOTKEYS, format as formatShortcut } from '../lib/shortcuts';
+import type {
+  FolderStructure,
+  LlmProvider,
+  AudioRetention,
+  TranscriptModel,
+} from '../../shared/types';
 
 type SectionId = 'display' | 'vault' | 'privacy' | 'meeting' | 'hotkeys' | 'account' | 'about';
 
@@ -95,6 +101,10 @@ function DisplaySettings() {
 
 function VaultSettings() {
   const vaultPath = useSettings((s) => s.vaultPath);
+  const dailyNoteEnabled = useSettings((s) => s.dailyNoteEnabled);
+  const markdownFrontmatter = useSettings((s) => s.markdownFrontmatter);
+  const autoLinkMentions = useSettings((s) => s.autoLinkMentions);
+  const folderStructure = useSettings((s) => s.folderStructure);
   const setSetting = useSettings((s) => s.set);
   const onPick = async () => {
     const next = await window.gb.dialogs.pickVaultFolder();
@@ -121,33 +131,51 @@ function VaultSettings() {
         label="folder structure"
         sub="how ghostbrain organizes captured items"
         control={
-          <select className={selectClass} onChange={() => stub(3)}>
-            <option>by source</option>
-            <option>by date</option>
-            <option>by person</option>
+          <select
+            className={selectClass}
+            value={folderStructure}
+            onChange={(e) => void setSetting('folderStructure', e.target.value as FolderStructure)}
+          >
+            <option value="by-source">by source</option>
+            <option value="by-date">by date</option>
+            <option value="by-person">by person</option>
           </select>
         }
       />
       <SettingRow
         label="daily note"
         sub="capture digest appended to today's daily note"
-        control={<Toggle on />}
+        control={
+          <Toggle on={dailyNoteEnabled} onChange={(v) => void setSetting('dailyNoteEnabled', v)} />
+        }
       />
       <SettingRow
         label="markdown frontmatter"
         sub="add yaml metadata to every captured file"
-        control={<Toggle on />}
+        control={
+          <Toggle
+            on={markdownFrontmatter}
+            onChange={(v) => void setSetting('markdownFrontmatter', v)}
+          />
+        }
       />
       <SettingRow
         label="auto-link mentions"
         sub="turn @names and #tags into [[wikilinks]]"
-        control={<Toggle on />}
+        control={
+          <Toggle on={autoLinkMentions} onChange={(v) => void setSetting('autoLinkMentions', v)} />
+        }
       />
     </div>
   );
 }
 
 function PrivacySettings() {
+  const cloudSync = useSettings((s) => s.cloudSync);
+  const e2eEncryption = useSettings((s) => s.e2eEncryption);
+  const telemetry = useSettings((s) => s.telemetry);
+  const llmProvider = useSettings((s) => s.llmProvider);
+  const setSetting = useSettings((s) => s.set);
   return (
     <div>
       <SectionHeader
@@ -157,26 +185,32 @@ function PrivacySettings() {
       <SettingRow
         label="cloud sync"
         sub="opt-in. encrypted at rest. you hold the key."
-        control={<Toggle on={false} />}
+        control={<Toggle on={cloudSync} onChange={(v) => void setSetting('cloudSync', v)} />}
       />
       <SettingRow
         label="end-to-end encryption"
         sub="vault encrypted on disk with your passphrase"
-        control={<Toggle on />}
+        control={
+          <Toggle on={e2eEncryption} onChange={(v) => void setSetting('e2eEncryption', v)} />
+        }
       />
       <SettingRow
         label="telemetry"
         sub="anonymous crash reports. no message contents, ever."
-        control={<Toggle on={false} />}
+        control={<Toggle on={telemetry} onChange={(v) => void setSetting('telemetry', v)} />}
       />
       <SettingRow
         label="LLM provider"
         sub="for transcript summarization & query"
         control={
-          <select className={selectClass} onChange={() => stub(3)}>
-            <option>local (ollama)</option>
-            <option>anthropic</option>
-            <option>openai</option>
+          <select
+            className={selectClass}
+            value={llmProvider}
+            onChange={(e) => void setSetting('llmProvider', e.target.value as LlmProvider)}
+          >
+            <option value="local">local (ollama)</option>
+            <option value="anthropic">anthropic</option>
+            <option value="openai">openai</option>
           </select>
         }
       />
@@ -185,33 +219,48 @@ function PrivacySettings() {
 }
 
 function MeetingSettings() {
+  const autoRecord = useSettings((s) => s.autoRecordFromCalendar);
+  const diarize = useSettings((s) => s.diarizeSpeakers);
+  const extract = useSettings((s) => s.extractActionItems);
+  const retention = useSettings((s) => s.audioRetention);
+  const model = useSettings((s) => s.transcriptModel);
+  const setSetting = useSettings((s) => s.set);
   return (
     <div>
       <SectionHeader title="meetings" sub="how ghostbrain records, transcribes, and summarizes." />
       <SettingRow
         label="auto-record from calendar"
         sub="meetings tagged ⏺ in your calendar are auto-recorded"
-        control={<Toggle on />}
+        control={
+          <Toggle
+            on={autoRecord}
+            onChange={(v) => void setSetting('autoRecordFromCalendar', v)}
+          />
+        }
       />
       <SettingRow
         label="diarize speakers"
         sub="separate who-said-what in the transcript"
-        control={<Toggle on />}
+        control={<Toggle on={diarize} onChange={(v) => void setSetting('diarizeSpeakers', v)} />}
       />
       <SettingRow
         label="extract action items"
         sub="ghostbrain pulls todos automatically"
-        control={<Toggle on />}
+        control={<Toggle on={extract} onChange={(v) => void setSetting('extractActionItems', v)} />}
       />
       <SettingRow
         label="audio retention"
         sub="how long to keep raw audio after transcription"
         control={
-          <select className={selectClass} onChange={() => stub(3)}>
-            <option>30 days</option>
-            <option>7 days</option>
-            <option>delete immediately</option>
-            <option>keep forever</option>
+          <select
+            className={selectClass}
+            value={retention}
+            onChange={(e) => void setSetting('audioRetention', e.target.value as AudioRetention)}
+          >
+            <option value="30d">30 days</option>
+            <option value="7d">7 days</option>
+            <option value="immediate">delete immediately</option>
+            <option value="forever">keep forever</option>
           </select>
         }
       />
@@ -219,9 +268,13 @@ function MeetingSettings() {
         label="transcript model"
         sub="whisper · runs locally"
         control={
-          <select className={selectClass} onChange={() => stub(3)}>
-            <option>whisper-large-v3</option>
-            <option>whisper-medium</option>
+          <select
+            className={selectClass}
+            value={model}
+            onChange={(e) => void setSetting('transcriptModel', e.target.value as TranscriptModel)}
+          >
+            <option value="whisper-large-v3">whisper-large-v3</option>
+            <option value="whisper-medium">whisper-medium</option>
           </select>
         }
       />

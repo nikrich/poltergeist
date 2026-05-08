@@ -11,9 +11,28 @@ interface SettingsState extends Settings {
 }
 
 export const useSettings = create<SettingsState>((set) => ({
+  // placeholder defaults — overwritten on hydrate()
   theme: 'dark',
   density: 'comfortable',
   vaultPath: '',
+
+  dailyNoteEnabled: true,
+  markdownFrontmatter: true,
+  autoLinkMentions: true,
+
+  cloudSync: false,
+  e2eEncryption: true,
+  telemetry: false,
+  llmProvider: 'local',
+
+  autoRecordFromCalendar: true,
+  diarizeSpeakers: true,
+  extractActionItems: true,
+  audioRetention: '30d',
+  transcriptModel: 'whisper-large-v3',
+
+  folderStructure: 'by-source',
+
   ready: false,
   hydrate: async () => {
     const all = await window.gb.settings.getAll();
