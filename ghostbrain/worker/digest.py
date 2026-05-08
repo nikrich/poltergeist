@@ -163,11 +163,21 @@ def render_input_for_prompt(d: DigestInput) -> str:
 
 
 def _short_time(iso: str) -> str:
-    """Trim an ISO datetime to HH:MM for digest display, leave date strings alone."""
+    """Trim an ISO datetime to local-time HH:MM for digest display.
+
+    Apple Calendar / Google emit UTC ISO strings; we want the user's
+    actual wall time in the digest. ``astimezone()`` with no argument
+    converts to the local timezone. Plain date strings pass through.
+    """
     if not iso or "T" not in iso:
         return iso
-    # 2026-05-09T10:00:00+02:00 → 10:00
-    return iso.split("T", 1)[1][:5]
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        local = dt.astimezone()
+        return local.strftime("%H:%M")
+    except ValueError:
+        # Couldn't parse — fall back to the lexical hour:minute slice.
+        return iso.split("T", 1)[1][:5]
 
 
 def _load_today_calendar(target_date: date) -> list[CalendarItem]:
