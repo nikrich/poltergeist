@@ -14,42 +14,15 @@ export function Toggle({ label, on: initial, onChange }: Props) {
     onChange?.(next);
   };
   return (
-    <label
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        fontSize: 12,
-        color: 'var(--ink-1)',
-        cursor: 'pointer',
-      }}
-    >
+    <label className="flex cursor-pointer items-center gap-[10px] text-12 text-ink-1">
       <button
         type="button"
         onClick={toggle}
-        style={{
-          width: 28,
-          height: 16,
-          borderRadius: 999,
-          background: on ? 'var(--neon)' : 'var(--bg-fog)',
-          border: '1px solid var(--hairline-2)',
-          position: 'relative',
-          cursor: 'pointer',
-          flexShrink: 0,
-          transition: 'background 120ms',
-        }}
+        aria-pressed={on}
+        className={`relative h-4 w-7 flex-shrink-0 cursor-pointer rounded-pill border border-hairline-2 transition-colors duration-[120ms] ${on ? 'bg-neon' : 'bg-fog'}`}
       >
         <span
-          style={{
-            position: 'absolute',
-            top: 1,
-            left: on ? 13 : 1,
-            width: 12,
-            height: 12,
-            borderRadius: '50%',
-            background: on ? '#0E0F12' : 'var(--ink-2)',
-            transition: 'left 160ms cubic-bezier(.2,.8,.2,1)',
-          }}
+          className={`absolute top-px h-3 w-3 rounded-full transition-[left] duration-[160ms] ease-[cubic-bezier(.2,.8,.2,1)] ${on ? 'left-[13px] bg-paper' : 'left-px bg-ink-2'}`}
         />
       </button>
       {label && <span>{label}</span>}

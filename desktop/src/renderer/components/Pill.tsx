@@ -3,37 +3,23 @@ type Tone = 'neon' | 'moss' | 'oxblood' | 'fog' | 'outline';
 interface Props {
   tone?: Tone;
   children: React.ReactNode;
+  className?: string;
+  // style?: transitional — call sites migrate in B.2.b–f and this prop is dropped in B.2.f
   style?: React.CSSProperties;
 }
 
-const palettes: Record<Tone, { bg: string; fg: string; border?: string }> = {
-  neon: { bg: 'rgba(197,255,61,0.15)', fg: 'var(--neon)' },
-  moss: { bg: 'rgba(92,124,79,0.18)', fg: '#A2C795' },
-  oxblood: { bg: 'rgba(255,107,90,0.14)', fg: '#FF8A7C' },
-  fog: { bg: 'var(--bg-fog)', fg: 'var(--ink-1)' },
-  outline: { bg: 'transparent', fg: 'var(--ink-2)', border: '1px solid var(--hairline-2)' },
+const toneClasses: Record<Tone, string> = {
+  neon: 'bg-neon/15 text-neon',
+  moss: 'bg-moss/20 text-[#A2C795]',
+  oxblood: 'bg-oxblood/15 text-[#FF8A7C]',
+  fog: 'bg-fog text-ink-1',
+  outline: 'bg-transparent text-ink-2 border border-hairline-2',
 };
 
-export function Pill({ tone = 'neon', children, style }: Props) {
-  const p = palettes[tone];
+export function Pill({ tone = 'neon', children, className = '' }: Props) {
   return (
     <span
-      style={{
-        fontFamily: 'var(--font-mono)',
-        fontSize: 10,
-        fontWeight: 500,
-        padding: '2px 7px',
-        borderRadius: 4,
-        background: p.bg,
-        color: p.fg,
-        border: p.border ?? 'none',
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 5,
-        textTransform: 'lowercase',
-        whiteSpace: 'nowrap',
-        ...style,
-      }}
+      className={`inline-flex items-center gap-[5px] whitespace-nowrap rounded-sm px-[7px] py-[2px] font-mono text-10 font-medium lowercase ${toneClasses[tone]} ${className}`}
     >
       {children}
     </span>

@@ -3,23 +3,14 @@ import { Lucide } from './Lucide';
 interface Props {
   icon: string;
   text: string;
+  // style?: transitional — call sites migrate in B.2.b–f and this prop is dropped in B.2.f
+  style?: React.CSSProperties;
 }
 
 export function Catch({ icon, text }: Props) {
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: 8,
-        padding: '8px 6px',
-        borderRadius: 4,
-        fontSize: 12,
-        color: 'var(--ink-0)',
-        lineHeight: 1.4,
-      }}
-    >
-      <Lucide name={icon} size={12} color="var(--neon)" style={{ marginTop: 3 }} />
+    <div className="flex items-start gap-2 rounded-sm px-[6px] py-2 text-12 leading-[1.4] text-ink-0">
+      <Lucide name={icon} size={12} color="var(--neon)" className="mt-[3px]" />
       <span>{text}</span>
     </div>
   );

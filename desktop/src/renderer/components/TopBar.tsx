@@ -6,46 +6,18 @@ interface Props {
 
 export function TopBar({ title, subtitle, right }: Props) {
   return (
-    <div
-      style={{
-        height: 56,
-        padding: '0 24px',
-        borderBottom: '1px solid var(--hairline)',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 16,
-        background: 'var(--bg-paper)',
-        flexShrink: 0,
-      }}
-    >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, lineHeight: 1.15 }}>
-        <h1
-          style={{
-            margin: 0,
-            fontFamily: 'var(--font-display)',
-            fontSize: 20,
-            fontWeight: 600,
-            color: 'var(--ink-0)',
-            letterSpacing: '-0.02em',
-          }}
-        >
+    <div className="gb-topbar flex h-14 flex-shrink-0 items-center gap-4 border-b border-hairline bg-paper px-6">
+      <div className="flex flex-col gap-[2px] leading-[1.15]">
+        <h1 className="m-0 font-display text-20 font-semibold tracking-tight-xx text-ink-0">
           {title}
         </h1>
         {subtitle && (
-          <span
-            style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: 10,
-              color: 'var(--ink-2)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.12em',
-            }}
-          >
+          <span className="font-mono text-10 uppercase tracking-eyebrow text-ink-2">
             {subtitle}
           </span>
         )}
       </div>
-      <div style={{ flex: 1 }} />
+      <div className="flex-1" />
       {right}
     </div>
   );
