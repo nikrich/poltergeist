@@ -48,12 +48,12 @@ export function TodayScreen() {
   ];
 
   return (
-    <div style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-paper)' }}>
+    <div className="flex-1 overflow-y-auto bg-paper">
       <TopBar
         title="today"
         subtitle="thursday · may 8"
         right={
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div className="flex gap-2">
             <Btn
               variant="ghost"
               size="sm"
@@ -61,17 +61,7 @@ export function TodayScreen() {
               onClick={() => stub(3)}
             >
               ask…
-              <kbd
-                style={{
-                  marginLeft: 8,
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 9,
-                  padding: '1px 5px',
-                  borderRadius: 3,
-                  background: 'var(--bg-fog)',
-                  color: 'var(--ink-2)',
-                }}
-              >
+              <kbd className="ml-2 rounded-xs bg-fog px-[5px] py-[1px] font-mono text-9 text-ink-2">
                 ⌘K
               </kbd>
             </Btn>
@@ -85,73 +75,29 @@ export function TodayScreen() {
         }
       />
 
-      <div
-        style={{
-          padding: '24px 32px 40px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 24,
-          maxWidth: 1100,
-        }}
-      >
+      <div className="flex max-w-[1100px] flex-col gap-6 px-8 pb-10 pt-6">
         {/* Hero greeting + ghost activity */}
-        <div
-          className="gb-noise"
-          style={{
-            position: 'relative',
-            overflow: 'hidden',
-            background: 'var(--bg-vellum)',
-            border: '1px solid var(--hairline)',
-            borderRadius: 12,
-            padding: 28,
-            display: 'grid',
-            gridTemplateColumns: '1.4fr 1fr',
-            gap: 28,
-          }}
-        >
+        <div className="gb-noise relative grid grid-cols-[1.4fr_1fr] gap-7 overflow-hidden rounded-lg border border-hairline bg-vellum p-7">
           <div
+            className="pointer-events-none absolute -right-20 -top-20 h-[360px] w-[360px]"
             style={{
-              position: 'absolute',
-              top: -80,
-              right: -80,
-              width: 360,
-              height: 360,
               background: 'radial-gradient(circle, rgba(197,255,61,0.10) 0%, transparent 60%)',
-              pointerEvents: 'none',
             }}
           />
 
-          <div style={{ position: 'relative', zIndex: 1 }}>
+          <div className="relative z-[1]">
             <Eyebrow>good morning</Eyebrow>
-            <h2
-              style={{
-                margin: '8px 0 0',
-                fontFamily: 'var(--font-display)',
-                fontSize: 38,
-                fontWeight: 600,
-                color: 'var(--ink-0)',
-                letterSpacing: '-0.035em',
-                lineHeight: 1.05,
-              }}
-            >
+            <h2 className="mb-0 mt-2 font-display text-38 font-semibold leading-[1.05] tracking-tightest text-ink-0">
               while you slept,
               <br />
-              <span style={{ color: 'var(--neon)' }}>ghostbrain caught</span>
+              <span className="text-neon">ghostbrain caught</span>
               <br />
               241 things.
             </h2>
-            <p
-              style={{
-                margin: '14px 0 18px',
-                color: 'var(--ink-1)',
-                fontSize: 14,
-                maxWidth: '46ch',
-                lineHeight: 1.5,
-              }}
-            >
+            <p className="mb-[18px] mt-[14px] max-w-[46ch] text-14 leading-[1.5] text-ink-1">
               4 connectors syncing. 2 meetings on your calendar today — one is ready to record.
             </p>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div className="flex gap-2">
               <Btn
                 variant="primary"
                 size="md"
@@ -172,16 +118,7 @@ export function TodayScreen() {
           </div>
 
           {/* mini stat grid */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: 8,
-              alignContent: 'start',
-              position: 'relative',
-              zIndex: 1,
-            }}
-          >
+          <div className="relative z-[1] grid grid-cols-2 content-start gap-2">
             <Stat {...STATS.captured} tone="neon" />
             <Stat {...STATS.meetings} />
             <Stat {...STATS.followups} tone="oxblood" />
@@ -190,7 +127,7 @@ export function TodayScreen() {
         </div>
 
         {/* Two-column: agenda + activity */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <div className="grid grid-cols-2 gap-4">
           {/* Agenda */}
           <Panel
             title="agenda"
@@ -217,15 +154,7 @@ export function TodayScreen() {
             subtitle="last 4 hours"
             action={
               <Pill tone="neon">
-                <span
-                  style={{
-                    width: 5,
-                    height: 5,
-                    borderRadius: '50%',
-                    background: 'var(--neon)',
-                  }}
-                />{' '}
-                live
+                <span className="h-[5px] w-[5px] rounded-full bg-neon" /> live
               </Pill>
             }
           >
@@ -250,7 +179,7 @@ export function TodayScreen() {
             </Btn>
           }
         >
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 8 }}>
+          <div className="grid grid-cols-7 gap-2">
             {CONNECTOR_PULSES.map((c) => (
               <ConnectorPulse key={c.name} {...c} />
             ))}
@@ -258,7 +187,7 @@ export function TodayScreen() {
         </Panel>
 
         {/* Bottom row — recent capture + suggestions */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 16 }}>
+        <div className="grid grid-cols-[1.3fr_1fr] gap-4">
           <Panel
             title="caught lately"
             action={
@@ -299,35 +228,19 @@ interface StatProps {
 
 function Stat({ label, value, delta, tone }: StatProps) {
   return (
-    <div
-      style={{
-        background: 'var(--bg-paper)',
-        border: '1px solid var(--hairline)',
-        borderRadius: 8,
-        padding: 14,
-      }}
-    >
+    <div className="rounded-md border border-hairline bg-paper p-[14px]">
       <Eyebrow>{label}</Eyebrow>
       <div
-        style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: 28,
-          fontWeight: 600,
-          color: tone === 'neon' ? 'var(--neon)' : 'var(--ink-0)',
-          letterSpacing: '-0.025em',
-          lineHeight: 1.1,
-          marginTop: 4,
-        }}
+        className={`mt-1 font-display text-28 font-semibold leading-[1.1] tracking-tight-x ${
+          tone === 'neon' ? 'text-neon' : 'text-ink-0'
+        }`}
       >
         {value}
       </div>
       <div
-        style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: 10,
-          color: tone === 'oxblood' ? 'var(--oxblood)' : 'var(--ink-2)',
-          marginTop: 2,
-        }}
+        className={`mt-[2px] font-mono text-10 ${
+          tone === 'oxblood' ? 'text-oxblood' : 'text-ink-2'
+        }`}
       >
         {delta}
       </div>
@@ -340,68 +253,26 @@ interface AgendaItemProps extends AgendaItemData {
 }
 
 function AgendaItem({ time, dur, title, with: people, status, cta }: AgendaItemProps) {
+  const recorded = status === 'recorded';
   return (
     <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '52px 1fr auto',
-        gap: 14,
-        alignItems: 'center',
-        padding: '10px 8px',
-        borderRadius: 6,
-        opacity: status === 'recorded' ? 0.7 : 1,
-      }}
+      className={`grid grid-cols-[52px_1fr_auto] items-center gap-[14px] rounded-r6 px-2 py-[10px] ${
+        recorded ? 'opacity-70' : 'opacity-100'
+      }`}
     >
       <div
-        style={{
-          borderLeft: '2px solid var(--neon)',
-          paddingLeft: 8,
-          lineHeight: 1.15,
-          opacity: status === 'recorded' ? 0.5 : 1,
-        }}
+        className={`border-l-2 border-neon pl-2 leading-[1.15] ${
+          recorded ? 'opacity-50' : 'opacity-100'
+        }`}
       >
-        <div
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: 13,
-            color: 'var(--ink-0)',
-            fontWeight: 500,
-          }}
-        >
-          {time}
-        </div>
-        <div
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: 9,
-            color: 'var(--ink-2)',
-          }}
-        >
-          {dur}
-        </div>
+        <div className="font-mono text-13 font-medium text-ink-0">{time}</div>
+        <div className="font-mono text-9 text-ink-2">{dur}</div>
       </div>
-      <div style={{ minWidth: 0 }}>
-        <div
-          style={{
-            fontSize: 13,
-            color: 'var(--ink-0)',
-            fontWeight: 500,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
+      <div className="min-w-0">
+        <div className="overflow-hidden text-ellipsis whitespace-nowrap text-13 font-medium text-ink-0">
           {title}
         </div>
-        <div
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: 10,
-            color: 'var(--ink-2)',
-          }}
-        >
-          with {people.join(', ')}
-        </div>
+        <div className="font-mono text-10 text-ink-2">with {people.join(', ')}</div>
       </div>
       {cta}
     </div>
@@ -410,105 +281,42 @@ function AgendaItem({ time, dur, title, with: people, status, cta }: AgendaItemP
 
 function ActivityRow({ source, verb, subject, time }: ActivityRowData) {
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        padding: '8px 6px',
-        borderRadius: 4,
-      }}
-    >
+    <div className="flex items-center gap-[10px] rounded-sm px-[6px] py-2">
       <img
         src={`/assets/connectors/${source}.svg`}
         alt=""
-        style={{ width: 14, height: 14, opacity: 0.9 }}
+        className="h-[14px] w-[14px] opacity-90"
       />
-      <span
-        style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: 10,
-          color: 'var(--ink-2)',
-        }}
-      >
-        {verb}
-      </span>
-      <span
-        style={{
-          fontSize: 12,
-          color: 'var(--ink-0)',
-          flex: 1,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}
-      >
+      <span className="font-mono text-10 text-ink-2">{verb}</span>
+      <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-12 text-ink-0">
         {subject}
       </span>
-      <span
-        style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: 10,
-          color: 'var(--ink-3)',
-        }}
-      >
-        {time}
-      </span>
+      <span className="font-mono text-10 text-ink-3">{time}</span>
     </div>
   );
 }
 
 function ConnectorPulse({ name, state, count }: ConnectorPulseData) {
-  const dotColor =
-    state === 'on' ? 'var(--neon)' : state === 'err' ? 'var(--oxblood)' : 'var(--ink-3)';
+  const dotClass =
+    state === 'on' ? 'bg-neon' : state === 'err' ? 'bg-oxblood' : 'bg-ink-3';
   return (
     <div
-      style={{
-        background: 'var(--bg-paper)',
-        border: '1px solid var(--hairline)',
-        borderRadius: 6,
-        padding: '10px 8px',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: 4,
-        cursor: 'pointer',
-        opacity: state === 'off' ? 0.5 : 1,
-      }}
+      className={`flex cursor-pointer flex-col items-center gap-1 rounded-r6 border border-hairline bg-paper px-2 py-[10px] ${
+        state === 'off' ? 'opacity-50' : 'opacity-100'
+      }`}
     >
-      <div style={{ position: 'relative' }}>
+      <div className="relative">
         <img
           src={`/assets/connectors/${name}.svg`}
           alt={name}
-          style={{
-            width: 22,
-            height: 22,
-            filter: state === 'off' ? 'grayscale(1)' : 'none',
-          }}
+          className={`h-[22px] w-[22px] ${state === 'off' ? 'grayscale' : ''}`}
         />
         <span
-          style={{
-            position: 'absolute',
-            bottom: -2,
-            right: -2,
-            width: 7,
-            height: 7,
-            borderRadius: '50%',
-            background: dotColor,
-            border: '1.5px solid var(--bg-paper)',
-          }}
+          className={`absolute -bottom-[2px] -right-[2px] h-[7px] w-[7px] rounded-full border-[1.5px] border-paper ${dotClass}`}
         />
       </div>
-      <div style={{ fontSize: 10, color: 'var(--ink-1)', textTransform: 'lowercase' }}>{name}</div>
-      <div
-        style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: 9,
-          color: 'var(--ink-3)',
-        }}
-      >
-        {count}
-      </div>
+      <div className="text-10 lowercase text-ink-1">{name}</div>
+      <div className="font-mono text-9 text-ink-3">{count}</div>
     </div>
   );
 }
@@ -516,33 +324,16 @@ function ConnectorPulse({ name, state, count }: ConnectorPulseData) {
 function CaptureItem({ source, title, snippet, from }: CaptureLatelyItem) {
   return (
     <div
-      style={{ padding: '10px 8px', borderRadius: 6, cursor: 'pointer' }}
+      className="cursor-pointer rounded-r6 px-2 py-[10px]"
       onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-paper)')}
       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-        <img src={`/assets/connectors/${source}.svg`} alt="" style={{ width: 12, height: 12 }} />
-        <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-0)' }}>{title}</span>
-        <span
-          style={{
-            marginLeft: 'auto',
-            fontFamily: 'var(--font-mono)',
-            fontSize: 9,
-            color: 'var(--ink-3)',
-          }}
-        >
-          {from}
-        </span>
+      <div className="mb-1 flex items-center gap-2">
+        <img src={`/assets/connectors/${source}.svg`} alt="" className="h-3 w-3" />
+        <span className="text-12 font-medium text-ink-0">{title}</span>
+        <span className="ml-auto font-mono text-9 text-ink-3">{from}</span>
       </div>
-      <div
-        style={{
-          fontFamily: 'var(--font-display)',
-          fontStyle: 'italic',
-          fontSize: 13,
-          color: 'var(--ink-1)',
-          lineHeight: 1.4,
-        }}
-      >
+      <div className="font-display text-13 italic leading-[1.4] text-ink-1">
         &ldquo;{snippet}&rdquo;
       </div>
     </div>
@@ -552,42 +343,22 @@ function CaptureItem({ source, title, snippet, from }: CaptureLatelyItem) {
 function Suggestion({ icon, title, body, accent }: SuggestionData) {
   return (
     <div
-      style={{
-        padding: '10px 12px',
-        borderRadius: 6,
-        background: accent ? 'rgba(197,255,61,0.06)' : 'transparent',
-        border: accent ? '1px solid rgba(197,255,61,0.18)' : '1px solid transparent',
-        display: 'flex',
-        gap: 10,
-        cursor: 'pointer',
-      }}
+      className={`flex cursor-pointer gap-[10px] rounded-r6 px-3 py-[10px] ${
+        accent
+          ? 'border border-[rgba(197,255,61,0.18)] bg-[rgba(197,255,61,0.06)]'
+          : 'border border-transparent bg-transparent'
+      }`}
     >
       <div
-        style={{
-          width: 26,
-          height: 26,
-          borderRadius: 5,
-          flexShrink: 0,
-          background: accent ? 'rgba(197,255,61,0.15)' : 'var(--bg-paper)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
+        className={`flex h-[26px] w-[26px] flex-shrink-0 items-center justify-center rounded-sm ${
+          accent ? 'bg-[rgba(197,255,61,0.15)]' : 'bg-paper'
+        }`}
       >
         <Lucide name={icon} size={13} color={accent ? 'var(--neon)' : 'var(--ink-1)'} />
       </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-0)' }}>{title}</div>
-        <div
-          style={{
-            fontSize: 11,
-            color: 'var(--ink-2)',
-            lineHeight: 1.4,
-            marginTop: 2,
-          }}
-        >
-          {body}
-        </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-12 font-medium text-ink-0">{title}</div>
+        <div className="mt-[2px] text-11 leading-[1.4] text-ink-2">{body}</div>
       </div>
     </div>
   );
