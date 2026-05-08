@@ -1,5 +1,7 @@
 # Ghost Brain
 
+<img width="779" height="779" alt="Ghost Brain" src="https://github.com/user-attachments/assets/e08e24c2-ad5d-4edb-b10e-d9a73ecaf3e8" />
+
 A self-hosted personal knowledge automation system. Captures activity from
 your tools (Claude Code & Desktop, GitHub, Jira, Confluence, Slack, Gmail,
 Teams, Calendar) into an Obsidian vault, classifies and summarizes it with
