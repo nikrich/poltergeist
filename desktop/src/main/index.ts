@@ -16,6 +16,7 @@ function createWindow() {
     backgroundColor: '#0E0F12',
     titleBarStyle: isMac ? 'hiddenInset' : 'default',
     trafficLightPosition: isMac ? { x: 14, y: 14 } : undefined,
+    icon: join(app.getAppPath(), 'build/icon.png'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,

@@ -1,3 +1,10 @@
-# Populated in Slice 5 — placeholder so CI knows where it'll live.
 appId: app.ghostbrain.desktop
 productName: ghostbrain
+directories:
+  buildResources: build
+mac:
+  icon: build/icon.icns
+win:
+  icon: build/icon.ico
+linux:
+  icon: build/icon.png
