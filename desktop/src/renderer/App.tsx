@@ -7,10 +7,12 @@ export default function App() {
     window.gb.settings.getAll().then(setSettings);
   }, []);
   return (
-    <div style={{ padding: 24, fontFamily: 'system-ui', color: 'white', background: '#0E0F12' }}>
-      <h1>ghostbrain — bridge online</h1>
-      <pre>{JSON.stringify(settings, null, 2)}</pre>
-      <p>platform: {window.gb.platform}</p>
+    <div className="bg-paper text-ink-0 p-6 h-full font-body">
+      <h1 className="font-display text-4xl tracking-tight">ghostbrain</h1>
+      <p className="text-ink-2 font-mono text-xs uppercase tracking-widest">tokens online</p>
+      <pre className="bg-vellum text-ink-1 mt-4 rounded-md p-3 text-xs">
+        {JSON.stringify(settings, null, 2)}
+      </pre>
     </div>
   );
 }

@@ -1,17 +1,13 @@
 /* =========================================================================
    ghostbrain — design tokens
    colors, type, spacing, radii, shadows, motion
+
+   Note: the JetBrains Mono @import url(...) and the Google Sans Flex
+   @font-face that used to live here have been hoisted into
+   src/renderer/styles.css. CSS @import rules must precede other
+   statements, and once this file is inlined into styles.css those
+   imports would arrive after tailwindcss's emitted rules.
    ========================================================================= */
-
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap');
-
-@font-face {
-  font-family: 'Google Sans Flex';
-  src: url('fonts/GoogleSansFlex-VariableFont_GRAD_ROND_opsz_slnt_wdth_wght.ttf') format('truetype-variations');
-  font-weight: 100 1000;
-  font-style: oblique -15deg 0deg;
-  font-display: swap;
-}
 
 :root {
   /* ---------- color: neutral spine (cool ink → bone) -------------------- */
