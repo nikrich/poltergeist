@@ -538,6 +538,40 @@ that the connector will produce nothing useful for that workspace.
 The connector code itself is correct — it'll work the day it's pointed
 at a workspace where API access isn't policy-restricted.
 
+## Weekly digest (Phase 13)
+
+Where the daily digest answers "what happened yesterday", the weekly
+answers "what's drifting, what's recurring, who needs unblocking" —
+strategic patterns that don't show up in any single day.
+
+Aggregates the past 7 days of:
+- Daily digest summaries
+- Transcript-derived artifacts (decisions, action items, unresolved
+  questions, specs)
+- Stale PRs/tickets and check-in suggestions
+- Per-context + per-source event volumes
+
+Renders a compact week-in-review with wikilinks (clickable in
+Obsidian) under `<vault>/10-daily/weekly/YYYY-Www.md`. Sections it
+produces (skipped silently when empty): At a glance, Decisions made,
+Action items still open, Risks not moving, Recurring themes, People
+to follow up with, Quiet this week, System health.
+
+### Run
+
+```bash
+ghostbrain-weekly-digest [--week-end 2026-05-10]
+```
+
+By default it summarises the most recently completed week (week
+ending on the most recent Sunday). Pass `--week-end YYYY-MM-DD` for
+a specific Sunday.
+
+### Schedule
+
+Run weekly via launchd or cron. A reasonable default is Sunday
+evening so the digest is waiting for you Monday morning.
+
 ## Profile auto-update (Phase 6)
 
 Each Claude Code session, after extraction, calls the profile-updater LLM

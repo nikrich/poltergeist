@@ -27,6 +27,7 @@ TOP_LEVEL_DIRS: tuple[str, ...] = (
     "00-inbox/raw/confluence",
     "00-inbox/raw/calendar",
     "10-daily/by-context",
+    "10-daily/weekly",
     "30-cross-context/people",
     "30-cross-context/topics",
     "30-cross-context/decisions",
@@ -174,6 +175,84 @@ audit log to understand the decision.
 Email to evaluate:
 
 {{content}}
+"""
+
+
+_WEEKLY_DIGEST_PROMPT = """\
+<!-- Weekly digest prompt. Used by ghostbrain.worker.weekly_digest. The
+output is a markdown document written to vault/10-daily/weekly/<week>.md
+verbatim. -->
+
+You are writing a weekly review for the user of a personal knowledge
+system. The user reads this once a week (Sunday morning) and wants a
+strategic view: what's drifting, what's recurring, who needs unblocking
+— patterns that don't show up in any single daily digest.
+
+Tone:
+- Direct. No preamble. No "I hope this helps". No "Here's your weekly".
+- Plain markdown. No emoji. No marketing voice.
+- Bullets, not paragraphs. Each bullet is one observation.
+- Skip sections silently when empty.
+- Aim for ~25 lines of content. The user re-reads this; brevity matters.
+
+## Wikilinks — IMPORTANT
+
+The input below renders many items as `<title> -> [[vault/path|alias]]`.
+Copy each wikilink VERBATIM. Keep the `[[path|alias]]` form exactly.
+Each bullet that references a specific decision, artifact, or stale
+item must end with its wikilink so the user can click through to the
+source note. Never invent a link.
+
+Structure (omit any section that has no content):
+
+```markdown
+# Week {{week_label}} — {{week_start}} -> {{week_end}}
+
+## At a glance
+
+[2-3 sentences. Lead with the single most important pattern of the
+week. If nothing meaningful happened, say "Quiet week." in one line.]
+
+## Decisions made
+
+[Every decision artifact captured this week, grouped by context. Each
+bullet ends with its `[[wikilink]]`.]
+
+## Action items still open
+
+[Action-item artifacts. Lead with owner if named. Each ends with the
+`[[wikilink]]`.]
+
+## Risks not moving
+
+[`unresolved` artifacts that aged >=3 days or appeared in multiple
+daily digests.]
+
+## Recurring themes
+
+[Cross-context threads — a topic in 2+ contexts, or a person in 2+
+days. Skip if nothing recurs.]
+
+## People to follow up with
+
+[From "Check-in suggestions" only. "<name> -- last activity <date> --
+<reason>".]
+
+## Quiet this week
+
+[From "Quiet contexts" only. One nudge line.]
+
+## System health
+
+[One line: "N events processed across <day_count> days. By source:
+<src: count, ...>."]
+```
+
+Be conservative — if the week was quiet, say so in one line and stop.
+
+This week's data:
+
+{{events}}
 """
 
 
@@ -573,6 +652,7 @@ recorder:
     "90-meta/prompts/gmail-relevance.md": _GMAIL_RELEVANCE_PROMPT,
     "90-meta/prompts/profile-updater.md": _PROFILE_UPDATER_PROMPT,
     "90-meta/prompts/digest.md": _DIGEST_PROMPT,
+    "90-meta/prompts/weekly-digest.md": _WEEKLY_DIGEST_PROMPT,
     "90-meta/prompts/classifier.md": "# Classifier prompt\n\nUsed for fine-grained classification. Defined later.\n",
     "80-profile/_index.md": """\
 # Profile index
