@@ -4,12 +4,16 @@ import * as settings from './settings';
 import { pickVaultFolder } from './dialogs';
 import { settingsSchema } from '../shared/settings-schema';
 import type { Settings } from '../shared/types';
+import { loadInitialState, attachStatePersistence } from './window-state';
 
 function createWindow() {
   const isMac = process.platform === 'darwin';
+  const initial = loadInitialState();
   const win = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    x: initial.x,
+    y: initial.y,
+    width: initial.width,
+    height: initial.height,
     minWidth: 1024,
     minHeight: 720,
     show: false,
@@ -23,6 +27,8 @@ function createWindow() {
       sandbox: true,
     },
   });
+  if (initial.maximized) win.maximize();
+  attachStatePersistence(win);
   win.on('ready-to-show', () => win.show());
   if (process.env.ELECTRON_RENDERER_URL) {
     win.loadURL(process.env.ELECTRON_RENDERER_URL);
