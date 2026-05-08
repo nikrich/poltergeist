@@ -438,7 +438,7 @@ function Segmented<T extends string>({
             onClick={() => onChange(o.value)}
             aria-pressed={selected}
             className={`cursor-pointer rounded-sm border-0 px-3 py-[6px] font-mono text-11 ${
-              selected ? 'bg-neon/15 text-neon' : 'bg-transparent text-ink-1'
+              selected ? 'bg-neon/15 text-neon-ink' : 'bg-transparent text-ink-1'
             }`}
           >
             {o.label}

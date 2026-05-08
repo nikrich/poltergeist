@@ -66,7 +66,7 @@ export function ConnectorsScreen() {
                 onClick={() => setFilter(f)}
                 className={`cursor-pointer rounded-sm border px-[10px] py-1 font-mono text-11 ${
                   filter === f
-                    ? 'border-neon/30 bg-neon/15 text-neon'
+                    ? 'border-neon/30 bg-neon/15 text-neon-ink'
                     : 'border-hairline-2 bg-transparent text-ink-1'
                 }`}
               >

@@ -2,7 +2,7 @@ import { useToasts, type ToastKind } from '../stores/toast';
 
 const KIND_CLASSES: Record<ToastKind, string> = {
   info: 'border-hairline-2 bg-vellum text-ink-0',
-  success: 'border-neon/40 bg-neon/12 text-neon',
+  success: 'border-neon/40 bg-neon/12 text-neon-ink',
   error: 'border-oxblood/40 bg-oxblood/15 text-oxblood',
 };
 

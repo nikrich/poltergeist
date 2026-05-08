@@ -20,9 +20,11 @@
   --ink-3:      #4A4D55;   /* disabled, placeholders */
 
   /* ---------- color: accent + semantics --------------------------------- */
-  --neon:          #C5FF3D;   /* primary accent — neon lime */
+  --neon:          #C5FF3D;   /* primary accent — neon lime (fills, decorative) */
   --neon-dark:     #9CD420;   /* hovered links / pressed */
   --neon-mist:     #1F2A0A;   /* selected backgrounds */
+  --neon-ink:      #C5FF3D;   /* "neon as readable text"; equals --neon in dark mode,
+                                  darkens in light mode for WCAG AA on bone bg */
   --violet:        #C5FF3D;   /* legacy alias → maps to neon */
   --violet-dark:   #9CD420;
   --violet-mist:   #1F2A0A;
@@ -138,6 +140,11 @@
   --violet-mist:   #E8FAB8;
   --oxblood-mist:  #FCE8E5;
   --moss-mist:     #E2EEDC;
+
+  /* neon as text on the bone background. The brand --neon (#C5FF3D) at ~1.4:1
+     fails WCAG everywhere; this deep olive holds the green hue while passing
+     AA at body-text size on --bg-paper/--bg-vellum. */
+  --neon-ink:      #4D6B00;
 
   /* pill foregrounds — darker tonal shifts so the text reads on the
      translucent accent fills the Pill component lays over a light bone

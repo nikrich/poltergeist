@@ -499,7 +499,7 @@ function Action({ who, text }: ActionProps) {
         className="mt-[3px] h-3 w-3 flex-shrink-0 cursor-not-allowed appearance-none rounded-sm border-[1.5px] border-ink-3 bg-transparent"
       />
       <div className="flex-1 text-12 leading-[1.5] text-ink-0">
-        {text} <span className="font-mono text-10 text-neon">@{who}</span>
+        {text} <span className="font-mono text-10 text-neon-ink">@{who}</span>
       </div>
     </div>
   );
