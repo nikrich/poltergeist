@@ -20,6 +20,7 @@
 }
 
 @theme {
+  /* colors */
   --color-paper: var(--bg-paper);
   --color-vellum: var(--bg-vellum);
   --color-fog: var(--bg-fog);
@@ -35,16 +36,54 @@
   --color-moss: var(--moss);
   --color-moss-mist: var(--moss-mist);
 
+  /* hairlines (semi-transparent dividers) */
+  --color-hairline: var(--hairline);
+  --color-hairline-2: var(--hairline-2);
+  --color-hairline-3: var(--hairline-3);
+
+  /* fonts */
   --font-display: 'Google Sans Flex', ui-sans-serif, system-ui, sans-serif;
   --font-body: 'Google Sans Flex', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
+  /* font sizes — design uses these specific values */
+  --text-9: 9px;
+  --text-10: 10px;
+  --text-11: 11px;
+  --text-12: 12px;
+  --text-13: 13px;
+  --text-14: 14px;
+  --text-16: 16px;
+  --text-18: 18px;
+  --text-20: 20px;
+  --text-22: 22px;
+  --text-26: 26px;
+  --text-28: 28px;
+  --text-32: 32px;
+  --text-38: 38px;
+  --text-72: 72px;
 
+  /* tracking (letter-spacing) */
+  --tracking-tightest: -0.035em;
+  --tracking-tighter: -0.03em;
+  --tracking-tight-x: -0.025em;
+  --tracking-tight-xx: -0.02em;
+  --tracking-eyebrow: 0.12em;
+  --tracking-eyebrow-loose: 0.14em;
+
+  /* radii */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-r6: 6px;
+  --radius-md: 8px;
+  --radius-r10: 10px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+
+  /* shadows */
   --shadow-card: 0 2px 4px rgba(0, 0, 0, 0.3), 0 12px 24px rgba(0, 0, 0, 0.45);
   --shadow-float: 0 16px 40px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.4);
+  --shadow-glow-neon: 0 0 0 1px rgba(197, 255, 61, 0.35), 0 0 24px rgba(197, 255, 61, 0.25);
 }
 
 html,
