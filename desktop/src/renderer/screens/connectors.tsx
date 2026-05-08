@@ -15,6 +15,11 @@ const FILTERS: Filter[] = ['all', 'on', 'err', 'off'];
 const filterLabel = (f: Filter): string =>
   f === 'on' ? 'connected' : f === 'err' ? 'error' : f === 'off' ? 'disconnected' : 'all';
 
+// Custom 6-col grid: minmax(0, 1fr) has no clean Tailwind utility, so the
+// template stays inline. Used for both header row and data rows so columns
+// align across them.
+const ROW_GRID = '32px minmax(0, 1fr) 100px 120px 120px 90px';
+
 export function ConnectorsScreen() {
   const [selectedId, setSelectedId] = useState<string>(CONNECTORS[0]!.id);
   const [filter, setFilter] = useState<Filter>('all');
@@ -22,20 +27,12 @@ export function ConnectorsScreen() {
   const selected = CONNECTORS.find((c) => c.id === selectedId)!;
 
   return (
-    <div
-      style={{
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-        background: 'var(--bg-paper)',
-      }}
-    >
+    <div className="flex flex-1 flex-col overflow-hidden bg-paper">
       <TopBar
         title="connectors"
         subtitle="6 of 7 · syncing live"
         right={
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div className="flex gap-2">
             <Btn
               variant="secondary"
               size="sm"
@@ -56,42 +53,21 @@ export function ConnectorsScreen() {
         }
       />
 
-      <div
-        style={{
-          flex: 1,
-          display: 'grid',
-          gridTemplateColumns: '1fr 380px',
-          overflow: 'hidden',
-        }}
-      >
+      <div className="grid flex-1 grid-cols-[1fr_380px] overflow-hidden">
         {/* List */}
-        <div style={{ overflowY: 'auto', padding: '20px 24px' }}>
+        <div className="overflow-y-auto px-6 py-5">
           {/* filter chips */}
-          <div
-            style={{
-              display: 'flex',
-              gap: 6,
-              marginBottom: 16,
-              alignItems: 'center',
-            }}
-          >
-            <Eyebrow style={{ marginRight: 4 }}>filter</Eyebrow>
+          <div className="mb-4 flex items-center gap-[6px]">
+            <Eyebrow className="mr-1">filter</Eyebrow>
             {FILTERS.map((f) => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
-                style={{
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 11,
-                  padding: '4px 10px',
-                  borderRadius: 4,
-                  background: filter === f ? 'rgba(197,255,61,0.16)' : 'transparent',
-                  color: filter === f ? 'var(--neon)' : 'var(--ink-1)',
-                  border: `1px solid ${
-                    filter === f ? 'rgba(197,255,61,0.30)' : 'var(--hairline-2)'
-                  }`,
-                  cursor: 'pointer',
-                }}
+                className={`cursor-pointer rounded-sm border px-[10px] py-1 font-mono text-11 ${
+                  filter === f
+                    ? 'border-neon/30 bg-neon/15 text-neon'
+                    : 'border-hairline-2 bg-transparent text-ink-1'
+                }`}
               >
                 {filterLabel(f)}
               </button>
@@ -100,30 +76,18 @@ export function ConnectorsScreen() {
 
           {/* table header */}
           <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '32px minmax(0, 1fr) 100px 120px 120px 90px',
-              gap: 12,
-              padding: '0 14px 8px',
-              borderBottom: '1px solid var(--hairline)',
-            }}
+            className="grid gap-3 border-b border-hairline px-[14px] pb-2"
+            style={{ gridTemplateColumns: ROW_GRID }}
           >
             <div />
             <Eyebrow>app</Eyebrow>
-            <Eyebrow style={{ textAlign: 'right' }}>indexed</Eyebrow>
+            <Eyebrow className="text-right">indexed</Eyebrow>
             <Eyebrow>last sync</Eyebrow>
             <Eyebrow>throughput</Eyebrow>
-            <Eyebrow style={{ textAlign: 'right' }}>status</Eyebrow>
+            <Eyebrow className="text-right">status</Eyebrow>
           </div>
 
-          <div
-            style={{
-              marginTop: 6,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 2,
-            }}
-          >
+          <div className="mt-[6px] flex flex-col gap-[2px]">
             {filtered.map((c) => (
               <ConnectorRow
                 key={c.id}
@@ -165,77 +129,40 @@ const STATE_LABELS: Record<ConnectorState, string> = {
 
 function ConnectorRow({ c, selected, onClick }: ConnectorRowProps) {
   const [hover, setHover] = useState(false);
+  const bgClass = selected || hover ? 'bg-vellum' : 'bg-transparent';
+  const borderClass = selected ? 'border-hairline-2' : 'border-transparent';
+  const opacityClass = c.state === 'off' ? 'opacity-65' : 'opacity-100';
   return (
     <div
       onClick={onClick}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '32px minmax(0, 1fr) 100px 120px 120px 90px',
-        gap: 12,
-        alignItems: 'center',
-        padding: '12px 14px',
-        borderRadius: 6,
-        cursor: 'pointer',
-        background: selected ? 'var(--bg-vellum)' : hover ? 'var(--bg-vellum)' : 'transparent',
-        border: `1px solid ${selected ? 'var(--hairline-2)' : 'transparent'}`,
-        opacity: c.state === 'off' ? 0.65 : 1,
-      }}
+      className={`grid cursor-pointer items-center gap-3 rounded-r6 border px-[14px] py-3 ${bgClass} ${borderClass} ${opacityClass}`}
+      style={{ gridTemplateColumns: ROW_GRID }}
     >
       <img
         src={'/' + c.src}
         alt=""
-        style={{
-          width: 22,
-          height: 22,
-          filter: c.state === 'off' ? 'grayscale(1)' : 'none',
-        }}
+        width={22}
+        height={22}
+        className={c.state === 'off' ? 'grayscale' : ''}
       />
-      <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2, minWidth: 0 }}>
-        <span style={{ fontSize: 13, color: 'var(--ink-0)', fontWeight: 500 }}>{c.name}</span>
-        <span
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: 10,
-            color: 'var(--ink-2)',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
+      <div className="flex min-w-0 flex-col leading-[1.2]">
+        <span className="text-13 font-medium text-ink-0">{c.name}</span>
+        <span className="overflow-hidden text-ellipsis whitespace-nowrap font-mono text-10 text-ink-2">
           {c.account}
         </span>
       </div>
-      <span
-        style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: 11,
-          color: 'var(--ink-1)',
-          textAlign: 'right',
-        }}
-      >
+      <span className="text-right font-mono text-11 text-ink-1">
         {c.state === 'off' ? '—' : c.count.toLocaleString()}
       </span>
       <span
-        style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: 11,
-          color: c.state === 'err' ? 'var(--oxblood)' : 'var(--ink-2)',
-        }}
+        className={`font-mono text-11 ${c.state === 'err' ? 'text-oxblood' : 'text-ink-2'}`}
       >
         {c.last}
       </span>
-      <span
-        style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: 11,
-          color: 'var(--ink-2)',
-        }}
-      >
-        {c.throughput}
-      </span>
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+      <span className="font-mono text-11 text-ink-2">{c.throughput}</span>
+      <div className="flex justify-end">
         <Pill tone={TONES[c.state]}>{STATE_LABELS[c.state]}</Pill>
       </div>
     </div>
@@ -244,20 +171,7 @@ function ConnectorRow({ c, selected, onClick }: ConnectorRowProps) {
 
 function AddConnectorRow() {
   return (
-    <div
-      style={{
-        marginTop: 8,
-        padding: '14px',
-        borderRadius: 6,
-        border: '1px dashed var(--hairline-2)',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        cursor: 'pointer',
-        color: 'var(--ink-2)',
-        fontSize: 13,
-      }}
-    >
+    <div className="mt-2 flex cursor-pointer items-center gap-[10px] rounded-r6 border border-dashed border-hairline-2 p-[14px] text-13 text-ink-2">
       <Lucide name="plus" size={14} />
       <span>request a connector — figma, intercom, hubspot, anywhere else</span>
     </div>
@@ -270,85 +184,28 @@ interface ConnectorDetailProps {
 
 function ConnectorDetail({ c }: ConnectorDetailProps) {
   return (
-    <aside
-      style={{
-        borderLeft: '1px solid var(--hairline)',
-        background: 'var(--bg-vellum)',
-        overflowY: 'auto',
-        display: 'flex',
-        flexDirection: 'column',
-      }}
-    >
+    <aside className="flex flex-col overflow-y-auto border-l border-hairline bg-vellum">
       {/* hero */}
-      <div
-        className="gb-noise"
-        style={{
-          padding: 24,
-          borderBottom: '1px solid var(--hairline)',
-          position: 'relative',
-          overflow: 'hidden',
-        }}
-      >
+      <div className="gb-noise relative overflow-hidden border-b border-hairline p-6">
         <div
+          className="pointer-events-none absolute -right-10 -top-10 h-[200px] w-[200px]"
           style={{
-            position: 'absolute',
-            top: -40,
-            right: -40,
-            width: 200,
-            height: 200,
             background: `radial-gradient(circle, ${c.color}22 0%, transparent 60%)`,
-            pointerEvents: 'none',
           }}
         />
-        <div
-          style={{
-            position: 'relative',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 14,
-            marginBottom: 14,
-          }}
-        >
-          <div
-            style={{
-              width: 56,
-              height: 56,
-              borderRadius: 12,
-              background: 'var(--bg-paper)',
-              border: '1px solid var(--hairline)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <img src={'/' + c.src} alt="" style={{ width: 32, height: 32 }} />
+        <div className="relative mb-[14px] flex items-center gap-[14px]">
+          <div className="flex h-14 w-14 items-center justify-center rounded-lg border border-hairline bg-paper">
+            <img src={'/' + c.src} alt="" width={32} height={32} />
           </div>
-          <div style={{ flex: 1 }}>
-            <div
-              style={{
-                fontFamily: 'var(--font-display)',
-                fontSize: 22,
-                fontWeight: 600,
-                color: 'var(--ink-0)',
-                letterSpacing: '-0.025em',
-              }}
-            >
+          <div className="flex-1">
+            <div className="font-display text-22 font-semibold tracking-tight-x text-ink-0">
               {c.name}
             </div>
-            <div
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 10,
-                color: 'var(--ink-2)',
-                marginTop: 2,
-              }}
-            >
-              {c.account}
-            </div>
+            <div className="mt-[2px] font-mono text-10 text-ink-2">{c.account}</div>
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="flex gap-2">
           {c.state === 'off' && (
             <Btn
               variant="primary"
@@ -393,44 +250,13 @@ function ConnectorDetail({ c }: ConnectorDetailProps) {
       </div>
 
       {/* details */}
-      <div
-        style={{
-          padding: '20px 24px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 22,
-        }}
-      >
+      <div className="flex flex-col gap-[22px] px-6 py-5">
         {c.state === 'err' && (
-          <div
-            style={{
-              background: 'rgba(255,107,90,0.08)',
-              border: '1px solid rgba(255,107,90,0.25)',
-              borderRadius: 6,
-              padding: 12,
-              display: 'flex',
-              gap: 10,
-            }}
-          >
+          <div className="flex gap-[10px] rounded-r6 border border-oxblood/30 bg-oxblood/10 p-3">
             <Lucide name="alert-triangle" size={14} color="var(--oxblood)" />
-            <div style={{ flex: 1 }}>
-              <div
-                style={{
-                  fontSize: 12,
-                  color: 'var(--oxblood)',
-                  fontWeight: 500,
-                }}
-              >
-                oauth token expired
-              </div>
-              <div
-                style={{
-                  fontSize: 11,
-                  color: 'var(--ink-1)',
-                  marginTop: 2,
-                  lineHeight: 1.4,
-                }}
-              >
+            <div className="flex-1">
+              <div className="text-12 font-medium text-oxblood">oauth token expired</div>
+              <div className="mt-[2px] text-11 leading-[1.4] text-ink-1">
                 github stopped accepting our token 2 days ago. one click and it&rsquo;s quiet again.
               </div>
             </div>
@@ -438,7 +264,7 @@ function ConnectorDetail({ c }: ConnectorDetailProps) {
         )}
 
         <DetailBlock label="indexed">
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div className="grid grid-cols-2 gap-[10px]">
             <Stat
               label="items"
               value={c.state === 'off' ? '—' : c.count.toLocaleString()}
@@ -449,7 +275,7 @@ function ConnectorDetail({ c }: ConnectorDetailProps) {
         </DetailBlock>
 
         <DetailBlock label="what ghostbrain pulls">
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          <div className="flex flex-wrap gap-[6px]">
             {c.pulls.map((p) => (
               <Pill key={p} tone="fog">
                 {p}
@@ -459,18 +285,11 @@ function ConnectorDetail({ c }: ConnectorDetailProps) {
         </DetailBlock>
 
         <DetailBlock label="oauth scopes">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div className="flex flex-col gap-[6px]">
             {c.scopes.map((s) => (
               <div
                 key={s}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 11,
-                  color: 'var(--ink-1)',
-                }}
+                className="flex items-center gap-2 font-mono text-11 text-ink-1"
               >
                 <Lucide name="check" size={12} color="var(--neon)" />
                 <span>{s}</span>
@@ -480,26 +299,9 @@ function ConnectorDetail({ c }: ConnectorDetailProps) {
         </DetailBlock>
 
         <DetailBlock label="vault destination">
-          <div
-            style={{
-              background: 'var(--bg-paper)',
-              border: '1px solid var(--hairline)',
-              borderRadius: 6,
-              padding: '10px 12px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-            }}
-          >
+          <div className="flex items-center gap-[10px] rounded-r6 border border-hairline bg-paper px-3 py-[10px]">
             <Lucide name="folder" size={13} color="var(--ink-2)" />
-            <span
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 11,
-                color: 'var(--ink-0)',
-                flex: 1,
-              }}
-            >
+            <span className="flex-1 font-mono text-11 text-ink-0">
               ~/brain/sources/{c.name}
             </span>
             <Lucide name="external-link" size={11} color="var(--ink-3)" />
@@ -507,7 +309,7 @@ function ConnectorDetail({ c }: ConnectorDetailProps) {
         </DetailBlock>
 
         <DetailBlock label="filters">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div className="flex flex-col gap-2">
             <Toggle label="ignore promotional & social" on={true} />
             <Toggle label="skip messages older than 90 days" on={false} />
             <Toggle label="extract action items" on={true} />
@@ -519,7 +321,7 @@ function ConnectorDetail({ c }: ConnectorDetailProps) {
             variant="danger"
             size="sm"
             icon={<Lucide name="unplug" size={13} />}
-            style={{ alignSelf: 'flex-start', marginTop: 8 }}
+            className="mt-2 self-start"
             onClick={() => stub(3)}
           >
             disconnect
@@ -538,7 +340,7 @@ interface DetailBlockProps {
 function DetailBlock({ label, children }: DetailBlockProps) {
   return (
     <div>
-      <Eyebrow style={{ marginBottom: 8 }}>{label}</Eyebrow>
+      <Eyebrow className="mb-2">{label}</Eyebrow>
       {children}
     </div>
   );
@@ -552,38 +354,12 @@ interface StatProps {
 
 function Stat({ label, value, delta }: StatProps) {
   return (
-    <div
-      style={{
-        background: 'var(--bg-paper)',
-        border: '1px solid var(--hairline)',
-        borderRadius: 8,
-        padding: 14,
-      }}
-    >
+    <div className="rounded-md border border-hairline bg-paper p-[14px]">
       <Eyebrow>{label}</Eyebrow>
-      <div
-        style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: 28,
-          fontWeight: 600,
-          color: 'var(--ink-0)',
-          letterSpacing: '-0.025em',
-          lineHeight: 1.1,
-          marginTop: 4,
-        }}
-      >
+      <div className="mt-1 font-display text-28 font-semibold leading-[1.1] tracking-tight-x text-ink-0">
         {value}
       </div>
-      <div
-        style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: 10,
-          color: 'var(--ink-2)',
-          marginTop: 2,
-        }}
-      >
-        {delta}
-      </div>
+      <div className="mt-[2px] font-mono text-10 text-ink-2">{delta}</div>
     </div>
   );
 }
