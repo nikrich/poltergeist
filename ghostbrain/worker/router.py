@@ -152,6 +152,38 @@ def _fast_route(event: dict, routing: dict) -> RoutingDecision | None:
                     method="path",
                 )
 
+    if source == "gmail":
+        # Sender domain has the strongest signal: an email from
+        # @sanlam.co.za is sanlam regardless of label noise. Fall back to
+        # label prefixes (e.g. "sanlam/policies") and exact label match.
+        from_domain = (metadata.get("from_domain") or "").lower()
+        if from_domain:
+            domains = (routing.get("gmail") or {}).get("sender_domains", {}) or {}
+            ctx = domains.get(from_domain)
+            if ctx:
+                log.info("path-routed event=%s ctx=%s gmail domain=%s",
+                         event.get("id"), ctx, from_domain)
+                return RoutingDecision(
+                    context=ctx,
+                    confidence=1.0,
+                    reasoning=f"matched gmail sender_domain rule for {from_domain}",
+                    method="path",
+                )
+
+        labels = [str(l) for l in (metadata.get("labels") or [])]
+        prefixes = (routing.get("gmail") or {}).get("label_prefixes", {}) or {}
+        for label in labels:
+            for prefix, ctx in prefixes.items():
+                if label.startswith(prefix):
+                    log.info("path-routed event=%s ctx=%s gmail label=%s",
+                             event.get("id"), ctx, label)
+                    return RoutingDecision(
+                        context=ctx,
+                        confidence=1.0,
+                        reasoning=f"matched gmail label_prefix {prefix} (label={label})",
+                        method="path",
+                    )
+
     if source == "calendar":
         provider = metadata.get("provider")
         account = metadata.get("account")

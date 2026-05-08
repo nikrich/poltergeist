@@ -409,8 +409,18 @@ slack:
   workspaces:
     {}
 
-# Gmail label/sender prefix → context. Phase 9.
+# Gmail accounts + routing. The connector polls each account in
+# `gmail.accounts`; the router uses `gmail.sender_domains` (strongest
+# signal) and `gmail.label_prefixes` (fallback) to route threads.
 gmail:
+  accounts:
+    # TODO: add Gmail accounts you want to ingest. Run
+    # `ghostbrain-gmail-auth <email>` once per account to authorize.
+    # Example:
+    #   jannik@example.com:
+    #     monitored_labels: ["sanlam/policies", "codeship"]
+    #     unread_lookback_hours: 24
+    {}
   label_prefixes:
     # "sanlam/": sanlam
     {}

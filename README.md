@@ -401,6 +401,62 @@ For long-term use either:
   single-user personal apps.
 - Re-run `ghostbrain-calendar-auth google <email>` weekly.
 
+## Gmail connector (Phase 9)
+
+Polls one or more Gmail accounts. Surfaces threads that are either
+unread within the last 24h or carry a monitored label. Events route via
+sender domain (strongest signal) or label prefix; everything else falls
+through to the LLM router.
+
+### One-time setup
+
+Reuses the same OAuth client you set up for the calendar connector. If
+you skipped that, do steps 1–3 from the calendar setup first (Google
+Cloud project + OAuth consent screen + Desktop OAuth client at
+`~/.ghostbrain/state/google_oauth_client.json`). Then enable the
+**Gmail API** in the same project.
+
+1. Configure accounts and routing in `<vault>/90-meta/routing.yaml`:
+   ```yaml
+   gmail:
+     accounts:
+       you@gmail.com:
+         monitored_labels: ["sanlam/policies", "codeship/internal"]
+         unread_lookback_hours: 24
+     sender_domains:
+       sanlam.co.za: sanlam
+       codeship.tech: codeship
+     label_prefixes:
+       "sanlam/": sanlam
+       "codeship/": codeship
+   ```
+2. Run consent once per account:
+   ```bash
+   ghostbrain-gmail-auth you@gmail.com
+   ```
+   Refresh token lands at `~/.ghostbrain/state/gmail.<slug>.token`.
+
+### Run
+
+```bash
+ghostbrain-gmail-fetch [--dry-run]
+```
+
+Threads land in `<vault>/00-inbox/raw/gmail/` and route to
+`<vault>/20-contexts/<ctx>/gmail/`.
+
+### Filtering philosophy
+
+Gmail is noisy, so the connector deliberately doesn't pull "all mail":
+- Domain-routed mail (e.g., `@sanlam.co.za`) lands no matter what.
+- Labeled mail (e.g., `sanlam/policies`) lands no matter what.
+- Everything else only shows up while it's still **unread** within the
+  configured lookback window — once you've read a newsletter, it stops
+  appearing in future fetches.
+
+If something important keeps slipping through, add a sender_domain or
+label rule rather than widening the unread filter.
+
 ## Profile auto-update (Phase 6)
 
 Each Claude Code session, after extraction, calls the profile-updater LLM
