@@ -42,6 +42,8 @@ ghostbrain-profile-apply = "ghostbrain.profile.apply:main"
 ghostbrain-profile-decay = "ghostbrain.profile.decay:main"
 ghostbrain-calendar-fetch = "ghostbrain.connectors.calendar.__main__:main"
 ghostbrain-calendar-auth = "ghostbrain.connectors.calendar.auth_cli:main"
+ghostbrain-transcribe = "ghostbrain.recorder.main:main"
+ghostbrain-recorder = "ghostbrain.recorder.daemon_cli:main"
 
 [tool.setuptools.packages.find]
 include = ["ghostbrain*"]

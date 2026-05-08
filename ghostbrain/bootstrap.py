@@ -367,6 +367,20 @@ profile:
   project_roots:
     - ~/code
     - ~/development
+
+# Autonomous meeting recorder (Phase 12). Watches Apple Calendar, records
+# eligible meetings via BlackHole + mic, transcribes with whisper.cpp,
+# links transcripts to calendar event notes.
+recorder:
+  enabled: true
+  poll_interval_seconds: 30
+  end_grace_seconds: 60
+  audio_device: "Ghost Brain"
+  excluded_titles:
+    - Focus
+    - focus
+  excluded_contexts: []
+  included_contexts: []
 """,
     "90-meta/prompts/router.md": _ROUTER_PROMPT,
     "90-meta/prompts/extractor.md": _EXTRACTOR_PROMPT,

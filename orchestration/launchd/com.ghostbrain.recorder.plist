@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Autonomous meeting recorder. Watches Apple Calendar, records eligible
+  meetings via BlackHole + mic, transcribes locally, links transcripts
+  to calendar event notes.
+
+  TEMPLATE — replace placeholders before loading.
+
+  Note: this LaunchAgent (gui/$UID) inherits the user's login session,
+  which is required for ffmpeg to access the mic + audio devices and
+  for SwitchAudioSource to flip system output. A LaunchDaemon (root)
+  would not have those.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ghostbrain.recorder</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__REPO_ROOT__/.venv/bin/python</string>
+        <string>-m</string>
+        <string>ghostbrain.recorder.daemon_cli</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__REPO_ROOT__</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>__REPO_ROOT__/logs/recorder.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>__REPO_ROOT__/logs/recorder.err</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>VAULT_PATH</key>
+        <string>__VAULT_PATH__</string>
+        <!-- ffmpeg + whisper-cli + SwitchAudioSource all live in /opt/homebrew/bin -->
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>
