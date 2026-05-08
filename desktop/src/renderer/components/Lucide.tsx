@@ -18,7 +18,6 @@ export function Lucide({ name, size = 16, color, style, className }: Props) {
   ];
   if (!Icon) {
     if (import.meta.env.DEV) {
-      // eslint-disable-next-line no-console
       console.warn(`Lucide: unknown icon name: "${name}"`);
     }
     return (
