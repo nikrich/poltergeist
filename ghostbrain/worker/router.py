@@ -124,6 +124,34 @@ def _fast_route(event: dict, routing: dict) -> RoutingDecision | None:
                     method="path",
                 )
 
+    if source == "jira":
+        site = metadata.get("site")
+        if site:
+            ctx = (routing.get("jira") or {}).get("sites", {}).get(site)
+            if ctx:
+                log.info("path-routed event=%s ctx=%s jira site=%s",
+                         event.get("id"), ctx, site)
+                return RoutingDecision(
+                    context=ctx,
+                    confidence=1.0,
+                    reasoning=f"matched jira site rule for {site}",
+                    method="path",
+                )
+
+    if source == "confluence":
+        space = metadata.get("space")
+        if space:
+            ctx = (routing.get("confluence") or {}).get("spaces", {}).get(space)
+            if ctx:
+                log.info("path-routed event=%s ctx=%s confluence space=%s",
+                         event.get("id"), ctx, space)
+                return RoutingDecision(
+                    context=ctx,
+                    confidence=1.0,
+                    reasoning=f"matched confluence space rule for {space}",
+                    method="path",
+                )
+
     return None
 
 

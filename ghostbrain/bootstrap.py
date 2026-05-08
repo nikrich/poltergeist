@@ -274,16 +274,22 @@ github:
     # TODO: "reducedrecipes": reducedrecipes
     {}
 
-# Jira sites → context. Phase 7.
+# Jira sites → context. Used by the router for path-first routing of
+# Jira events, and by the Jira connector to know which sites to fetch.
 jira:
   sites:
-    # TODO: "sanlam.atlassian.net": sanlam
-    # TODO: "codeship.atlassian.net": codeship
+    # TODO: "your-site.atlassian.net": your-context
     {}
 
-# Confluence spaces → context. Phase 7.
+# Confluence sites + spaces → context. Confluence shares Atlassian site
+# auth with Jira; you typically only need to add the same site once per
+# product. Space keys are short codes from page URLs.
 confluence:
+  sites:
+    # TODO: "your-site.atlassian.net": your-context
+    {}
   spaces:
+    # TODO: e.g. "ASCP": sanlam
     {}
 
 # Slack workspaces → context. Phase 9.

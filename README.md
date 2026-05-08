@@ -5,11 +5,11 @@ your tools (Claude Code & Desktop, GitHub, Jira, Confluence, Slack, Gmail,
 Teams, Calendar) into an Obsidian vault, classifies and summarizes it with
 an LLM, and serves it back as a daily digest.
 
-> **Status: alpha.** Phases 1–6 of the
+> **Status: alpha.** Phases 1–7 of the
 > [build sequence](./spec/SPEC.md#section-9--build-sequence-phased) are
-> complete: foundation, profile, Claude Code capture, GitHub connector,
-> daily digest, profile auto-update. Other connectors (Jira, Slack,
-> Gmail, Calendar) are next. The system is designed to be incrementally
+> complete: foundation, profile, Claude Code capture, GitHub, daily
+> digest, profile auto-update, Jira + Confluence. Slack, Gmail, Calendar,
+> Teams, metrics are next. The system is designed to be incrementally
 > adopted phase by phase.
 
 ## Why
@@ -283,6 +283,66 @@ Schedule it via launchd (after templating the plist with your paths):
 ```bash
 launchctl load ~/Library/LaunchAgents/com.ghostbrain.digest.plist
 ```
+
+## Jira + Confluence (Phase 7)
+
+Connectors for Atlassian Cloud, polled separately:
+
+- **Jira** — every 4 hours. Fetches tickets where you're assignee,
+  reporter, or watcher, updated within the lookback window. JQL: see
+  `ghostbrain/connectors/jira/__init__.py`.
+- **Confluence** — daily at 06:00 (just before the digest at 06:30 so
+  the day's edits show up). Fetches pages updated in monitored spaces.
+
+Auth via Atlassian API tokens, read from your `.env` (never in source
+or vault):
+
+```
+ATLASSIAN_EMAIL=your.email@example.com
+ATLASSIAN_TOKEN_<SITE>=<api token from id.atlassian.com>
+```
+
+`<SITE>` is the site slug uppercased — e.g. `sft.atlassian.net` →
+`ATLASSIAN_TOKEN_SFT`. A single shared `ATLASSIAN_TOKEN` works as a
+fallback if you only have one site.
+
+Configure sites + spaces in `<vault>/90-meta/routing.yaml`:
+
+```yaml
+jira:
+  sites:
+    sft.atlassian.net: sanlam      # site → context
+confluence:
+  sites:
+    sft.atlassian.net: sanlam
+  spaces:
+    DIG: sanlam                    # space key → context
+    ASCP: sanlam
+```
+
+Find space keys in any Confluence page URL: `.../wiki/spaces/<KEY>/...`.
+
+Run manually:
+
+```bash
+ghostbrain-jira-fetch [--dry-run]
+ghostbrain-confluence-fetch [--dry-run]
+```
+
+Schedule via launchd:
+
+```bash
+launchctl load ~/Library/LaunchAgents/com.ghostbrain.jira.plist
+launchctl load ~/Library/LaunchAgents/com.ghostbrain.confluence.plist
+```
+
+Notes land at `<vault>/20-contexts/<ctx>/jira/tickets/<KEY>.md` and
+`<vault>/20-contexts/<ctx>/confluence/<title>-<id>.md`.
+
+**Heads up on body content.** Ticket descriptions and Confluence page
+bodies are stored verbatim. If your Atlassian tickets/pages contain PII
+or sensitive data, the vault has it too. Vault is local-only by default;
+think before pushing it to a git remote.
 
 ## Profile auto-update (Phase 6)
 

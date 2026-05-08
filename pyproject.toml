@@ -19,6 +19,7 @@ dependencies = [
     "python-frontmatter>=1.1.0",
     "python-dotenv>=1.0.0",
     "jinja2>=3.1.0",
+    "requests>=2.31",
 ]
 
 [project.optional-dependencies]
@@ -33,6 +34,8 @@ ghostbrain-worker = "ghostbrain.worker.main:main"
 ghostbrain-claude-md = "ghostbrain.profile.claude_md:main"
 ghostbrain-digest = "ghostbrain.worker.digest:main"
 ghostbrain-github-fetch = "ghostbrain.connectors.github.__main__:main"
+ghostbrain-jira-fetch = "ghostbrain.connectors.jira.__main__:main"
+ghostbrain-confluence-fetch = "ghostbrain.connectors.confluence.__main__:main"
 ghostbrain-profile-apply = "ghostbrain.profile.apply:main"
 ghostbrain-profile-decay = "ghostbrain.profile.decay:main"
 
