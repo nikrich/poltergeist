@@ -457,6 +457,87 @@ Gmail is noisy, so the connector deliberately doesn't pull "all mail":
 If something important keeps slipping through, add a sender_domain or
 label rule rather than widening the unread filter.
 
+## Slack connector (Phase 9)
+
+Polls one or more Slack workspaces for `@`-mentions of the
+authenticated user over the last 24h. Only mentions — no raw channel
+volume. Each mention routes via workspace slug (e.g., `sft → sanlam`)
+without an LLM call.
+
+### One-time setup per workspace
+
+1. Create a Slack app: `https://api.slack.com/apps` → **Create New App**
+   → **From scratch** → name `ghostbrain`, pick the workspace.
+2. **OAuth & Permissions** → add **User Token Scopes**:
+   - `search:read`
+   - `users:read`
+   - `team:read`
+   - `channels:history`
+   - `groups:history`
+   - `im:history`
+   - `mpim:history`
+3. **Install to Workspace** → approve. Copy the **User OAuth Token**
+   (starts with `xoxp-`).
+4. Save the token:
+   ```bash
+   ghostbrain-slack-token-add <slug> xoxp-...your-token...
+   ```
+   The slug is whatever you'll use in `routing.yaml`. The CLI verifies
+   the token by calling `auth.test` and writes it 0600 to
+   `~/.ghostbrain/state/slack.<slug>.token`.
+5. Configure the workspace in `<vault>/90-meta/routing.yaml`:
+   ```yaml
+   slack:
+     workspaces:
+       sft:
+         context: sanlam
+         lookback_hours: 24
+         mentions_only: true
+       codeship:
+         context: codeship
+   ```
+
+Repeat for each workspace.
+
+### Run
+
+```bash
+ghostbrain-slack-fetch [--dry-run]
+```
+
+Mentions land in `<vault>/00-inbox/raw/slack/` and route to
+`<vault>/20-contexts/<ctx>/slack/`. Each note's frontmatter carries
+`workspace_slug`, `channel_name`, `user_name`, `permalink`, `is_dm`,
+`thread_ts` — Dataview-friendly.
+
+### Filtering philosophy
+
+Mentions-only is the default because it's already a high-signal filter
+the user maintains in Slack itself. If you want to widen — say, ingest
+every message in a specific channel — that's an `--include-channels`
+flag the connector doesn't have yet. Open an issue if you need it.
+
+### Caveat: admin-restricted workspaces
+
+Slack workspaces with **Information Barriers** (common on enterprise
+plans) can silently filter user-token API responses — granting the
+scopes you ask for, then returning empty results when you call them.
+Symptoms:
+
+- `auth.test` succeeds and reports the right team.
+- `conversations.list` for `private_channel` returns `ok: true` with
+  `channels: []` even though you're a member of dozens.
+- `search.messages` returns `ok: true` with `total: 0` for every query.
+- `users.conversations` shows `general` + `random` only, even though
+  you actively chat in many private channels.
+
+This is a tenant-side policy and there's no way around it from the API.
+Options: file an admin ticket, use a different workspace, or accept
+that the connector will produce nothing useful for that workspace.
+
+The connector code itself is correct — it'll work the day it's pointed
+at a workspace where API access isn't policy-restricted.
+
 ## Profile auto-update (Phase 6)
 
 Each Claude Code session, after extraction, calls the profile-updater LLM

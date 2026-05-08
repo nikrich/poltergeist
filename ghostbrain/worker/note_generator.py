@@ -114,6 +114,11 @@ def _build_frontmatter(
                     "thread_id", "account", "msg_count"):
             if md.get(key) is not None:
                 front[key] = md[key]
+    elif source == "slack":
+        for key in ("workspace_slug", "workspace_name", "channel_name",
+                    "user_name", "permalink", "is_dm", "is_mpim", "thread_ts"):
+            if md.get(key) is not None:
+                front[key] = md[key]
 
     return front
 

@@ -1,0 +1,30 @@
+# Slack app manifest for the ghostbrain connector.
+# Paste into https://api.slack.com/apps → Create New App → From a manifest.
+# Repeat per workspace (sft, codeship, ...). After install, copy the
+# User OAuth Token (xoxp-...) and run:
+#   ghostbrain-slack-token-add <slug> xoxp-...
+
+display_information:
+  name: ghostbrain
+  description: Personal second-brain mention ingestion
+  background_color: "#1a1a1a"
+
+oauth_config:
+  scopes:
+    user:
+      - search:read       # search.messages — find @-mentions
+      - users:read        # resolve user IDs to names
+      - team:read         # workspace name
+      - channels:read     # list public channels the user is in
+      - channels:history  # read public channel content
+      - groups:read       # list private channels
+      - groups:history    # read private channel content
+      - im:read           # list DMs
+      - im:history        # read DM content
+      - mpim:read         # list group DMs
+      - mpim:history      # read group-DM content
+
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

@@ -184,6 +184,24 @@ def _fast_route(event: dict, routing: dict) -> RoutingDecision | None:
                         method="path",
                     )
 
+    if source == "slack":
+        # Workspace slug is the strongest signal — every message in
+        # workspace `sft` is sanlam, regardless of channel or sender.
+        slug = (metadata.get("workspace_slug") or "").lower()
+        if slug:
+            workspaces = (routing.get("slack") or {}).get("workspaces", {}) or {}
+            cfg = workspaces.get(slug) or {}
+            ctx = cfg.get("context") if isinstance(cfg, dict) else cfg
+            if ctx:
+                log.info("path-routed event=%s ctx=%s slack workspace=%s",
+                         event.get("id"), ctx, slug)
+                return RoutingDecision(
+                    context=ctx,
+                    confidence=1.0,
+                    reasoning=f"matched slack workspace rule for {slug}",
+                    method="path",
+                )
+
     if source == "calendar":
         provider = metadata.get("provider")
         account = metadata.get("account")

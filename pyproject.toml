@@ -22,6 +22,7 @@ dependencies = [
     "requests>=2.31",
     "google-api-python-client>=2.100",
     "google-auth-oauthlib>=1.2",
+    "slack-sdk>=3.27",
 ]
 
 [project.optional-dependencies]
@@ -48,6 +49,8 @@ ghostbrain-calendar-fetch = "ghostbrain.connectors.calendar.__main__:main"
 ghostbrain-calendar-auth = "ghostbrain.connectors.calendar.auth_cli:main"
 ghostbrain-gmail-fetch = "ghostbrain.connectors.gmail.__main__:main"
 ghostbrain-gmail-auth = "ghostbrain.connectors.gmail.auth_cli:main"
+ghostbrain-slack-fetch = "ghostbrain.connectors.slack.__main__:main"
+ghostbrain-slack-token-add = "ghostbrain.connectors.slack.token_cli:main"
 ghostbrain-transcribe = "ghostbrain.recorder.main:main"
 ghostbrain-recorder = "ghostbrain.recorder.daemon_cli:main"
 ghostbrain-metrics = "ghostbrain.metrics.main:main"

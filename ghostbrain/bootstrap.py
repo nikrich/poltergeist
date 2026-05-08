@@ -452,9 +452,21 @@ confluence:
     # TODO: e.g. "ASCP": sanlam
     {}
 
-# Slack workspaces → context. Phase 9.
+# Slack workspaces → context. The connector polls each workspace for
+# @-mentions over the configured lookback window and routes them
+# straight to the listed context (workspace slug = strongest signal).
+# Required user-token scopes: search:read, users:read, team:read,
+# channels:history, groups:history, im:history, mpim:history.
+# Save tokens via `ghostbrain-slack-token-add <slug> <xoxp-token>`.
 slack:
   workspaces:
+    # Example:
+    #   sft:
+    #     context: sanlam
+    #     lookback_hours: 24
+    #     mentions_only: true
+    #   codeship:
+    #     context: codeship
     {}
 
 # Gmail accounts + routing. The connector polls each account in
