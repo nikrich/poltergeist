@@ -122,6 +122,7 @@ function PreMeeting({ onStart }: PreMeetingProps) {
             <Btn
               variant="record"
               size="lg"
+              // intentional fixed color: dark dot sits inside the always-bright oxblood record button
               icon={<span className="h-2 w-2 rounded-full bg-[#0E0F12]" />}
               onClick={onStart}
             >
@@ -175,6 +176,8 @@ function PreMeeting({ onStart }: PreMeetingProps) {
 function ParticipantRow({ name, role, color }: Participant) {
   return (
     <div className="flex items-center gap-[10px] rounded-sm px-2 py-[6px]">
+      {/* intentional fixed color: first-letter avatar text stays dark on the
+          per-participant bright background, regardless of theme */}
       <div
         className="flex h-6 w-6 items-center justify-center rounded-full text-11 font-semibold text-[#0E0F12]"
         style={{ background: color }}
@@ -301,6 +304,7 @@ function ActiveRecording({ startedAt, onStop }: ActiveRecordingProps) {
           <Btn
             variant="record"
             size="md"
+            // intentional fixed color: dark stop-square inside the always-bright oxblood record button
             icon={<span className="h-[9px] w-[9px] bg-[#0E0F12]" />}
             onClick={onStop}
           >
@@ -337,6 +341,7 @@ function ActiveRecording({ startedAt, onStop }: ActiveRecordingProps) {
                 className={`grid grid-cols-[64px_1fr] gap-3 ${line.live ? 'opacity-100' : 'opacity-90'}`}
               >
                 <div className="flex flex-col items-start gap-[2px]">
+                  {/* intentional fixed color: speaker initial reads dark on per-line bright avatar bg */}
                   <div
                     className="flex h-[22px] w-[22px] items-center justify-center rounded-full text-10 font-semibold text-[#0E0F12]"
                     style={{ background: line.color }}
@@ -437,6 +442,7 @@ function PostMeeting({ onClose }: PostMeetingProps) {
               <Btn
                 variant="primary"
                 size="sm"
+                // intentional fixed color: icon must read dark on the always-bright neon button
                 icon={<Lucide name="file-down" size={13} color="#0E0F12" />}
                 onClick={() => stub(4)}
               >

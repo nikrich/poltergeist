@@ -27,9 +27,17 @@
   --violet-dark:   #9CD420;
   --violet-mist:   #1F2A0A;
   --oxblood:       #FF6B5A;   /* destructive, errors */
+  --oxblood-dark:  #E8584C;   /* hovered/pressed oxblood */
   --oxblood-mist:  #2A1411;
   --moss:          #5C7C4F;   /* success, "connected" */
   --moss-mist:     #16201A;
+
+  /* ---------- color: pill foregrounds ----------------------------------- */
+  /* Tonally-shifted accent foregrounds for Pill component (lighter than the
+     base accent to read on a tinted backplate). */
+  --pill-moss-fg:    #A2C795;   /* foreground for moss pill */
+  --pill-oxblood-fg: #FF8A7C;   /* foreground for oxblood pill */
+  --pill-water-fg:   #7FB3D5;   /* foreground for "water" tone (cool blue) */
 
   /* ---------- borders & dividers (alpha on ink-0) ----------------------- */
   --hairline:      rgba(242, 243, 245, 0.08);

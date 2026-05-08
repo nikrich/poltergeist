@@ -14,6 +14,10 @@ export interface Connector {
   color: string;
 }
 
+// Each `color` below is the vendor's official brand color (Gmail red, Slack
+// purple, Notion black, Linear indigo, Google blue, GitHub black, Drive green).
+// These are intentional fixed colors — they identify the third-party service
+// and must NOT be tokenized into the ghostbrain theme.
 export const CONNECTORS: Connector[] = [
   {
     id: 'gmail',

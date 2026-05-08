@@ -30,6 +30,7 @@ export function TodayScreen() {
       key="record"
       variant="primary"
       size="sm"
+      // intentional fixed color: icon must read dark on the always-bright neon button
       icon={<Lucide name="mic" size={12} color="#0E0F12" />}
       onClick={() => setActive('meetings')}
     >
@@ -101,6 +102,7 @@ export function TodayScreen() {
               <Btn
                 variant="primary"
                 size="md"
+                // intentional fixed color: icon must read dark on the always-bright neon button
                 icon={<Lucide name="search" size={14} color="#0E0F12" />}
                 onClick={() => stub(3)}
               >

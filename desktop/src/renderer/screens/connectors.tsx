@@ -44,6 +44,7 @@ export function ConnectorsScreen() {
             <Btn
               variant="primary"
               size="sm"
+              // intentional fixed color: icon must read dark on the always-bright neon button
               icon={<Lucide name="plus" size={13} color="#0E0F12" />}
               onClick={() => stub(3)}
             >
@@ -210,6 +211,7 @@ function ConnectorDetail({ c }: ConnectorDetailProps) {
             <Btn
               variant="primary"
               size="sm"
+              // intentional fixed color: icon must read dark on the always-bright neon button
               icon={<Lucide name="link" size={13} color="#0E0F12" />}
               onClick={() => stub(3)}
             >
@@ -220,6 +222,7 @@ function ConnectorDetail({ c }: ConnectorDetailProps) {
             <Btn
               variant="primary"
               size="sm"
+              // intentional fixed color: icon must read dark on the always-bright neon button
               icon={<Lucide name="refresh-cw" size={13} color="#0E0F12" />}
               onClick={() => stub(3)}
             >

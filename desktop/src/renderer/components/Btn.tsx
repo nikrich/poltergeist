@@ -20,12 +20,15 @@ const sizeClasses: Record<Size, string> = {
   lg: 'px-[18px] py-[11px] text-14 gap-2',
 };
 
+// intentional fixed color: text-[#0E0F12] on primary/record sits on the
+// always-bright neon/oxblood plate and must stay dark in BOTH themes — using
+// `text-paper` would flip to bone in light mode and vanish on the bright bg.
 const variantClasses: Record<Variant, string> = {
   primary: 'bg-neon text-[#0E0F12] border border-transparent hover:bg-neon-dark',
   secondary: 'bg-vellum text-ink-0 border border-hairline-2 hover:bg-fog',
   ghost: 'bg-transparent text-ink-1 border border-transparent hover:bg-vellum',
   danger: 'bg-oxblood/10 text-oxblood border border-oxblood/30 hover:bg-oxblood/20',
-  record: 'bg-oxblood text-[#0E0F12] border border-transparent hover:bg-[#E8584C]',
+  record: 'bg-oxblood text-[#0E0F12] border border-transparent hover:bg-oxblood-dark',
 };
 
 export function Btn({

@@ -20,6 +20,9 @@ export interface PastMeeting {
   tags: string[];
 }
 
+// Per-participant avatar colors. These are mock data — in real usage they come
+// from the user record. Hex values intentionally mirror the theme accents
+// (neon, oxblood, pill-water-fg, pill-moss-fg) so the demo looks on-brand.
 export const PARTICIPANTS: Participant[] = [
   { name: 'mira', role: 'design lead', color: '#C5FF3D' },
   { name: 'jules', role: 'eng', color: '#FF6B5A' },
@@ -27,6 +30,7 @@ export const PARTICIPANTS: Participant[] = [
   { name: 'you', role: 'host', color: '#A2C795' },
 ];
 
+// Per-line speaker color, kept in sync with PARTICIPANTS above (mock data).
 export const TRANSCRIPT: TranscriptLine[] = [
   {
     who: 'mira',

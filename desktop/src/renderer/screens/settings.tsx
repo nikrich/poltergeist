@@ -256,6 +256,7 @@ function AccountSettings() {
     <div>
       <SectionHeader title="account" sub="theo · ghostbrain pro" />
       <div className="mb-4 flex items-center gap-[14px] rounded-r10 border border-hairline bg-vellum p-4">
+        {/* intentional fixed color: account-initial avatar reads dark on the always-bright neon plate */}
         <div className="flex h-12 w-12 items-center justify-center rounded-full bg-neon text-18 font-semibold text-[#0E0F12]">
           T
         </div>

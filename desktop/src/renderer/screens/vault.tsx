@@ -24,6 +24,7 @@ export function VaultScreen() {
         <Btn
           variant="primary"
           size="lg"
+          // intentional fixed color: icon must read dark on the always-bright neon button
           icon={<Lucide name="external-link" size={14} color="#0E0F12" />}
           onClick={onOpen}
         >

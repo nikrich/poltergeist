@@ -32,9 +32,15 @@
   --color-neon-dark: var(--neon-dark);
   --color-neon-mist: var(--neon-mist);
   --color-oxblood: var(--oxblood);
+  --color-oxblood-dark: var(--oxblood-dark);
   --color-oxblood-mist: var(--oxblood-mist);
   --color-moss: var(--moss);
   --color-moss-mist: var(--moss-mist);
+
+  /* pill foregrounds — tonally-shifted accents, see colors_and_type.css */
+  --color-pill-moss-fg: var(--pill-moss-fg);
+  --color-pill-oxblood-fg: var(--pill-oxblood-fg);
+  --color-pill-water-fg: var(--pill-water-fg);
 
   /* hairlines (semi-transparent dividers) */
   --color-hairline: var(--hairline);
@@ -97,6 +103,8 @@ body,
 
 body {
   font-family: var(--font-body);
+  /* intentional fixed color: pre-paint body bg, slightly darker than --bg-paper
+     so the BrowserWindow flash on first paint blends into the dark theme */
   background: #06070a;
   color: var(--ink-0);
   overflow: hidden;
@@ -104,6 +112,8 @@ body {
 }
 
 body[data-theme='light'] {
+  /* intentional fixed color: pre-paint body bg for light theme, slightly cooler
+     than --bg-paper to avoid a stark white flash before React mounts */
   background: #d8dbe0;
 }
 

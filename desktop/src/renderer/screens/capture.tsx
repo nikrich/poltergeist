@@ -190,6 +190,7 @@ function CaptureDetail({ c }: CaptureDetailProps) {
         <Btn
           variant="primary"
           size="sm"
+          // intentional fixed color: icon must read dark on the always-bright neon button
           icon={<Lucide name="file-down" size={13} color="#0E0F12" />}
           onClick={() => stub(3)}
         >

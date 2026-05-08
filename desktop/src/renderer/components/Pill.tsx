@@ -8,8 +8,8 @@ interface Props {
 
 const toneClasses: Record<Tone, string> = {
   neon: 'bg-neon/15 text-neon',
-  moss: 'bg-moss/20 text-[#A2C795]',
-  oxblood: 'bg-oxblood/15 text-[#FF8A7C]',
+  moss: 'bg-moss/20 text-pill-moss-fg',
+  oxblood: 'bg-oxblood/15 text-pill-oxblood-fg',
   fog: 'bg-fog text-ink-1',
   outline: 'bg-transparent text-ink-2 border border-hairline-2',
 };
