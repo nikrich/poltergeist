@@ -10,23 +10,7 @@ import { ConnectorsScreen } from './screens/connectors';
 import { MeetingsScreen } from './screens/meetings';
 import { CaptureScreen } from './screens/capture';
 import { VaultScreen } from './screens/vault';
-
-function ScreenStub({ name }: { name: string }) {
-  return (
-    <div
-      style={{
-        flex: 1,
-        display: 'grid',
-        placeItems: 'center',
-        color: 'var(--ink-2)',
-        fontFamily: 'var(--font-mono)',
-        fontSize: 14,
-      }}
-    >
-      {name} screen — coming next
-    </div>
-  );
-}
+import { SettingsScreen } from './screens/settings';
 
 export default function App() {
   const { theme, density, ready, hydrate } = useSettings();
@@ -54,7 +38,7 @@ export default function App() {
           {active === 'meetings' && <MeetingsScreen />}
           {active === 'capture' && <CaptureScreen />}
           {active === 'vault' && <VaultScreen />}
-          {active === 'settings' && <ScreenStub name={active} />}
+          {active === 'settings' && <SettingsScreen />}
         </main>
       </div>
       <StatusBar />
