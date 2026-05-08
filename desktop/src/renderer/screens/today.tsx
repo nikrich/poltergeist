@@ -91,7 +91,7 @@ export function TodayScreen() {
             <h2 className="mb-0 mt-2 font-display text-38 font-semibold leading-[1.05] tracking-tightest text-ink-0">
               while you slept,
               <br />
-              <span className="text-neon">ghostbrain caught</span>
+              <span className="text-neon-ink">ghostbrain caught</span>
               <br />
               241 things.
             </h2>
@@ -234,7 +234,7 @@ function Stat({ label, value, delta, tone }: StatProps) {
       <Eyebrow>{label}</Eyebrow>
       <div
         className={`mt-1 font-display text-28 font-semibold leading-[1.1] tracking-tight-x ${
-          tone === 'neon' ? 'text-neon' : 'text-ink-0'
+          tone === 'neon' ? 'text-neon-ink' : 'text-ink-0'
         }`}
       >
         {value}
