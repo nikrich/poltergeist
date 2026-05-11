@@ -3,6 +3,7 @@ import { Ghost } from './Ghost';
 import { Eyebrow } from './Eyebrow';
 import { useNavigation, type ScreenId } from '../stores/navigation';
 import { useMeeting } from '../stores/meeting';
+import { useDaily, useMeetings } from '../lib/api/hooks';
 import { isMac } from '../lib/platform';
 
 const NAV_ITEMS: Array<{ id: ScreenId; icon: string; label: string }> = [
@@ -12,14 +13,6 @@ const NAV_ITEMS: Array<{ id: ScreenId; icon: string; label: string }> = [
   { id: 'capture', icon: 'inbox', label: 'capture' },
   { id: 'vault', icon: 'book-open', label: 'vault' },
   { id: 'settings', icon: 'settings', label: 'settings' },
-];
-
-const VAULT_FOLDERS = [
-  { icon: 'folder', label: 'Daily', count: 284 },
-  { icon: 'folder', label: 'Meetings', count: 47 },
-  { icon: 'folder', label: 'People', count: 91 },
-  { icon: 'folder', label: 'Projects', count: 23 },
-  { icon: 'hash', label: '#followup', count: 8 },
 ];
 
 function RecordingDot() {
@@ -34,6 +27,12 @@ function RecordingDot() {
 export function Sidebar() {
   const { active, setActive } = useNavigation();
   const phase = useMeeting((s) => s.phase);
+  const daily = useDaily({ limit: 1 });
+  const meetings = useMeetings({ limit: 1 });
+  const vaultFolders: Array<{ id: ScreenId; icon: string; label: string; count: number | null }> = [
+    { id: 'daily', icon: 'folder', label: 'Daily', count: daily.data?.total ?? null },
+    { id: 'meetings', icon: 'folder', label: 'Meetings', count: meetings.data?.total ?? null },
+  ];
   return (
     <aside
       className="flex w-[220px] flex-shrink-0 flex-col border-r border-hairline bg-paper"
@@ -74,8 +73,15 @@ export function Sidebar() {
           />
         ))}
         <Eyebrow className="mt-4 px-[10px] py-[6px]">vault</Eyebrow>
-        {VAULT_FOLDERS.map((f) => (
-          <VaultRow key={f.label} {...f} />
+        {vaultFolders.map((f) => (
+          <VaultRow
+            key={f.id}
+            icon={f.icon}
+            label={f.label}
+            count={f.count}
+            active={active === f.id}
+            onClick={() => setActive(f.id)}
+          />
         ))}
       </nav>
 
@@ -131,15 +137,30 @@ function NavRow({
   );
 }
 
-function VaultRow({ icon, label, count }: { icon: string; label: string; count: number }) {
+function VaultRow({
+  icon,
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  icon: string;
+  label: string;
+  count: number | null;
+  active: boolean;
+  onClick: () => void;
+}) {
   return (
     <button
       type="button"
-      className="flex w-full items-center gap-2 rounded-sm px-[10px] py-[5px] text-left text-12 text-ink-1 transition-colors duration-[120ms] hover:bg-vellum"
+      onClick={onClick}
+      className={`flex w-full items-center gap-2 rounded-sm px-[10px] py-[5px] text-left text-12 transition-colors duration-[120ms] ${
+        active ? 'bg-neon/12 font-medium text-ink-0' : 'text-ink-1 hover:bg-vellum'
+      }`}
     >
-      <Lucide name={icon} size={12} color="var(--ink-3)" />
+      <Lucide name={icon} size={12} color={active ? 'var(--neon)' : 'var(--ink-3)'} />
       <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{label}</span>
-      <span className="font-mono text-9 text-ink-3">{count}</span>
+      <span className="font-mono text-9 text-ink-3">{count ?? '—'}</span>
     </button>
   );
 }

@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 
 import type {
   ActivityRow,
@@ -7,11 +7,14 @@ import type {
   CapturesPage,
   Connector,
   ConnectorDetail,
+  DailyPage,
   MeetingsPage,
+  Note,
+  SearchResponse,
   Suggestion,
   VaultStats,
 } from '../../../shared/api-types';
-import { get } from './client';
+import { get, post } from './client';
 
 export function useVaultStats() {
   return useQuery({
@@ -97,5 +100,32 @@ export function useSuggestions() {
     queryKey: ['suggestions'],
     queryFn: () => get<Suggestion[]>('/v1/suggestions'),
     staleTime: 5 * 60_000,
+  });
+}
+
+export function useDaily(opts?: { limit?: number }) {
+  const params = new URLSearchParams();
+  if (opts?.limit) params.set('limit', String(opts.limit));
+  const query = params.toString();
+  return useQuery({
+    queryKey: ['daily', opts ?? {}],
+    queryFn: () => get<DailyPage>(`/v1/daily${query ? '?' + query : ''}`),
+    staleTime: 60_000,
+  });
+}
+
+export function useSearch() {
+  return useMutation({
+    mutationFn: (vars: { q: string; limit?: number }) =>
+      post<SearchResponse>('/v1/search', { q: vars.q, limit: vars.limit ?? 10 }),
+  });
+}
+
+export function useNote(path: string | null) {
+  return useQuery({
+    queryKey: ['note', path],
+    queryFn: () => get<Note>(`/v1/notes?path=${encodeURIComponent(path!)}`),
+    enabled: path !== null,
+    staleTime: 60_000,
   });
 }

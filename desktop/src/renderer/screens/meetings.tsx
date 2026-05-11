@@ -6,6 +6,7 @@ import { Pill } from '../components/Pill';
 import { Eyebrow } from '../components/Eyebrow';
 import { Panel } from '../components/Panel';
 import { Catch } from '../components/Catch';
+import { Ghost } from '../components/Ghost';
 import { useMeeting } from '../stores/meeting';
 import { stub } from '../stores/toast';
 import {
@@ -15,20 +16,78 @@ import {
   type Participant,
   type TranscriptLine,
 } from '../lib/mocks/meetings';
-import { useMeetings } from '../lib/api/hooks';
-import type { PastMeeting } from '../../shared/api-types';
+import { useAgenda, useMeetings } from '../lib/api/hooks';
+import type { AgendaItem, PastMeeting } from '../../shared/api-types';
 import { SkeletonRows } from '../components/SkeletonRows';
 import { PanelEmpty } from '../components/PanelEmpty';
 import { PanelError } from '../components/PanelError';
 import { mmss } from '../lib/format';
 
+function parseAgendaTime(item: AgendaItem): Date | null {
+  // item.time is HH:MM in the user's local timezone; combine with today.
+  const match = item.time.match(/^(\d{2}):(\d{2})$/);
+  if (!match) return null;
+  const d = new Date();
+  d.setHours(Number(match[1]), Number(match[2]), 0, 0);
+  return d;
+}
+
+function parseDurationMinutes(dur: string): number {
+  // Repo emits "30m", "1h", "1h15m", "1h05m", etc.
+  let total = 0;
+  const h = dur.match(/(\d+)h/);
+  const m = dur.match(/(\d+)m/);
+  if (h) total += Number(h[1]) * 60;
+  if (m) total += Number(m[1]);
+  return total;
+}
+
+function relativeMinutes(target: Date | null): string {
+  if (target === null) return '';
+  const diffMs = target.getTime() - Date.now();
+  const diffMin = Math.round(diffMs / 60000);
+  if (diffMin <= -60) return `started ${Math.round(-diffMin / 60)}h ago`;
+  if (diffMin < -1) return `started ${-diffMin}m ago`;
+  if (diffMin < 1) return 'starting now';
+  if (diffMin < 60) return `starts in ${diffMin}m`;
+  return `starts in ${Math.round(diffMin / 60)}h`;
+}
+
 export function MeetingsScreen() {
   const { phase, startedAt, start, stop, reset } = useMeeting();
+  const agenda = useAgenda();
+  const meetings = useMeetings({ limit: 1 });
+
+  const upcoming = useMemo<AgendaItem | null>(() => {
+    if (!agenda.data) return null;
+    const now = Date.now();
+    const candidates = agenda.data
+      .filter((e) => e.status === 'upcoming')
+      .map((e) => ({ item: e, start: parseAgendaTime(e) }))
+      .filter((x): x is { item: AgendaItem; start: Date } => x.start !== null);
+    candidates.sort((a, b) => a.start.getTime() - b.start.getTime());
+    const ongoing = candidates.find(
+      ({ item, start }) =>
+        start.getTime() <= now &&
+        start.getTime() + parseDurationMinutes(item.duration) * 60_000 > now,
+    );
+    if (ongoing) return ongoing.item;
+    const future = candidates.find(({ start }) => start.getTime() > now);
+    return future?.item ?? null;
+  }, [agenda.data]);
+
+  const subtitle =
+    phase === 'recording'
+      ? '· recording in progress'
+      : meetings.data
+        ? `${meetings.data.total} in vault`
+        : '…';
+
   return (
     <div className="flex-1 overflow-y-auto bg-paper">
       <TopBar
         title="meetings"
-        subtitle={phase === 'recording' ? '· recording in progress' : '47 in vault · 2 today'}
+        subtitle={subtitle}
         right={
           <div className="flex gap-2">
             <Btn
@@ -51,7 +110,12 @@ export function MeetingsScreen() {
         }
       />
 
-      {phase === 'pre' && <PreMeeting onStart={start} />}
+      {phase === 'pre' &&
+        (upcoming ? (
+          <PreMeeting onStart={start} event={upcoming} />
+        ) : (
+          <IdleLobby onStart={start} />
+        ))}
       {phase === 'recording' && startedAt !== null && (
         <ActiveRecording startedAt={startedAt} onStop={stop} />
       )}
@@ -65,9 +129,17 @@ export function MeetingsScreen() {
 // ── Pre-meeting (lobby) ────────────────────────────────────────────────────
 interface PreMeetingProps {
   onStart: () => void;
+  event: AgendaItem;
 }
 
-function PreMeeting({ onStart }: PreMeetingProps) {
+function PreMeeting({ onStart, event }: PreMeetingProps) {
+  const startAt = parseAgendaTime(event);
+  const rel = relativeMinutes(startAt);
+  const endLabel = startAt
+    ? new Date(
+        startAt.getTime() + parseDurationMinutes(event.duration) * 60_000,
+      ).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : '';
   return (
     <div className="max-w-[1100px] px-8 py-6">
       <div className="gb-noise relative grid grid-cols-[1.3fr_1fr] gap-8 overflow-hidden rounded-lg border border-hairline bg-vellum p-8">
@@ -80,10 +152,10 @@ function PreMeeting({ onStart }: PreMeetingProps) {
 
         <div className="relative">
           <Pill tone="neon" className="mb-[14px]">
-            <Lucide name="clock" size={9} /> starts in 23m
+            <Lucide name="clock" size={9} /> {rel || 'today'}
           </Pill>
           <h2 className="m-0 font-display text-32 font-semibold leading-[1.05] tracking-tighter text-ink-0">
-            design crit · onboarding v3
+            {event.title}
           </h2>
           <div className="mt-3 flex items-center gap-4 font-mono text-11 text-ink-2">
             <span>
@@ -92,32 +164,31 @@ function PreMeeting({ onStart }: PreMeetingProps) {
                 size={11}
                 className="mr-[5px] align-[-2px] inline-block"
               />{' '}
-              today · 11:00 — 11:30
+              today · {event.time}
+              {endLabel ? ` — ${endLabel}` : ''}
             </span>
-            <span>
-              <Lucide
-                name="map-pin"
-                size={11}
-                className="mr-[5px] align-[-2px] inline-block"
-              />{' '}
-              google meet
-            </span>
+            {event.duration && <span>{event.duration}</span>}
           </div>
 
           <div className="mt-6 rounded-md border border-hairline bg-paper p-4">
             <Eyebrow className="mb-2">ghostbrain primed</Eyebrow>
             <ul className="m-0 flex list-none flex-col gap-[6px] p-0">
-              {[
-                'pulled 14 messages from #design-crit since last session',
-                'linked GHO-241, GHO-247 from linear',
-                '2 onboarding mocks in notion, last edited 2h ago',
-                'transcript will land in ~/brain/Meetings/2026-05-08-design-crit.md',
-              ].map((line, i) => (
-                <li key={i} className="flex items-start gap-2 text-12 text-ink-1">
-                  <Lucide name="check" size={11} color="var(--neon)" className="mt-1" />
-                  <span>{line}</span>
-                </li>
-              ))}
+              <li className="flex items-start gap-2 text-12 text-ink-1">
+                <Lucide name="check" size={11} color="var(--neon)" className="mt-1" />
+                <span>
+                  transcript will land in{' '}
+                  <span className="font-mono text-11">
+                    20-contexts/&lt;ctx&gt;/calendar/transcripts/
+                  </span>
+                </span>
+              </li>
+              <li className="flex items-start gap-2 text-12 text-ink-1">
+                <Lucide name="check" size={11} color="var(--neon)" className="mt-1" />
+                <span>
+                  auto-record skips Focus blocks; manual start works for any
+                  session
+                </span>
+              </li>
             </ul>
           </div>
 
@@ -131,14 +202,6 @@ function PreMeeting({ onStart }: PreMeetingProps) {
             >
               start recording
             </Btn>
-            <Btn
-              variant="secondary"
-              size="lg"
-              icon={<Lucide name="external-link" size={14} />}
-              onClick={() => stub(4)}
-            >
-              open meet
-            </Btn>
             <Btn variant="ghost" size="lg" onClick={() => stub(4)}>
               configure…
             </Btn>
@@ -147,11 +210,15 @@ function PreMeeting({ onStart }: PreMeetingProps) {
 
         {/* Right: participants + audio preview */}
         <div className="relative flex flex-col gap-4">
-          <Eyebrow>participants · 4</Eyebrow>
+          <Eyebrow>participants · {event.with.length || '—'}</Eyebrow>
           <div className="flex flex-col gap-1">
-            {PARTICIPANTS.map((p) => (
-              <ParticipantRow key={p.name} {...p} />
-            ))}
+            {event.with.length > 0 ? (
+              event.with.map((name) => <AttendeeRow key={name} name={name} />)
+            ) : (
+              <div className="rounded-sm px-2 py-[6px] text-12 text-ink-3">
+                no attendees on the invite
+              </div>
+            )}
           </div>
 
           <div className="mt-2">
@@ -163,7 +230,6 @@ function PreMeeting({ onStart }: PreMeetingProps) {
               sub="capture both sides of meet"
               active
             />
-            <AudioSource icon="bluetooth" label="AirPods Pro" sub="not connected" active={false} />
           </div>
 
           <div className="mt-2">
@@ -172,6 +238,47 @@ function PreMeeting({ onStart }: PreMeetingProps) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function IdleLobby({ onStart }: { onStart: () => void }) {
+  return (
+    <div className="max-w-[1100px] px-8 py-6">
+      <div className="flex flex-col items-center gap-[18px] rounded-lg border border-hairline bg-vellum p-12">
+        <Ghost size={56} floating />
+        <h2 className="m-0 font-display text-24 font-semibold tracking-tight-x text-ink-0">
+          no upcoming meetings.
+        </h2>
+        <p className="m-0 max-w-[420px] text-center text-13 leading-[1.55] text-ink-2">
+          your calendar is clear. start a manual recording if you want to capture
+          a working session — it&rsquo;ll transcribe and file itself when you
+          stop.
+        </p>
+        <Btn
+          variant="record"
+          size="lg"
+          icon={<span className="h-2 w-2 rounded-full bg-[#0E0F12]" />}
+          onClick={onStart}
+        >
+          start recording
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
+function AttendeeRow({ name }: { name: string }) {
+  const initial = name[0]?.toUpperCase() ?? '?';
+  return (
+    <div className="flex items-center gap-[10px] rounded-sm px-2 py-[6px]">
+      <div
+        className="flex h-6 w-6 items-center justify-center rounded-full text-11 font-semibold text-[#0E0F12]"
+        style={{ background: 'var(--neon)' }}
+      >
+        {initial}
+      </div>
+      <span className="flex-1 text-12 text-ink-0">{name}</span>
     </div>
   );
 }

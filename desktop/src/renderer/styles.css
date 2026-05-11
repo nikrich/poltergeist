@@ -208,3 +208,62 @@ body[data-theme='light'] {
 [data-density='compact'] .gb-setting-row { padding-top: 10px; padding-bottom: 10px; }
 [data-density='compact'] .gb-panel-header { padding-top: 8px; padding-bottom: 8px; padding-left: 12px; padding-right: 12px; }
 [data-density='compact'] .gb-panel-body { padding: 8px; }
+
+/* in-app markdown rendering used by NoteView */
+.gb-prose { font-family: var(--font-display, inherit); }
+.gb-prose h1,
+.gb-prose h2,
+.gb-prose h3,
+.gb-prose h4 {
+  color: var(--ink-0);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 1.4em 0 0.5em;
+  line-height: 1.25;
+}
+.gb-prose h1 { font-size: 22px; margin-top: 0; }
+.gb-prose h2 { font-size: 18px; }
+.gb-prose h3 { font-size: 15px; }
+.gb-prose h4 { font-size: 13px; color: var(--ink-1); }
+.gb-prose p { margin: 0 0 0.9em; color: var(--ink-0); }
+.gb-prose ul,
+.gb-prose ol { margin: 0 0 0.9em 1.2em; padding: 0; }
+.gb-prose li { margin: 0.2em 0; }
+.gb-prose code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  background: var(--vellum);
+  border: 1px solid var(--hairline);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 12px;
+  color: var(--ink-0);
+}
+.gb-prose pre {
+  background: var(--vellum);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  margin: 0 0 1em;
+}
+.gb-prose pre code { background: transparent; border: 0; padding: 0; font-size: 12px; }
+.gb-prose blockquote {
+  border-left: 2px solid var(--neon);
+  margin: 0 0 1em;
+  padding: 0.2em 1em;
+  color: var(--ink-1);
+  font-style: italic;
+}
+.gb-prose hr { border: 0; border-top: 1px solid var(--hairline); margin: 1.5em 0; }
+.gb-prose a { color: var(--neon-ink); text-decoration: underline; text-underline-offset: 2px; }
+.gb-prose table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0 0 1em;
+  font-size: 12px;
+}
+.gb-prose th,
+.gb-prose td { border: 1px solid var(--hairline); padding: 6px 10px; text-align: left; }
+.gb-prose th { background: var(--vellum); font-weight: 600; color: var(--ink-0); }
+.gb-prose em { color: var(--ink-1); }
+.gb-prose strong { color: var(--ink-0); }

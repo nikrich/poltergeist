@@ -1,6 +1,13 @@
 import { create } from 'zustand';
 
-export type ScreenId = 'today' | 'connectors' | 'meetings' | 'capture' | 'vault' | 'settings';
+export type ScreenId =
+  | 'today'
+  | 'connectors'
+  | 'meetings'
+  | 'capture'
+  | 'vault'
+  | 'daily'
+  | 'settings';
 
 interface NavState {
   active: ScreenId;

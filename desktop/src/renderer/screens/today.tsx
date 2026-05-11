@@ -1,9 +1,11 @@
+import { useEffect, useState } from 'react';
 import { Btn } from '../components/Btn';
 import { Lucide } from '../components/Lucide';
 import { Pill } from '../components/Pill';
 import { Eyebrow } from '../components/Eyebrow';
 import { Panel } from '../components/Panel';
 import { TopBar } from '../components/TopBar';
+import { AskPanel } from '../components/AskPanel';
 import { useNavigation } from '../stores/navigation';
 import { stub } from '../stores/toast';
 import {
@@ -33,6 +35,18 @@ export function TodayScreen() {
   const connectors = useConnectors();
   const captures = useCaptures({ limit: 3 });
   const suggestions = useSuggestions();
+  const [askOpen, setAskOpen] = useState(false);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setAskOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const upcomingCount =
     agenda.data?.filter((e) => e.status === 'upcoming').length ?? 0;
@@ -43,6 +57,7 @@ export function TodayScreen() {
 
   return (
     <div className="flex-1 overflow-y-auto bg-paper">
+      <AskPanel open={askOpen} onClose={() => setAskOpen(false)} />
       <TopBar
         title="today"
         subtitle="thursday · may 8"
@@ -52,7 +67,7 @@ export function TodayScreen() {
               variant="ghost"
               size="sm"
               icon={<Lucide name="search" size={14} />}
-              onClick={() => stub(3)}
+              onClick={() => setAskOpen(true)}
             >
               ask…
               <kbd className="ml-2 rounded-xs bg-fog px-[5px] py-[1px] font-mono text-9 text-ink-2">
@@ -102,7 +117,7 @@ export function TodayScreen() {
                 size="md"
                 // intentional fixed color: icon must read dark on the always-bright neon button
                 icon={<Lucide name="search" size={14} color="#0E0F12" />}
-                onClick={() => stub(3)}
+                onClick={() => setAskOpen(true)}
               >
                 ask the archive
               </Btn>
@@ -157,7 +172,7 @@ export function TodayScreen() {
                 variant="ghost"
                 size="sm"
                 iconRight={<Lucide name="arrow-right" size={12} />}
-                onClick={() => stub(3)}
+                onClick={() => setActive('meetings')}
               >
                 calendar
               </Btn>
@@ -240,15 +255,9 @@ export function TodayScreen() {
                 message="nothing in the last 4 hours"
               />
             )}
-            {activity.data?.map((row) => (
-              <ActivityRowComp
-                key={row.id}
-                source={row.source}
-                verb={row.verb}
-                subject={row.subject}
-                time={row.atRelative}
-              />
-            ))}
+            {activity.data && (
+              <ActivityList items={activity.data} />
+            )}
           </Panel>
         </div>
 
@@ -462,6 +471,48 @@ function ActivityRowComp({ source, verb, subject, time }: ActivityRowCompProps) 
       </span>
       <span className="font-mono text-10 text-ink-3">{time}</span>
     </div>
+  );
+}
+
+const ACTIVITY_INITIAL_LIMIT = 10;
+
+function ActivityList({ items }: { items: ActivityRow[] }) {
+  const [expanded, setExpanded] = useState(false);
+  if (items.length === 0) {
+    return <PanelEmpty icon="activity" message="nothing in the last 4 hours" />;
+  }
+  const visible = expanded ? items : items.slice(0, ACTIVITY_INITIAL_LIMIT);
+  const hiddenCount = items.length - visible.length;
+  return (
+    <>
+      {visible.map((row) => (
+        <ActivityRowComp
+          key={row.id}
+          source={row.source}
+          verb={row.verb}
+          subject={row.subject}
+          time={row.atRelative}
+        />
+      ))}
+      {hiddenCount > 0 && (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="mt-1 w-full rounded-sm px-[6px] py-2 text-center font-mono text-10 text-ink-2 hover:bg-paper"
+        >
+          view {hiddenCount} more
+        </button>
+      )}
+      {expanded && items.length > ACTIVITY_INITIAL_LIMIT && (
+        <button
+          type="button"
+          onClick={() => setExpanded(false)}
+          className="mt-1 w-full rounded-sm px-[6px] py-2 text-center font-mono text-10 text-ink-3 hover:bg-paper"
+        >
+          collapse
+        </button>
+      )}
+    </>
   );
 }
 

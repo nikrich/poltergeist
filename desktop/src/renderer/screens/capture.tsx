@@ -1,18 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { TopBar } from '../components/TopBar';
 import { Btn } from '../components/Btn';
 import { Lucide } from '../components/Lucide';
 import { Pill } from '../components/Pill';
-import { Eyebrow } from '../components/Eyebrow';
-import { Catch } from '../components/Catch';
 import type { Capture, CaptureSummary } from '../../shared/api-types';
-import { useCapture, useCaptures } from '../lib/api/hooks';
+import { useCapture, useCaptures, useConnectors } from '../lib/api/hooks';
 import { SkeletonRows } from '../components/SkeletonRows';
 import { PanelEmpty } from '../components/PanelEmpty';
 import { PanelError } from '../components/PanelError';
 import { stub } from '../stores/toast';
-
-const SOURCES = ['gmail', 'slack', 'notion', 'linear', 'calendar', 'github'];
 
 function chipClass(active: boolean): string {
   return `cursor-pointer rounded-sm border px-[10px] py-1 font-mono text-11 ${
@@ -22,11 +20,29 @@ function chipClass(active: boolean): string {
   }`;
 }
 
+// Capture `source` is hyphenated (`claude-code`); connector ids and SVG asset
+// filenames use underscores (`claude_code`). Normalize both directions.
+function sourceFromId(id: string): string {
+  return id.replace(/_/g, '-');
+}
+function assetIdFromSource(source: string): string {
+  return source.replace(/-/g, '_');
+}
+
 export function CaptureScreen() {
   const [selected, setSelected] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>('all');
+  const connectors = useConnectors();
   const captures = useCaptures({ source: filter === 'all' ? undefined : filter });
   const detail = useCapture(selected);
+
+  const sources = useMemo(
+    () =>
+      (connectors.data ?? [])
+        .filter((c) => c.state === 'on')
+        .map((c) => ({ value: sourceFromId(c.id), asset: c.id, label: sourceFromId(c.id) })),
+    [connectors.data],
+  );
 
   // Default selection to first item once data arrives
   useEffect(() => {
@@ -70,14 +86,18 @@ export function CaptureScreen() {
         <button onClick={() => setFilter('all')} className={chipClass(filter === 'all')}>
           all
         </button>
-        {SOURCES.map((s) => (
-          <button key={s} onClick={() => setFilter(s)} className={chipClass(filter === s)}>
+        {sources.map((s) => (
+          <button
+            key={s.value}
+            onClick={() => setFilter(s.value)}
+            className={chipClass(filter === s.value)}
+          >
             <img
-              src={`/assets/connectors/${s}.svg`}
+              src={`/assets/connectors/${s.asset}.svg`}
               alt=""
               className="mr-1 inline-block h-[11px] w-[11px] align-[-1px]"
             />
-            {s}
+            {s.label}
           </button>
         ))}
       </div>
@@ -151,7 +171,11 @@ function CaptureRow({ c, selected, onClick }: CaptureRowProps) {
           c.unread ? 'bg-neon' : 'bg-transparent'
         }`}
       />
-      <img src={`/assets/connectors/${c.source}.svg`} alt="" className="h-[13px] w-[13px]" />
+      <img
+        src={`/assets/connectors/${assetIdFromSource(c.source)}.svg`}
+        alt=""
+        className="h-[13px] w-[13px]"
+      />
       <div className="min-w-0">
         <div className="flex items-baseline gap-2">
           <span
@@ -186,7 +210,11 @@ function CaptureDetail({ c }: CaptureDetailProps) {
   return (
     <aside className="overflow-y-auto border-l border-hairline bg-vellum p-6">
       <div className="mb-[14px] flex items-center gap-[10px]">
-        <img src={`/assets/connectors/${c.source}.svg`} alt="" className="h-[18px] w-[18px]" />
+        <img
+          src={`/assets/connectors/${assetIdFromSource(c.source)}.svg`}
+          alt=""
+          className="h-[18px] w-[18px]"
+        />
         <span className="font-mono text-11 text-ink-2">
           {c.source} · {c.from}
         </span>
@@ -207,26 +235,11 @@ function CaptureDetail({ c }: CaptureDetailProps) {
       <h3 className="m-0 font-display text-22 font-semibold leading-[1.15] tracking-tight-x text-ink-0">
         {c.title}
       </h3>
-      <p className="mt-[14px] font-display text-16 italic leading-[1.55] text-ink-0">
-        &ldquo;{c.snippet}&rdquo;
-      </p>
-
-      <div className="mt-6">
-        <Eyebrow className="mb-[10px]">ghostbrain extracted</Eyebrow>
-        <div className="flex flex-col gap-[10px] rounded-md border border-hairline bg-paper p-[14px]">
-          <Catch icon="check-square" text="action: ping mira about thursday" />
-          <Catch icon="link" text="ref: design crit · onboarding v3" />
-          <Catch icon="user" text="people: theo, mira" />
-        </div>
-      </div>
-
-      <div className="mt-5">
-        <Eyebrow className="mb-[10px]">destination</Eyebrow>
-        <div className="flex items-center gap-[10px] rounded-r6 border border-hairline bg-paper px-3 py-[10px]">
-          <Lucide name="folder" size={13} color="var(--ink-2)" />
-          <span className="flex-1 font-mono text-11 text-ink-0">~/brain/Daily/2026-05-08.md</span>
-        </div>
-      </div>
+      {c.body && (
+        <article className="gb-prose mt-[14px] text-13 leading-[1.6] text-ink-0">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{c.body}</ReactMarkdown>
+        </article>
+      )}
 
       <div className="mt-6 flex gap-2">
         <Btn

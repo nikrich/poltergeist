@@ -6,12 +6,14 @@ import { WindowChrome } from './components/WindowChrome';
 import { Sidebar } from './components/Sidebar';
 import { StatusBar } from './components/StatusBar';
 import { Toaster } from './components/Toaster';
+import { NoteView } from './components/NoteView';
 import { SidecarSetup } from './components/SidecarSetup';
 import { TodayScreen } from './screens/today';
 import { ConnectorsScreen } from './screens/connectors';
 import { MeetingsScreen } from './screens/meetings';
 import { CaptureScreen } from './screens/capture';
 import { VaultScreen } from './screens/vault';
+import { DailyScreen } from './screens/daily';
 import { SettingsScreen } from './screens/settings';
 
 export default function App() {
@@ -63,11 +65,13 @@ export default function App() {
           {active === 'meetings' && <MeetingsScreen />}
           {active === 'capture' && <CaptureScreen />}
           {active === 'vault' && <VaultScreen />}
+          {active === 'daily' && <DailyScreen />}
           {active === 'settings' && <SettingsScreen />}
         </main>
       </div>
       <StatusBar />
       <Toaster />
+      <NoteView />
     </WindowChrome>
   );
 }

@@ -90,3 +90,36 @@ export interface Suggestion {
   body: string;
   accent: boolean;
 }
+
+export interface DailyDigest {
+  id: string;
+  date: string;
+  title: string;
+  snippet: string;
+  noteCount: number;
+}
+
+export interface DailyPage {
+  total: number;
+  items: DailyDigest[];
+}
+
+export interface SearchHit {
+  path: string;
+  title: string;
+  snippet: string;
+  score: number;
+}
+
+export interface SearchResponse {
+  query: string;
+  total: number;
+  items: SearchHit[];
+}
+
+export interface Note {
+  path: string;
+  title: string;
+  body: string;
+  frontmatter: Record<string, unknown>;
+}
