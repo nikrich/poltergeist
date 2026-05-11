@@ -1,22 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { TopBar } from '../components/TopBar';
 import { Btn } from '../components/Btn';
 import { Lucide } from '../components/Lucide';
 import { Pill } from '../components/Pill';
 import { Eyebrow } from '../components/Eyebrow';
 import { Panel } from '../components/Panel';
-import { Catch } from '../components/Catch';
 import { Ghost } from '../components/Ghost';
 import { useMeeting } from '../stores/meeting';
 import { useNoteView } from '../stores/note-view';
 import { stub } from '../stores/toast';
-import {
-  PARTICIPANTS,
-  TRANSCRIPT,
-  SPEAKER_AIRTIME,
-  type Participant,
-  type TranscriptLine,
-} from '../lib/mocks/meetings';
 import { useAgenda, useMeetings } from '../lib/api/hooks';
 import type { AgendaItem, PastMeeting } from '../../shared/api-types';
 import { SkeletonRows } from '../components/SkeletonRows';
@@ -55,7 +47,16 @@ function relativeMinutes(target: Date | null): string {
 }
 
 export function MeetingsScreen() {
-  const { phase, startedAt, start, stop, reset } = useMeeting();
+  const {
+    phase,
+    startedAt,
+    title: activeTitle,
+    transcriptPath,
+    error: activeError,
+    start,
+    stop,
+    reset,
+  } = useMeeting();
   const agenda = useAgenda();
   const meetings = useMeetings({ limit: 1 });
 
@@ -77,12 +78,18 @@ export function MeetingsScreen() {
     return future?.item ?? null;
   }, [agenda.data]);
 
-  const subtitle =
-    phase === 'recording'
-      ? '· recording in progress'
-      : meetings.data
-        ? `${meetings.data.total} in vault`
-        : '…';
+  const subtitle = (() => {
+    if (phase === 'recording') return '· recording in progress';
+    if (phase === 'transcribing') return '· transcribing';
+    if (meetings.data) return `${meetings.data.total} in vault`;
+    return '…';
+  })();
+
+  const handleStartForEvent = useCallback(
+    () => start(upcoming ? { title: upcoming.title } : {}),
+    [start, upcoming],
+  );
+  const handleStartManual = useCallback(() => start({}), [start]);
 
   return (
     <div className="flex-1 overflow-y-auto bg-paper">
@@ -113,14 +120,28 @@ export function MeetingsScreen() {
 
       {phase === 'pre' &&
         (upcoming ? (
-          <PreMeeting onStart={start} event={upcoming} />
+          <PreMeeting onStart={handleStartForEvent} event={upcoming} />
         ) : (
-          <IdleLobby onStart={start} />
+          <IdleLobby onStart={handleStartManual} />
         ))}
       {phase === 'recording' && startedAt !== null && (
-        <ActiveRecording startedAt={startedAt} onStop={stop} />
+        <ActiveRecording
+          startedAt={startedAt}
+          title={activeTitle}
+          onStop={stop}
+        />
       )}
-      {phase === 'post' && <PostMeeting onClose={reset} />}
+      {phase === 'transcribing' && (
+        <Transcribing title={activeTitle} startedAt={startedAt} />
+      )}
+      {phase === 'post' && (
+        <PostMeeting
+          title={activeTitle}
+          transcriptPath={transcriptPath}
+          error={activeError}
+          onClose={reset}
+        />
+      )}
 
       <MeetingHistory />
     </div>
@@ -284,23 +305,6 @@ function AttendeeRow({ name }: { name: string }) {
   );
 }
 
-function ParticipantRow({ name, role, color }: Participant) {
-  return (
-    <div className="flex items-center gap-[10px] rounded-sm px-2 py-[6px]">
-      {/* intentional fixed color: first-letter avatar text stays dark on the
-          per-participant bright background, regardless of theme */}
-      <div
-        className="flex h-6 w-6 items-center justify-center rounded-full text-11 font-semibold text-[#0E0F12]"
-        style={{ background: color }}
-      >
-        {name[0]}
-      </div>
-      <span className="flex-1 text-12 text-ink-0">{name}</span>
-      <span className="font-mono text-10 text-ink-2">{role}</span>
-    </div>
-  );
-}
-
 interface AudioSourceProps {
   icon: string;
   label: string;
@@ -354,11 +358,13 @@ function Waveform({ live = false }: WaveformProps) {
 // ── Active recording ───────────────────────────────────────────────────────
 interface ActiveRecordingProps {
   startedAt: number;
-  onStop: () => void;
+  title: string | null;
+  onStop: () => Promise<void> | void;
 }
 
-function ActiveRecording({ startedAt, onStop }: ActiveRecordingProps) {
+function ActiveRecording({ startedAt, title, onStop }: ActiveRecordingProps) {
   const [elapsed, setElapsed] = useState(0);
+  const [stopping, setStopping] = useState(false);
   useEffect(() => {
     const tick = () => setElapsed(Math.floor((Date.now() - startedAt) / 1000));
     tick();
@@ -366,9 +372,18 @@ function ActiveRecording({ startedAt, onStop }: ActiveRecordingProps) {
     return () => clearInterval(t);
   }, [startedAt]);
 
+  const handleStop = async () => {
+    if (stopping) return;
+    setStopping(true);
+    try {
+      await onStop();
+    } finally {
+      setStopping(false);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-[1100px] px-8 py-6">
-      {/* live banner */}
       <div
         className="mb-4 grid grid-cols-[auto_1fr_auto] items-center gap-6 rounded-lg border border-oxblood/30 p-5"
         style={{
@@ -389,7 +404,7 @@ function ActiveRecording({ startedAt, onStop }: ActiveRecordingProps) {
               recording · live
             </div>
             <div className="font-display text-22 font-semibold tracking-tight-xx text-ink-0">
-              design crit · onboarding v3
+              {title || 'manual recording'}
             </div>
           </div>
         </div>
@@ -405,111 +420,56 @@ function ActiveRecording({ startedAt, onStop }: ActiveRecordingProps) {
             {mmss(elapsed)}
           </div>
           <Btn
-            variant="ghost"
-            size="sm"
-            icon={<Lucide name="pause" size={14} />}
-            onClick={() => stub(4)}
-          >
-            pause
-          </Btn>
-          <Btn
             variant="record"
             size="md"
-            // intentional fixed color: dark stop-square inside the always-bright oxblood record button
             icon={<span className="h-[9px] w-[9px] bg-[#0E0F12]" />}
-            onClick={onStop}
+            onClick={handleStop}
+            disabled={stopping}
           >
-            stop
+            {stopping ? 'stopping…' : 'stop'}
           </Btn>
         </div>
       </div>
 
-      {/* live transcript + side rail */}
-      <div className="grid grid-cols-[1.6fr_1fr] gap-4">
-        <Panel
-          title="live transcript"
-          subtitle="diarized · 4 speakers"
-          action={
-            <div className="flex gap-[6px]">
-              <Pill tone="moss">
-                <Lucide name="check" size={9} /> auto-saving
-              </Pill>
-              <Btn
-                variant="ghost"
-                size="sm"
-                icon={<Lucide name="bookmark" size={12} />}
-                onClick={() => stub(4)}
-              >
-                mark
-              </Btn>
-            </div>
-          }
-        >
-          <div className="flex max-h-[360px] flex-col gap-[14px] overflow-y-auto px-1 py-2">
-            {TRANSCRIPT.map((line: TranscriptLine, i) => (
-              <div
-                key={i}
-                className={`grid grid-cols-[64px_1fr] gap-3 ${line.live ? 'opacity-100' : 'opacity-90'}`}
-              >
-                <div className="flex flex-col items-start gap-[2px]">
-                  {/* intentional fixed color: speaker initial reads dark on per-line bright avatar bg */}
-                  <div
-                    className="flex h-[22px] w-[22px] items-center justify-center rounded-full text-10 font-semibold text-[#0E0F12]"
-                    style={{ background: line.color }}
-                  >
-                    {line.who[0]}
-                  </div>
-                  <div className="font-mono text-9 text-ink-3">{line.t}</div>
-                </div>
-                <div>
-                  <div className="mb-[2px] text-11 lowercase text-ink-2">{line.who}</div>
-                  <div className="text-14 leading-[1.55] text-ink-0">
-                    {line.text}
-                    {line.live && (
-                      <span
-                        className="ml-1 inline-block bg-neon"
-                        style={{
-                          width: 6,
-                          height: 14,
-                          verticalAlign: -2,
-                          animation: 'gb-blink 1s steps(2) infinite',
-                        }}
-                      />
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
+      <div className="rounded-lg border border-hairline bg-vellum p-6">
+        <Eyebrow className="mb-2">capturing audio</Eyebrow>
+        <p className="m-0 max-w-[60ch] text-14 leading-[1.55] text-ink-1">
+          ghostbrain is recording your mic + system audio. transcription runs
+          locally with whisper.cpp after you hit stop — no audio leaves your
+          machine. the transcript will land under{' '}
+          <span className="font-mono text-12">20-contexts/&lt;ctx&gt;/calendar/transcripts/</span>.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+interface TranscribingProps {
+  title: string | null;
+  startedAt: number | null;
+}
+
+function Transcribing({ title, startedAt }: TranscribingProps) {
+  const recordedSeconds =
+    startedAt !== null ? Math.max(0, Math.floor((Date.now() - startedAt) / 1000)) : null;
+  return (
+    <div className="mx-auto max-w-[1100px] px-8 py-6">
+      <div className="flex items-center gap-5 rounded-lg border border-hairline bg-vellum p-6">
+        <div
+          className="h-4 w-4 rounded-full border-2 border-neon border-t-transparent"
+          style={{ animation: 'gb-spin 0.9s linear infinite' }}
+        />
+        <div className="leading-[1.2]">
+          <div className="font-mono text-10 uppercase tracking-eyebrow-loose text-neon-ink">
+            transcribing
           </div>
-        </Panel>
-
-        <div className="flex flex-col gap-4">
-          <Panel title="speakers" subtitle="airtime">
-            {PARTICIPANTS.map((p, i) => (
-              <div key={p.name} className="flex items-center gap-[10px] px-1 py-[6px]">
-                <div
-                  className="h-[18px] w-[18px] rounded-full"
-                  style={{ background: p.color }}
-                />
-                <span className="flex-1 text-12 text-ink-0">{p.name}</span>
-                <div className="h-1 w-[90px] overflow-hidden rounded-xs bg-paper">
-                  <div
-                    className="h-full"
-                    style={{ width: `${SPEAKER_AIRTIME[i]}%`, background: p.color }}
-                  />
-                </div>
-                <span className="w-8 text-right font-mono text-10 text-ink-2">
-                  {SPEAKER_AIRTIME[i]}%
-                </span>
-              </div>
-            ))}
-          </Panel>
-
-          <Panel title="ghost catches" subtitle="auto-extracted · live">
-            <Catch icon="check-square" text="split connector picker out from vault setup" />
-            <Catch icon="alert-circle" text="minimum one connected = soft requirement" />
-            <Catch icon="link" text="ref: GHO-241, GHO-247" />
-          </Panel>
+          <div className="font-display text-20 font-semibold tracking-tight-x text-ink-0">
+            {title || 'manual recording'}
+          </div>
+          <div className="mt-1 font-mono text-11 text-ink-2">
+            running whisper.cpp locally
+            {recordedSeconds !== null ? ` · ${mmss(recordedSeconds)} of audio` : ''}
+          </div>
         </div>
       </div>
     </div>
@@ -518,78 +478,62 @@ function ActiveRecording({ startedAt, onStop }: ActiveRecordingProps) {
 
 // ── Post-meeting summary ──────────────────────────────────────────────────
 interface PostMeetingProps {
-  onClose: () => void;
+  title: string | null;
+  transcriptPath: string | null;
+  error: string | null;
+  onClose: () => Promise<void> | void;
 }
 
-function PostMeeting({ onClose }: PostMeetingProps) {
+function PostMeeting({ title, transcriptPath, error, onClose }: PostMeetingProps) {
+  const openNote = useNoteView((s) => s.open);
   return (
     <div className="mx-auto max-w-[1100px] px-8 py-6">
       <div className="mb-4 rounded-lg border border-hairline bg-vellum p-7">
         <div className="mb-4 flex items-center gap-3">
-          <Pill tone="moss">
-            <Lucide name="check" size={9} /> wrapped · 28:14
-          </Pill>
+          {error ? (
+            <Pill tone="oxblood">
+              <Lucide name="alert-triangle" size={9} /> error
+            </Pill>
+          ) : (
+            <Pill tone="moss">
+              <Lucide name="check" size={9} /> saved
+            </Pill>
+          )}
           <Pill tone="fog">just now</Pill>
           <div className="flex-1" />
-          <Btn variant="ghost" size="sm" icon={<Lucide name="x" size={13} />} onClick={onClose} />
+          <Btn
+            variant="ghost"
+            size="sm"
+            icon={<Lucide name="x" size={13} />}
+            onClick={onClose}
+            ariaLabel="close"
+          />
         </div>
 
         <h2 className="m-0 font-display text-28 font-semibold tracking-tighter text-ink-0">
-          design crit · onboarding v3
+          {title || 'manual recording'}
         </h2>
-        <div className="mt-1 font-mono text-11 text-ink-2">
-          ~/brain/Meetings/2026-05-08-design-crit.md · 4 speakers · 312 lines
-        </div>
+        {transcriptPath && (
+          <div className="mt-1 font-mono text-11 text-ink-2">{transcriptPath}</div>
+        )}
+        {error && (
+          <p className="mt-3 text-13 leading-[1.5] text-oxblood">{error}</p>
+        )}
 
-        <div className="mt-5 grid grid-cols-[1.5fr_1fr] gap-4">
-          <div className="rounded-md border border-hairline bg-paper p-[18px]">
-            <Eyebrow className="mb-[10px]">tl;dr</Eyebrow>
-            <p className="m-0 font-display text-16 italic leading-[1.5] text-ink-0">
-              &ldquo;the third onboarding screen is doing too much. split the connector picker out,
-              but require at least one connected before showing the dashboard — otherwise the
-              welcome state is empty.&rdquo;
-            </p>
-            <div className="mt-4 flex gap-2">
-              <Btn
-                variant="primary"
-                size="sm"
-                // intentional fixed color: icon must read dark on the always-bright neon button
-                icon={<Lucide name="file-down" size={13} color="#0E0F12" />}
-                onClick={() => stub(4)}
-              >
-                save to vault
-              </Btn>
-              <Btn
-                variant="secondary"
-                size="sm"
-                icon={<Lucide name="share" size={13} />}
-                onClick={() => stub(4)}
-              >
-                share md
-              </Btn>
-              <Btn
-                variant="ghost"
-                size="sm"
-                icon={<Lucide name="play" size={13} />}
-                onClick={() => stub(4)}
-              >
-                play audio
-              </Btn>
-            </div>
-          </div>
-
-          <div className="rounded-md border border-hairline bg-paper p-[18px]">
-            <Eyebrow className="mb-[10px]">action items · 3</Eyebrow>
-            <Action who="jules" text="split connector picker into its own screen" />
-            <Action who="mira" text="document 'min one connected' rule" />
-            <Action who="you" text="redo welcome state mock by friday" />
-          </div>
-        </div>
-
-        <div className="mt-4 grid grid-cols-3 gap-4">
-          <SmallStat label="words" value="3,841" />
-          <SmallStat label="speakers" value="4" />
-          <SmallStat label="links extracted" value="6" />
+        <div className="mt-5 flex gap-2">
+          {transcriptPath && (
+            <Btn
+              variant="primary"
+              size="sm"
+              icon={<Lucide name="file-text" size={13} color="#0E0F12" />}
+              onClick={() => openNote(transcriptPath)}
+            >
+              open transcript
+            </Btn>
+          )}
+          <Btn variant="ghost" size="sm" onClick={onClose}>
+            done
+          </Btn>
         </div>
       </div>
     </div>

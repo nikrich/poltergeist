@@ -192,13 +192,24 @@ def _file_transcript(
     return target
 
 
-def recover_one(wav: Path, config: ManualConfig) -> Path | None:
-    """Recover a single orphan WAV. Returns the transcript path or None."""
+def recover_one(
+    wav: Path,
+    config: ManualConfig,
+    *,
+    title_override: str | None = None,
+    started_override: "datetime | None" = None,
+) -> Path | None:
+    """Recover a single orphan WAV. Returns the transcript path or None.
+
+    `title_override` skips the LLM-title step (useful when the user provided
+    a title up front). `started_override` skips the filename-based start-time
+    derivation (useful when the manual flow knows the exact start instant).
+    """
     if _already_filed(wav.name):
         return None
 
     log.info("recovering orphan manual recording: %s", wav.name)
-    started = _parse_started_from_name(wav)
+    started = started_override or _parse_started_from_name(wav)
 
     try:
         txt_path = transcribe(wav)
@@ -211,7 +222,7 @@ def recover_one(wav: Path, config: ManualConfig) -> Path | None:
         log.warning("empty transcript for %s; skipping", wav.name)
         return None
 
-    title = _derive_title(transcript_text)
+    title = title_override or _derive_title(transcript_text)
     duration_s = _duration_seconds(wav, started)
 
     return _file_transcript(

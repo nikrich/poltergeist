@@ -2,7 +2,7 @@ import { Lucide } from './Lucide';
 import { useMeeting } from '../stores/meeting';
 
 export function StatusBar() {
-  const phase = useMeeting((s) => s.phase);
+  const { phase } = useMeeting();
   return (
     <footer className="gb-statusbar flex h-[26px] flex-shrink-0 items-center gap-4 border-t border-hairline bg-vellum px-[14px] font-mono text-10 lowercase text-ink-2">
       <span className="inline-flex items-center gap-[5px]">

@@ -10,7 +10,9 @@ import type {
   DailyPage,
   MeetingsPage,
   Note,
+  RecorderStatus,
   SearchResponse,
+  StartRecordingRequest,
   Suggestion,
   VaultStats,
 } from '../../../shared/api-types';
@@ -127,5 +129,40 @@ export function useNote(path: string | null) {
     queryFn: () => get<Note>(`/v1/notes?path=${encodeURIComponent(path!)}`),
     enabled: path !== null,
     staleTime: 60_000,
+  });
+}
+
+export function useRecorderStatus(opts?: { pollWhile?: 'recording' | 'transcribing' | 'all' }) {
+  return useQuery({
+    queryKey: ['recorder', 'status'],
+    queryFn: () => get<RecorderStatus>('/v1/recorder/status'),
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data) return false;
+      if (opts?.pollWhile === 'all') return 2_000;
+      if (data.phase === 'recording') return opts?.pollWhile === 'transcribing' ? false : 4_000;
+      if (data.phase === 'transcribing') return 3_000;
+      return false; // idle/done — stop polling
+    },
+    staleTime: 0,
+  });
+}
+
+export function useStartRecording() {
+  return useMutation({
+    mutationFn: (vars: StartRecordingRequest) =>
+      post<RecorderStatus>('/v1/recorder/start', vars),
+  });
+}
+
+export function useStopRecording() {
+  return useMutation({
+    mutationFn: () => post<RecorderStatus>('/v1/recorder/stop'),
+  });
+}
+
+export function useClearRecording() {
+  return useMutation({
+    mutationFn: () => post<RecorderStatus>('/v1/recorder/clear'),
   });
 }

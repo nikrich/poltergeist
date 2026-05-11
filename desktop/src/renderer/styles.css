@@ -152,6 +152,11 @@ body[data-theme='light'] {
     opacity: 0;
   }
 }
+@keyframes gb-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 @keyframes gb-float {
   0%,
   100% {

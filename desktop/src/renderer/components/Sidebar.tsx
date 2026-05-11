@@ -26,7 +26,7 @@ function RecordingDot() {
 
 export function Sidebar() {
   const { active, setActive } = useNavigation();
-  const phase = useMeeting((s) => s.phase);
+  const { phase } = useMeeting();
   const daily = useDaily({ limit: 1 });
   const meetings = useMeetings({ limit: 1 });
   const vaultFolders: Array<{ id: ScreenId; icon: string; label: string; count: number | null }> = [

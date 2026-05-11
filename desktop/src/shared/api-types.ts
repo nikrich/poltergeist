@@ -126,3 +126,21 @@ export interface Note {
   body: string;
   frontmatter: Record<string, unknown>;
 }
+
+export type RecorderPhase = 'idle' | 'recording' | 'transcribing' | 'done';
+export type RecorderOwner = 'manual' | 'daemon';
+
+export interface RecorderStatus {
+  phase: RecorderPhase;
+  owner: RecorderOwner | null;
+  title: string | null;
+  startedAt: string | null;
+  wavPath: string | null;
+  transcriptPath: string | null;
+  error: string | null;
+}
+
+export interface StartRecordingRequest {
+  title?: string;
+  context?: string;
+}
