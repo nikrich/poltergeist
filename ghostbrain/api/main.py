@@ -2,6 +2,7 @@
 from fastapi import FastAPI
 
 from ghostbrain.api.auth import make_auth_middleware
+from ghostbrain.api.routes import captures as captures_routes
 from ghostbrain.api.routes import connectors as connectors_routes
 from ghostbrain.api.routes import vault as vault_routes
 
@@ -18,4 +19,5 @@ def create_app(token: str) -> FastAPI:
     app.middleware("http")(make_auth_middleware(token))
     app.include_router(vault_routes.router)
     app.include_router(connectors_routes.router)
+    app.include_router(captures_routes.router)
     return app
