@@ -149,5 +149,11 @@ def get_capture(capture_id: str) -> dict | None:
     """Returns the full Capture (summary + body + extracted) or None."""
     for summary, raw in _walk_inbox():
         if summary["id"] == capture_id:
-            return {**summary, "body": raw["content"], "extracted": None}
+            source_url = raw["metadata"].get("sourceUrl")
+            return {
+                **summary,
+                "body": raw["content"],
+                "extracted": None,
+                "sourceUrl": str(source_url) if isinstance(source_url, str) else None,
+            }
     return None

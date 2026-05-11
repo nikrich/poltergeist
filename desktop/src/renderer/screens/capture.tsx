@@ -9,7 +9,7 @@ import { useCapture, useCaptures, useConnectors } from '../lib/api/hooks';
 import { SkeletonRows } from '../components/SkeletonRows';
 import { PanelEmpty } from '../components/PanelEmpty';
 import { PanelError } from '../components/PanelError';
-import { stub } from '../stores/toast';
+import { stub, toast } from '../stores/toast';
 
 function chipClass(active: boolean): string {
   return `cursor-pointer rounded-sm border px-[10px] py-1 font-mono text-11 ${
@@ -206,6 +206,14 @@ interface CaptureDetailProps {
 }
 
 function CaptureDetail({ c }: CaptureDetailProps) {
+  const openSource = async () => {
+    if (!c.sourceUrl) {
+      toast.info('no source link for this capture');
+      return;
+    }
+    const result = await window.gb.shell.openExternal(c.sourceUrl);
+    if (!result.ok) toast.error(result.error);
+  };
   return (
     <aside className="overflow-y-auto border-l border-hairline bg-vellum p-6">
       <div className="mb-[14px] flex items-center gap-[10px]">
@@ -222,7 +230,9 @@ function CaptureDetail({ c }: CaptureDetailProps) {
           variant="ghost"
           size="sm"
           icon={<Lucide name="external-link" size={12} />}
-          onClick={() => stub(3)}
+          onClick={openSource}
+          disabled={!c.sourceUrl}
+          ariaLabel={c.sourceUrl ? 'open original source' : 'no source link'}
         />
         <Btn
           variant="ghost"

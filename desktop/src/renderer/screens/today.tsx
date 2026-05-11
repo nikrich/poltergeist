@@ -7,6 +7,7 @@ import { Panel } from '../components/Panel';
 import { TopBar } from '../components/TopBar';
 import { AskPanel } from '../components/AskPanel';
 import { useNavigation } from '../stores/navigation';
+import { useNoteView } from '../stores/note-view';
 import { stub } from '../stores/toast';
 import {
   useAgenda,
@@ -455,11 +456,15 @@ interface ActivityRowCompProps {
   verb: ActivityRow['verb'];
   subject: ActivityRow['subject'];
   time: string;
+  onClick?: () => void;
 }
 
-function ActivityRowComp({ source, verb, subject, time }: ActivityRowCompProps) {
-  return (
-    <div className="flex items-center gap-[10px] rounded-sm px-[6px] py-2">
+function ActivityRowComp({ source, verb, subject, time, onClick }: ActivityRowCompProps) {
+  const className =
+    'flex w-full items-center gap-[10px] rounded-sm px-[6px] py-2 text-left' +
+    (onClick ? ' cursor-pointer hover:bg-paper' : '');
+  const content = (
+    <>
       <img
         src={`/assets/connectors/${source}.svg`}
         alt=""
@@ -470,14 +475,23 @@ function ActivityRowComp({ source, verb, subject, time }: ActivityRowCompProps) 
         {subject}
       </span>
       <span className="font-mono text-10 text-ink-3">{time}</span>
-    </div>
+    </>
   );
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className={className}>
+        {content}
+      </button>
+    );
+  }
+  return <div className={className}>{content}</div>;
 }
 
 const ACTIVITY_INITIAL_LIMIT = 10;
 
 function ActivityList({ items }: { items: ActivityRow[] }) {
   const [expanded, setExpanded] = useState(false);
+  const openNote = useNoteView((s) => s.open);
   if (items.length === 0) {
     return <PanelEmpty icon="activity" message="nothing in the last 4 hours" />;
   }
@@ -492,6 +506,7 @@ function ActivityList({ items }: { items: ActivityRow[] }) {
           verb={row.verb}
           subject={row.subject}
           time={row.atRelative}
+          onClick={row.path ? () => openNote(row.path!) : undefined}
         />
       ))}
       {hiddenCount > 0 && (

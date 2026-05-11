@@ -42,6 +42,7 @@ export interface CaptureSummary {
 export interface Capture extends CaptureSummary {
   body: string;
   extracted: Record<string, unknown> | null;
+  sourceUrl: string | null;
 }
 
 export interface CapturesPage {
@@ -81,6 +82,7 @@ export interface ActivityRow {
   subject: string;
   atRelative: string;
   at: string;
+  path: string | null;
 }
 
 export interface Suggestion {

@@ -58,6 +58,26 @@ def _subject_for(event: dict) -> str:
     return ""
 
 
+def _note_path_for(event: dict) -> str | None:
+    """Vault-relative path of the note this audit row is about, if any.
+
+    The audit log stores absolute paths or vault-relative paths depending on
+    the producer. Strip a leading vault prefix when present so the UI can
+    feed the result straight into /v1/notes?path=...
+    """
+    from ghostbrain.paths import vault_path
+
+    raw = event.get("inbox_path") or event.get("path")
+    if not isinstance(raw, str) or not raw:
+        return None
+    if raw.startswith("/"):
+        try:
+            return str(Path(raw).resolve().relative_to(vault_path().resolve()))
+        except ValueError:
+            return None
+    return raw
+
+
 def _source_for(event: dict) -> str:
     et = event.get("event_type", "")
     if et == "digest_generated":
@@ -104,6 +124,7 @@ def list_activity(window_minutes: int = 240) -> list[dict]:
                 "subject": _subject_for(event),
                 "atRelative": _relative(when),
                 "at": ts_str,
+                "path": _note_path_for(event),
             })
     items.sort(key=lambda r: r["at"], reverse=True)
     return items

@@ -11,3 +11,4 @@ class ActivityRow(BaseModel):
     subject: str
     atRelative: str
     at: str
+    path: str | None = None

@@ -79,8 +79,12 @@ def _build_frontmatter(
         "routingMethod": decision.method,
         "routingReasoning": decision.reasoning,
     }
-    if event.get("sourceUrl"):
-        front["sourceUrl"] = event["sourceUrl"]
+    # Accept both `sourceUrl` (newer connectors) and `url` (older ones —
+    # confluence, jira, github, calendar). Normalize to `sourceUrl` so the
+    # API + UI have one key to look at.
+    source_url = event.get("sourceUrl") or event.get("url")
+    if source_url:
+        front["sourceUrl"] = source_url
     if event.get("title"):
         front["title"] = event["title"]
     if md.get("projectPath"):

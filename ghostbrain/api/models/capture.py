@@ -18,6 +18,7 @@ class CaptureSummary(BaseModel):
 class Capture(CaptureSummary):
     body: str
     extracted: dict | None
+    sourceUrl: str | None = None
 
 
 class CapturesPage(BaseModel):
