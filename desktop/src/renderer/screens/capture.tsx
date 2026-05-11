@@ -1,11 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { TopBar } from '../components/TopBar';
 import { Btn } from '../components/Btn';
 import { Lucide } from '../components/Lucide';
 import { Pill } from '../components/Pill';
 import { Eyebrow } from '../components/Eyebrow';
 import { Catch } from '../components/Catch';
-import { CAPTURE_ITEMS, type CaptureRecord } from '../lib/mocks/capture';
+import type { Capture, CaptureSummary } from '../../shared/api-types';
+import { useCapture, useCaptures } from '../lib/api/hooks';
+import { SkeletonRows } from '../components/SkeletonRows';
+import { PanelEmpty } from '../components/PanelEmpty';
+import { PanelError } from '../components/PanelError';
 import { stub } from '../stores/toast';
 
 const SOURCES = ['gmail', 'slack', 'notion', 'linear', 'calendar', 'github'];
@@ -19,17 +23,26 @@ function chipClass(active: boolean): string {
 }
 
 export function CaptureScreen() {
-  const [selected, setSelected] = useState<number>(1);
+  const [selected, setSelected] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>('all');
-  const item = CAPTURE_ITEMS.find((c) => c.id === selected);
-  const filtered = CAPTURE_ITEMS.filter((c) => filter === 'all' || c.source === filter);
-  const unread = CAPTURE_ITEMS.filter((c) => c.unread).length;
+  const captures = useCaptures({ source: filter === 'all' ? undefined : filter });
+  const detail = useCapture(selected);
+
+  // Default selection to first item once data arrives
+  useEffect(() => {
+    if (selected === null && captures.data && captures.data.items.length > 0) {
+      setSelected(captures.data.items[0]!.id);
+    }
+  }, [captures.data, selected]);
+
+  const unreadCount = captures.data?.items.filter((c) => c.unread).length ?? 0;
+  const totalToday = captures.data?.total ?? 0;
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden bg-paper">
       <TopBar
         title="capture"
-        subtitle={`${unread} unread · ${CAPTURE_ITEMS.length} today`}
+        subtitle={captures.data ? `${unreadCount} unread · ${totalToday} today` : '…'}
         right={
           <div className="flex gap-2">
             <Btn
@@ -72,7 +85,21 @@ export function CaptureScreen() {
       <div className="grid flex-1 grid-cols-[1fr_480px] overflow-hidden">
         {/* List */}
         <div className="overflow-y-auto px-2 py-3">
-          {filtered.map((c) => (
+          {captures.isLoading && <SkeletonRows count={6} height={56} />}
+          {captures.isError && (
+            <PanelError
+              message={
+                captures.error instanceof Error
+                  ? captures.error.message
+                  : 'failed to load captures'
+              }
+              onRetry={() => captures.refetch()}
+            />
+          )}
+          {captures.data && captures.data.items.length === 0 && (
+            <PanelEmpty icon="inbox" message="nothing captured yet" />
+          )}
+          {captures.data?.items.map((c) => (
             <CaptureRow
               key={c.id}
               c={c}
@@ -83,14 +110,29 @@ export function CaptureScreen() {
         </div>
 
         {/* Detail */}
-        {item && <CaptureDetail c={item} />}
+        {detail.isLoading && (
+          <aside className="overflow-y-auto border-l border-hairline bg-vellum p-6">
+            <SkeletonRows count={4} />
+          </aside>
+        )}
+        {detail.isError && (
+          <aside className="overflow-y-auto border-l border-hairline bg-vellum p-6">
+            <PanelError
+              message={
+                detail.error instanceof Error ? detail.error.message : 'failed to load capture'
+              }
+              onRetry={() => detail.refetch()}
+            />
+          </aside>
+        )}
+        {detail.data && <CaptureDetail c={detail.data} />}
       </div>
     </div>
   );
 }
 
 interface CaptureRowProps {
-  c: CaptureRecord;
+  c: CaptureSummary;
   selected: boolean;
   onClick: () => void;
 }
@@ -137,7 +179,7 @@ function CaptureRow({ c, selected, onClick }: CaptureRowProps) {
 }
 
 interface CaptureDetailProps {
-  c: CaptureRecord;
+  c: Capture;
 }
 
 function CaptureDetail({ c }: CaptureDetailProps) {
