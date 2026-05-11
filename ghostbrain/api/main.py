@@ -2,6 +2,7 @@
 from fastapi import FastAPI
 
 from ghostbrain.api.auth import make_auth_middleware
+from ghostbrain.api.routes import activity as activity_routes
 from ghostbrain.api.routes import agenda as agenda_routes
 from ghostbrain.api.routes import captures as captures_routes
 from ghostbrain.api.routes import connectors as connectors_routes
@@ -24,4 +25,5 @@ def create_app(token: str) -> FastAPI:
     app.include_router(captures_routes.router)
     app.include_router(meetings_routes.router)
     app.include_router(agenda_routes.router)
+    app.include_router(activity_routes.router)
     return app
