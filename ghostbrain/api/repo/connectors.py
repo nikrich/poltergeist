@@ -1,7 +1,7 @@
 """Connector enumeration and state."""
 from __future__ import annotations
 
-import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from ghostbrain.paths import state_dir
@@ -59,6 +59,12 @@ _DISPLAY: dict[str, dict] = {
     },
 }
 
+# Connector id → state-file key. Most connectors use their id; one exception:
+# the calendar connector writes state to macos_calendar.last_run.
+_STATE_KEY: dict[str, str] = {
+    "calendar": "macos_calendar",
+}
+
 
 def _connectors_root() -> Path:
     """Locate ghostbrain/connectors/ as installed."""
@@ -86,14 +92,26 @@ def _list_connector_ids() -> list[str]:
     return sorted(ids)
 
 
-def _read_state(connector_id: str) -> dict:
-    state_file = state_dir() / connector_id / "state.json"
-    if not state_file.exists():
-        return {}
+def _read_last_run(connector_id: str) -> str | None:
+    """Read the .last_run file content (ISO timestamp string) or None."""
+    key = _STATE_KEY.get(connector_id, connector_id)
+    f = state_dir() / f"{key}.last_run"
+    if not f.exists():
+        return None
     try:
-        return json.loads(state_file.read_text())
-    except json.JSONDecodeError:
-        return {}
+        return f.read_text().strip()
+    except OSError:
+        return None
+
+
+def _is_recent(iso: str, hours: int = 24) -> bool:
+    try:
+        when = datetime.fromisoformat(iso)
+    except ValueError:
+        return False
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - when) < timedelta(hours=hours)
 
 
 def _connector_record(connector_id: str) -> dict:
@@ -103,12 +121,8 @@ def _connector_record(connector_id: str) -> dict:
         "pulls": [],
         "vaultDestination": f"20-contexts/{{ctx}}/{connector_id}/",
     })
-    state = _read_state(connector_id)
-    has_error = isinstance(state.get("error"), str) and bool(state["error"])
-    has_recent_run = isinstance(state.get("last_run"), str) and bool(state["last_run"])
-    if has_error:
-        run_state = "err"
-    elif has_recent_run:
+    last_run = _read_last_run(connector_id)
+    if last_run and _is_recent(last_run):
         run_state = "on"
     else:
         run_state = "off"
@@ -116,11 +130,11 @@ def _connector_record(connector_id: str) -> dict:
         "id": connector_id,
         "displayName": display["displayName"],
         "state": run_state,
-        "count": int(state.get("indexed", 0)),
-        "lastSyncAt": state.get("last_run"),
-        "account": state.get("account"),
-        "throughput": state.get("throughput"),
-        "error": state.get("error"),
+        "count": 0,  # not exposed by .last_run; Phase 2 enriches
+        "lastSyncAt": last_run,
+        "account": None,
+        "throughput": None,
+        "error": None,
     }
 
 

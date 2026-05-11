@@ -20,6 +20,52 @@ def _relative(when: datetime) -> str:
     return f"{secs // 86_400}d"
 
 
+def _verb_for(event_type: str) -> str:
+    mapping = {
+        "digest_generated": "wrote digest",
+        "event_processed": "processed",
+        "event_routed": "routed",
+        "artifact_extracted": "extracted",
+    }
+    if event_type in mapping:
+        return mapping[event_type]
+    return event_type.replace("_", " ")
+
+
+def _strip_inbox_timestamp_prefix(name: str) -> str:
+    """Strip leading 'YYYYMMDDTHHMMSS-' prefix from inbox basenames."""
+    parts = name.split("-", 1)
+    if len(parts) < 2:
+        return name
+    head = parts[0]
+    # The inbox convention is e.g. '20260507T144500'. Check it looks like
+    # 8-digit-date + 'T' + time.
+    if "T" in head and head[:8].isdigit():
+        return parts[1]
+    return name
+
+
+def _subject_for(event: dict) -> str:
+    inbox_path = event.get("inbox_path")
+    if isinstance(inbox_path, str) and inbox_path:
+        return _strip_inbox_timestamp_prefix(Path(inbox_path).stem)
+    path = event.get("path")
+    if isinstance(path, str) and path:
+        return Path(path).stem
+    event_id = event.get("event_id")
+    if event_id:
+        return str(event_id)
+    return ""
+
+
+def _source_for(event: dict) -> str:
+    et = event.get("event_type", "")
+    if et == "digest_generated":
+        return "digest"
+    src = event.get("source")
+    return src if isinstance(src, str) and src else "ghostbrain"
+
+
 def list_activity(window_minutes: int = 240) -> list[dict]:
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
     audit = audit_dir()
@@ -32,7 +78,7 @@ def list_activity(window_minutes: int = 240) -> list[dict]:
         path = audit / f"{day.isoformat()}.jsonl"
         if not path.exists():
             continue
-        for line in path.read_text().splitlines():
+        for lineno, line in enumerate(path.read_text().splitlines()):
             line = line.strip()
             if not line:
                 continue
@@ -40,20 +86,24 @@ def list_activity(window_minutes: int = 240) -> list[dict]:
                 event = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            at_str = event.get("at", "")
+            ts_str = event.get("ts", "")
             try:
-                when = datetime.fromisoformat(at_str.replace("Z", "+00:00"))
-            except ValueError:
+                when = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+            except (ValueError, TypeError, AttributeError):
                 continue
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=timezone.utc)
             if when < cutoff:
                 continue
+            event_id = event.get("event_id")
+            row_id = str(event_id) if event_id else f"audit-{day.isoformat()}-{lineno}"
             items.append({
-                "id": event.get("id", f"audit-{day}-{len(items)}"),
-                "source": event.get("source", "unknown"),
-                "verb": event.get("verb", "processed"),
-                "subject": event.get("subject", ""),
+                "id": row_id,
+                "source": _source_for(event),
+                "verb": _verb_for(event.get("event_type", "")),
+                "subject": _subject_for(event),
                 "atRelative": _relative(when),
-                "at": at_str,
+                "at": ts_str,
             })
     items.sort(key=lambda r: r["at"], reverse=True)
     return items

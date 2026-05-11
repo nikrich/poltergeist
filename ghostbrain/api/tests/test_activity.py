@@ -25,16 +25,43 @@ def test_includes_recent_events(
 ):
     now = datetime.now(timezone.utc)
     today = now.strftime("%Y-%m-%d")
-    one_min_ago = (now - timedelta(minutes=1)).isoformat().replace("+00:00", "Z")
+    one_min_ago = (now - timedelta(minutes=1)).isoformat()
     _write_audit_event(tmp_vault, today, {
-        "id": "evt1", "source": "gmail", "verb": "archived",
-        "subject": "3 newsletters", "at": one_min_ago,
+        "ts": one_min_ago,
+        "event_type": "event_processed",
+        "event_id": "evt1",
+        "source": "gmail",
+        "status": "success",
+        "context": "personal",
+        "inbox_path": "/v/00-inbox/raw/gmail/20260507T144500-3-newsletters.md",
     })
     res = client.get("/v1/activity?windowMinutes=240", headers=auth_headers)
     data = res.json()
     assert len(data) == 1
     assert data[0]["source"] == "gmail"
-    assert data[0]["verb"] == "archived"
+    assert data[0]["verb"] == "processed"
+    # Subject should strip the timestamp prefix from the inbox basename.
+    assert data[0]["subject"] == "3-newsletters"
+
+
+def test_digest_event_uses_digest_source(
+    client: TestClient, auth_headers: dict[str, str], tmp_vault: Path
+):
+    now = datetime.now(timezone.utc)
+    today = now.strftime("%Y-%m-%d")
+    one_min_ago = (now - timedelta(minutes=1)).isoformat()
+    _write_audit_event(tmp_vault, today, {
+        "ts": one_min_ago,
+        "event_type": "digest_generated",
+        "event_id": "2026-05-08",
+        "path": "/v/10-daily/2026-05-08.md",
+        "notes_count": 0,
+    })
+    res = client.get("/v1/activity?windowMinutes=240", headers=auth_headers)
+    data = res.json()
+    assert len(data) == 1
+    assert data[0]["source"] == "digest"
+    assert data[0]["verb"] == "wrote digest"
 
 
 def test_excludes_old_events(
@@ -42,10 +69,12 @@ def test_excludes_old_events(
 ):
     now = datetime.now(timezone.utc)
     today = now.strftime("%Y-%m-%d")
-    five_hours_ago = (now - timedelta(hours=5)).isoformat().replace("+00:00", "Z")
+    five_hours_ago = (now - timedelta(hours=5)).isoformat()
     _write_audit_event(tmp_vault, today, {
-        "id": "evt-old", "source": "gmail", "verb": "x",
-        "subject": "old", "at": five_hours_ago,
+        "ts": five_hours_ago,
+        "event_type": "event_processed",
+        "event_id": "evt-old",
+        "source": "gmail",
     })
     # windowMinutes=240 = 4 hours
     res = client.get("/v1/activity?windowMinutes=240", headers=auth_headers)

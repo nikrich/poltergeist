@@ -61,8 +61,16 @@ def write_note(vault: Path, relative_path: str, body: str = "# Note\n\nbody.\n")
 
 
 def write_state(state_dir: Path, connector_id: str, data: dict) -> Path:
-    """Helper: write state.json for a connector."""
+    """Helper: write state.json for a connector (legacy schema; kept for compat)."""
     p = state_dir / connector_id / "state.json"
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(data))
+    return p
+
+
+def write_last_run(state_dir: Path, key: str, iso_ts: str) -> Path:
+    """Helper: write <key>.last_run as a flat text file containing an ISO timestamp."""
+    p = state_dir / f"{key}.last_run"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(iso_ts)
     return p
