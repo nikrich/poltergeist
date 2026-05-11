@@ -1,7 +1,6 @@
 """Connector enumeration and state."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from ghostbrain.paths import state_dir
@@ -104,16 +103,6 @@ def _read_last_run(connector_id: str) -> str | None:
         return None
 
 
-def _is_recent(iso: str, hours: int = 24) -> bool:
-    try:
-        when = datetime.fromisoformat(iso)
-    except ValueError:
-        return False
-    if when.tzinfo is None:
-        when = when.replace(tzinfo=timezone.utc)
-    return (datetime.now(timezone.utc) - when) < timedelta(hours=hours)
-
-
 def _connector_record(connector_id: str) -> dict:
     display = _DISPLAY.get(connector_id, {
         "displayName": connector_id,
@@ -121,11 +110,11 @@ def _connector_record(connector_id: str) -> dict:
         "pulls": [],
         "vaultDestination": f"20-contexts/{{ctx}}/{connector_id}/",
     })
+    # A .last_run file means the connector is configured and has successfully
+    # run at least once — call it 'on'. Recency surfaces via the lastSyncAt
+    # field; UI flags stale runs there.
     last_run = _read_last_run(connector_id)
-    if last_run and _is_recent(last_run):
-        run_state = "on"
-    else:
-        run_state = "off"
+    run_state = "on" if last_run else "off"
     return {
         "id": connector_id,
         "displayName": display["displayName"],

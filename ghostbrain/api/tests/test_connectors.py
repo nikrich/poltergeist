@@ -46,15 +46,17 @@ def test_connector_state_on_with_recent_sync(
     assert github["lastSyncAt"] == now_iso
 
 
-def test_connector_state_off_when_last_run_is_stale(
+def test_connector_state_on_even_when_last_run_is_stale(
     client: TestClient, auth_headers: dict[str, str], tmp_state_dir: Path
 ):
+    """A .last_run file means the connector is configured; staleness surfaces
+    via the lastSyncAt timestamp, not the state field."""
     stale = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
     write_last_run(tmp_state_dir, "github", stale)
     res = client.get("/v1/connectors", headers=auth_headers)
     github = next((c for c in res.json() if c["id"] == "github"), None)
     assert github is not None
-    assert github["state"] == "off"
+    assert github["state"] == "on"
     assert github["lastSyncAt"] == stale
 
 

@@ -38,8 +38,8 @@ export function TodayScreen() {
     agenda.data?.filter((e) => e.status === 'upcoming').length ?? 0;
   const connectorsOn =
     connectors.data?.filter((c) => c.state === 'on').length ?? 0;
-  const followupsCount =
-    captures.data?.items.filter((c) => c.tags.includes('followup')).length ?? 0;
+  const unreadCount =
+    captures.data?.items.filter((c) => c.unread).length ?? 0;
 
   return (
     <div className="flex-1 overflow-y-auto bg-paper">
@@ -121,12 +121,8 @@ export function TodayScreen() {
           <div className="relative z-[1] grid grid-cols-2 content-start gap-2">
             <Stat
               label="captured"
-              value={
-                stats.data
-                  ? String(stats.data.queuePending + stats.data.indexedCount)
-                  : '—'
-              }
-              delta={stats.data ? `${stats.data.queuePending} pending` : ''}
+              value={stats.data ? stats.data.indexedCount.toLocaleString() : '—'}
+              delta={stats.data && stats.data.queuePending > 0 ? `${stats.data.queuePending} pending` : 'in inbox'}
               tone="neon"
             />
             <Stat
@@ -135,10 +131,10 @@ export function TodayScreen() {
               delta={agenda.data && upcomingCount > 0 ? 'today' : ''}
             />
             <Stat
-              label="followups"
-              value={captures.data ? String(followupsCount) : '—'}
-              delta="from captures"
-              tone="oxblood"
+              label="unread"
+              value={captures.data ? String(unreadCount) : '—'}
+              delta="last 6 hours"
+              tone={unreadCount > 0 ? 'neon' : undefined}
             />
             <Stat
               label="vault size"

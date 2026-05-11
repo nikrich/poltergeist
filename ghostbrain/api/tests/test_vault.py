@@ -3,7 +3,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from ghostbrain.api.tests.conftest import write_note, write_state
+from ghostbrain.api.tests.conftest import write_last_run, write_note
 
 
 def test_empty_vault_returns_zeros(client: TestClient, auth_headers: dict[str, str]):
@@ -37,12 +37,23 @@ def test_counts_pending_queue_entries(
     assert res.json()["queuePending"] == 2
 
 
-def test_aggregates_last_sync_and_indexed_from_state(
+def test_last_sync_is_max_of_last_run_files(
     client: TestClient, auth_headers: dict[str, str], tmp_state_dir: Path
 ):
-    write_state(tmp_state_dir, "github", {"last_run": "2026-05-11T12:00:00Z", "indexed": 100})
-    write_state(tmp_state_dir, "slack", {"last_run": "2026-05-11T13:30:00Z", "indexed": 250})
+    """lastSyncAt = max timestamp across <connector>.last_run flat text files."""
+    write_last_run(tmp_state_dir, "github", "2026-05-11T12:00:00Z")
+    write_last_run(tmp_state_dir, "slack", "2026-05-11T13:30:00Z")
     res = client.get("/v1/vault/stats", headers=auth_headers)
     data = res.json()
     assert data["lastSyncAt"] == "2026-05-11T13:30:00Z"  # max
-    assert data["indexedCount"] == 350  # sum
+
+
+def test_indexed_count_is_inbox_file_count(
+    client: TestClient, auth_headers: dict[str, str], tmp_vault: Path
+):
+    """indexedCount counts markdown files under <vault>/00-inbox/raw/<source>/."""
+    write_note(tmp_vault, "00-inbox/raw/gmail/a.md", "---\nid: a\n---\nbody")
+    write_note(tmp_vault, "00-inbox/raw/gmail/b.md", "---\nid: b\n---\nbody")
+    write_note(tmp_vault, "00-inbox/raw/slack/c.md", "---\nid: c\n---\nbody")
+    res = client.get("/v1/vault/stats", headers=auth_headers)
+    assert res.json()["indexedCount"] == 3
