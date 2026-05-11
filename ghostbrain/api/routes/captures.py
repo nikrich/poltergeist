@@ -16,8 +16,11 @@ def captures(
     return list_captures(limit=limit, offset=offset, source=source)
 
 
-@router.get("/{capture_id}", response_model=Capture)
+@router.get("/{capture_id:path}", response_model=Capture)
 def capture_detail(capture_id: str) -> dict:
+    # `:path` lets Starlette accept ids that contain `/` (e.g. github
+    # captures use `github:pr:owner/repo#NNN`). Without it, an encoded `/`
+    # in the path segment fails to match the route.
     record = get_capture(capture_id)
     if record is None:
         raise HTTPException(status_code=404, detail=f"Capture not found: {capture_id}")
