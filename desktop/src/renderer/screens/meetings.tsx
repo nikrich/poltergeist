@@ -11,12 +11,15 @@ import { stub } from '../stores/toast';
 import {
   PARTICIPANTS,
   TRANSCRIPT,
-  HISTORY,
   SPEAKER_AIRTIME,
   type Participant,
   type TranscriptLine,
-  type PastMeeting,
 } from '../lib/mocks/meetings';
+import { useMeetings } from '../lib/api/hooks';
+import type { PastMeeting } from '../../shared/api-types';
+import { SkeletonRows } from '../components/SkeletonRows';
+import { PanelEmpty } from '../components/PanelEmpty';
+import { PanelError } from '../components/PanelError';
 import { mmss } from '../lib/format';
 
 export function MeetingsScreen() {
@@ -523,11 +526,12 @@ function SmallStat({ label, value }: SmallStatProps) {
 
 // ── History ────────────────────────────────────────────────────────────────
 function MeetingHistory() {
+  const meetings = useMeetings({ limit: 50 });
   return (
     <div className="max-w-[1100px] px-8 pb-10 pt-2">
       <Panel
         title="past meetings"
-        subtitle="47 in vault"
+        subtitle={meetings.data ? `${meetings.data.total} in vault` : '…'}
         action={
           <Btn
             variant="ghost"
@@ -539,19 +543,35 @@ function MeetingHistory() {
           </Btn>
         }
       >
-        <div
-          className="grid gap-3 border-b border-hairline px-2 pb-2 pt-1"
-          style={{ gridTemplateColumns: '120px minmax(0, 1fr) 80px 80px minmax(0, 1fr)' }}
-        >
-          <Eyebrow>date</Eyebrow>
-          <Eyebrow>title</Eyebrow>
-          <Eyebrow>length</Eyebrow>
-          <Eyebrow>speakers</Eyebrow>
-          <Eyebrow>tags</Eyebrow>
-        </div>
-        {HISTORY.map((m: PastMeeting, i) => (
-          <HistoryRow key={i} m={m} />
-        ))}
+        {meetings.isLoading && <SkeletonRows count={5} />}
+        {meetings.isError && (
+          <PanelError
+            message={
+              meetings.error instanceof Error ? meetings.error.message : 'failed to load meetings'
+            }
+            onRetry={() => meetings.refetch()}
+          />
+        )}
+        {meetings.data && meetings.data.items.length === 0 && (
+          <PanelEmpty icon="mic" message="no recorded meetings yet" />
+        )}
+        {meetings.data && meetings.data.items.length > 0 && (
+          <>
+            <div
+              className="grid gap-3 border-b border-hairline px-2 pb-2 pt-1"
+              style={{ gridTemplateColumns: '120px minmax(0, 1fr) 80px 80px minmax(0, 1fr)' }}
+            >
+              <Eyebrow>date</Eyebrow>
+              <Eyebrow>title</Eyebrow>
+              <Eyebrow>length</Eyebrow>
+              <Eyebrow>speakers</Eyebrow>
+              <Eyebrow>tags</Eyebrow>
+            </div>
+            {meetings.data.items.map((m) => (
+              <HistoryRow key={m.id} m={m} />
+            ))}
+          </>
+        )}
       </Panel>
     </div>
   );
