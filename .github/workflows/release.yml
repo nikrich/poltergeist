@@ -3,6 +3,8 @@ name: release
 on:
   push:
     branches: [main]
+  release:
+    types: [published]
 
 permissions:
   contents: write
@@ -10,6 +12,7 @@ permissions:
 
 jobs:
   release-please:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     outputs:
       release_created: ${{ steps.rp.outputs.releases_created }}
@@ -24,7 +27,15 @@ jobs:
 
   build-mac:
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    # Two ways in: (1) release-please cut a new release on push, or
+    # (2) a release was published manually (rescue path for the first cut,
+    # or any time we need to bypass release-please).
+    if: |
+      always() &&
+      (
+        github.event_name == 'release' ||
+        needs.release-please.outputs.release_created == 'true'
+      )
     runs-on: macos-14  # arm64 native
     timeout-minutes: 60
     env:
@@ -36,8 +47,15 @@ jobs:
       APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Resolve the release tag from whichever trigger fired.
+      RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || needs.release-please.outputs.tag_name }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # For release: published, github.event.release.target_commitish is
+          # the branch; for push, the default checkout points at the merge
+          # commit. Both produce the right tree for the build.
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref }}
 
       - uses: actions/setup-node@v4
         with:
@@ -84,11 +102,9 @@ jobs:
         run: npm run pack
 
       - name: Upload assets to release
-        env:
-          TAG: ${{ needs.release-please.outputs.tag_name }}
         run: |
           shopt -s nullglob
-          gh release upload "$TAG" \
+          gh release upload "$RELEASE_TAG" \
             desktop/dist/*.dmg \
             desktop/dist/*.zip \
             desktop/dist/*.blockmap \
