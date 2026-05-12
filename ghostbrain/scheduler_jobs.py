@@ -31,6 +31,46 @@ from ghostbrain.scheduler import (
 log = logging.getLogger("ghostbrain.scheduler.jobs")
 
 
+def _semantic_refresh() -> RunResult:
+    """Run a semantic index refresh and translate the result into RunResult.
+
+    Lazy-imports the semantic module so we don't drag torch into every sidecar
+    start; the import is paid once per refresh.
+    """
+    import time as _time
+    import traceback as _tb
+
+    started = _time.time()
+    try:
+        from ghostbrain.semantic.refresh import refresh as _refresh
+
+        result = _refresh()
+        return RunResult(
+            connector="semantic-refresh",
+            ok=True,
+            started_at=started,
+            finished_at=_time.time(),
+            queued=result.embedded,
+            details={
+                "embedded": result.embedded,
+                "reused": result.reused,
+                "linked": result.linked,
+                "skipped": result.skipped,
+            },
+        )
+    except Exception as e:  # noqa: BLE001
+        log.exception("semantic refresh failed")
+        return RunResult(
+            connector="semantic-refresh",
+            ok=False,
+            started_at=started,
+            finished_at=_time.time(),
+            error=str(e),
+            error_type=type(e).__name__,
+            details={"traceback": _tb.format_exc(limit=5)},
+        )
+
+
 def register_connectors(scheduler: Scheduler) -> None:
     """Wire every connector with its scheduling cadence."""
     scheduler.add_job("github", Interval(seconds=7200), github_runner.run, "every 2h")
@@ -39,6 +79,16 @@ def register_connectors(scheduler: Scheduler) -> None:
     scheduler.add_job("slack", Interval(seconds=3600), slack_runner.run, "every 1h")
     scheduler.add_job("jira", Interval(seconds=14400), jira_runner.run, "every 4h")
     scheduler.add_job("confluence", DailyAt(hour=6, minute=0), confluence_runner.run, "daily 06:00")
+    # Semantic refresh runs frequently — embedding cost is paid only for new
+    # or modified notes (mtime + hash short-circuit). Steady-state runs are
+    # seconds. Keeping search/answer queries up-to-date with new transcripts
+    # matters more than the small CPU spike.
+    scheduler.add_job(
+        "semantic-refresh",
+        Interval(seconds=900),
+        _semantic_refresh,
+        "every 15m",
+    )
 
 
 # ---------------------------------------------------------------------------

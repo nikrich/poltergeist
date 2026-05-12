@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Weekly semantic-link refresh. Runs Sunday 23:00 (after the metrics
-  snapshot at 22:30 + the profile applier at 22:00).
+  Semantic-link refresh, every 15 minutes. Incremental — unchanged notes
+  are skipped via mtime/hash, so steady-state runs complete in seconds.
+  Worth being aggressive so queries see fresh notes / transcripts.
 
   TEMPLATE — replace placeholders before loading.
 
@@ -25,17 +26,10 @@
     <string>__REPO_ROOT__</string>
 
     <key>RunAtLoad</key>
-    <false/>
+    <true/>
 
-    <key>StartCalendarInterval</key>
-    <dict>
-        <key>Weekday</key>
-        <integer>0</integer>
-        <key>Hour</key>
-        <integer>23</integer>
-        <key>Minute</key>
-        <integer>0</integer>
-    </dict>
+    <key>StartInterval</key>
+    <integer>900</integer>
 
     <key>StandardOutPath</key>
     <string>__REPO_ROOT__/logs/semantic.log</string>
