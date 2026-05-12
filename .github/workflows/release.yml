@@ -13,6 +13,11 @@ on:
         description: 'Existing release tag to build + upload to (e.g. v0.1.1)'
         required: true
         type: string
+      use_main_head:
+        description: 'Check out main HEAD instead of the release tag (lets you re-run with CI/build fixes that landed after the tag was cut)'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -67,7 +72,7 @@ jobs:
           # For release: published, github.event.release.target_commitish is
           # the branch; for push, the default checkout points at the merge
           # commit. Both produce the right tree for the build.
-          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref }}
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.event_name == 'workflow_dispatch' && (inputs.use_main_head == true && 'main' || inputs.release_tag) || github.ref }}
 
       - uses: actions/setup-node@v4
         with:
