@@ -1,0 +1,693 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ghostbrain — a quiet brain for your loud apps</title>
+  <meta name="description" content="ghostbrain quietly haunts every app you use — gmail, slack, notion, linear, calendar — pulls every passing thought into your obsidian vault, and lets you query the whole archive in plain markdown.">
+  <link rel="icon" href="assets/favicon.svg">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- =====================================================================
+     NAV
+===================================================================== -->
+<nav class="nav" id="nav">
+  <div class="nav__inner">
+    <a href="#top" class="nav__brand" aria-label="ghostbrain home">
+      <svg class="ghost" viewBox="0 0 100 110" width="26" height="29" aria-hidden="true">
+        <path d="M 50 6 C 24 6, 10 24, 10 50 L 10 94 Q 17 102, 24 95 Q 31 88, 38 95 Q 44 102, 50 95 Q 56 88, 62 95 Q 69 102, 76 95 Q 83 88, 90 94 L 90 50 C 90 24, 76 6, 50 6 Z" fill="#C5FF3D"/>
+        <circle cx="38" cy="48" r="3.2" fill="#0E0F12"/>
+        <circle cx="62" cy="48" r="3.2" fill="#0E0F12"/>
+        <line x1="38" y1="48" x2="62" y2="48" stroke="#0E0F12" stroke-width="1.2" stroke-opacity="0.5"/>
+      </svg>
+      <span class="nav__wordmark">ghostbrain</span>
+    </a>
+    <div class="nav__links">
+      <a href="#how">how it works</a>
+      <a href="#connectors">connectors</a>
+      <a href="#pricing">pricing</a>
+      <a href="#docs">docs</a>
+    </div>
+    <div class="nav__cta">
+      <a class="btn btn--ghost btn--small" href="#">sign in</a>
+      <a class="btn btn--primary btn--small" href="https://github.com/nikrich/ghost-brain/releases/latest" target="_blank" rel="noopener noreferrer">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        download
+      </a>
+    </div>
+  </div>
+</nav>
+
+<!-- =====================================================================
+     HERO
+===================================================================== -->
+<section id="top" class="hero noise">
+  <div class="hero__glow"></div>
+  <div class="hero__inner">
+    <div>
+      <div class="hero__meta">
+        <span class="tag">v 1.4 · obsidian plugin</span>
+        <span class="eyebrow">4mb · macos · windows · linux</span>
+      </div>
+
+      <h1 class="hero__headline">
+        your apps remember<br>
+        more than&nbsp;<span class="accent">you do</span>.
+      </h1>
+
+      <p class="hero__sub">
+        ghostbrain quietly haunts every app you use — gmail, slack, notion, linear,
+        calendar — pulls every passing thought into your obsidian vault, and lets
+        you query the whole archive in plain markdown.
+      </p>
+
+      <div class="hero__ctas">
+        <a class="btn btn--primary btn--large" href="https://github.com/nikrich/ghost-brain/releases/latest" target="_blank" rel="noopener noreferrer">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          download for obsidian
+        </a>
+        <a class="btn btn--secondary btn--large" href="#how">
+          see how it works
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+        </a>
+      </div>
+
+      <div class="hero__trust">
+        <span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="#C5FF3D" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="20 6 9 17 4 12"/></svg>
+          end-to-end encrypted
+        </span>
+        <span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="#C5FF3D" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="20 6 9 17 4 12"/></svg>
+          local-first vault
+        </span>
+        <span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="#C5FF3D" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="20 6 9 17 4 12"/></svg>
+          no cloud sync required
+        </span>
+      </div>
+    </div>
+
+    <!-- orbit -->
+    <div class="orbit">
+      <svg class="orbit__svg" viewBox="0 0 400 400" aria-hidden="true">
+        <circle cx="200" cy="200" r="180" fill="none" stroke="rgba(242,243,245,0.14)" stroke-dasharray="2 4"/>
+        <circle cx="200" cy="200" r="130" fill="none" stroke="rgba(242,243,245,0.14)" stroke-dasharray="2 4"/>
+        <circle cx="200" cy="200" r="80"  fill="none" stroke="rgba(242,243,245,0.14)" stroke-dasharray="2 4"/>
+        <line x1="200" y1="200" x2="200"    y2="20"     stroke="rgba(242,243,245,0.14)"/>
+        <line x1="200" y1="200" x2="339.88" y2="86.72"  stroke="rgba(242,243,245,0.14)"/>
+        <line x1="200" y1="200" x2="375.39" y2="240.50" stroke="rgba(242,243,245,0.14)"/>
+        <line x1="200" y1="200" x2="278.91" y2="361.78" stroke="rgba(242,243,245,0.14)"/>
+        <line x1="200" y1="200" x2="121.09" y2="361.78" stroke="rgba(242,243,245,0.14)"/>
+        <line x1="200" y1="200" x2="24.61"  y2="240.50" stroke="rgba(242,243,245,0.14)"/>
+        <line x1="200" y1="200" x2="60.12"  y2="86.72"  stroke="rgba(242,243,245,0.14)"/>
+      </svg>
+
+      <div class="orbit__center">
+        <svg class="ghost floating" viewBox="0 0 100 110" width="100" height="110" aria-hidden="true">
+          <path d="M 50 6 C 24 6, 10 24, 10 50 L 10 94 Q 17 102, 24 95 Q 31 88, 38 95 Q 44 102, 50 95 Q 56 88, 62 95 Q 69 102, 76 95 Q 83 88, 90 94 L 90 50 C 90 24, 76 6, 50 6 Z" fill="#C5FF3D"/>
+          <circle cx="38" cy="48" r="3.2" fill="#0E0F12"/>
+          <circle cx="62" cy="48" r="3.2" fill="#0E0F12"/>
+          <line x1="38" y1="48" x2="62" y2="48" stroke="#0E0F12" stroke-width="1.2" stroke-opacity="0.5"/>
+        </svg>
+      </div>
+
+      <div class="orbit__tile" style="left: 50%;    top: 5%;">    <img src="assets/connectors/gmail.svg"    alt="gmail"></div>
+      <div class="orbit__tile" style="left: 84.97%; top: 21.68%;"><img src="assets/connectors/slack.svg"    alt="slack"></div>
+      <div class="orbit__tile" style="left: 93.85%; top: 60.12%;"><img src="assets/connectors/notion.svg"   alt="notion"></div>
+      <div class="orbit__tile" style="left: 69.73%; top: 90.45%;"><img src="assets/connectors/linear.svg"   alt="linear"></div>
+      <div class="orbit__tile" style="left: 30.27%; top: 90.45%;"><img src="assets/connectors/github.svg"   alt="github"></div>
+      <div class="orbit__tile" style="left: 6.15%;  top: 60.12%;"><img src="assets/connectors/calendar.svg" alt="calendar"></div>
+      <div class="orbit__tile" style="left: 15.03%; top: 21.68%;"><img src="assets/connectors/drive.svg"    alt="drive"></div>
+    </div>
+  </div>
+</section>
+
+<!-- =====================================================================
+     HOW IT WORKS
+===================================================================== -->
+<section id="how" class="how">
+  <div class="how__inner">
+    <div class="how__head">
+      <span class="eyebrow">how it works</span>
+      <h2 class="how__title">three steps. then it just keeps remembering.</h2>
+    </div>
+
+    <div class="how__steps">
+      <div class="step">
+        <div class="step__n">01</div>
+        <h3 class="step__title">install the plugin</h3>
+        <p class="step__body">open obsidian. drop in the ghostbrain plugin. it appears as a quiet sidebar in your vault — no setup wizard, no account.</p>
+      </div>
+      <div class="step">
+        <div class="step__n">02</div>
+        <h3 class="step__title">connect your apps</h3>
+        <p class="step__body">auth into gmail, slack, notion, linear, calendar. ghostbrain starts listening. tokens stay in your os keychain.</p>
+      </div>
+      <div class="step">
+        <div class="step__n">03</div>
+        <h3 class="step__title">ask the archive</h3>
+        <p class="step__body">every message, doc, and meeting becomes plain markdown. query it like you'd query your own brain — only it actually answers.</p>
+      </div>
+    </div>
+
+    <div class="terminal">
+      <div class="terminal__bar">
+        <svg class="ghost" viewBox="0 0 100 110" width="14" height="15" aria-hidden="true">
+          <path d="M 50 6 C 24 6, 10 24, 10 50 L 10 94 Q 17 102, 24 95 Q 31 88, 38 95 Q 44 102, 50 95 Q 56 88, 62 95 Q 69 102, 76 95 Q 83 88, 90 94 L 90 50 C 90 24, 76 6, 50 6 Z" fill="#C5FF3D"/>
+          <circle cx="38" cy="48" r="3.2" fill="#0E0F12"/>
+          <circle cx="62" cy="48" r="3.2" fill="#0E0F12"/>
+        </svg>
+        <span>ghostbrain query · read-only demo</span>
+        <span class="right">v 1.4.2</span>
+      </div>
+      <div class="terminal__body">
+        <div class="terminal__prompt">what did marie say about the q3 launch?</div>
+        <div class="terminal__meta">→ searching · 7 connectors · 41,200 items</div>
+
+        <div class="terminal__result">
+          <div class="terminal__result-row">
+            <img src="assets/connectors/gmail.svg" alt="">
+            <span class="terminal__result-title">re: q3 launch — marketing scope</span>
+            <span class="terminal__result-date">apr 24</span>
+          </div>
+          <div class="terminal__snippet">"...we should pull launch a week earlier. let's discuss tomorrow."</div>
+        </div>
+
+        <div class="terminal__result">
+          <div class="terminal__result-row">
+            <img src="assets/connectors/slack.svg" alt="">
+            <span class="terminal__result-title">#launch · marie</span>
+            <span class="terminal__result-date">apr 26</span>
+          </div>
+          <div class="terminal__snippet">"locking the date. team agreed: jun 11."</div>
+        </div>
+
+        <div class="terminal__result">
+          <div class="terminal__result-row">
+            <img src="assets/connectors/notion.svg" alt="">
+            <span class="terminal__result-title">q3 launch plan — v3</span>
+            <span class="terminal__result-date">apr 28</span>
+          </div>
+          <div class="terminal__snippet">"...moved to jun 11. risks: copy not finalized..."</div>
+        </div>
+
+        <div class="terminal__piped">piped 3 results into vault/inbox/2026-05-08.md</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =====================================================================
+     CONNECTORS
+===================================================================== -->
+<section id="connectors" class="connectors">
+  <div class="connectors__inner">
+    <div class="connectors__head">
+      <div>
+        <span class="eyebrow">connectors · 7 live · 1 incoming</span>
+        <h2 class="connectors__title">connect what you use. ignore the rest.</h2>
+      </div>
+      <p class="connectors__desc">
+        each connector runs locally. tokens are encrypted in your os keychain.
+        you can disconnect any of them in one click and it's gone.
+      </p>
+    </div>
+
+    <div class="connectors__grid">
+      <div class="tile">
+        <div class="tile__head">
+          <img class="tile__icon" src="assets/connectors/gmail.svg" alt="gmail">
+          <span class="tag">connected</span>
+        </div>
+        <div class="tile__name">gmail</div>
+        <div class="tile__blurb">every thread, indexed and searchable</div>
+      </div>
+      <div class="tile">
+        <div class="tile__head">
+          <img class="tile__icon" src="assets/connectors/slack.svg" alt="slack">
+          <span class="tag">connected</span>
+        </div>
+        <div class="tile__name">slack</div>
+        <div class="tile__blurb">channels, dms, threads, the lot</div>
+      </div>
+      <div class="tile">
+        <div class="tile__head">
+          <img class="tile__icon" src="assets/connectors/notion.svg" alt="notion">
+          <span class="tag">connected</span>
+        </div>
+        <div class="tile__name">notion</div>
+        <div class="tile__blurb">pages, dbs, comments — mirrored</div>
+      </div>
+      <div class="tile">
+        <div class="tile__head">
+          <img class="tile__icon" src="assets/connectors/linear.svg" alt="linear">
+          <span class="tag">connected</span>
+        </div>
+        <div class="tile__name">linear</div>
+        <div class="tile__blurb">issues, projects, cycles</div>
+      </div>
+      <div class="tile">
+        <div class="tile__head">
+          <img class="tile__icon" src="assets/connectors/github.svg" alt="github">
+          <span class="tag">connected</span>
+        </div>
+        <div class="tile__name">github</div>
+        <div class="tile__blurb">prs, issues, mentions</div>
+      </div>
+      <div class="tile">
+        <div class="tile__head">
+          <img class="tile__icon" src="assets/connectors/calendar.svg" alt="calendar">
+          <span class="tag">connected</span>
+        </div>
+        <div class="tile__name">calendar</div>
+        <div class="tile__blurb">meetings before &amp; after</div>
+      </div>
+      <div class="tile">
+        <div class="tile__head">
+          <img class="tile__icon" src="assets/connectors/drive.svg" alt="drive">
+          <span class="tag">connected</span>
+        </div>
+        <div class="tile__name">drive</div>
+        <div class="tile__blurb">docs, sheets, file changes</div>
+      </div>
+      <div class="tile tile--soon">
+        <div class="tile__head">
+          <div class="tile__icon-placeholder"></div>
+          <span class="tag outline">soon</span>
+        </div>
+        <div class="tile__name">arc</div>
+        <div class="tile__blurb">browser history, opt-in</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =====================================================================
+     VAULT PREVIEW
+===================================================================== -->
+<section id="vault" class="vault noise">
+  <div class="vault__inner">
+    <div class="vault__head">
+      <div>
+        <span class="eyebrow">your vault, on disk</span>
+        <h2 class="vault__title">plain markdown. yours forever.</h2>
+      </div>
+      <p class="vault__desc">
+        no proprietary database. no lock-in. ghostbrain writes one markdown
+        file per moment, organised the way obsidian already organises everything else.
+      </p>
+    </div>
+
+    <div class="vault__shell">
+      <!-- file tree -->
+      <div class="tree">
+        <div class="tree__head">files</div>
+        <div class="tree__row tree__row--folder" style="padding-left:10px;">      <span class="glyph">▾</span><span>vault</span></div>
+        <div class="tree__row tree__row--folder" style="padding-left:24px;">      <span class="glyph">▾</span><span>inbox</span></div>
+        <div class="tree__row tree__row--file"   style="padding-left:38px;">      <span class="glyph">·</span><span>2026-05-08.md</span></div>
+        <div class="tree__row tree__row--file"   style="padding-left:38px;">      <span class="glyph">·</span><span>2026-05-07.md</span></div>
+        <div class="tree__row tree__row--folder" style="padding-left:24px;">      <span class="glyph">▾</span><span>people</span></div>
+        <div class="tree__row tree__row--active" style="padding-left:38px;">      <span class="glyph">·</span><span>marie chen.md</span></div>
+        <div class="tree__row tree__row--file"   style="padding-left:38px;">      <span class="glyph">·</span><span>sam okafor.md</span></div>
+        <div class="tree__row tree__row--file"   style="padding-left:38px;">      <span class="glyph">·</span><span>eli park.md</span></div>
+        <div class="tree__row tree__row--folder" style="padding-left:24px;">      <span class="glyph">▸</span><span>projects</span></div>
+        <div class="tree__row tree__row--folder" style="padding-left:24px;">      <span class="glyph">▸</span><span>meetings</span></div>
+        <div class="tree__row tree__row--folder" style="padding-left:24px;">      <span class="glyph">▸</span><span>threads</span></div>
+        <div class="tree__row tree__row--folder" style="padding-left:10px;">      <span class="glyph">▸</span><span>.ghostbrain</span></div>
+      </div>
+
+      <!-- markdown -->
+      <div class="md">
+        <div class="md__bar">
+          <span>people / marie chen.md</span>
+          <span class="md__dot"></span>
+          <span class="md__synced">haunted · synced 14s ago</span>
+          <span class="md__size">0.4 kb</span>
+        </div>
+        <div class="md__body">
+<pre class="md__frontmatter">---
+name: marie chen
+aliases: [marie, m.chen]
+role: head of marketing
+last_seen: 2026-05-07
+sources: [gmail, slack, calendar]
+---</pre>
+          <h3 class="md__h1">marie chen</h3>
+          <p class="md__p">works with you on the q3 launch. tends to ship copy late but always nails the headline.</p>
+          <div class="md__h2">## recent</div>
+          <div class="md__bullet"><span class="md__link">[[2026-05-07]]</span> · slack #launch — locked launch date jun 11</div>
+          <div class="md__bullet"><span class="md__link">[[re-q3-launch-marketing]]</span> · gmail thread, 14 replies</div>
+          <div class="md__bullet"><span class="md__link">[[2026-05-05 mon weekly]]</span> · 30m, calendar</div>
+          <div class="md__h2">## links</div>
+          <p class="md__p"><span class="md__link">[[people/sam okafor]]</span> · <span class="md__link">[[projects/q3-launch]]</span> · <span class="md__link">[[meetings/may]]</span></p>
+        </div>
+      </div>
+
+      <!-- graph -->
+      <div class="graph">
+        <div class="graph__head">graph · neighbors</div>
+        <svg class="graph__svg" viewBox="0 0 260 260" aria-hidden="true">
+          <!-- edges -->
+          <g stroke="rgba(242,243,245,0.22)" stroke-width="0.6">
+            <line x1="130" y1="110" x2="70"  y2="70"/>
+            <line x1="130" y1="110" x2="60"  y2="160"/>
+            <line x1="130" y1="110" x2="175" y2="60"/>
+            <line x1="130" y1="110" x2="200" y2="140"/>
+            <line x1="130" y1="110" x2="105" y2="195"/>
+            <line x1="70"  y1="70"  x2="175" y2="60"/>
+            <line x1="70"  y1="70"  x2="165" y2="215"/>
+            <line x1="60"  y1="160" x2="105" y2="195"/>
+            <line x1="60"  y1="160" x2="35"  y2="110"/>
+            <line x1="200" y1="140" x2="215" y2="195"/>
+            <line x1="105" y1="195" x2="165" y2="215"/>
+          </g>
+          <!-- nodes -->
+          <g>
+            <circle cx="130" cy="110" r="10" fill="#C5FF3D"/>
+            <text x="144" y="113" font-family="JetBrains Mono, monospace" font-size="8" fill="#7A7E88">marie</text>
+            <circle cx="70"  cy="70"  r="6" fill="#B7BAC2" opacity="0.7"/>
+            <text x="80" y="73"  font-family="JetBrains Mono, monospace" font-size="8" fill="#7A7E88">q3 launch</text>
+            <circle cx="60"  cy="160" r="5" fill="#B7BAC2" opacity="0.7"/>
+            <text x="69" y="163" font-family="JetBrains Mono, monospace" font-size="8" fill="#7A7E88">sam</text>
+            <circle cx="175" cy="60"  r="5" fill="#B7BAC2" opacity="0.7"/>
+            <text x="184" y="63" font-family="JetBrains Mono, monospace" font-size="8" fill="#7A7E88">gmail</text>
+            <circle cx="200" cy="140" r="4" fill="#B7BAC2" opacity="0.7"/>
+            <circle cx="105" cy="195" r="4" fill="#B7BAC2" opacity="0.7"/>
+            <circle cx="35"  cy="110" r="3" fill="#B7BAC2" opacity="0.7"/>
+            <circle cx="215" cy="195" r="3" fill="#B7BAC2" opacity="0.7"/>
+            <circle cx="165" cy="215" r="4" fill="#B7BAC2" opacity="0.7"/>
+            <text x="173" y="218" font-family="JetBrains Mono, monospace" font-size="8" fill="#7A7E88">slack</text>
+            <circle cx="35"  cy="40"  r="3" fill="#B7BAC2" opacity="0.7"/>
+          </g>
+        </svg>
+        <div class="graph__meta">
+          <div class="graph__meta-row"><span>backlinks</span><b>23</b></div>
+          <div class="graph__meta-row"><span>tags</span><b>q3, eng-x, marketing</b></div>
+          <div class="graph__meta-row"><span>last touched</span><b>14s ago</b></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat">
+        <div class="stat__n">41,208</div>
+        <div class="stat__label">items captured</div>
+      </div>
+      <div class="stat">
+        <div class="stat__n">6.4 GB</div>
+        <div class="stat__label">vault, all-time</div>
+      </div>
+      <div class="stat">
+        <div class="stat__n">0 bytes</div>
+        <div class="stat__label">left our machine</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =====================================================================
+     QUOTES
+===================================================================== -->
+<section id="quotes" class="quotes">
+  <div class="quotes__glow"></div>
+  <div class="quotes__inner">
+    <div class="quotes__head">
+      <span class="eyebrow">field reports</span>
+      <h2 class="quotes__title">haunted, and quietly enjoying it.</h2>
+    </div>
+
+    <div class="quotes__grid">
+      <figure class="quote">
+        <svg class="ghost" viewBox="0 0 100 110" width="22" height="24" aria-hidden="true">
+          <path d="M 50 6 C 24 6, 10 24, 10 50 L 10 94 Q 17 102, 24 95 Q 31 88, 38 95 Q 44 102, 50 95 Q 56 88, 62 95 Q 69 102, 76 95 Q 83 88, 90 94 L 90 50 C 90 24, 76 6, 50 6 Z" fill="#C5FF3D"/>
+          <circle cx="38" cy="48" r="3.2" fill="#0E0F12"/>
+          <circle cx="62" cy="48" r="3.2" fill="#0E0F12"/>
+        </svg>
+        <blockquote class="quote__body">"i stopped writing meeting notes three months ago. nobody noticed. i remember more than before."</blockquote>
+        <figcaption class="quote__cap">
+          <span class="quote__name">ada</span>
+          <span class="quote__role">· staff engineer · stripe</span>
+        </figcaption>
+      </figure>
+
+      <figure class="quote">
+        <svg class="ghost" viewBox="0 0 100 110" width="22" height="24" aria-hidden="true">
+          <path d="M 50 6 C 24 6, 10 24, 10 50 L 10 94 Q 17 102, 24 95 Q 31 88, 38 95 Q 44 102, 50 95 Q 56 88, 62 95 Q 69 102, 76 95 Q 83 88, 90 94 L 90 50 C 90 24, 76 6, 50 6 Z" fill="#C5FF3D"/>
+          <circle cx="38" cy="48" r="3.2" fill="#0E0F12"/>
+          <circle cx="62" cy="48" r="3.2" fill="#0E0F12"/>
+        </svg>
+        <blockquote class="quote__body">"it found a slack thread from 2024 i swore i had imagined. proof of receipts is a love language."</blockquote>
+        <figcaption class="quote__cap">
+          <span class="quote__name">idris</span>
+          <span class="quote__role">· founder · two-person studio</span>
+        </figcaption>
+      </figure>
+
+      <figure class="quote">
+        <svg class="ghost" viewBox="0 0 100 110" width="22" height="24" aria-hidden="true">
+          <path d="M 50 6 C 24 6, 10 24, 10 50 L 10 94 Q 17 102, 24 95 Q 31 88, 38 95 Q 44 102, 50 95 Q 56 88, 62 95 Q 69 102, 76 95 Q 83 88, 90 94 L 90 50 C 90 24, 76 6, 50 6 Z" fill="#C5FF3D"/>
+          <circle cx="38" cy="48" r="3.2" fill="#0E0F12"/>
+          <circle cx="62" cy="48" r="3.2" fill="#0E0F12"/>
+        </svg>
+        <blockquote class="quote__body">"queryable archive of every meeting i've ever had, sitting on my disk as markdown. i didn't know i needed this."</blockquote>
+        <figcaption class="quote__cap">
+          <span class="quote__name">priya</span>
+          <span class="quote__role">· pm · figma</span>
+        </figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- =====================================================================
+     PRICING
+===================================================================== -->
+<section id="pricing" class="pricing">
+  <div class="pricing__glow"></div>
+  <div class="pricing__inner">
+    <div class="pricing__head">
+      <span class="eyebrow">pricing</span>
+      <h2 class="pricing__title">free. all of it.</h2>
+      <p class="pricing__sub">
+        no tiers. no seats. no "upgrade for unlimited". ghostbrain runs on
+        your machine — the meter would be silly.
+      </p>
+    </div>
+
+    <div class="pricing__card">
+      <div>
+        <div class="pricing__label">ghostbrain · everything</div>
+        <div class="pricing__price">
+          <span class="pricing__price-n">$0</span>
+          <span class="pricing__price-unit">/ forever</span>
+        </div>
+        <p class="pricing__tag">one brain, one disk, no meter.</p>
+        <a class="btn btn--accent btn--large pricing__cta" href="https://github.com/nikrich/ghost-brain/releases/latest" target="_blank" rel="noopener noreferrer">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          download for obsidian
+        </a>
+        <p class="pricing__platforms">4 mb · macos · windows · linux</p>
+      </div>
+
+      <div>
+        <div class="pricing__inc-head">what's included</div>
+        <ul class="pricing__features">
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="20 6 9 17 4 12"/></svg><span>all connectors, unlimited</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="20 6 9 17 4 12"/></svg><span>unlimited vault size, forever</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="20 6 9 17 4 12"/></svg><span>natural-language query</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="20 6 9 17 4 12"/></svg><span>local-only — no account required</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="20 6 9 17 4 12"/></svg><span>mit-licensed obsidian plugin</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="20 6 9 17 4 12"/></svg><span>fair-source local indexer</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <p class="pricing__foot">
+      your vault is just markdown on your disk. if we ever change our mind,
+      you keep everything that's already in there. that's the whole deal.
+    </p>
+  </div>
+</section>
+
+<!-- =====================================================================
+     FAQ
+===================================================================== -->
+<section id="faq" class="faq">
+  <div class="faq__inner">
+    <div>
+      <span class="eyebrow">faq</span>
+      <h2 class="faq__title">questions a sensible person asks.</h2>
+      <p class="faq__sub">none of these answers will change. they're a load-bearing part of the product.</p>
+    </div>
+
+    <div class="faq__list">
+      <div class="faq__item open">
+        <button class="faq__btn" aria-expanded="true">
+          <span class="faq__n">01</span>
+          <span class="faq__q">where does my data live?</span>
+          <span class="faq__plus" aria-hidden="true">+</span>
+        </button>
+        <div class="faq__answer">
+          <p class="faq__a">on your machine. ghostbrain writes plain markdown into the obsidian vault you point it at. nothing is sent to our servers unless you explicitly turn on cloud sync, which is opt-in and end-to-end encrypted.</p>
+        </div>
+      </div>
+
+      <div class="faq__item">
+        <button class="faq__btn" aria-expanded="false">
+          <span class="faq__n">02</span>
+          <span class="faq__q">do you train on my emails?</span>
+          <span class="faq__plus" aria-hidden="true">+</span>
+        </button>
+        <div class="faq__answer">
+          <p class="faq__a">no. the local extraction model runs on your machine. we do not see your data, we cannot see your data, and we structure the company so we never can. the only telemetry is anonymous crash reports.</p>
+        </div>
+      </div>
+
+      <div class="faq__item">
+        <button class="faq__btn" aria-expanded="false">
+          <span class="faq__n">03</span>
+          <span class="faq__q">how is this different from a notion ai or chatgpt connector?</span>
+          <span class="faq__plus" aria-hidden="true">+</span>
+        </button>
+        <div class="faq__answer">
+          <p class="faq__a">the canonical store is your obsidian vault, on your disk. ghostbrain is a quiet listener; obsidian is the front-end you already use. you can rip ghostbrain out tomorrow and your notes don't go anywhere.</p>
+        </div>
+      </div>
+
+      <div class="faq__item">
+        <button class="faq__btn" aria-expanded="false">
+          <span class="faq__n">04</span>
+          <span class="faq__q">will it slow down my mac?</span>
+          <span class="faq__plus" aria-hidden="true">+</span>
+        </button>
+        <div class="faq__answer">
+          <p class="faq__a">the indexer is rate-limited and pauses on battery. typical idle cpu is under 1%. the model fits in 1.8gb of memory. you will not hear the fan.</p>
+        </div>
+      </div>
+
+      <div class="faq__item">
+        <button class="faq__btn" aria-expanded="false">
+          <span class="faq__n">05</span>
+          <span class="faq__q">what happens if i disconnect an app?</span>
+          <span class="faq__plus" aria-hidden="true">+</span>
+        </button>
+        <div class="faq__answer">
+          <p class="faq__a">the connector tokens are deleted from your keychain and no further fetches happen. existing notes in your vault stay where they are — they are yours. you can also choose to purge them with one command.</p>
+        </div>
+      </div>
+
+      <div class="faq__item">
+        <button class="faq__btn" aria-expanded="false">
+          <span class="faq__n">06</span>
+          <span class="faq__q">is the source available?</span>
+          <span class="faq__plus" aria-hidden="true">+</span>
+        </button>
+        <div class="faq__answer">
+          <p class="faq__a">the obsidian plugin is mit-licensed and on github. the local indexer is source-available under a fair-source license — read it, build it, fork it for personal use.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =====================================================================
+     CTA
+===================================================================== -->
+<section id="download" class="cta noise">
+  <div class="cta__dots"></div>
+  <div class="cta__glow"></div>
+  <div class="cta__inner">
+    <div class="cta__glyph">
+      <svg class="ghost floating" viewBox="0 0 100 110" width="72" height="79" aria-hidden="true">
+        <path d="M 50 6 C 24 6, 10 24, 10 50 L 10 94 Q 17 102, 24 95 Q 31 88, 38 95 Q 44 102, 50 95 Q 56 88, 62 95 Q 69 102, 76 95 Q 83 88, 90 94 L 90 50 C 90 24, 76 6, 50 6 Z" fill="#C5FF3D"/>
+        <circle cx="38" cy="48" r="3.2" fill="#0E0F12"/>
+        <circle cx="62" cy="48" r="3.2" fill="#0E0F12"/>
+        <line x1="38" y1="48" x2="62" y2="48" stroke="#0E0F12" stroke-width="1.2" stroke-opacity="0.5"/>
+      </svg>
+    </div>
+    <h2 class="cta__title">
+      let it haunt your apps.<br>
+      <span class="accent">keep the receipts.</span>
+    </h2>
+    <p class="cta__sub">
+      install the obsidian plugin. connect three apps. ask it something you couldn't
+      have remembered yourself. then come back tomorrow and ask again.
+    </p>
+    <div class="cta__buttons">
+      <a class="btn btn--accent btn--large" href="https://github.com/nikrich/ghost-brain/releases/latest" target="_blank" rel="noopener noreferrer">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        download for obsidian
+      </a>
+      <a class="btn btn--secondary btn--large" href="#">read the manifesto</a>
+    </div>
+    <div class="cta__platforms">4 mb · macos · windows · linux · obsidian 1.5+</div>
+  </div>
+</section>
+
+<!-- =====================================================================
+     FOOTER
+===================================================================== -->
+<footer class="footer">
+  <div class="footer__inner">
+    <div class="footer__grid">
+      <div>
+        <div class="footer__brand">
+          <svg class="ghost" viewBox="0 0 100 110" width="28" height="31" aria-hidden="true">
+            <path d="M 50 6 C 24 6, 10 24, 10 50 L 10 94 Q 17 102, 24 95 Q 31 88, 38 95 Q 44 102, 50 95 Q 56 88, 62 95 Q 69 102, 76 95 Q 83 88, 90 94 L 90 50 C 90 24, 76 6, 50 6 Z" fill="#C5FF3D"/>
+            <circle cx="38" cy="48" r="3.2" fill="#0E0F12"/>
+            <circle cx="62" cy="48" r="3.2" fill="#0E0F12"/>
+          </svg>
+          <span class="nav__wordmark" style="font-size:28px;">ghostbrain</span>
+        </div>
+        <p class="footer__manifesto">a second brain that quietly haunts the apps your first one forgets about.</p>
+      </div>
+      <div class="footer__col">
+        <span class="eyebrow footer__col-head">product</span>
+        <ul>
+          <li><a href="https://github.com/nikrich/ghost-brain/releases/latest" target="_blank" rel="noopener noreferrer">download</a></li>
+          <li><a href="#connectors">connectors</a></li>
+          <li><a href="https://github.com/nikrich/ghost-brain/releases" target="_blank" rel="noopener noreferrer">changelog</a></li>
+          <li><a href="#">roadmap</a></li>
+        </ul>
+      </div>
+      <div class="footer__col">
+        <span class="eyebrow footer__col-head">docs</span>
+        <ul>
+          <li><a href="#">quickstart</a></li>
+          <li><a href="#">query syntax</a></li>
+          <li><a href="#">api</a></li>
+          <li><a href="#">self-host</a></li>
+        </ul>
+      </div>
+      <div class="footer__col">
+        <span class="eyebrow footer__col-head">company</span>
+        <ul>
+          <li><a href="#">about</a></li>
+          <li><a href="#">manifesto</a></li>
+          <li><a href="#">press</a></li>
+          <li><a href="#">contact</a></li>
+        </ul>
+      </div>
+      <div class="footer__col">
+        <span class="eyebrow footer__col-head">legal</span>
+        <ul>
+          <li><a href="#">privacy</a></li>
+          <li><a href="#">terms</a></li>
+          <li><a href="#">security</a></li>
+          <li><a href="https://github.com/nikrich/ghost-brain" target="_blank" rel="noopener noreferrer">open source</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer__bar">
+      <span>© 2026 ghostbrain · made quietly</span>
+      <span id="footer-version">v 1.4.2</span>
+    </div>
+  </div>
+</footer>
+
+<script src="script.js"></script>
+</body>
+</html>
