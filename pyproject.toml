@@ -39,6 +39,10 @@ api = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
     "httpx>=0.27.0",
+    # Required by jaraco.context at pkg_resources runtime hook time when the
+    # API is bundled by PyInstaller. Without it the packaged sidecar crashes
+    # on first import.
+    "backports.tarfile>=1.0",
 ]
 
 [project.scripts]
