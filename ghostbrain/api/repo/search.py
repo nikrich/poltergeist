@@ -3,6 +3,10 @@
 Lazy-loads the SentenceTransformer model and the index on first call so the
 sidecar boots fast — the ~80 MB model only gets pulled in if/when the user
 runs a search.
+
+The index file is rewritten by the semantic-refresh cron every 15 min. We
+hot-reload on file mtime change so the sidecar surfaces new notes without
+needing a restart.
 """
 from __future__ import annotations
 
@@ -12,15 +16,21 @@ from pathlib import Path
 import frontmatter
 
 from ghostbrain.paths import vault_path
-from ghostbrain.semantic.index import Index, load as load_index
+from ghostbrain.semantic.index import Index, load as load_index, metadata_path
 
 _lock = threading.Lock()
-_state: dict = {"index": None, "embedder": None}
+_state: dict = {"index": None, "embedder": None, "index_mtime": 0.0}
 
 
 def _get_index() -> Index:
-    if _state["index"] is None:
+    """Return the embedding index, reloading from disk if it was refreshed."""
+    try:
+        disk_mtime = metadata_path().stat().st_mtime
+    except FileNotFoundError:
+        disk_mtime = 0.0
+    if _state["index"] is None or disk_mtime > _state["index_mtime"]:
         _state["index"] = load_index()
+        _state["index_mtime"] = disk_mtime
     return _state["index"]
 
 
