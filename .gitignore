@@ -21,3 +21,7 @@ logs/
 .vscode/
 *.swp
 .DS_Store
+
+# PyInstaller / desktop packaging artifacts
+packaging/build/
+desktop/resources/sidecar/

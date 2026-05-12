@@ -1,0 +1,106 @@
+# PyInstaller spec for the ghostbrain.api sidecar.
+#
+# Build with:
+#   pyinstaller packaging/sidecar.spec \
+#     --distpath desktop/resources/sidecar \
+#     --workpath packaging/build \
+#     --noconfirm
+#
+# Output: desktop/resources/sidecar/ghostbrain-api/  (--onedir layout)
+# Electron-builder picks this up via `extraResources` in electron-builder.yml.
+
+from PyInstaller.utils.hooks import collect_submodules, collect_data_files
+
+# Uvicorn and Starlette load protocol/loop implementations dynamically, so
+# PyInstaller's static analysis misses them. Pull in the whole tree.
+hiddenimports = []
+hiddenimports += collect_submodules('uvicorn')
+hiddenimports += collect_submodules('starlette')
+hiddenimports += collect_submodules('fastapi')
+hiddenimports += collect_submodules('anthropic')
+
+# Semantic search is lazy-loaded from ghostbrain.api.repo.search, so PyInstaller
+# can't see it from the entry point. Bundle it so packaged builds aren't crippled.
+hiddenimports += collect_submodules('sentence_transformers')
+hiddenimports += collect_submodules('transformers')
+hiddenimports += collect_submodules('tokenizers')
+hiddenimports += collect_submodules('huggingface_hub')
+hiddenimports += ['numpy']
+
+# Connector deps — pulled in conditionally by routes but worth including so the
+# packaged sidecar matches dev behavior.
+hiddenimports += collect_submodules('slack_sdk')
+hiddenimports += ['frontmatter', 'yaml', 'markdownify', 'dotenv', 'jinja2', 'requests']
+# jaraco.context (pulled in by pkg_resources at runtime hook time) imports
+# backports.tarfile dynamically, which PyInstaller's analyzer misses.
+hiddenimports += ['backports', 'backports.tarfile']
+
+# Scheduler picks up runner shims and the worker/recorder modules dynamically.
+# Pull each in so PyInstaller's static analyzer doesn't skip them.
+hiddenimports += collect_submodules('ghostbrain.connectors')
+hiddenimports += collect_submodules('ghostbrain.worker')
+hiddenimports += collect_submodules('ghostbrain.recorder')
+hiddenimports += [
+    'ghostbrain.scheduler',
+    'ghostbrain.scheduler_jobs',
+]
+
+# Google Calendar uses google-api-python-client, which loads service modules
+# lazily by name (build('calendar', 'v3', ...)).
+hiddenimports += collect_submodules('googleapiclient')
+hiddenimports += collect_submodules('google_auth_oauthlib')
+
+datas = []
+datas += collect_data_files('ghostbrain', include_py_files=False)
+datas += collect_data_files('uvicorn')
+datas += collect_data_files('anthropic')
+
+a = Analysis(
+    ['../ghostbrain/api/__main__.py'],
+    pathex=['..'],
+    binaries=[],
+    datas=datas,
+    hiddenimports=hiddenimports,
+    hookspath=[],
+    runtime_hooks=[],
+    excludes=[
+        # We don't ship a UI from Python — strip the GUI stacks if they sneak in.
+        'tkinter',
+        'PyQt5',
+        'PyQt6',
+        'PySide2',
+        'PySide6',
+        'matplotlib',
+    ],
+    noarchive=False,
+)
+
+pyz = PYZ(a.pure)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name='ghostbrain-api',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    console=True,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch='arm64',
+    codesign_identity=None,
+    entitlements_file=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name='ghostbrain-api',
+)

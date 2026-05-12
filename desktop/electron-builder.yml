@@ -1,10 +1,63 @@
-appId: app.ghostbrain.desktop
-productName: ghostbrain
+appId: tech.codeship.ghostbrain
+productName: GhostBrain
+copyright: Copyright © 2026 Jannik
+
 directories:
+  output: dist
   buildResources: build
+
+# Only ship what the runtime needs.
+files:
+  - out/**/*
+  - package.json
+  - "!**/*.map"
+  - "!**/*.ts"
+  - "!**/__tests__/**"
+  - "!**/*.test.*"
+
+# The PyInstaller sidecar bundle. CI writes it to resources/sidecar/ before
+# running electron-builder. Path is relative to the desktop/ project root.
+extraResources:
+  - from: resources/sidecar
+    to: sidecar
+    filter:
+      - "**/*"
+
 mac:
+  category: public.app-category.productivity
   icon: build/icon.icns
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # Notarization runs via the afterSign hook (scripts/notarize.cjs) so we can
+  # use notarytool with an app-specific password. electron-builder's built-in
+  # notarize uses the legacy altool path.
+  notarize: false
+  target:
+    - target: dmg
+      arch: arm64
+    - target: zip
+      arch: arm64
+
+afterSign: scripts/notarize.cjs
+
+dmg:
+  sign: false  # The .dmg itself isn't signed; the .app inside is.
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
 win:
   icon: build/icon.ico
+
 linux:
   icon: build/icon.png
+
+# Auto-update is wired off for now; flip publish to "github" to enable.
+# See docs/release.md.
+publish: null

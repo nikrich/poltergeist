@@ -12,6 +12,10 @@ export default [
       'node_modules/**',
       '_prototype/**',
       'src/renderer/public/**',
+      'scripts/**',
+      // PyInstaller writes its bundled Python deps here; the embedded JS is
+      // not ours to lint.
+      'resources/**',
     ],
   },
   js.configs.recommended,

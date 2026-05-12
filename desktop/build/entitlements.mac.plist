@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTD/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- PyInstaller's bootloader unpacks code into memory and jumps to it, which
+         the hardened runtime rejects without these two entitlements. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+
+    <!-- Required for the bundled Python sidecar (and any of its native deps,
+         e.g. torch) to load .dylibs that aren't signed by Apple. -->
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+
+    <!-- The sidecar reads/writes the vault, which lives outside the sandbox.
+         The app isn't sandboxed (Mac App Store distribution is not a goal),
+         but these declare intent for any future sandboxing. -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+</dict>
+</plist>
