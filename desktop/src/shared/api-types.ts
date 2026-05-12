@@ -121,6 +121,18 @@ export interface SearchResponse {
   items: SearchHit[];
 }
 
+export interface AnswerRequest {
+  q: string;
+  limit?: number;
+}
+
+export interface AnswerResponse {
+  query: string;
+  answer: string;
+  sources: SearchHit[];
+  error: string | null;
+}
+
 export interface Note {
   path: string;
   title: string;

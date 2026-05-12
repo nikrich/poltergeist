@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   ActivityRow,
   AgendaItem,
+  AnswerResponse,
   Capture,
   CapturesPage,
   Connector,
@@ -122,6 +123,13 @@ export function useSearch() {
   return useMutation({
     mutationFn: (vars: { q: string; limit?: number }) =>
       post<SearchResponse>('/v1/search', { q: vars.q, limit: vars.limit ?? 10 }),
+  });
+}
+
+export function useAsk() {
+  return useMutation({
+    mutationFn: (vars: { q: string; limit?: number }) =>
+      post<AnswerResponse>('/v1/answer', { q: vars.q, limit: vars.limit ?? 8 }),
   });
 }
 
