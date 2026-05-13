@@ -26,7 +26,116 @@ from ghostbrain.connectors.calendar._base import CalendarEvent
 log = logging.getLogger("ghostbrain.connectors.calendar.macos")
 
 DEFAULT_LOOKAHEAD_HOURS = 36
-OSASCRIPT_TIMEOUT_S = 60
+# Past events earlier today need to be captured too — the connector used to
+# only look forward, so meetings already finished were never ingested.
+DEFAULT_LOOKBACK_HOURS = 24
+OSASCRIPT_TIMEOUT_S = 180  # AppleScript whose-predicate is slow for recurring events
+
+
+def _fetch_via_eventkit(
+    start: datetime, end: datetime, calendar_names: list[str],
+) -> list[dict] | None:
+    """Pull events via EventKit (PyObjC). Returns events in the JXA shape so the
+    callsite can normalize uniformly. Returns None to signal "fall back to JXA"
+    (PyObjC not installed, permission denied, etc).
+
+    Why this exists: AppleScript's `cal.events.whose(startDate>X)` does NOT
+    expand recurring events — it returns only the master record, whose
+    startDate is the FIRST occurrence (often months/years ago). EventKit's
+    predicate-based fetch expands recurrences natively.
+    """
+    try:
+        from EventKit import EKEventStore
+        from Foundation import NSDate
+    except ImportError:
+        return None
+
+    store = EKEventStore.alloc().init()
+
+    # Permission gate. On macOS 14+ use the new API; pre-14 falls back.
+    granted = [None]
+    def _cb(g, err):
+        granted[0] = bool(g)
+    try:
+        store.requestFullAccessToEventsWithCompletion_(_cb)
+    except AttributeError:
+        from EventKit import EKEntityTypeEvent
+        store.requestAccessToEntityType_completion_(EKEntityTypeEvent, _cb)
+
+    # Spin the runloop briefly so the callback can fire. EventKit calls the
+    # block on the main runloop — drain a few iterations to let it complete.
+    import time
+    from Foundation import NSRunLoop
+    deadline = time.time() + 5.0
+    while granted[0] is None and time.time() < deadline:
+        NSRunLoop.currentRunLoop().runUntilDate_(
+            NSDate.dateWithTimeIntervalSinceNow_(0.05)
+        )
+
+    if granted[0] is False:
+        log.warning(
+            "EventKit access denied. Open System Settings → Privacy & "
+            "Security → Calendars and toggle access for the Python process. "
+            "Falling back to JXA (recurring events will be missed)."
+        )
+        return None
+    if granted[0] is None:
+        # Authorization status fallback — older macOS sometimes returns access
+        # without firing the callback in time.
+        try:
+            from EventKit import EKAuthorizationStatusAuthorized, EKEntityTypeEvent
+            from EventKit import EKEventStore
+            current = EKEventStore.authorizationStatusForEntityType_(EKEntityTypeEvent)
+            if current != EKAuthorizationStatusAuthorized:
+                log.warning(
+                    "EventKit authorization unresolved (status=%s); falling back to JXA",
+                    current,
+                )
+                return None
+        except Exception:  # noqa: BLE001
+            return None
+
+    start_ns = NSDate.dateWithTimeIntervalSince1970_(start.timestamp())
+    end_ns = NSDate.dateWithTimeIntervalSince1970_(end.timestamp())
+    predicate = store.predicateForEventsWithStartDate_endDate_calendars_(
+        start_ns, end_ns, None,  # None = all visible calendars
+    )
+    raw_events = store.eventsMatchingPredicate_(predicate) or []
+
+    out: list[dict] = []
+    name_set = set(calendar_names)
+    for ev in raw_events:
+        cal_name = str(ev.calendar().title())
+        if cal_name not in name_set:
+            continue
+        start_dt = ev.startDate()
+        end_dt = ev.endDate()
+        # EventKit's external identifier is stable across syncs and unique per
+        # recurring instance. eventIdentifier() differs between expansions and
+        # the master record.
+        ext_id = str(ev.calendarItemExternalIdentifier() or ev.eventIdentifier() or "")
+        # For recurring instances, the external id is shared across occurrences,
+        # so suffix with the start time to keep each instance distinct.
+        uid = f"{ext_id}:{start_dt.timeIntervalSince1970():.0f}" if ext_id else ""
+        out.append({
+            "calendar": cal_name,
+            "uid": uid,
+            "summary": str(ev.title() or ""),
+            "start": _iso(start_dt),
+            "end": _iso(end_dt),
+            "location": str(ev.location() or ""),
+            "description": (str(ev.notes() or "") or "")[:5000],
+            "allDay": bool(ev.isAllDay()),
+            "url": str(ev.URL().absoluteString()) if ev.URL() else "",
+        })
+    return out
+
+
+def _iso(nsdate) -> str:
+    """NSDate → ISO 8601 UTC string with Z suffix to match JXA's toISOString()."""
+    import datetime as _dt
+    ts = nsdate.timeIntervalSince1970()
+    return _dt.datetime.fromtimestamp(ts, tz=timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 JXA_SCRIPT = r"""
@@ -131,6 +240,9 @@ class MacosCalendarConnector(Connector):
         self.lookahead_hours = int(
             config.get("lookahead_hours") or DEFAULT_LOOKAHEAD_HOURS
         )
+        self.lookback_hours = int(
+            config.get("lookback_hours") or DEFAULT_LOOKBACK_HOURS
+        )
         self._osascript = shutil.which("osascript") or "/usr/bin/osascript"
 
     def health_check(self) -> bool:
@@ -155,21 +267,27 @@ class MacosCalendarConnector(Connector):
             return []
 
         now = datetime.now(timezone.utc)
-        start = now
+        start = now - timedelta(hours=self.lookback_hours)
         end = now + timedelta(hours=self.lookahead_hours)
 
         target_names = list(self.calendar_contexts.keys())
 
-        try:
-            payload = self._run_jxa(start, end, target_names)
-        except Exception as e:  # noqa: BLE001
-            log.exception("macos calendar fetch failed: %s", e)
-            return []
-
-        events_raw = (payload.get("events") or [])
-        for err in payload.get("errors") or []:
-            log.warning("macos calendar fetch error for %s: %s",
-                        err.get("calendar"), err.get("error"))
+        # Try EventKit first — it expands recurring events, which AppleScript's
+        # `whose` predicate does not. Fall back to JXA if EventKit isn't
+        # installed (no PyObjC) or permission was denied.
+        events_raw = _fetch_via_eventkit(start, end, target_names)
+        source = "eventkit"
+        if events_raw is None:
+            source = "jxa"
+            try:
+                payload = self._run_jxa(start, end, target_names)
+            except Exception as e:  # noqa: BLE001
+                log.exception("macos calendar fetch failed: %s", e)
+                return []
+            events_raw = payload.get("events") or []
+            for err in payload.get("errors") or []:
+                log.warning("macos calendar fetch error for %s: %s",
+                            err.get("calendar"), err.get("error"))
 
         events: list[dict] = []
         for raw in events_raw:
@@ -177,8 +295,8 @@ class MacosCalendarConnector(Connector):
             if ce is not None:
                 events.append(ce.to_event())
 
-        log.info("macos calendar fetch: %d event(s) across %d calendar(s)",
-                 len(events), len(target_names))
+        log.info("macos calendar fetch (%s): %d event(s) across %d calendar(s)",
+                 source, len(events), len(target_names))
         return events
 
     def normalize(self, raw: dict) -> dict:

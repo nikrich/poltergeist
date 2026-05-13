@@ -31,6 +31,9 @@ from ghostbrain.connectors.calendar.google.auth import (
 log = logging.getLogger("ghostbrain.connectors.calendar.google")
 
 DEFAULT_LOOKAHEAD_HOURS = 36  # today + tomorrow morning
+# Past events earlier today were never captured before this — the fetch
+# window started at `now`. 24h back covers today's already-finished meetings.
+DEFAULT_LOOKBACK_HOURS = 24
 SCOPES = ("https://www.googleapis.com/auth/calendar.readonly",)
 
 
@@ -55,6 +58,9 @@ class GoogleCalendarConnector(Connector):
         self.lookahead_hours = int(
             config.get("lookahead_hours") or DEFAULT_LOOKAHEAD_HOURS
         )
+        self.lookback_hours = int(
+            config.get("lookback_hours") or DEFAULT_LOOKBACK_HOURS
+        )
 
     def health_check(self) -> bool:
         if not self.account_contexts:
@@ -73,7 +79,7 @@ class GoogleCalendarConnector(Connector):
 
         events: list[dict] = []
         now = datetime.now(timezone.utc)
-        time_min = now.isoformat()
+        time_min = (now - timedelta(hours=self.lookback_hours)).isoformat()
         time_max = (now + timedelta(hours=self.lookahead_hours)).isoformat()
 
         for email in self.account_contexts:

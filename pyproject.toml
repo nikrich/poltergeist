@@ -24,6 +24,9 @@ dependencies = [
     "google-auth-oauthlib>=1.2",
     "slack-sdk>=3.27",
     "markdownify>=0.13",
+    # macOS Calendar connector reads via EventKit (PyObjC) so recurring
+    # events get expanded — AppleScript's `whose` predicate misses them.
+    "pyobjc-framework-EventKit>=11.0; sys_platform == 'darwin'",
 ]
 
 [project.optional-dependencies]
