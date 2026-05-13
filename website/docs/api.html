@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>api &amp; cli — ghostbrain docs</title>
-  <meta name="description" content="Local HTTP API on loopback plus the ghostbrain command-line interface for scripting and automation.">
+  <title>api &amp; cli — poltergeist docs</title>
+  <meta name="description" content="Local HTTP API on loopback plus the poltergeist command-line interface for scripting and automation.">
   <link rel="icon" href="../assets/favicon.svg">
   <link rel="stylesheet" href="../styles.css">
 </head>
@@ -12,14 +12,14 @@
 
 <nav class="nav" id="nav">
   <div class="nav__inner">
-    <a href="../" class="nav__brand" aria-label="ghostbrain home">
+    <a href="../" class="nav__brand" aria-label="poltergeist home">
       <svg viewBox="0 0 100 110" width="26" height="29" aria-hidden="true">
         <path d="M 50 6 C 24 6, 10 24, 10 50 L 10 94 Q 17 102, 24 95 Q 31 88, 38 95 Q 44 102, 50 95 Q 56 88, 62 95 Q 69 102, 76 95 Q 83 88, 90 94 L 90 50 C 90 24, 76 6, 50 6 Z" fill="#C5FF3D"/>
         <circle cx="38" cy="48" r="3.2" fill="#0E0F12"/>
         <circle cx="62" cy="48" r="3.2" fill="#0E0F12"/>
         <line x1="38" y1="48" x2="62" y2="48" stroke="#0E0F12" stroke-width="1.2" stroke-opacity="0.5"/>
       </svg>
-      <span class="nav__wordmark">ghostbrain</span>
+      <span class="nav__wordmark">poltergeist</span>
     </a>
     <div class="nav__links">
       <a href="../#how">how it works</a>
@@ -68,25 +68,25 @@
 
   <article class="article">
     <div class="article__crumb">
-      <a href="../">ghostbrain</a><span class="sep">/</span><a href="./">docs</a><span class="sep">/</span><span>api &amp; cli</span>
+      <a href="../">poltergeist</a><span class="sep">/</span><a href="./">docs</a><span class="sep">/</span><span>api &amp; cli</span>
     </div>
 
     <h1>api &amp; cli</h1>
     <p class="article__lede">
-      ghostbrain runs a small http server on loopback so the plugin (and any
+      poltergeist runs a small http server on loopback so the plugin (and any
       scripts you write) can talk to the indexer. the same operations are
-      exposed through the <code>ghostbrain</code> command-line tool. nothing here
+      exposed through the <code>poltergeist</code> command-line tool. nothing here
       is exposed to the network — there's no auth because there's no listening
       socket beyond <code>127.0.0.1</code>.
     </p>
 
     <h2 id="http">http api</h2>
 
-    <p>default base: <code>http://127.0.0.1:7349</code>. port is configurable via <code>GHOSTBRAIN_PORT</code>. content type is <code>application/json</code> everywhere.</p>
+    <p>default base: <code>http://127.0.0.1:7349</code>. port is configurable via <code>POLTERGEIST_PORT</code>. content type is <code>application/json</code> everywhere.</p>
 
     <div class="callout callout--note">
       <span class="callout__label">note</span>
-      <p>the server only binds to <code>127.0.0.1</code> and refuses to start on any other interface. there is no <code>--bind 0.0.0.0</code> flag. if you need a remote api, run ghostbrain through an ssh tunnel.</p>
+      <p>the server only binds to <code>127.0.0.1</code> and refuses to start on any other interface. there is no <code>--bind 0.0.0.0</code> flag. if you need a remote api, run poltergeist through an ssh tunnel.</p>
     </div>
 
     <h3 id="search">GET /v1/search</h3>
@@ -151,43 +151,43 @@ data: {"took_ms": 1820}</code></pre>
     <p>kick a manual reindex. body accepts <code>{ "source": "slack" }</code> to scope; omitting reindexes everything. returns a job id you can poll at <code>/v1/jobs/:id</code>.</p>
 
     <h2 id="cli">cli reference</h2>
-    <p>installed as <code>ghostbrain</code> in your <code>$PATH</code> on macos and linux; <code>ghostbrain.exe</code> on windows. all commands accept <code>--json</code> for machine-readable output.</p>
+    <p>installed as <code>poltergeist</code> in your <code>$PATH</code> on macos and linux; <code>poltergeist.exe</code> on windows. all commands accept <code>--json</code> for machine-readable output.</p>
 
     <table>
       <thead><tr><th>command</th><th>does</th></tr></thead>
       <tbody>
-        <tr><td>ghostbrain status</td><td>connectors, queue depth, vault size, indexer health.</td></tr>
-        <tr><td>ghostbrain search "&lt;q&gt;"</td><td>same as <code>/v1/search</code>.</td></tr>
-        <tr><td>ghostbrain ask "&lt;q&gt;"</td><td>same as <code>/v1/ask</code>, prints synthesised answer to stdout.</td></tr>
-        <tr><td>ghostbrain connector list</td><td>list connectors, last sync, item counts.</td></tr>
-        <tr><td>ghostbrain connector disconnect &lt;name&gt;</td><td>remove token; keep notes.</td></tr>
-        <tr><td>ghostbrain connector purge &lt;name&gt; [--dry-run]</td><td>remove token + every note written by that connector.</td></tr>
-        <tr><td>ghostbrain reindex [--source=&lt;name&gt;]</td><td>force a re-scan.</td></tr>
-        <tr><td>ghostbrain doctor</td><td>run health checks. prints a single <code>ok</code> or a list of issues.</td></tr>
-        <tr><td>ghostbrain logs [--follow]</td><td>tail the indexer log.</td></tr>
-        <tr><td>ghostbrain export &lt;path&gt;</td><td>tar.gz the vault + <code>.ghostbrain/</code> for backup.</td></tr>
+        <tr><td>poltergeist status</td><td>connectors, queue depth, vault size, indexer health.</td></tr>
+        <tr><td>poltergeist search "&lt;q&gt;"</td><td>same as <code>/v1/search</code>.</td></tr>
+        <tr><td>poltergeist ask "&lt;q&gt;"</td><td>same as <code>/v1/ask</code>, prints synthesised answer to stdout.</td></tr>
+        <tr><td>poltergeist connector list</td><td>list connectors, last sync, item counts.</td></tr>
+        <tr><td>poltergeist connector disconnect &lt;name&gt;</td><td>remove token; keep notes.</td></tr>
+        <tr><td>poltergeist connector purge &lt;name&gt; [--dry-run]</td><td>remove token + every note written by that connector.</td></tr>
+        <tr><td>poltergeist reindex [--source=&lt;name&gt;]</td><td>force a re-scan.</td></tr>
+        <tr><td>poltergeist doctor</td><td>run health checks. prints a single <code>ok</code> or a list of issues.</td></tr>
+        <tr><td>poltergeist logs [--follow]</td><td>tail the indexer log.</td></tr>
+        <tr><td>poltergeist export &lt;path&gt;</td><td>tar.gz the vault + <code>.poltergeist/</code> for backup.</td></tr>
       </tbody>
     </table>
 
     <h3 id="examples">examples</h3>
     <pre><code><span class="c-com"># quick sanity check after install</span>
-<span class="c-fn">ghostbrain</span> doctor
+<span class="c-fn">poltergeist</span> doctor
 
 <span class="c-com"># pipe into jq</span>
-<span class="c-fn">ghostbrain</span> search <span class="c-str">"deploy"</span> <span class="c-flag">--source=</span>slack <span class="c-flag">--limit=</span>50 <span class="c-flag">--json</span> \
+<span class="c-fn">poltergeist</span> search <span class="c-str">"deploy"</span> <span class="c-flag">--source=</span>slack <span class="c-flag">--limit=</span>50 <span class="c-flag">--json</span> \
   | jq <span class="c-str">'.hits[] | {date: .occurred_at, who: .author, title: .title}'</span>
 
 <span class="c-com"># nightly backup to time machine drive</span>
-<span class="c-fn">ghostbrain</span> export /Volumes/Backup/ghostbrain-$(<span class="c-fn">date</span> +%F).tar.gz</code></pre>
+<span class="c-fn">poltergeist</span> export /Volumes/Backup/poltergeist-$(<span class="c-fn">date</span> +%F).tar.gz</code></pre>
 
     <h2 id="hooks">hooks &amp; scheduled queries</h2>
-    <p>hooks let you run a shell command whenever something happens in ghostbrain. configure them in <code>vault/.ghostbrain/hooks.yaml</code>:</p>
+    <p>hooks let you run a shell command whenever something happens in poltergeist. configure them in <code>vault/.poltergeist/hooks.yaml</code>:</p>
 
     <pre><code><span class="c-key">hooks:</span>
   <span class="c-com"># every monday 09:00 local, run a saved query and append to inbox</span>
   - <span class="c-key">on:</span> schedule
     <span class="c-key">at:</span> <span class="c-str">"0 9 * * mon"</span>
-    <span class="c-key">run:</span> ghostbrain ask <span class="c-str">"what did i miss last week"</span> &gt;&gt; inbox/monday.md
+    <span class="c-key">run:</span> poltergeist ask <span class="c-str">"what did i miss last week"</span> &gt;&gt; inbox/monday.md
 
   <span class="c-com"># whenever a github review is captured from eli, ping me</span>
   - <span class="c-key">on:</span> item.captured
@@ -196,7 +196,7 @@ data: {"took_ms": 1820}</code></pre>
 
   <span class="c-com"># at the end of every calendar meeting, summarise</span>
   - <span class="c-key">on:</span> meeting.ended
-    <span class="c-key">run:</span> ghostbrain ask <span class="c-str">"summarise {meeting.title}"</span> &gt; meetings/{meeting.slug}.md</code></pre>
+    <span class="c-key">run:</span> poltergeist ask <span class="c-str">"summarise {meeting.title}"</span> &gt; meetings/{meeting.slug}.md</code></pre>
 
     <p>available events: <code>item.captured</code>, <code>connector.connected</code>, <code>connector.disconnected</code>, <code>meeting.ended</code>, <code>query.run</code>, plus the cron-style <code>schedule</code>.</p>
 
@@ -206,7 +206,7 @@ data: {"took_ms": 1820}</code></pre>
     </div>
 
     <h2 id="webhooks">outgoing webhooks</h2>
-    <p>ghostbrain can post a json payload to a url on the same events. set them up under <strong>settings → ghostbrain → webhooks</strong>. the payload signature is in the <code>x-ghostbrain-signature</code> header (hmac-sha256 over the body, key from settings).</p>
+    <p>poltergeist can post a json payload to a url on the same events. set them up under <strong>settings → poltergeist → webhooks</strong>. the payload signature is in the <code>x-poltergeist-signature</code> header (hmac-sha256 over the body, key from settings).</p>
 
     <div class="page-nav">
       <a class="page-nav__link" href="vault.html">

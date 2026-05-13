@@ -16,5 +16,5 @@ export const HOTKEYS: Array<{ label: string; shortcut: Shortcut }> = [
   { label: 'start recording', shortcut: { mod: 'cmd-shift', key: 'R' } },
   { label: 'stop recording', shortcut: { mod: 'cmd-shift', key: 'S' } },
   { label: 'open vault', shortcut: { mod: 'cmd-shift', key: 'V' } },
-  { label: 'toggle ghostbrain window', shortcut: { mod: 'cmd-shift', key: 'G' } },
+  { label: 'toggle poltergeist window', shortcut: { mod: 'cmd-shift', key: 'G' } },
 ];

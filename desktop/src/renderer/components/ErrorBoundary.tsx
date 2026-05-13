@@ -36,7 +36,7 @@ export class ErrorBoundary extends Component<Props, State> {
         <div className="flex h-full items-center justify-center bg-paper p-8">
           <div className="max-w-[480px] rounded-lg border border-oxblood/30 bg-oxblood/10 p-6">
             <h2 className="m-0 font-display text-22 font-semibold tracking-tight-x text-ink-0">
-              ghostbrain hit a snag.
+              poltergeist hit a snag.
             </h2>
             <p className="mt-3 text-13 text-ink-1">
               the renderer process threw an error and stopped drawing. you can reload to recover —

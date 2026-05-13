@@ -60,7 +60,7 @@ function Intro() {
           connect your sources.
         </h2>
         <p className="m-0 mt-1 max-w-[60ch] text-13 text-ink-2">
-          ghostbrain&rsquo;s value comes from what flows into the vault. work
+          poltergeist&rsquo;s value comes from what flows into the vault. work
           through the connectors below — each one is independent, and you can
           add more anytime.
         </p>
@@ -99,7 +99,7 @@ function VaultCard({ vaultPath }: { vaultPath: string }) {
         </Btn>
       </div>
       <p className="mt-3 max-w-[60ch] text-12 leading-[1.55] text-ink-2">
-        the vault is where everything ghostbrain captures gets written. open it
+        the vault is where everything poltergeist captures gets written. open it
         in Obsidian for the best experience — install the Dataview, Templater,
         Periodic Notes, and Local REST API plugins from the in-app community
         marketplace.

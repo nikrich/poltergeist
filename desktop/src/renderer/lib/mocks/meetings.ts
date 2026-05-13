@@ -1,7 +1,7 @@
 // Recording UI stub data. The history portion of the meetings screen
 // reads real data from the sidecar (via useMeetings), but the
 // pre/recording/post state machine is UI-only in Phase 1 — Slice 4 will
-// wire it to the real ghostbrain.recorder. Until then, these constants
+// wire it to the real poltergeist.recorder. Until then, these constants
 // drive the static portions of that UI (participant list, sample
 // transcript lines, fake speaker airtime percentages).
 
@@ -49,7 +49,7 @@ export const TRANSCRIPT: TranscriptLine[] = [
     who: 'sam',
     color: '#7FB3D5',
     t: '00:38',
-    text: 'what if connectors are deferred entirely? you can install ghostbrain and do it later.',
+    text: 'what if connectors are deferred entirely? you can install poltergeist and do it later.',
     live: false,
   },
   {

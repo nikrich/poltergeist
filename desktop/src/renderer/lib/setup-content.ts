@@ -198,7 +198,7 @@ export const RECIPES: ConnectorRecipe[] = [
     steps: [
       {
         text:
-          'Create a Slack app from scratch at api.slack.com/apps → name "ghostbrain" → pick the workspace.',
+          'Create a Slack app from scratch at api.slack.com/apps → name "poltergeist" → pick the workspace.',
       },
       {
         text:

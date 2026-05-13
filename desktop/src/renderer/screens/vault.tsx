@@ -20,7 +20,7 @@ export function VaultScreen() {
           your vault is on disk.
         </h2>
         <p className="m-0 max-w-[380px] text-center text-14 text-ink-2">
-          ghostbrain doesn&rsquo;t replace your editor — it feeds the vault. open it to see
+          poltergeist doesn&rsquo;t replace your editor — it feeds the vault. open it to see
           everything as markdown.
         </p>
         <Btn

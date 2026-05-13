@@ -57,7 +57,7 @@ export function SettingsScreen() {
   const [section, setSection] = useState<SectionId>('display');
   return (
     <div className="flex flex-1 flex-col overflow-hidden bg-paper">
-      <TopBar title="settings" subtitle="ghostbrain v 0.1.0" />
+      <TopBar title="settings" subtitle="poltergeist v 0.1.0" />
       <div className="grid flex-1 grid-cols-[200px_1fr] overflow-hidden">
         <nav className="overflow-y-auto border-r border-hairline px-2 py-4">
           {SECTIONS.map((s) => (
@@ -90,7 +90,7 @@ function DisplaySettings() {
   const setSetting = useSettings((s) => s.set);
   return (
     <div>
-      <SectionHeader title="display" sub="how ghostbrain looks." />
+      <SectionHeader title="display" sub="how poltergeist looks." />
       <SettingRow
         label="theme"
         sub="cool ink (dark) or cool bone (light)"
@@ -136,7 +136,7 @@ function VaultSettings() {
   };
   return (
     <div>
-      <SectionHeader title="vault" sub="where ghostbrain writes everything it catches." />
+      <SectionHeader title="vault" sub="where poltergeist writes everything it catches." />
       <SettingRow
         label="vault path"
         sub={vaultPath}
@@ -153,7 +153,7 @@ function VaultSettings() {
       />
       <SettingRow
         label="folder structure"
-        sub="how ghostbrain organizes captured items"
+        sub="how poltergeist organizes captured items"
         control={
           <select
             className={selectClass}
@@ -204,7 +204,7 @@ function PrivacySettings() {
     <div>
       <SectionHeader
         title="privacy"
-        sub="ghostbrain is local-first. nothing leaves your machine unless you flip a switch."
+        sub="poltergeist is local-first. nothing leaves your machine unless you flip a switch."
       />
       <SettingRow
         label="cloud sync"
@@ -261,7 +261,7 @@ function MeetingSettings() {
 
   return (
     <div>
-      <SectionHeader title="meetings" sub="how ghostbrain records, transcribes, and summarizes." />
+      <SectionHeader title="meetings" sub="how poltergeist records, transcribes, and summarizes." />
       <SettingRow
         label="auto-record from calendar"
         sub="when on, calendar events that pass the recorder policy auto-record"
@@ -334,7 +334,7 @@ function BackgroundSettings() {
     <div>
       <SectionHeader
         title="background"
-        sub="when on, ghostbrain stays running in the menu bar and fetches connectors on a schedule from inside the app."
+        sub="when on, poltergeist stays running in the menu bar and fetches connectors on a schedule from inside the app."
       />
       {conflicts ? (
         <div className="mb-4 flex gap-3 rounded-r6 border border-oxblood/30 bg-oxblood/10 p-3">
@@ -384,7 +384,7 @@ function HotkeySettings() {
     <div>
       <SectionHeader
         title="hotkeys"
-        sub="global shortcuts — work even when ghostbrain isn't focused."
+        sub="global shortcuts — work even when poltergeist isn't focused."
       />
       {HOTKEYS.map((h) => (
         <SettingRow
@@ -404,14 +404,14 @@ function HotkeySettings() {
 function AccountSettings() {
   return (
     <div>
-      <SectionHeader title="account" sub="ghostbrain runs locally — no account needed for now." />
+      <SectionHeader title="account" sub="poltergeist runs locally — no account needed for now." />
       <div className="rounded-lg border border-hairline bg-vellum p-6">
         <div className="flex items-start gap-3">
           <Lucide name="info" size={16} color="var(--ink-2)" className="mt-1" />
           <div className="flex-1 leading-[1.4]">
             <div className="text-13 font-medium text-ink-0">no sign-in yet</div>
             <p className="mt-1 text-12 text-ink-2">
-              ghostbrain is local-first. accounts, sync, and the pro tier are coming in a future
+              poltergeist is local-first. accounts, sync, and the pro tier are coming in a future
               release. for now, everything runs on your machine and the vault on disk is the only
               source of truth.
             </p>
@@ -430,7 +430,7 @@ function AboutSettings() {
         <Ghost size={56} floating />
         <div className="leading-[1.4]">
           <div className="font-display text-22 font-semibold tracking-tight-xx text-ink-0">
-            ghostbrain
+            poltergeist
           </div>
           <div className="font-mono text-11 text-ink-2">
             0.1.0 · build {new Date().toISOString().slice(0, 10)} · {window.gb.platform}

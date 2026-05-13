@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>quickstart — ghostbrain docs</title>
-  <meta name="description" content="Install ghostbrain, connect your first app, run your first query — in five minutes.">
+  <title>quickstart — poltergeist docs</title>
+  <meta name="description" content="Install poltergeist, connect your first app, run your first query — in five minutes.">
   <link rel="icon" href="../assets/favicon.svg">
   <link rel="stylesheet" href="../styles.css">
 </head>
@@ -12,14 +12,14 @@
 
 <nav class="nav" id="nav">
   <div class="nav__inner">
-    <a href="../" class="nav__brand" aria-label="ghostbrain home">
+    <a href="../" class="nav__brand" aria-label="poltergeist home">
       <svg viewBox="0 0 100 110" width="26" height="29" aria-hidden="true">
         <path d="M 50 6 C 24 6, 10 24, 10 50 L 10 94 Q 17 102, 24 95 Q 31 88, 38 95 Q 44 102, 50 95 Q 56 88, 62 95 Q 69 102, 76 95 Q 83 88, 90 94 L 90 50 C 90 24, 76 6, 50 6 Z" fill="#C5FF3D"/>
         <circle cx="38" cy="48" r="3.2" fill="#0E0F12"/>
         <circle cx="62" cy="48" r="3.2" fill="#0E0F12"/>
         <line x1="38" y1="48" x2="62" y2="48" stroke="#0E0F12" stroke-width="1.2" stroke-opacity="0.5"/>
       </svg>
-      <span class="nav__wordmark">ghostbrain</span>
+      <span class="nav__wordmark">poltergeist</span>
     </a>
     <div class="nav__links">
       <a href="../#how">how it works</a>
@@ -68,12 +68,12 @@
 
   <article class="article">
     <div class="article__crumb">
-      <a href="../">ghostbrain</a><span class="sep">/</span><a href="./">docs</a><span class="sep">/</span><span>quickstart</span>
+      <a href="../">poltergeist</a><span class="sep">/</span><a href="./">docs</a><span class="sep">/</span><span>quickstart</span>
     </div>
 
     <h1>quickstart</h1>
     <p class="article__lede">
-      get from zero to a working ghostbrain in five minutes. you'll need
+      get from zero to a working poltergeist in five minutes. you'll need
       obsidian, the plugin, and one app to connect — gmail is the easiest first
       target. by the end you'll have your first markdown note written by the
       ghost.
@@ -82,35 +82,35 @@
     <h2 id="prerequisites">prerequisites</h2>
     <ul>
       <li><strong>obsidian 1.5 or newer</strong> — free at <a href="https://obsidian.md" target="_blank" rel="noopener noreferrer">obsidian.md</a>.</li>
-      <li><strong>a vault</strong> — either a fresh one or an existing one you don't mind ghostbrain writing into.</li>
+      <li><strong>a vault</strong> — either a fresh one or an existing one you don't mind poltergeist writing into.</li>
       <li><strong>macos 12+ on apple silicon</strong> for now. windows and linux builds are in flight — track them on the <a href="https://github.com/nikrich/ghost-brain/releases" target="_blank" rel="noopener noreferrer">releases page</a>.</li>
       <li><strong>about 200 mb of free disk</strong> — the indexer is small but the local model is ~1.8 gb on first run.</li>
     </ul>
 
     <h2 id="install">1. install the plugin</h2>
-    <p>download the latest release from <a href="https://github.com/nikrich/ghost-brain/releases/latest" target="_blank" rel="noopener noreferrer">github</a> and pick the right archive for your os. unzip it and drop the <code>ghostbrain</code> folder into your vault's plugins directory:</p>
+    <p>download the latest release from <a href="https://github.com/nikrich/ghost-brain/releases/latest" target="_blank" rel="noopener noreferrer">github</a> and pick the right archive for your os. unzip it and drop the <code>poltergeist</code> folder into your vault's plugins directory:</p>
 
     <pre><code><span class="c-com"># macos / linux</span>
-&lt;your-vault&gt;/.obsidian/plugins/ghostbrain/
+&lt;your-vault&gt;/.obsidian/plugins/poltergeist/
 
 <span class="c-com"># windows</span>
-&lt;your-vault&gt;\.obsidian\plugins\ghostbrain\</code></pre>
+&lt;your-vault&gt;\.obsidian\plugins\poltergeist\</code></pre>
 
-    <p>open obsidian → <strong>settings → community plugins</strong>, enable <em>ghostbrain</em>, and the ghost icon appears in the left ribbon. clicking it opens the ghostbrain sidebar.</p>
+    <p>open obsidian → <strong>settings → community plugins</strong>, enable <em>poltergeist</em>, and the ghost icon appears in the left ribbon. clicking it opens the poltergeist sidebar.</p>
 
     <div class="callout callout--note">
       <span class="callout__label">note</span>
-      <p>the first time you enable the plugin it downloads the local extraction model (~1.8 gb). this happens once and is cached in <code>~/.ghostbrain/</code>. afterwards the indexer runs entirely offline.</p>
+      <p>the first time you enable the plugin it downloads the local extraction model (~1.8 gb). this happens once and is cached in <code>~/.poltergeist/</code>. afterwards the indexer runs entirely offline.</p>
     </div>
 
     <h2 id="connect">2. connect your first app</h2>
-    <p>in the ghostbrain sidebar, click <strong>connect an app</strong> and pick <em>gmail</em>. obsidian opens your default browser, sends you through google's standard oauth screen, and bounces back to obsidian when you approve. the token lands in your os keychain — never in the vault, never on disk in plaintext.</p>
+    <p>in the poltergeist sidebar, click <strong>connect an app</strong> and pick <em>gmail</em>. obsidian opens your default browser, sends you through google's standard oauth screen, and bounces back to obsidian when you approve. the token lands in your os keychain — never in the vault, never on disk in plaintext.</p>
 
     <p>once authorised you'll see a small status line:</p>
 
     <pre><code>gmail · <span class="c-key">connected</span> · backfilling 41,200 threads · 14% (~3 min)</code></pre>
 
-    <p>the first backfill walks the full mailbox; subsequent fetches are incremental. you can keep working — ghostbrain is rate-limited and pauses on battery.</p>
+    <p>the first backfill walks the full mailbox; subsequent fetches are incremental. you can keep working — poltergeist is rate-limited and pauses on battery.</p>
 
     <div class="callout callout--tip">
       <span class="callout__label">tip</span>
@@ -118,13 +118,13 @@
     </div>
 
     <h2 id="query">3. ask your first question</h2>
-    <p>once the initial backfill is past about 1%, you can start querying. open the command palette (<kbd>cmd</kbd>+<kbd>p</kbd> / <kbd>ctrl</kbd>+<kbd>p</kbd>) and run <strong>ghostbrain: ask the archive</strong>, or hit the keyboard shortcut <kbd>cmd</kbd>+<kbd>shift</kbd>+<kbd>g</kbd>.</p>
+    <p>once the initial backfill is past about 1%, you can start querying. open the command palette (<kbd>cmd</kbd>+<kbd>p</kbd> / <kbd>ctrl</kbd>+<kbd>p</kbd>) and run <strong>poltergeist: ask the archive</strong>, or hit the keyboard shortcut <kbd>cmd</kbd>+<kbd>shift</kbd>+<kbd>g</kbd>.</p>
 
     <p>type something a person might actually say:</p>
 
     <pre><code><span class="c-key">?</span> what did marie say about the q3 launch?</code></pre>
 
-    <p>you'll get a ranked list of matches from your connected sources. clicking any result either opens the rendered note in your vault or jumps to the source app — your choice in <strong>settings → ghostbrain → click behaviour</strong>.</p>
+    <p>you'll get a ranked list of matches from your connected sources. clicking any result either opens the rendered note in your vault or jumps to the source app — your choice in <strong>settings → poltergeist → click behaviour</strong>.</p>
 
     <h2 id="pipe">4. pipe a result into a note</h2>
     <p>at the bottom of any query result, <strong>pipe to note</strong> dumps the matches into <code>vault/inbox/&lt;today&gt;.md</code> as a clean markdown summary:</p>
@@ -150,7 +150,7 @@ in <span class="c-flag">[[notion/q3-launch-plan-v3]]</span>.
     <ul>
       <li><a href="connectors.html">connect more apps</a> — slack, notion, linear, github, calendar, drive.</li>
       <li><a href="query.html">query syntax</a> — narrow with <code>from:</code>, <code>after:</code>, <code>in:</code>, and pipe operators.</li>
-      <li><a href="vault.html">vault layout</a> — how ghostbrain organises folders and frontmatter.</li>
+      <li><a href="vault.html">vault layout</a> — how poltergeist organises folders and frontmatter.</li>
       <li><a href="privacy.html">privacy &amp; security</a> — what stays on your machine and what doesn't.</li>
     </ul>
 

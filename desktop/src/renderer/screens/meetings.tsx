@@ -195,7 +195,7 @@ function PreMeeting({ onStart, event }: PreMeetingProps) {
           </div>
 
           <div className="mt-6 rounded-md border border-hairline bg-paper p-4">
-            <Eyebrow className="mb-2">ghostbrain primed</Eyebrow>
+            <Eyebrow className="mb-2">poltergeist primed</Eyebrow>
             <ul className="m-0 flex list-none flex-col gap-[6px] p-0">
               <li className="flex items-start gap-2 text-12 text-ink-1">
                 <Lucide name="check" size={11} color="var(--neon)" className="mt-1" />
@@ -445,7 +445,7 @@ function ActiveRecording({ startedAt, title, onStop }: ActiveRecordingProps) {
       <div className="rounded-lg border border-hairline bg-vellum p-6">
         <Eyebrow className="mb-2">capturing audio</Eyebrow>
         <p className="m-0 max-w-[60ch] text-14 leading-[1.55] text-ink-1">
-          ghostbrain is recording your mic + system audio. transcription runs
+          poltergeist is recording your mic + system audio. transcription runs
           locally with whisper.cpp after you hit stop — no audio leaves your
           machine. the transcript will land under{' '}
           <span className="font-mono text-12">20-contexts/&lt;ctx&gt;/calendar/transcripts/</span>.

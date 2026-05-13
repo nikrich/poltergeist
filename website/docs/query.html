@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>query syntax — ghostbrain docs</title>
+  <title>query syntax — poltergeist docs</title>
   <meta name="description" content="Plain-english questions plus operators (from:, in:, after:, with:, mentions:) and pipe destinations.">
   <link rel="icon" href="../assets/favicon.svg">
   <link rel="stylesheet" href="../styles.css">
@@ -12,14 +12,14 @@
 
 <nav class="nav" id="nav">
   <div class="nav__inner">
-    <a href="../" class="nav__brand" aria-label="ghostbrain home">
+    <a href="../" class="nav__brand" aria-label="poltergeist home">
       <svg viewBox="0 0 100 110" width="26" height="29" aria-hidden="true">
         <path d="M 50 6 C 24 6, 10 24, 10 50 L 10 94 Q 17 102, 24 95 Q 31 88, 38 95 Q 44 102, 50 95 Q 56 88, 62 95 Q 69 102, 76 95 Q 83 88, 90 94 L 90 50 C 90 24, 76 6, 50 6 Z" fill="#C5FF3D"/>
         <circle cx="38" cy="48" r="3.2" fill="#0E0F12"/>
         <circle cx="62" cy="48" r="3.2" fill="#0E0F12"/>
         <line x1="38" y1="48" x2="62" y2="48" stroke="#0E0F12" stroke-width="1.2" stroke-opacity="0.5"/>
       </svg>
-      <span class="nav__wordmark">ghostbrain</span>
+      <span class="nav__wordmark">poltergeist</span>
     </a>
     <div class="nav__links">
       <a href="../#how">how it works</a>
@@ -68,19 +68,19 @@
 
   <article class="article">
     <div class="article__crumb">
-      <a href="../">ghostbrain</a><span class="sep">/</span><a href="./">docs</a><span class="sep">/</span><span>query syntax</span>
+      <a href="../">poltergeist</a><span class="sep">/</span><a href="./">docs</a><span class="sep">/</span><span>query syntax</span>
     </div>
 
     <h1>query syntax</h1>
     <p class="article__lede">
-      the recommended way to query ghostbrain is to ask it a question. operators
+      the recommended way to query poltergeist is to ask it a question. operators
       exist for when you already know the shape of the answer — they narrow
       the search before the language model ever sees it, which is faster and
       cheaper than reranking.
     </p>
 
     <h2 id="natural">plain english</h2>
-    <p>just type. ghostbrain extracts entities (people, projects, dates, source apps) and runs a hybrid lexical + semantic search across the matching corpora.</p>
+    <p>just type. poltergeist extracts entities (people, projects, dates, source apps) and runs a hybrid lexical + semantic search across the matching corpora.</p>
 
     <pre><code><span class="c-key">?</span> what did marie say about the q3 launch
 <span class="c-key">?</span> meetings about pricing this week
@@ -122,7 +122,7 @@
 
     <div class="callout callout--tip">
       <span class="callout__label">tip</span>
-      <p>if you find yourself disambiguating "marie" every time, edit <code>vault/people/marie chen.md</code> and add the alias to frontmatter: <code>aliases: [marie, m.chen, marie c]</code>. ghostbrain reads its own vault too.</p>
+      <p>if you find yourself disambiguating "marie" every time, edit <code>vault/people/marie chen.md</code> and add the alias to frontmatter: <code>aliases: [marie, m.chen, marie c]</code>. poltergeist reads its own vault too.</p>
     </div>
 
     <h2 id="composition">composing queries</h2>
@@ -138,7 +138,7 @@
 <span class="c-key">?</span> blockers <span class="c-flag">with:</span>marie <span class="c-flag">in:</span>launch <span class="c-flag">during:</span>2w</code></pre>
 
     <h2 id="answers">getting an answer, not a list</h2>
-    <p>by default ghostbrain returns ranked hits. if you want a <em>synthesised</em> answer instead — a paragraph with citations — prefix the query with <code>!</code>:</p>
+    <p>by default poltergeist returns ranked hits. if you want a <em>synthesised</em> answer instead — a paragraph with citations — prefix the query with <code>!</code>:</p>
 
     <pre><code><span class="c-key">!</span> what did we decide about pricing in march
 <span class="c-com"># →</span>
@@ -161,7 +161,7 @@ confirmed by sam in the q1 retro doc [<span class="c-flag">[2]</span>].
 <span class="c-key">!</span> what's blocking the migration <span class="c-flag">&gt;</span> projects/migration/blockers.md
 
 <span class="c-com"># json on stdout (cli only)</span>
-<span class="c-fn">ghostbrain</span> search <span class="c-str">"q3 launch"</span> <span class="c-flag">--json</span></code></pre>
+<span class="c-fn">poltergeist</span> search <span class="c-str">"q3 launch"</span> <span class="c-flag">--json</span></code></pre>
 
     <h2 id="saved">saved queries</h2>
     <p>pin a query with <code>:save &lt;name&gt;</code> and it shows up in the sidebar under <strong>saved</strong>. saved queries re-run on demand and can be scheduled (every monday morning, every commit, every meeting end) — see <a href="api.html#hooks">hooks</a>.</p>

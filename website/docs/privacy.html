@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>privacy &amp; security — ghostbrain docs</title>
+  <title>privacy &amp; security — poltergeist docs</title>
   <meta name="description" content="Where your data lives, how tokens are stored, the telemetry policy, optional end-to-end encrypted sync, and the disclosure process.">
   <link rel="icon" href="../assets/favicon.svg">
   <link rel="stylesheet" href="../styles.css">
@@ -12,14 +12,14 @@
 
 <nav class="nav" id="nav">
   <div class="nav__inner">
-    <a href="../" class="nav__brand" aria-label="ghostbrain home">
+    <a href="../" class="nav__brand" aria-label="poltergeist home">
       <svg viewBox="0 0 100 110" width="26" height="29" aria-hidden="true">
         <path d="M 50 6 C 24 6, 10 24, 10 50 L 10 94 Q 17 102, 24 95 Q 31 88, 38 95 Q 44 102, 50 95 Q 56 88, 62 95 Q 69 102, 76 95 Q 83 88, 90 94 L 90 50 C 90 24, 76 6, 50 6 Z" fill="#C5FF3D"/>
         <circle cx="38" cy="48" r="3.2" fill="#0E0F12"/>
         <circle cx="62" cy="48" r="3.2" fill="#0E0F12"/>
         <line x1="38" y1="48" x2="62" y2="48" stroke="#0E0F12" stroke-width="1.2" stroke-opacity="0.5"/>
       </svg>
-      <span class="nav__wordmark">ghostbrain</span>
+      <span class="nav__wordmark">poltergeist</span>
     </a>
     <div class="nav__links">
       <a href="../#how">how it works</a>
@@ -68,12 +68,12 @@
 
   <article class="article">
     <div class="article__crumb">
-      <a href="../">ghostbrain</a><span class="sep">/</span><a href="./">docs</a><span class="sep">/</span><span>privacy &amp; security</span>
+      <a href="../">poltergeist</a><span class="sep">/</span><a href="./">docs</a><span class="sep">/</span><span>privacy &amp; security</span>
     </div>
 
     <h1>privacy &amp; security</h1>
     <p class="article__lede">
-      ghostbrain is a local-first product. nothing leaves your machine unless
+      poltergeist is a local-first product. nothing leaves your machine unless
       you flip an explicit switch — and even then, only in shapes you've
       consented to. this page lays out exactly what stays, what moves, and
       how to verify each claim for yourself.
@@ -81,13 +81,13 @@
 
     <h2 id="local">what stays local</h2>
     <ul>
-      <li>every message, document, comment, meeting, and pr ghostbrain ever indexes.</li>
+      <li>every message, document, comment, meeting, and pr poltergeist ever indexes.</li>
       <li>the extracted entities, the vector index, the lexical index.</li>
-      <li>every query you've ever run and every answer ghostbrain has produced.</li>
+      <li>every query you've ever run and every answer poltergeist has produced.</li>
       <li>the model weights themselves — the extraction and ranking model both run on-device.</li>
     </ul>
 
-    <p>you can verify this with a network monitor. with default settings, ghostbrain makes only outbound requests <em>directly to the connector providers</em> (gmail api, slack api, etc.) using your own tokens. there is no "phone home" endpoint.</p>
+    <p>you can verify this with a network monitor. with default settings, poltergeist makes only outbound requests <em>directly to the connector providers</em> (gmail api, slack api, etc.) using your own tokens. there is no "phone home" endpoint.</p>
 
     <div class="callout callout--tip">
       <span class="callout__label">tip</span>
@@ -104,10 +104,10 @@
         <tr><td>linux</td><td>gnome-keyring or kwallet (whichever is active); falls back to libsecret</td></tr>
       </tbody>
     </table>
-    <p>ghostbrain never writes tokens to a plain file. when you disconnect a connector, the token is removed from the keychain immediately — not at the next sync.</p>
+    <p>poltergeist never writes tokens to a plain file. when you disconnect a connector, the token is removed from the keychain immediately — not at the next sync.</p>
 
     <h2 id="telemetry">telemetry</h2>
-    <p>ghostbrain ships <em>two</em> kinds of telemetry by default, both off:</p>
+    <p>poltergeist ships <em>two</em> kinds of telemetry by default, both off:</p>
     <ul>
       <li><strong>anonymous crash reports</strong> — disabled. enable in <strong>settings → privacy</strong> to send stack traces (no user data) when the indexer panics.</li>
       <li><strong>usage stats</strong> — disabled. enable to send daily counts of {queries run, items indexed, model latency p50/p99}. no content, no metadata about what was queried.</li>
@@ -119,7 +119,7 @@
     <p>the model also can't see your data over the wire. it's loaded from disk on startup and runs in the same process; there is no rpc, no server, no inference api.</p>
 
     <h2 id="sync">optional end-to-end encrypted sync</h2>
-    <p>if you want your vault on two machines, ghostbrain ships an optional sync service. it is:</p>
+    <p>if you want your vault on two machines, poltergeist ships an optional sync service. it is:</p>
     <ul>
       <li><strong>opt-in</strong> — off by default; configure in <strong>settings → sync</strong>.</li>
       <li><strong>end-to-end encrypted</strong> — keys are derived from a passphrase you pick, then split with shamir's secret sharing. we get the encrypted blobs; we cannot read them.</li>
@@ -146,10 +146,10 @@
       </tbody>
     </table>
 
-    <p>no connector ever writes back to the source. ghostbrain is read-only by design — we never want to be in a position to <em>send</em> a slack message on your behalf.</p>
+    <p>no connector ever writes back to the source. poltergeist is read-only by design — we never want to be in a position to <em>send</em> a slack message on your behalf.</p>
 
     <h2 id="threats">threat model</h2>
-    <p>what ghostbrain protects against, and what it doesn't:</p>
+    <p>what poltergeist protects against, and what it doesn't:</p>
 
     <h3 id="protects">protects against</h3>
     <ul>
@@ -163,13 +163,13 @@
     <ul>
       <li>an attacker with root on your machine — they can read your keychain and your vault.</li>
       <li>malicious obsidian plugins — they share the vault and the obsidian process. install plugins from people you trust.</li>
-      <li>cloud sync of the underlying apps — if your gmail is in a breach, ghostbrain can't pull it back.</li>
+      <li>cloud sync of the underlying apps — if your gmail is in a breach, poltergeist can't pull it back.</li>
     </ul>
 
     <h2 id="disclosure">responsible disclosure</h2>
     <p>found something? we'd rather hear about it than have it be public:</p>
     <ul>
-      <li>email <code>security@ghostbrain.app</code> with details and a reproduction.</li>
+      <li>email <code>security@poltergeist.app</code> with details and a reproduction.</li>
       <li>or open a github security advisory at <a href="https://github.com/nikrich/ghost-brain/security/advisories/new" target="_blank" rel="noopener noreferrer">github.com/nikrich/ghost-brain/security/advisories/new</a>.</li>
       <li>we'll respond within 72 hours, fix critical issues within 14 days, and credit you in the release notes unless you'd rather we didn't.</li>
     </ul>

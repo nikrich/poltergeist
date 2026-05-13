@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>self-host — ghostbrain docs</title>
+  <title>self-host — poltergeist docs</title>
   <meta name="description" content="Build the indexer from source, run updates, manage backups, and understand the fair-source license.">
   <link rel="icon" href="../assets/favicon.svg">
   <link rel="stylesheet" href="../styles.css">
@@ -12,14 +12,14 @@
 
 <nav class="nav" id="nav">
   <div class="nav__inner">
-    <a href="../" class="nav__brand" aria-label="ghostbrain home">
+    <a href="../" class="nav__brand" aria-label="poltergeist home">
       <svg viewBox="0 0 100 110" width="26" height="29" aria-hidden="true">
         <path d="M 50 6 C 24 6, 10 24, 10 50 L 10 94 Q 17 102, 24 95 Q 31 88, 38 95 Q 44 102, 50 95 Q 56 88, 62 95 Q 69 102, 76 95 Q 83 88, 90 94 L 90 50 C 90 24, 76 6, 50 6 Z" fill="#C5FF3D"/>
         <circle cx="38" cy="48" r="3.2" fill="#0E0F12"/>
         <circle cx="62" cy="48" r="3.2" fill="#0E0F12"/>
         <line x1="38" y1="48" x2="62" y2="48" stroke="#0E0F12" stroke-width="1.2" stroke-opacity="0.5"/>
       </svg>
-      <span class="nav__wordmark">ghostbrain</span>
+      <span class="nav__wordmark">poltergeist</span>
     </a>
     <div class="nav__links">
       <a href="../#how">how it works</a>
@@ -68,12 +68,12 @@
 
   <article class="article">
     <div class="article__crumb">
-      <a href="../">ghostbrain</a><span class="sep">/</span><a href="./">docs</a><span class="sep">/</span><span>self-host</span>
+      <a href="../">poltergeist</a><span class="sep">/</span><a href="./">docs</a><span class="sep">/</span><span>self-host</span>
     </div>
 
     <h1>self-host</h1>
     <p class="article__lede">
-      ghostbrain already runs entirely on your machine — "self-hosting" here
+      poltergeist already runs entirely on your machine — "self-hosting" here
       really means <em>building the indexer from source</em> instead of using
       the signed binary, plus a few extras: managing updates, backing up the
       vault, and understanding the licenses.
@@ -107,16 +107,16 @@
 <span class="c-fn">npm</span> run build
 
 <span class="c-com"># drop the dist/ folder into your vault</span>
-<span class="c-fn">cp</span> -r dist/ <span class="c-str">"~/your-vault/.obsidian/plugins/ghostbrain"</span></code></pre>
+<span class="c-fn">cp</span> -r dist/ <span class="c-str">"~/your-vault/.obsidian/plugins/poltergeist"</span></code></pre>
 
     <h3 id="build-indexer">indexer</h3>
     <pre><code><span class="c-fn">cd</span> ghost-brain/indexer
 <span class="c-fn">cargo</span> build <span class="c-flag">--release</span>
 
 <span class="c-com"># run it directly; the plugin will find it on its socket</span>
-./target/release/ghostbrain serve <span class="c-flag">--vault</span> ~/your-vault</code></pre>
+./target/release/poltergeist serve <span class="c-flag">--vault</span> ~/your-vault</code></pre>
 
-    <p>the first build downloads the <code>1.8 gb</code> model artefact. it's pinned by sha-256 in <code>indexer/models.lock</code>. you can mirror the artefact to your own object store and pass <code>GHOSTBRAIN_MODEL_URL</code> to fetch it from there in a locked-down environment.</p>
+    <p>the first build downloads the <code>1.8 gb</code> model artefact. it's pinned by sha-256 in <code>indexer/models.lock</code>. you can mirror the artefact to your own object store and pass <code>POLTERGEIST_MODEL_URL</code> to fetch it from there in a locked-down environment.</p>
 
     <div class="callout callout--note">
       <span class="callout__label">note</span>
@@ -133,24 +133,24 @@
         <tr><td>nightly</td><td>main branch, built every commit. expect breakage.</td></tr>
       </tbody>
     </table>
-    <p>set the channel in <strong>settings → ghostbrain → updates</strong>, or by env: <code>GHOSTBRAIN_CHANNEL=beta</code>. the plugin checks once a day on launch and prompts you; it never updates silently.</p>
+    <p>set the channel in <strong>settings → poltergeist → updates</strong>, or by env: <code>POLTERGEIST_CHANNEL=beta</code>. the plugin checks once a day on launch and prompts you; it never updates silently.</p>
 
     <h2 id="storage">disk &amp; storage</h2>
-    <p>ghostbrain stores three things:</p>
+    <p>poltergeist stores three things:</p>
     <ul>
       <li><strong>markdown notes</strong> — in your obsidian vault. backup with your normal vault backup.</li>
-      <li><strong>indexer state</strong> — under <code>vault/.ghostbrain/</code>. small, mostly text. include in vault backup.</li>
-      <li><strong>the model</strong> — under <code>~/.ghostbrain/models/</code>. ~1.8 gb. you can exclude from backup; it'll be re-downloaded.</li>
+      <li><strong>indexer state</strong> — under <code>vault/.poltergeist/</code>. small, mostly text. include in vault backup.</li>
+      <li><strong>the model</strong> — under <code>~/.poltergeist/models/</code>. ~1.8 gb. you can exclude from backup; it'll be re-downloaded.</li>
     </ul>
 
     <h3 id="backup">backup</h3>
-    <pre><code><span class="c-com"># tar.gz the vault + .ghostbrain/ (skips the model)</span>
-<span class="c-fn">ghostbrain</span> export ~/Backups/ghostbrain-$(<span class="c-fn">date</span> +%F).tar.gz</code></pre>
+    <pre><code><span class="c-com"># tar.gz the vault + .poltergeist/ (skips the model)</span>
+<span class="c-fn">poltergeist</span> export ~/Backups/poltergeist-$(<span class="c-fn">date</span> +%F).tar.gz</code></pre>
 
     <p>restoring is "untar and point obsidian at it." tokens are <em>not</em> exported — you'll reconnect each app on restore. this is on purpose.</p>
 
     <h3 id="encryption">encrypting at rest</h3>
-    <p>ghostbrain doesn't encrypt the vault itself — that's your filesystem's job. use filevault, bitlocker, or luks. if you want per-vault encryption inside an unencrypted volume, obsidian has plugins for that (e.g. age-encrypt); they work fine with ghostbrain.</p>
+    <p>poltergeist doesn't encrypt the vault itself — that's your filesystem's job. use filevault, bitlocker, or luks. if you want per-vault encryption inside an unencrypted volume, obsidian has plugins for that (e.g. age-encrypt); they work fine with poltergeist.</p>
 
     <h2 id="license">licenses</h2>
     <p>two different ones, on purpose:</p>
@@ -159,7 +159,7 @@
       <tbody>
         <tr><td>obsidian plugin</td><td>mit</td><td>do whatever you want. attribution preserved.</td></tr>
         <tr><td>indexer (rust)</td><td><a href="https://fair.io/licenses/fair-source-0.9" target="_blank" rel="noopener noreferrer">fair-source 0.9</a></td><td>read, build, fork for personal &amp; small-org use (≤ 5 users). reach out for a commercial license at the 6th user.</td></tr>
-        <tr><td>extraction model</td><td>research-only weights</td><td>included for use inside ghostbrain. not redistributable as a standalone model.</td></tr>
+        <tr><td>extraction model</td><td>research-only weights</td><td>included for use inside poltergeist. not redistributable as a standalone model.</td></tr>
       </tbody>
     </table>
 
@@ -170,21 +170,21 @@
 
     <h2 id="airgap">running on an airgapped machine</h2>
     <ol>
-      <li>on a connected machine, run <code>ghostbrain bundle --output offline.tar</code>. this packages the binary, the model, and a pinned dependency mirror.</li>
+      <li>on a connected machine, run <code>poltergeist bundle --output offline.tar</code>. this packages the binary, the model, and a pinned dependency mirror.</li>
       <li>transfer <code>offline.tar</code> to the airgapped machine.</li>
-      <li><code>ghostbrain bundle --install offline.tar</code>.</li>
+      <li><code>poltergeist bundle --install offline.tar</code>.</li>
       <li>connect connectors that don't require oauth (linear api key, github pat, notion integration token). gmail/slack/calendar/drive require a one-time browser exchange and won't work on an airgapped host.</li>
     </ol>
 
     <h2 id="troubleshooting">troubleshooting</h2>
-    <p><code>ghostbrain doctor</code> covers most issues. common failure modes:</p>
+    <p><code>poltergeist doctor</code> covers most issues. common failure modes:</p>
     <table>
       <thead><tr><th>symptom</th><th>cause</th><th>fix</th></tr></thead>
       <tbody>
-        <tr><td>"port 7349 in use"</td><td>another ghostbrain or unrelated process bound the port</td><td>set <code>GHOSTBRAIN_PORT</code> to another port, restart obsidian</td></tr>
+        <tr><td>"port 7349 in use"</td><td>another poltergeist or unrelated process bound the port</td><td>set <code>POLTERGEIST_PORT</code> to another port, restart obsidian</td></tr>
         <tr><td>fan spins on backfill</td><td>working as designed, briefly</td><td>backfill rate-limits itself; let it finish once and idle cpu drops &lt; 1%</td></tr>
-        <tr><td>"keychain access denied" on macos</td><td>obsidian sandboxing edge case</td><td>open keychain access, grant <code>ghostbrain-indexer</code> "always allow"</td></tr>
-        <tr><td>graph view doesn't update</td><td>obsidian's cache stale</td><td><code>cmd</code>+<code>r</code> in obsidian to reload, or run <code>ghostbrain reindex</code></td></tr>
+        <tr><td>"keychain access denied" on macos</td><td>obsidian sandboxing edge case</td><td>open keychain access, grant <code>poltergeist-indexer</code> "always allow"</td></tr>
+        <tr><td>graph view doesn't update</td><td>obsidian's cache stale</td><td><code>cmd</code>+<code>r</code> in obsidian to reload, or run <code>poltergeist reindex</code></td></tr>
       </tbody>
     </table>
 

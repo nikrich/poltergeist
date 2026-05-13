@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>vault structure — ghostbrain docs</title>
-  <meta name="description" content="How ghostbrain organises folders, names files, writes frontmatter, and links entities together.">
+  <title>vault structure — poltergeist docs</title>
+  <meta name="description" content="How poltergeist organises folders, names files, writes frontmatter, and links entities together.">
   <link rel="icon" href="../assets/favicon.svg">
   <link rel="stylesheet" href="../styles.css">
 </head>
@@ -12,14 +12,14 @@
 
 <nav class="nav" id="nav">
   <div class="nav__inner">
-    <a href="../" class="nav__brand" aria-label="ghostbrain home">
+    <a href="../" class="nav__brand" aria-label="poltergeist home">
       <svg viewBox="0 0 100 110" width="26" height="29" aria-hidden="true">
         <path d="M 50 6 C 24 6, 10 24, 10 50 L 10 94 Q 17 102, 24 95 Q 31 88, 38 95 Q 44 102, 50 95 Q 56 88, 62 95 Q 69 102, 76 95 Q 83 88, 90 94 L 90 50 C 90 24, 76 6, 50 6 Z" fill="#C5FF3D"/>
         <circle cx="38" cy="48" r="3.2" fill="#0E0F12"/>
         <circle cx="62" cy="48" r="3.2" fill="#0E0F12"/>
         <line x1="38" y1="48" x2="62" y2="48" stroke="#0E0F12" stroke-width="1.2" stroke-opacity="0.5"/>
       </svg>
-      <span class="nav__wordmark">ghostbrain</span>
+      <span class="nav__wordmark">poltergeist</span>
     </a>
     <div class="nav__links">
       <a href="../#how">how it works</a>
@@ -68,12 +68,12 @@
 
   <article class="article">
     <div class="article__crumb">
-      <a href="../">ghostbrain</a><span class="sep">/</span><a href="./">docs</a><span class="sep">/</span><span>vault structure</span>
+      <a href="../">poltergeist</a><span class="sep">/</span><a href="./">docs</a><span class="sep">/</span><span>vault structure</span>
     </div>
 
     <h1>vault structure</h1>
     <p class="article__lede">
-      ghostbrain doesn't own its database — the obsidian vault <em>is</em> the
+      poltergeist doesn't own its database — the obsidian vault <em>is</em> the
       database. every captured item is one markdown file with frontmatter,
       sitting in a predictable folder, with wiki-links to every other item
       it touches. obsidian's graph view and backlinks panel work because we
@@ -89,19 +89,19 @@
 ├── threads/          <span class="c-com"># gmail + slack threads</span>
 ├── docs/             <span class="c-com"># notion pages, google docs, drive files</span>
 ├── code/             <span class="c-com"># github prs, issues, mentions</span>
-└── .ghostbrain/      <span class="c-com"># indexer state — see below</span></code></pre>
+└── .poltergeist/      <span class="c-com"># indexer state — see below</span></code></pre>
 
-    <p>only <code>.ghostbrain/</code> is reserved. you can rearrange anything in the other folders and ghostbrain will follow your edits — the indexer treats your version as authoritative and won't overwrite it.</p>
+    <p>only <code>.poltergeist/</code> is reserved. you can rearrange anything in the other folders and poltergeist will follow your edits — the indexer treats your version as authoritative and won't overwrite it.</p>
 
     <div class="callout callout--note">
       <span class="callout__label">note</span>
-      <p>by default ghostbrain writes into a sibling vault called <code>ghostbrain-vault</code>. point it at an existing vault in <strong>settings → ghostbrain → vault path</strong> if you'd rather share one with your own notes.</p>
+      <p>by default poltergeist writes into a sibling vault called <code>poltergeist-vault</code>. point it at an existing vault in <strong>settings → poltergeist → vault path</strong> if you'd rather share one with your own notes.</p>
     </div>
 
     <h2 id="files">file types</h2>
 
     <h3 id="people-file">people note</h3>
-    <p>one per resolved person. lives at <code>vault/people/&lt;display-name&gt;.md</code>. ghostbrain merges multiple identities (gmail address, slack id, github handle) into a single note.</p>
+    <p>one per resolved person. lives at <code>vault/people/&lt;display-name&gt;.md</code>. poltergeist merges multiple identities (gmail address, slack id, github handle) into a single note.</p>
 
     <pre><code><span class="c-com">---
 name: marie chen
@@ -134,10 +134,10 @@ the headline.
     <p>one per calendar event, named <code>yyyy-mm-dd &lt;title&gt;.md</code>. recurring events still get one file per occurrence so the timeline reads correctly.</p>
 
     <h3 id="project-file">project</h3>
-    <p>folder, not a file. ghostbrain infers projects from co-occurring tags and people and creates <code>vault/projects/&lt;slug&gt;/</code> with an index <code>README.md</code> plus child notes for milestones, decisions, and meeting recaps.</p>
+    <p>folder, not a file. poltergeist infers projects from co-occurring tags and people and creates <code>vault/projects/&lt;slug&gt;/</code> with an index <code>README.md</code> plus child notes for milestones, decisions, and meeting recaps.</p>
 
     <h2 id="frontmatter">frontmatter conventions</h2>
-    <p>every ghostbrain-written file starts with yaml frontmatter. the shared keys:</p>
+    <p>every poltergeist-written file starts with yaml frontmatter. the shared keys:</p>
 
     <table>
       <thead><tr><th>key</th><th>meaning</th></tr></thead>
@@ -145,20 +145,20 @@ the headline.
         <tr><td>id</td><td>stable identifier. don't edit.</td></tr>
         <tr><td>source</td><td>connector that emitted it. one of <code>gmail · slack · notion · linear · github · calendar · drive</code>.</td></tr>
         <tr><td>source_url</td><td>deep link back to the original item.</td></tr>
-        <tr><td>captured_at</td><td>iso timestamp of when ghostbrain wrote the file.</td></tr>
+        <tr><td>captured_at</td><td>iso timestamp of when poltergeist wrote the file.</td></tr>
         <tr><td>occurred_at</td><td>iso timestamp of the underlying event (message sent, meeting started, pr opened).</td></tr>
         <tr><td>people</td><td>array of <code>[[people/...]]</code> wiki-links involved.</td></tr>
-        <tr><td>tags</td><td>flat list. ghostbrain infers a few; you can add your own.</td></tr>
+        <tr><td>tags</td><td>flat list. poltergeist infers a few; you can add your own.</td></tr>
       </tbody>
     </table>
 
     <div class="callout callout--tip">
       <span class="callout__label">tip</span>
-      <p>you can add any keys you want. ghostbrain never deletes frontmatter fields it doesn't recognise — those are yours. it only adjusts the keys above.</p>
+      <p>you can add any keys you want. poltergeist never deletes frontmatter fields it doesn't recognise — those are yours. it only adjusts the keys above.</p>
     </div>
 
     <h2 id="links">wiki-links and entities</h2>
-    <p>ghostbrain writes <code>[[wiki-links]]</code> the way obsidian expects. every person, project, thread, and meeting gets a link; entity resolution makes sure "marie", "marie c", and "marie@stripe.com" all point at the same file.</p>
+    <p>poltergeist writes <code>[[wiki-links]]</code> the way obsidian expects. every person, project, thread, and meeting gets a link; entity resolution makes sure "marie", "marie c", and "marie@stripe.com" all point at the same file.</p>
 
     <p>links are <em>relative to the vault root</em>:</p>
     <ul>
@@ -169,28 +169,28 @@ the headline.
 
     <p>this matches obsidian's default link style and means the graph view "just works."</p>
 
-    <h2 id="state">.ghostbrain/ — indexer state</h2>
-    <p>everything ghostbrain needs to reconstruct your index, isolated to one folder:</p>
-    <pre><code>vault/.ghostbrain/
+    <h2 id="state">.poltergeist/ — indexer state</h2>
+    <p>everything poltergeist needs to reconstruct your index, isolated to one folder:</p>
+    <pre><code>vault/.poltergeist/
 ├── manifest.json     <span class="c-com"># schema version, vault config</span>
 ├── connectors/       <span class="c-com"># per-connector cursors + last-sync</span>
 ├── index/            <span class="c-com"># lexical + vector index files</span>
 ├── people.json       <span class="c-com"># resolved entity table</span>
 └── logs/             <span class="c-com"># rolling indexer log, 7 days</span></code></pre>
 
-    <p>safe to delete: <code>index/</code> and <code>logs/</code>. ghostbrain will rebuild them on next launch. <strong>do not</strong> delete <code>connectors/</code> while a connector is authorised — you'll lose the cursors and the next sync will be a full backfill.</p>
+    <p>safe to delete: <code>index/</code> and <code>logs/</code>. poltergeist will rebuild them on next launch. <strong>do not</strong> delete <code>connectors/</code> while a connector is authorised — you'll lose the cursors and the next sync will be a full backfill.</p>
 
     <h2 id="edits">what happens when you edit a file</h2>
-    <p>ghostbrain checksums every file it writes. when it next visits one, it does one of three things:</p>
+    <p>poltergeist checksums every file it writes. when it next visits one, it does one of three things:</p>
     <ol>
       <li><strong>unchanged</strong> — overwrite normally with the latest source data.</li>
-      <li><strong>edited by you</strong> — keep your version, append new source data below a <code>## added by ghostbrain</code> heading, never overwrite your text.</li>
+      <li><strong>edited by you</strong> — keep your version, append new source data below a <code>## added by poltergeist</code> heading, never overwrite your text.</li>
       <li><strong>renamed/moved</strong> — follow the rename via the obsidian metadata cache, keep updating the new path.</li>
     </ol>
 
     <div class="callout callout--warn">
       <span class="callout__label">warning</span>
-      <p>if you delete a ghostbrain-written file, the next sync will rewrite it. to permanently remove items from the vault, use <code>ghostbrain purge</code> with a glob — see <a href="api.html#cli">cli reference</a>.</p>
+      <p>if you delete a poltergeist-written file, the next sync will rewrite it. to permanently remove items from the vault, use <code>poltergeist purge</code> with a glob — see <a href="api.html#cli">cli reference</a>.</p>
     </div>
 
     <div class="page-nav">
@@ -212,7 +212,7 @@ the headline.
       <li><a href="#files">file types</a></li>
       <li><a href="#frontmatter">frontmatter</a></li>
       <li><a href="#links">wiki-links</a></li>
-      <li><a href="#state">.ghostbrain/</a></li>
+      <li><a href="#state">.poltergeist/</a></li>
       <li><a href="#edits">when you edit</a></li>
     </ul>
   </aside>

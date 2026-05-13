@@ -112,7 +112,7 @@ export function TodayScreen() {
             <h2 className="mb-0 mt-2 font-display text-38 font-semibold leading-[1.05] tracking-tightest text-ink-0">
               while you slept,
               <br />
-              <span className="text-neon-ink">ghostbrain caught</span>
+              <span className="text-neon-ink">poltergeist caught</span>
               <br />
               {stats.data?.indexedCount ?? '…'} things.
             </h2>
@@ -363,7 +363,7 @@ export function TodayScreen() {
             ))}
           </Panel>
 
-          <Panel title="suggested by ghostbrain" subtitle="quiet hunches">
+          <Panel title="suggested by poltergeist" subtitle="quiet hunches">
             {suggestions.isLoading && <SkeletonRows count={2} />}
             {suggestions.isError && (
               <PanelError

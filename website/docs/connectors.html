@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>connectors — ghostbrain docs</title>
+  <title>connectors — poltergeist docs</title>
   <meta name="description" content="Set up gmail, slack, notion, linear, github, calendar, and drive — auth flows, scopes, and what each connector pulls.">
   <link rel="icon" href="../assets/favicon.svg">
   <link rel="stylesheet" href="../styles.css">
@@ -12,14 +12,14 @@
 
 <nav class="nav" id="nav">
   <div class="nav__inner">
-    <a href="../" class="nav__brand" aria-label="ghostbrain home">
+    <a href="../" class="nav__brand" aria-label="poltergeist home">
       <svg viewBox="0 0 100 110" width="26" height="29" aria-hidden="true">
         <path d="M 50 6 C 24 6, 10 24, 10 50 L 10 94 Q 17 102, 24 95 Q 31 88, 38 95 Q 44 102, 50 95 Q 56 88, 62 95 Q 69 102, 76 95 Q 83 88, 90 94 L 90 50 C 90 24, 76 6, 50 6 Z" fill="#C5FF3D"/>
         <circle cx="38" cy="48" r="3.2" fill="#0E0F12"/>
         <circle cx="62" cy="48" r="3.2" fill="#0E0F12"/>
         <line x1="38" y1="48" x2="62" y2="48" stroke="#0E0F12" stroke-width="1.2" stroke-opacity="0.5"/>
       </svg>
-      <span class="nav__wordmark">ghostbrain</span>
+      <span class="nav__wordmark">poltergeist</span>
     </a>
     <div class="nav__links">
       <a href="../#how">how it works</a>
@@ -68,7 +68,7 @@
 
   <article class="article">
     <div class="article__crumb">
-      <a href="../">ghostbrain</a><span class="sep">/</span><a href="./">docs</a><span class="sep">/</span><span>connectors</span>
+      <a href="../">poltergeist</a><span class="sep">/</span><a href="./">docs</a><span class="sep">/</span><span>connectors</span>
     </div>
 
     <h1>connectors</h1>
@@ -81,7 +81,7 @@
 
     <h2 id="common">things that apply to every connector</h2>
     <ul>
-      <li><strong>tokens live in your keychain.</strong> macos keychain, windows credential manager, gnome-keyring or kwallet on linux. ghostbrain never writes a token to a file in the vault.</li>
+      <li><strong>tokens live in your keychain.</strong> macos keychain, windows credential manager, gnome-keyring or kwallet on linux. poltergeist never writes a token to a file in the vault.</li>
       <li><strong>scopes are the minimum we can get away with.</strong> if a provider offers a read-only scope, we use it. you'll see the exact list on the consent screen.</li>
       <li><strong>backfill is rate-limited.</strong> first run walks the full history. typical mailbox finishes in 5–20 minutes; large slack workspaces can take hours. you don't need to babysit it.</li>
       <li><strong>incremental from then on.</strong> each connector keeps a cursor and polls every 60 s.</li>
@@ -97,34 +97,34 @@ https://www.googleapis.com/auth/gmail.metadata</code></pre>
 
     <div class="callout callout--note">
       <span class="callout__label">note</span>
-      <p>workspace gmail accounts may need an admin to whitelist ghostbrain's oauth client. the error message will tell you what to ask for.</p>
+      <p>workspace gmail accounts may need an admin to whitelist poltergeist's oauth client. the error message will tell you what to ask for.</p>
     </div>
 
     <h2 id="slack">slack</h2>
-    <p>uses slack's user-token oauth (not a bot install — ghostbrain reads what <em>you</em> can read).</p>
-    <p>scopes: <code>channels:history</code>, <code>groups:history</code>, <code>im:history</code>, <code>mpim:history</code>, plus the matching <code>:read</code> scopes. ghostbrain can index public channels you've joined, private channels you're a member of, dms, and group dms.</p>
+    <p>uses slack's user-token oauth (not a bot install — poltergeist reads what <em>you</em> can read).</p>
+    <p>scopes: <code>channels:history</code>, <code>groups:history</code>, <code>im:history</code>, <code>mpim:history</code>, plus the matching <code>:read</code> scopes. poltergeist can index public channels you've joined, private channels you're a member of, dms, and group dms.</p>
     <p>setup: <strong>connect → slack</strong>, pick a workspace, approve. you can connect multiple workspaces — each appears as a separate row in the sidebar.</p>
 
     <div class="callout callout--warn">
       <span class="callout__label">warning</span>
-      <p>some workspaces have <em>retention policies</em> that auto-delete messages older than 90 days. ghostbrain will index whatever the api returns, but it will not resurrect messages that slack has already purged.</p>
+      <p>some workspaces have <em>retention policies</em> that auto-delete messages older than 90 days. poltergeist will index whatever the api returns, but it will not resurrect messages that slack has already purged.</p>
     </div>
 
     <h2 id="notion">notion</h2>
-    <p>uses an <em>internal integration token</em>. you'll create one once at <a href="https://notion.so/my-integrations" target="_blank" rel="noopener noreferrer">notion.so/my-integrations</a>, then share the pages or workspaces you want ghostbrain to see with the integration.</p>
+    <p>uses an <em>internal integration token</em>. you'll create one once at <a href="https://notion.so/my-integrations" target="_blank" rel="noopener noreferrer">notion.so/my-integrations</a>, then share the pages or workspaces you want poltergeist to see with the integration.</p>
     <p>what's pulled: every page, every database row, comments, and the block tree. images and file blocks are indexed by caption + filename.</p>
     <p>setup:</p>
     <ol>
       <li>create the integration on notion, copy the secret.</li>
       <li>paste it into <strong>connect → notion → token</strong>.</li>
-      <li>open the notion pages or databases you want indexed, click <strong>···</strong> → <strong>add connections</strong> → ghostbrain.</li>
+      <li>open the notion pages or databases you want indexed, click <strong>···</strong> → <strong>add connections</strong> → poltergeist.</li>
     </ol>
 
     <h2 id="linear">linear</h2>
     <p>linear gives out personal api keys; no oauth dance.</p>
     <ol>
       <li>open linear → <strong>settings → api → personal api keys</strong>.</li>
-      <li>create a key labelled "ghostbrain" with read scopes.</li>
+      <li>create a key labelled "poltergeist" with read scopes.</li>
       <li>paste into <strong>connect → linear → key</strong>.</li>
     </ol>
     <p>what's pulled: issues you can read, projects, cycles, comments, and issue history. attachments by url and title.</p>
@@ -143,7 +143,7 @@ https://www.googleapis.com/auth/gmail.metadata</code></pre>
 
     <div class="callout callout--tip">
       <span class="callout__label">tip</span>
-      <p>calendar pairs well with gmail — ghostbrain can tell you what an attendee said in email both <em>before</em> and <em>after</em> the meeting, on one screen.</p>
+      <p>calendar pairs well with gmail — poltergeist can tell you what an attendee said in email both <em>before</em> and <em>after</em> the meeting, on one screen.</p>
     </div>
 
     <h2 id="drive">google drive</h2>
@@ -156,13 +156,13 @@ https://www.googleapis.com/auth/gmail.metadata</code></pre>
       <thead><tr><th>action</th><th>what happens</th></tr></thead>
       <tbody>
         <tr><td>disconnect</td><td>token deleted from keychain. no further fetches. existing notes stay in the vault.</td></tr>
-        <tr><td>purge</td><td>disconnect + delete every markdown file ghostbrain ever wrote for that source. files in your vault you've moved or edited are skipped — your edits are sacred.</td></tr>
+        <tr><td>purge</td><td>disconnect + delete every markdown file poltergeist ever wrote for that source. files in your vault you've moved or edited are skipped — your edits are sacred.</td></tr>
       </tbody>
     </table>
 
     <pre><code><span class="c-com"># from the cli</span>
-<span class="c-fn">ghostbrain</span> connector disconnect slack
-<span class="c-fn">ghostbrain</span> connector purge slack <span class="c-flag">--dry-run</span></code></pre>
+<span class="c-fn">poltergeist</span> connector disconnect slack
+<span class="c-fn">poltergeist</span> connector purge slack <span class="c-flag">--dry-run</span></code></pre>
 
     <p>both operations are also available from the sidebar under <strong>···</strong> on the connector row.</p>
 

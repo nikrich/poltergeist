@@ -10,7 +10,7 @@ export function SidecarSetup() {
       <div className="max-w-[520px] flex flex-col items-center gap-4 text-center">
         <Ghost size={48} />
         <h2 className="m-0 font-display text-26 font-semibold tracking-tight-x text-ink-0">
-          ghostbrain isn&apos;t running.
+          poltergeist isn&apos;t running.
         </h2>
         <p className="m-0 text-13 text-ink-2">
           the python backend failed to start. check that python is installed

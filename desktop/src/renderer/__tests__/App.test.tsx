@@ -13,6 +13,6 @@ describe('App', () => {
         <App />
       </QueryClientProvider>,
     );
-    expect(await screen.findByText('ghostbrain')).toBeInTheDocument();
+    expect(await screen.findByText('poltergeist')).toBeInTheDocument();
   });
 });

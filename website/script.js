@@ -1,4 +1,4 @@
-// ghostbrain promo site — minimal interactivity
+// poltergeist promo site — minimal interactivity
 // sticky nav state, faq accordion, footer date stamp
 
 (() => {

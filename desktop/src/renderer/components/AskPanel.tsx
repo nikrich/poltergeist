@@ -125,7 +125,7 @@ function EmptyHint() {
     <div className="flex flex-col items-center gap-2 py-10 text-center text-12 text-ink-3">
       <Lucide name="sparkles" size={14} color="var(--ink-3)" />
       <span>
-        ask anything in plain English. ghostbrain searches your vault, reads the
+        ask anything in plain English. poltergeist searches your vault, reads the
         top notes, and answers with citations.
       </span>
       <span className="font-mono text-10">esc to close</span>

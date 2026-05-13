@@ -404,7 +404,7 @@ function ConnectorDetailPanel({ c }: ConnectorDetailProps) {
           </div>
         </DetailBlock>
 
-        <DetailBlock label="what ghostbrain pulls">
+        <DetailBlock label="what poltergeist pulls">
           <div className="flex flex-wrap gap-[6px]">
             {c.pulls.map((p) => (
               <Pill key={p} tone="fog">

@@ -4,6 +4,7 @@ import { Eyebrow } from './Eyebrow';
 import { useNavigation, type ScreenId } from '../stores/navigation';
 import { useMeeting } from '../stores/meeting';
 import { useDaily, useMeetings } from '../lib/api/hooks';
+import { useSettings } from '../stores/settings';
 import { isMac } from '../lib/platform';
 
 const NAV_ITEMS: Array<{ id: ScreenId; icon: string; label: string }> = [
@@ -25,11 +26,19 @@ function RecordingDot() {
   );
 }
 
+function shortVaultPath(p: string): string {
+  if (!p) return '~/ghostbrain/vault';
+  // ~/-collapse if the path starts with HOME-equivalent prefix. We approximate
+  // by looking for `/Users/<user>/` since this only runs in the renderer.
+  return p.replace(/^\/Users\/[^/]+/, '~');
+}
+
 export function Sidebar() {
   const { active, setActive } = useNavigation();
   const { phase } = useMeeting();
   const daily = useDaily({ limit: 1 });
   const meetings = useMeetings({ limit: 1 });
+  const vaultPath = useSettings((s) => s.vaultPath);
   const vaultFolders: Array<{ id: ScreenId; icon: string; label: string; count: number | null }> = [
     { id: 'daily', icon: 'folder', label: 'Daily', count: daily.data?.total ?? null },
     { id: 'meetings', icon: 'folder', label: 'Meetings', count: meetings.data?.total ?? null },
@@ -45,7 +54,7 @@ export function Sidebar() {
         <Ghost size={20} floating />
         <div className="flex flex-col leading-[1.1]">
           <span className="font-display text-16 font-semibold tracking-tight-xx text-ink-0">
-            ghostbrain
+            poltergeist
           </span>
           <span className="font-mono text-9 uppercase tracking-eyebrow text-ink-2">
             v 0.1.0 · haunting
@@ -95,7 +104,7 @@ export function Sidebar() {
         </div>
         <div className="min-w-0 flex-1 leading-[1.2]">
           <div className="overflow-hidden text-ellipsis whitespace-nowrap text-11 font-medium text-ink-0">
-            ~/ghostbrain/vault
+            {shortVaultPath(vaultPath)}
           </div>
           <div className="font-mono text-9 text-ink-2">local · synced</div>
         </div>
