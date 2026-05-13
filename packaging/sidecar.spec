@@ -25,7 +25,11 @@ hiddenimports += collect_submodules('sentence_transformers')
 hiddenimports += collect_submodules('transformers')
 hiddenimports += collect_submodules('tokenizers')
 hiddenimports += collect_submodules('huggingface_hub')
-hiddenimports += ['numpy']
+# Bare `'numpy'` isn't enough — NumPy 2.x loads numpy._core.* dynamically at
+# import time (e.g. numpy._core._exceptions). Without the full submodule tree
+# the packaged sidecar crashes on first import with
+# "No module named 'numpy._core._exceptions'".
+hiddenimports += collect_submodules('numpy')
 
 # Connector deps — pulled in conditionally by routes but worth including so the
 # packaged sidecar matches dev behavior.
