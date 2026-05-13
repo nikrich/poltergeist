@@ -55,12 +55,18 @@ def _parse_iso(value: object) -> datetime | None:
 
 
 def _derive_time_and_duration(fm: dict) -> tuple[str, str] | None:
-    """Build (time, duration) from `start`/`end` ISO timestamps."""
+    """Build (time, duration) from `start`/`end` ISO timestamps.
+
+    Connectors write `start`/`end` in UTC (the macOS calendar connector
+    emits Z-suffixed ISO strings); we format the display time in the
+    machine's local timezone so an 11:00 SAST meeting doesn't read as
+    09:00 in the UI.
+    """
     start = _parse_iso(fm.get("start"))
     end = _parse_iso(fm.get("end"))
     if start is None:
         return None
-    time_str = start.strftime("%H:%M")
+    time_str = start.astimezone().strftime("%H:%M")
     if end is None or end <= start:
         return time_str, ""
     minutes = int((end - start).total_seconds() // 60)
