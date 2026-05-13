@@ -108,7 +108,12 @@ a = Analysis(
         'PySide6',
         'matplotlib',
     ],
-    noarchive=False,
+    # noarchive=True writes every .pyc to disk in its package layout instead
+    # of compressing them into the PYZ archive. Required by transformers and
+    # other libraries whose `_LazyModule` probes `__file__`-adjacent paths
+    # at import time. Without this, search crashes with
+    # "FileNotFoundError: ... transformers/models/__init__.pyc".
+    noarchive=True,
 )
 
 pyz = PYZ(a.pure)
