@@ -160,6 +160,7 @@ def _file_transcript(
     context: str,
     started: datetime,
     duration_s: float,
+    parent_path: str | None = None,
 ) -> Path:
     transcripts_dir = vault_path() / "20-contexts" / context / "calendar" / "transcripts"
     transcripts_dir.mkdir(parents=True, exist_ok=True)
@@ -167,7 +168,7 @@ def _file_transcript(
     filename = f"{_slugify(title)}-{short}.md"
     target = transcripts_dir / filename
 
-    fm = {
+    fm: dict = {
         "artifactType": "transcript",
         "context": context,
         "created": datetime.now(timezone.utc).isoformat(),
@@ -179,6 +180,12 @@ def _file_transcript(
         "type": "artifact",
         PROCESSED_MARKER_KEY: wav.name,
     }
+    # Link the transcript to the calendar event note it was recorded against,
+    # so Obsidian/Dataview can show the pair side by side. Wikilink form keeps
+    # the existing pattern from the daemon-driven linker.
+    if parent_path:
+        stem = parent_path.removesuffix(".md")
+        fm["parent"] = f"[[{stem}]]"
 
     started_local = started.astimezone()
     body = (
@@ -198,12 +205,15 @@ def recover_one(
     *,
     title_override: str | None = None,
     started_override: "datetime | None" = None,
+    parent_path_override: str | None = None,
 ) -> Path | None:
     """Recover a single orphan WAV. Returns the transcript path or None.
 
     `title_override` skips the LLM-title step (useful when the user provided
     a title up front). `started_override` skips the filename-based start-time
     derivation (useful when the manual flow knows the exact start instant).
+    `parent_path_override` links the transcript to the matching calendar
+    event note via a `parent: [[...]]` wikilink.
     """
     if _already_filed(wav.name):
         return None
@@ -232,6 +242,7 @@ def recover_one(
         context=config.context,
         started=started,
         duration_s=duration_s,
+        parent_path=parent_path_override,
     )
 
 

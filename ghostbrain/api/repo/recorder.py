@@ -134,6 +134,50 @@ def status() -> dict:
     }
 
 
+def _current_calendar_event() -> dict | None:
+    """If a calendar event is happening right now, return its frontmatter +
+    vault-relative path so a manual recording can inherit the context.
+
+    Picks the event whose [start, end] window contains now. If multiple
+    overlap, returns the one with the longest remaining time (best signal
+    of "the meeting I'm in").
+    """
+    import frontmatter
+
+    from ghostbrain.paths import vault_path
+
+    now = datetime.now(timezone.utc)
+    best: tuple[float, dict, Path] | None = None
+    for path in vault_path().glob("20-contexts/*/calendar/*.md"):
+        try:
+            post = frontmatter.load(path)
+        except Exception:  # noqa: BLE001
+            continue
+        fm = post.metadata
+        start_raw = fm.get("start")
+        end_raw = fm.get("end")
+        if not isinstance(start_raw, str) or not isinstance(end_raw, str):
+            continue
+        try:
+            start_dt = datetime.fromisoformat(start_raw.replace("Z", "+00:00"))
+            end_dt = datetime.fromisoformat(end_raw.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if not (start_dt <= now <= end_dt):
+            continue
+        remaining = (end_dt - now).total_seconds()
+        if best is None or remaining > best[0]:
+            best = (remaining, dict(fm), path)
+    if best is None:
+        return None
+    _, fm, path = best
+    try:
+        rel_path = str(path.resolve().relative_to(vault_path().resolve()))
+    except ValueError:
+        rel_path = None
+    return {"frontmatter": fm, "rel_path": rel_path}
+
+
 def start(title: str | None, context: str | None) -> dict:
     with _lock:
         if _daemon_active() is not None:
@@ -143,7 +187,25 @@ def start(title: str | None, context: str | None) -> dict:
             raise RecorderBusy(f"a manual recording is already {existing['phase']}")
 
         manual_cfg = load_manual_config()
-        chosen_context = context or manual_cfg.context
+        # Priority: explicit context arg > active calendar event's context >
+        # config default. The middle case is what most user "I'm in a meeting"
+        # presses should hit.
+        active_event = _current_calendar_event() if context is None else None
+        active_context = (
+            str(active_event["frontmatter"].get("context"))
+            if active_event and isinstance(active_event["frontmatter"].get("context"), str)
+            else None
+        )
+        chosen_context = context or active_context or manual_cfg.context
+        # If we found an active event, also pick up its title (so the user
+        # doesn't have to type it) and remember the event note for the
+        # parent wikilink at transcribe time.
+        chosen_title = title or (
+            str(active_event["frontmatter"].get("title"))
+            if active_event and isinstance(active_event["frontmatter"].get("title"), str)
+            else None
+        )
+        parent_path = active_event["rel_path"] if active_event else None
 
         timestamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
         wav_path = RECORDINGS_DIR / f"meeting-{timestamp}-manual.wav"
@@ -154,15 +216,18 @@ def start(title: str | None, context: str | None) -> dict:
             "phase": "recording",
             "pid": handle.pid,
             "wavPath": str(handle.wav_path),
-            "title": title,  # may be null; LLM derives if stop-time title still missing
+            "title": chosen_title,  # may be null; LLM derives if stop-time title still missing
             "context": chosen_context,
+            "parentPath": parent_path,  # vault-relative path of the linked calendar event
             "startedAt": datetime.now(timezone.utc).isoformat(),
             "transcriptPath": None,
             "error": None,
         }
         _write_state(state)
-        log.info("manual recording started pid=%d wav=%s ctx=%s",
-                 handle.pid, handle.wav_path.name, chosen_context)
+        log.info(
+            "manual recording started pid=%d wav=%s ctx=%s parent=%s",
+            handle.pid, handle.wav_path.name, chosen_context, parent_path or "-",
+        )
         return state
 
 
@@ -202,12 +267,14 @@ def _transcribe_in_background(snapshot: dict) -> None:
         started = None
 
     cfg = dataclasses.replace(load_manual_config(), context=context)
+    parent_path = snapshot.get("parentPath")
     try:
         transcript_path = recover_one(
             wav,
             cfg,
             title_override=title,
             started_override=started,
+            parent_path_override=parent_path,
         )
     except Exception as e:  # noqa: BLE001
         log.exception("transcription failed for %s", wav.name)
