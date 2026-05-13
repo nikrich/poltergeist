@@ -9,7 +9,11 @@
 # Output: desktop/resources/sidecar/ghostbrain-api/  (--onedir layout)
 # Electron-builder picks this up via `extraResources` in electron-builder.yml.
 
-from PyInstaller.utils.hooks import collect_submodules, collect_data_files
+from PyInstaller.utils.hooks import (
+    collect_submodules,
+    collect_data_files,
+    collect_dynamic_libs,
+)
 
 # Uvicorn and Starlette load protocol/loop implementations dynamically, so
 # PyInstaller's static analysis misses them. Pull in the whole tree.
@@ -30,6 +34,12 @@ hiddenimports += collect_submodules('huggingface_hub')
 # the packaged sidecar crashes on first import with
 # "No module named 'numpy._core._exceptions'".
 hiddenimports += collect_submodules('numpy')
+# scipy has C extensions (.so/.dylib) that PyInstaller misses without an
+# explicit dynamic-libs collection — symptom is "scipy install seems
+# broken (extension modules cannot be imported)" on first scipy import,
+# which sentence-transformers triggers when scoring.
+hiddenimports += collect_submodules('scipy')
+hiddenimports += collect_submodules('sklearn')
 
 # Connector deps — pulled in conditionally by routes but worth including so the
 # packaged sidecar matches dev behavior.
@@ -59,10 +69,20 @@ datas += collect_data_files('ghostbrain', include_py_files=False)
 datas += collect_data_files('uvicorn')
 datas += collect_data_files('anthropic')
 
+# The ML stack ships its native binaries as .so/.dylib alongside the Python
+# modules. collect_submodules only picks up .py files; collect_dynamic_libs is
+# what actually copies the compiled extensions into the bundle.
+binaries = []
+binaries += collect_dynamic_libs('numpy')
+binaries += collect_dynamic_libs('scipy')
+binaries += collect_dynamic_libs('sklearn')
+binaries += collect_dynamic_libs('torch')
+binaries += collect_dynamic_libs('tokenizers')
+
 a = Analysis(
     ['../ghostbrain/api/__main__.py'],
     pathex=['..'],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
