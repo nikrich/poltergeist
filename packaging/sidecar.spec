@@ -10,6 +10,7 @@
 # Electron-builder picks this up via `extraResources` in electron-builder.yml.
 
 from PyInstaller.utils.hooks import (
+    collect_all,
     collect_submodules,
     collect_data_files,
     collect_dynamic_libs,
@@ -25,10 +26,17 @@ hiddenimports += collect_submodules('anthropic')
 
 # Semantic search is lazy-loaded from ghostbrain.api.repo.search, so PyInstaller
 # can't see it from the entry point. Bundle it so packaged builds aren't crippled.
-hiddenimports += collect_submodules('sentence_transformers')
-hiddenimports += collect_submodules('transformers')
+#
+# transformers (and sentence_transformers + huggingface_hub) use _LazyModule
+# loaders that probe `__file__`-relative paths at import time and fail when
+# their .py sources only live inside the PYZ archive. collect_all() copies
+# the source files to disk as data, dodges the lookup failure
+# ("FileNotFoundError: ... transformers/models/__init__.pyc").
+_tr_datas, _tr_bins, _tr_hidden = collect_all('transformers')
+_st_datas, _st_bins, _st_hidden = collect_all('sentence_transformers')
+_hf_datas, _hf_bins, _hf_hidden = collect_all('huggingface_hub')
+hiddenimports += _tr_hidden + _st_hidden + _hf_hidden
 hiddenimports += collect_submodules('tokenizers')
-hiddenimports += collect_submodules('huggingface_hub')
 # Bare `'numpy'` isn't enough — NumPy 2.x loads numpy._core.* dynamically at
 # import time (e.g. numpy._core._exceptions). Without the full submodule tree
 # the packaged sidecar crashes on first import with
@@ -68,6 +76,8 @@ datas = []
 datas += collect_data_files('ghostbrain', include_py_files=False)
 datas += collect_data_files('uvicorn')
 datas += collect_data_files('anthropic')
+# Data files (incl. source .py files for the lazy loaders) for the ML stack.
+datas += _tr_datas + _st_datas + _hf_datas
 
 # The ML stack ships its native binaries as .so/.dylib alongside the Python
 # modules. collect_submodules only picks up .py files; collect_dynamic_libs is
@@ -78,6 +88,8 @@ binaries += collect_dynamic_libs('scipy')
 binaries += collect_dynamic_libs('sklearn')
 binaries += collect_dynamic_libs('torch')
 binaries += collect_dynamic_libs('tokenizers')
+# Also any native libs picked up by collect_all for the ML stack.
+binaries += _tr_bins + _st_bins + _hf_bins
 
 a = Analysis(
     ['../ghostbrain/api/__main__.py'],
