@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.8](https://github.com/nikrich/poltergeist/compare/v0.1.7...v0.1.8) (2026-05-13)
+
+
+### Bug Fixes
+
+* **desktop:** Hide "with " on agenda rows when no attendees ([a2c77dd](https://github.com/nikrich/poltergeist/commit/a2c77dd9df1d652aeb24eb771c72cce7b5dc5e63))
+
 ## [0.1.4](https://github.com/nikrich/ghost-brain/compare/v0.1.3...v0.1.4) (2026-05-13)
 
 
