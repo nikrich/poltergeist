@@ -2,7 +2,7 @@ import type { Sidecar } from './sidecar';
 
 export type ApiResult<T = unknown> =
   | { ok: true; data: T }
-  | { ok: false; error: string };
+  | { ok: false; error: string; status?: number };
 
 export async function forward<T = unknown>(
   sidecar: Sidecar,
