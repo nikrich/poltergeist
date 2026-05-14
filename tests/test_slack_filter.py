@@ -15,6 +15,7 @@ from ghostbrain.connectors.slack.filter import (
     BATCH_SIZE,
     FilterableMessage,
     KEEP_THRESHOLD,
+    _build_schema,
     score_messages,
 )
 from ghostbrain.llm import client as llm
@@ -104,6 +105,43 @@ def test_malformed_payload_falls_back_to_keep() -> None:
     msgs = [_msg(), _msg()]
     out = score_messages(msgs, _llm_run=bad_run)
     assert out == [KEEP_THRESHOLD, KEEP_THRESHOLD]
+
+
+def test_schema_pins_array_length_to_batch_size() -> None:
+    """The JSON schema's minItems/maxItems force the LLM to return
+    exactly one score per input message. Without this, Claude
+    occasionally returns 49 scores for 50 messages and we fall back to
+    keep-all — leaking noise the gate would otherwise filter."""
+    schema = _build_schema(25)
+    arr = schema["properties"]["scores"]
+    assert arr["minItems"] == 25
+    assert arr["maxItems"] == 25
+    assert arr["items"]["minimum"] == 0
+    assert arr["items"]["maximum"] == 3
+
+
+def test_schema_count_tracks_actual_batch_when_split(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When score_messages splits a long input into batches of
+    BATCH_SIZE, each batch's schema must enforce that batch's length —
+    not the global BATCH_SIZE constant — otherwise the final partial
+    batch would always fail validation."""
+    captured_schemas: list[dict] = []
+
+    def capture(prompt: str, **kw: Any) -> llm.LLMResult:
+        captured_schemas.append(kw["json_schema"])
+        # Return exactly the batch length so the call succeeds.
+        count = kw["json_schema"]["properties"]["scores"]["minItems"]
+        return llm.LLMResult(
+            text="", structured={"scores": [1] * count},
+            model="haiku", cost_usd=0.0, duration_ms=10,
+            session_id="x", raw={},
+        )
+
+    msgs = [_msg(text=str(i)) for i in range(BATCH_SIZE + 7)]
+    score_messages(msgs, _llm_run=capture)
+    assert len(captured_schemas) == 2
+    assert captured_schemas[0]["properties"]["scores"]["minItems"] == BATCH_SIZE
+    assert captured_schemas[1]["properties"]["scores"]["minItems"] == 7
 
 
 def test_llm_error_falls_back_to_keep() -> None:

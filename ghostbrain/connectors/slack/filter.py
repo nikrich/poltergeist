@@ -29,9 +29,13 @@ from ghostbrain.llm import client as llm
 
 log = logging.getLogger("ghostbrain.connectors.slack.filter")
 
-BATCH_SIZE = 50
+BATCH_SIZE = 25
 KEEP_THRESHOLD = 1   # keep score >= this
-DEFAULT_BUDGET_USD = 0.10   # per batch — typically uses far less
+# Per-batch ceiling, not a target. We rely on Claude Code's session-level
+# budgeting and the user's plan-level quota for actual cost control; this
+# cap is a runaway-safety belt for buggy prompts. The previous 0.10 was
+# tripped by a single long-message batch (0.128 used) and tanked the run.
+DEFAULT_BUDGET_USD = 2.00
 
 _SYSTEM_PROMPT = """You are a triage gate for an executive's Slack feed.
 
@@ -60,17 +64,28 @@ Context for the user receiving this feed:
 Messages:
 """
 
-_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "scores": {
-            "type": "array",
-            "items": {"type": "integer", "minimum": 0, "maximum": 3},
-        }
-    },
-    "required": ["scores"],
-    "additionalProperties": False,
-}
+def _build_schema(expected_count: int) -> dict:
+    """Schema with minItems == maxItems == batch length.
+
+    Forces the LLM to emit exactly one integer per input message — if it
+    tries to return 49 scores for 50 messages, the JSON-schema validator
+    rejects the response and Claude is asked to try again. Previously
+    this off-by-one (rare but recurring) made us fall back to keep-all,
+    which leaks noise the gate would otherwise filter.
+    """
+    return {
+        "type": "object",
+        "properties": {
+            "scores": {
+                "type": "array",
+                "minItems": expected_count,
+                "maxItems": expected_count,
+                "items": {"type": "integer", "minimum": 0, "maximum": 3},
+            }
+        },
+        "required": ["scores"],
+        "additionalProperties": False,
+    }
 
 
 @dataclass
@@ -135,7 +150,7 @@ def _score_batch(
         result = _llm_run(
             prompt,
             model="haiku",
-            json_schema=_SCHEMA,
+            json_schema=_build_schema(len(batch)),
             system_prompt=_SYSTEM_PROMPT,
             budget_usd=budget_usd,
         )
