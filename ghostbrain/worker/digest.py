@@ -329,7 +329,7 @@ def render_input_for_prompt(d: DigestInput) -> str:
             duration = (
                 f", {t.duration_minutes:.0f} min" if t.duration_minutes else ""
             )
-            link = _wikilink_for_path(t.transcript_path)
+            link = _wikilink_for_path(t.transcript_path, display=t.title)
             parent_link = (
                 f" (parent: [[{t.parent_path}]])"
                 if t.parent_path
@@ -351,7 +351,7 @@ def render_input_for_prompt(d: DigestInput) -> str:
             f"Transcript-derived artifacts ({len(d.transcript_artifacts)}):"
         )
         for a in d.transcript_artifacts:
-            link = _wikilink_for_path(a.artifact_path)
+            link = _wikilink_for_path(a.artifact_path, display=a.title)
             parts.append(
                 f"  [{a.context}/{a.artifact_type}] {a.title} → {link}"
             )
@@ -371,10 +371,18 @@ def render_input_for_prompt(d: DigestInput) -> str:
         tickets = [i for i in d.stale_items if i.kind == "ticket"]
         parts.append(f"Stale items ({len(prs)} PR, {len(tickets)} ticket):")
         for item in d.stale_items[:12]:
-            link = _wikilink_for_path(getattr(item, "note_path", "") or "")
+            note_path = getattr(item, "note_path", "") or ""
+            # StaleItem.title is the frontmatter title when present, else
+            # the filename stem — pre-humanize when it's clearly the stem.
+            display = (
+                item.title
+                if item.title and not _looks_like_slug(item.title)
+                else _humanize_slug(item.title or "")
+            )
+            link = _wikilink_for_path(note_path, display=display)
             link_part = f" → {link}" if link else ""
             parts.append(
-                f"  [{item.kind}/{item.context}] {item.title} "
+                f"  [{item.kind}/{item.context}] {display} "
                 f"({item.age_days}d, {item.state}){link_part}"
             )
         parts.append("")
@@ -382,7 +390,15 @@ def render_input_for_prompt(d: DigestInput) -> str:
     if d.review_queue:
         parts.append(f"Needs review (count {len(d.review_queue)}):")
         for r in d.review_queue:
-            link = _wikilink_for_path(r.inbox_path or "") if r.inbox_path else ""
+            # Inbox files don't always have a frontmatter title; humanize
+            # the path stem so review-queue bullets are at least readable.
+            link = (
+                _wikilink_for_path(
+                    r.inbox_path,
+                    display=_humanize_slug(Path(r.inbox_path).stem),
+                )
+                if r.inbox_path else ""
+            )
             link_part = f" → {link}" if link else ""
             src = f" [{r.source}]" if r.source else ""
             parts.append(f"  - {r.event_id}{src}{link_part}")
@@ -399,10 +415,18 @@ def render_input_for_prompt(d: DigestInput) -> str:
                 if n.artifact_count
                 else ""
             )
-            link = _wikilink_for_path(n.note_path or "") if n.note_path else ""
+            display = (
+                n.title
+                if n.title and not _looks_like_slug(n.title)
+                else _humanize_slug(n.title or "")
+            )
+            link = (
+                _wikilink_for_path(n.note_path, display=display)
+                if n.note_path else ""
+            )
             link_part = f" → {link}" if link else ""
             parts.append(
-                f"  - [{n.source}] {n.title}{artifact_note}"
+                f"  - [{n.source}] {display}{artifact_note}"
                 f" (routed via {n.routing_method}){link_part}"
             )
         parts.append("")
@@ -414,18 +438,32 @@ def render_input_for_prompt(d: DigestInput) -> str:
     return "\n".join(parts)
 
 
-_TIMESTAMP_PREFIX_RE = re.compile(r"^\d{8}T\d{6}-")
-_DISPLAY_MAX_CHARS = 40
+_TIMESTAMP_PREFIX_RE = re.compile(r"^\d{8}T\d{6}Z?-")
+_DISPLAY_MAX_CHARS = 80
+# Common connector suffixes appended to slugs at ingest time. Stripping these
+# turns "fix-redact-sensitive-data-from-log-statements-github:p" into
+# "fix-redact-sensitive-data-from-log-statements" — the actual subject the
+# user recognizes.
+_CONNECTOR_SUFFIX_RE = re.compile(
+    r"-(?:github:?p?[a-z]*|"
+    r"gmailthread\d*|"
+    r"slackmsg[a-z0-9:]*|"
+    r"confluencesf?\w*|"
+    r"jiraissue\w*|"
+    r"calendareven?t\w*|"
+    r"claudecode[a-z0-9-]*"
+    r")$",
+)
 
 
-def _wikilink_for_path(absolute_or_rel: str) -> str:
-    """Return ``[[vault/path|short-alias]]`` for a path inside the vault.
+def _wikilink_for_path(absolute_or_rel: str, *, display: str | None = None) -> str:
+    """Return ``[[vault/path|alias]]`` for a path inside the vault.
 
-    The alias keeps the rendered bullet compact while preserving the full
-    path as the link target so Obsidian resolves it unambiguously. We
-    derive the alias from the file stem, stripping the ``YYYYMMDDTHHMMSS-``
-    timestamp prefix that ingestion adds and truncating long slugs with
-    an ellipsis.
+    The alias is what Obsidian renders to the user — slugged filenames
+    leak as the visible bullet text otherwise. Callers should pass
+    ``display`` (the real frontmatter title or upstream object title)
+    whenever they have one; we fall back to a humanized version of the
+    filename slug so the visible text is always at least readable.
     """
     if not absolute_or_rel:
         return ""
@@ -437,15 +475,63 @@ def _wikilink_for_path(absolute_or_rel: str) -> str:
             return ""
         rel = p
     target = rel.with_suffix("").as_posix()
-    alias = _shorten_for_display(rel.stem)
+    alias = _shorten_for_display(display) if display else _humanize_slug(rel.stem)
     return f"[[{target}|{alias}]]"
 
 
-def _shorten_for_display(stem: str) -> str:
-    cleaned = _TIMESTAMP_PREFIX_RE.sub("", stem)
-    if len(cleaned) > _DISPLAY_MAX_CHARS:
-        cleaned = cleaned[: _DISPLAY_MAX_CHARS - 1].rstrip("-_") + "…"
-    return cleaned or stem
+def _looks_like_slug(text: str) -> bool:
+    """Heuristic: is this string a filename stem, not a real title?
+
+    Real titles contain spaces; filename stems use hyphens or underscores
+    as separators. A string with a timestamp prefix or a long unbroken
+    kebab run is almost certainly a stem.
+    """
+    if not text:
+        return False
+    if _TIMESTAMP_PREFIX_RE.match(text):
+        return True
+    if " " in text:
+        return False
+    # 4+ hyphens with no spaces → very likely kebab-case slug
+    return text.count("-") >= 4
+
+
+def _humanize_slug(stem: str) -> str:
+    """Turn a kebab-case filename stem into a readable display title.
+
+    Pipeline:
+      strip ``YYYYMMDDTHHMMSS[Z]-`` timestamp prefix added by ingest
+      strip trailing connector suffix (``-github:p``, ``-gmailthread1``, ...)
+      hyphens/underscores → spaces
+      collapse runs of whitespace
+      sentence-case the result
+
+    Falls back to the original stem if cleaning empties it out, so a
+    weird filename still renders as something rather than nothing.
+    """
+    cleaned = _TIMESTAMP_PREFIX_RE.sub("", stem or "")
+    # Strip connector suffixes repeatedly — some slugs have two stacked
+    # (e.g. "...-githubprsanl-github:p").
+    while True:
+        new = _CONNECTOR_SUFFIX_RE.sub("", cleaned)
+        if new == cleaned:
+            break
+        cleaned = new
+    text = cleaned.replace("-", " ").replace("_", " ").strip()
+    text = " ".join(text.split())  # collapse whitespace
+    if not text:
+        return stem
+    if len(text) > _DISPLAY_MAX_CHARS:
+        text = text[: _DISPLAY_MAX_CHARS - 1].rstrip(" -_") + "…"
+    return text[0].upper() + text[1:] if len(text) > 1 else text.upper()
+
+
+def _shorten_for_display(text: str) -> str:
+    """Trim a real (human-provided) title to the display cap."""
+    text = text.strip()
+    if len(text) > _DISPLAY_MAX_CHARS:
+        text = text[: _DISPLAY_MAX_CHARS - 1].rstrip(" -_") + "…"
+    return text
 
 
 def _short_time(iso: str) -> str:
@@ -802,9 +888,34 @@ def _local_today() -> date:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate a daily digest.")
     parser.add_argument("--date", help="ISO date (YYYY-MM-DD). Default: today.")
+    parser.add_argument(
+        "--backfill", type=int, metavar="N",
+        help="Regenerate the last N days of digests (overwrites existing files). "
+             "Useful after format/template changes — pass --backfill 7 to refresh "
+             "the last week.",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+    if args.backfill is not None:
+        if args.backfill < 1:
+            parser.error("--backfill N requires N >= 1")
+        if args.date:
+            parser.error("--backfill and --date are mutually exclusive")
+        today = _local_today()
+        for offset in range(args.backfill):
+            target = today - timedelta(days=offset)
+            try:
+                out = generate_digest(target)
+                print(f"Wrote {out}")
+            except Exception as e:  # noqa: BLE001
+                # Don't let one bad day take out the rest of the backfill —
+                # log and keep going. The user can re-run for the failed
+                # date manually with --date once we know what broke.
+                log.exception("backfill failed for %s; continuing", target)
+                print(f"Skipped {target}: {type(e).__name__}: {e}")
+        return
 
     target = (
         date.fromisoformat(args.date) if args.date else _local_today()
