@@ -54,7 +54,24 @@ class WeeklyAt:
     minute: int
 
 
-Schedule = Interval | DailyAt | WeeklyAt
+@dataclass(frozen=True)
+class MonthlyAt:
+    day: int   # day-of-month (1..31). Clamped to month length when shorter.
+    hour: int
+    minute: int
+
+
+Schedule = Interval | DailyAt | WeeklyAt | MonthlyAt
+
+
+def _clamp_day(year: int, month: int, day: int) -> int:
+    """Return `day` clamped to the last day of (year, month)."""
+    if month == 12:
+        first_of_next = datetime(year + 1, 1, 1)
+    else:
+        first_of_next = datetime(year, month + 1, 1)
+    last_day = (first_of_next - timedelta(days=1)).day
+    return min(day, last_day)
 
 
 def next_fire_at(schedule: Schedule, now: datetime) -> datetime:
@@ -76,6 +93,19 @@ def next_fire_at(schedule: Schedule, now: datetime) -> datetime:
         candidate += timedelta(days=days_ahead)
         if candidate <= now:
             candidate += timedelta(days=7)
+        return candidate
+    if isinstance(schedule, MonthlyAt):
+        target_day = _clamp_day(now.year, now.month, schedule.day)
+        candidate = now.replace(
+            day=target_day, hour=schedule.hour, minute=schedule.minute,
+            second=0, microsecond=0,
+        )
+        if candidate <= now:
+            year = now.year + (1 if now.month == 12 else 0)
+            month = 1 if now.month == 12 else now.month + 1
+            candidate = candidate.replace(
+                year=year, month=month, day=_clamp_day(year, month, schedule.day),
+            )
         return candidate
     raise TypeError(f"unknown schedule type {type(schedule)}")
 

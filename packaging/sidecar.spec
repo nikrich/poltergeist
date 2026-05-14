@@ -62,6 +62,7 @@ hiddenimports += ['backports', 'backports.tarfile']
 hiddenimports += collect_submodules('ghostbrain.connectors')
 hiddenimports += collect_submodules('ghostbrain.worker')
 hiddenimports += collect_submodules('ghostbrain.recorder')
+hiddenimports += collect_submodules('ghostbrain.profile')
 hiddenimports += [
     'ghostbrain.scheduler',
     'ghostbrain.scheduler_jobs',

@@ -24,11 +24,92 @@ from ghostbrain.paths import queue_dir
 from ghostbrain.scheduler import (
     DailyAt,
     Interval,
+    MonthlyAt,
     Scheduler,
     WeeklyAt,
 )
 
 log = logging.getLogger("ghostbrain.scheduler.jobs")
+
+
+def _wrap_job(name: str, work: callable) -> RunResult:
+    """Adapt a plain callable into a `RunResult`, capturing exceptions.
+
+    `work()` returns a dict of detail fields (or empty). Anything raised is
+    turned into a failed RunResult so the scheduler never sees a bare
+    exception.
+    """
+    import time as _time
+    import traceback as _tb
+
+    started = _time.time()
+    try:
+        details = work() or {}
+        queued = int(details.pop("queued", 0))
+        return RunResult(
+            connector=name,
+            ok=True,
+            started_at=started,
+            finished_at=_time.time(),
+            queued=queued,
+            details=details,
+        )
+    except Exception as e:  # noqa: BLE001
+        log.exception("%s failed", name)
+        return RunResult(
+            connector=name,
+            ok=False,
+            started_at=started,
+            finished_at=_time.time(),
+            error=str(e),
+            error_type=type(e).__name__,
+            details={"traceback": _tb.format_exc(limit=5)},
+        )
+
+
+def _digest_job() -> RunResult:
+    """Generate today's daily digest. Mirrors `python -m ghostbrain.worker.digest`."""
+    def work() -> dict:
+        from ghostbrain.worker.digest import generate_digest, _local_today
+        out = generate_digest(_local_today())
+        return {"output_path": str(out)}
+    return _wrap_job("digest", work)
+
+
+def _claudemd_job() -> RunResult:
+    """Regenerate per-project CLAUDE.md files. Mirrors `claude_md --all`."""
+    def work() -> dict:
+        from ghostbrain.profile.claude_md import regenerate_all
+        written = regenerate_all() or []
+        return {"queued": len(written), "files": [str(p) for p in written[:20]]}
+    return _wrap_job("claudemd", work)
+
+
+def _profile_weekly_job() -> RunResult:
+    """Apply queued profile diffs. Mirrors `python -m ghostbrain.profile.apply`."""
+    def work() -> dict:
+        from datetime import date
+        from ghostbrain.profile.apply import apply_weekly
+        result = apply_weekly(date.today())
+        return {
+            "queued": len(result.applied),
+            "applied": len(result.applied),
+            "deferred": len(result.deferred_for_review),
+            "discarded": result.discarded_count,
+        }
+    return _wrap_job("profile-weekly", work)
+
+
+def _profile_monthly_job() -> RunResult:
+    """Profile decay + promotion. Mirrors `python -m ghostbrain.profile.decay`."""
+    def work() -> dict:
+        from datetime import date
+        from ghostbrain.profile.decay import decay_monthly
+        result = decay_monthly(date.today())
+        archived = int(result.get("archived", 0))
+        promoted = int(result.get("promoted", 0))
+        return {"queued": archived + promoted, **result}
+    return _wrap_job("profile-monthly", work)
 
 
 def _semantic_refresh() -> RunResult:
@@ -89,6 +170,23 @@ def register_connectors(scheduler: Scheduler) -> None:
         _semantic_refresh,
         "every 15m",
     )
+    # Daily/weekly/monthly jobs that were on launchd before the cutover.
+    # Match the schedules in orchestration/launchd/com.ghostbrain.*.plist.
+    scheduler.add_job("digest", DailyAt(hour=6, minute=30), _digest_job, "daily 06:30")
+    scheduler.add_job("claudemd", DailyAt(hour=2, minute=0), _claudemd_job, "daily 02:00")
+    # launchd Weekday=0 is Sunday; datetime.weekday()=6 is Sunday.
+    scheduler.add_job(
+        "profile-weekly",
+        WeeklyAt(weekday=6, hour=22, minute=0),
+        _profile_weekly_job,
+        "weekly Sun 22:00",
+    )
+    scheduler.add_job(
+        "profile-monthly",
+        MonthlyAt(day=1, hour=22, minute=0),
+        _profile_monthly_job,
+        "monthly day 1 22:00",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -137,13 +235,25 @@ async def worker_daemon(stop: asyncio.Event) -> None:
             )
         except Exception as e:  # noqa: BLE001
             log.exception("worker processing failed for %s", event_id)
-            failed_path = await asyncio.to_thread(_move, event_path, root / "failed")
-            failed_err = failed_path.with_suffix(failed_path.suffix + ".error")
-            await asyncio.to_thread(
-                failed_err.write_text,
-                f"{type(e).__name__}: {e}\n",
-                "utf-8",
-            )
+            # Failed-handling must itself be resilient: if the event file is
+            # already gone (a previous worker, manual cleanup, or a partial
+            # move during shutdown), letting that escape the loop kills the
+            # daemon and the tray reports "worker failing" forever. We log
+            # and continue instead.
+            try:
+                failed_path = await asyncio.to_thread(_move, event_path, root / "failed")
+                failed_err = failed_path.with_suffix(failed_path.suffix + ".error")
+                await asyncio.to_thread(
+                    failed_err.write_text,
+                    f"{type(e).__name__}: {e}\n",
+                    "utf-8",
+                )
+            except FileNotFoundError:
+                log.warning(
+                    "event %s vanished from processing/ before fail-move; "
+                    "another worker or cleanup likely handled it",
+                    event_id,
+                )
             audit_log("event_failed", event_id, error=f"{type(e).__name__}: {e}")
 
     audit_log("worker_stopped", source="scheduler")

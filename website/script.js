@@ -27,6 +27,6 @@
   const version = document.getElementById('footer-version');
   if (version) {
     const today = new Date().toLocaleDateString('en-CA');
-    version.textContent = `v 0.1.3 · ${today}`;
+    version.textContent = `v 0.1.9 · ${today}`;
   }
 })();
