@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/nikrich/poltergeist/compare/v0.2.0...v0.2.1) (2026-05-18)
+
+
+### Bug Fixes
+
+* **build:** add `com.apple.security.device.audio-input` entitlement so the recorder can actually capture the mic. Without it, hardened-runtime binaries are silently denied mic input by avfoundation — recordings came out as 13+ minute files of pure silence (-91 dB) and whisper produced empty transcripts.
+
 ## [0.2.0](https://github.com/nikrich/poltergeist/compare/v0.1.17...v0.2.0) (2026-05-18)
 
 
