@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.2](https://github.com/nikrich/poltergeist/compare/v0.2.1...v0.2.2) (2026-05-18)
+
+
+### Bug Fixes
+
+* **slack:** read full-pull allowlist from a state file (`~/.ghostbrain/state/slack.<slug>.allowed_channels.json`) before falling back to env var or routing.yaml. The env-var path silently broke on the packaged sidecar — token vars from `.env` reached `os.environ`, but the allowlist var from the same `.env` didn't, with no error logged.
+* **slack:** when `mode: full` is configured without an allowlist, fall back to mentions-only with a log warning instead of silently iterating every channel and exhausting Slack's Tier 3 rate limit (the old behavior reported `last_run_ok=true, queued=0` forever).
+
 ## [0.2.1](https://github.com/nikrich/poltergeist/compare/v0.2.0...v0.2.1) (2026-05-18)
 
 

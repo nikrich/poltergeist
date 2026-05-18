@@ -96,7 +96,27 @@ class SlackConnector(Connector):
         events: list[dict] = []
         for ws in self.workspaces:
             try:
-                if ws.mode == "full":
+                effective_mode = ws.mode
+                if effective_mode == "full" and not ws.allowed_channels:
+                    # Refuse silent failure on large workspaces. full-pull
+                    # without an allowlist would iterate every channel and
+                    # exhaust Slack's Tier 3 rate limit, with the
+                    # per-channel except-block swallowing the errors as
+                    # warnings — net result: last_run_ok=true, queued=0,
+                    # and no signal in the UI that anything is wrong.
+                    # Fall back to mentions so the user still gets the
+                    # @-mentions / DMs flow until they configure an
+                    # allowlist via Settings → Slack channels (or the
+                    # state file at ~/.ghostbrain/state/slack.<slug>.allowed_channels.json).
+                    log.warning(
+                        "slack %s: mode=full but no allowed_channels — "
+                        "falling back to mentions-mode for this run. "
+                        "Configure an allowlist to enable full-pull.",
+                        ws.slug,
+                    )
+                    effective_mode = "mentions"
+
+                if effective_mode == "full":
                     events.extend(self._fetch_workspace_full(ws))
                 else:
                     events.extend(self._fetch_workspace(ws))
@@ -594,19 +614,55 @@ def _allowed_channels_env_var(slug: str) -> str:
     return f"SLACK_ALLOWED_CHANNELS_{safe}"
 
 
+def _allowed_channels_state_file(slug: str) -> "Path":
+    """Per-workspace allowlist file. Lives under the state dir so it
+    isn't synced/committed."""
+    from pathlib import Path as _Path
+    from ghostbrain.paths import state_dir
+    safe = slug.lower().replace("/", "_").replace(" ", "_")
+    return state_dir() / f"slack.{safe}.allowed_channels.json"
+
+
 def _resolve_allowed_channels(slug: str, cfg: dict) -> tuple[str, ...]:
     """Whitelist of channel names for full-pull mode.
 
-    Resolution: ``SLACK_ALLOWED_CHANNELS_<UPPER_SLUG>`` (comma-separated)
-    wins when set, else falls back to yaml ``allowed_channels:``. Names
-    are lowercased and a leading ``#`` is stripped.
+    Resolution order (first source with content wins):
+
+    1. State file ``~/.ghostbrain/state/slack.<slug>.allowed_channels.json``
+       — JSON array of channel names. This is the recommended path for
+       any deployment: it's per-user, never committed, never relies on
+       env-var propagation through the packaged-app launcher (a known
+       source of silent failures we've hit before).
+    2. Env var ``SLACK_ALLOWED_CHANNELS_<UPPER_SLUG>`` — comma-separated.
+       Kept for `.env`-driven setups, but be aware the bundled sidecar's
+       dotenv load has been flaky in practice.
+    3. yaml ``allowed_channels:`` under the workspace in routing.yaml.
+
+    Names are lowercased and a leading ``#`` is stripped.
     """
+    import json
     import os
-    env_value = os.environ.get(_allowed_channels_env_var(slug), "").strip()
-    if env_value:
-        raw: Iterable = (s for s in env_value.split(","))
-    else:
+
+    raw: Iterable = ()
+
+    state_file = _allowed_channels_state_file(slug)
+    if state_file.exists():
+        try:
+            data = json.loads(state_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as e:
+            log.warning("slack allowlist %s unreadable: %s", state_file, e)
+        else:
+            if isinstance(data, list):
+                raw = data
+
+    if not raw:
+        env_value = os.environ.get(_allowed_channels_env_var(slug), "").strip()
+        if env_value:
+            raw = env_value.split(",")
+
+    if not raw:
         raw = cfg.get("allowed_channels") or ()
+
     return tuple(_strip_hash(str(item).strip()).lower() for item in raw if str(item).strip())
 
 

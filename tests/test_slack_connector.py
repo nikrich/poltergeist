@@ -175,6 +175,33 @@ def test_parse_workspaces_env_var_overrides_yaml_allowlist(
     assert ws.allowed_channels == ("alpha", "beta", "gamma")
 
 
+def test_parse_workspaces_state_file_overrides_env_and_yaml(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """The state file at ~/.ghostbrain/state/slack.<slug>.allowed_channels.json
+    is the highest-priority source. It doesn't rely on env-var
+    propagation through the packaged-app launcher (in v0.2.0 the
+    sidecar inherited the slack token from .env but not the allowlist
+    from the same file, with no error)."""
+    import json
+    monkeypatch.setenv("GHOSTBRAIN_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("SLACK_ALLOWED_CHANNELS_ACME", "ignored-because-state-file-wins")
+    (tmp_path / "slack.acme.allowed_channels.json").write_text(
+        json.dumps(["#first", "second", "Third"]),
+        encoding="utf-8",
+    )
+
+    from ghostbrain.connectors.slack.connector import _parse_workspaces
+    [ws] = list(_parse_workspaces({"workspaces": {
+        "acme": {
+            "context": "work",
+            "mode": "full",
+            "allowed_channels": ["also-ignored"],
+        },
+    }}))
+    assert ws.allowed_channels == ("first", "second", "third")
+
+
 # ---------------------------------------------------------------------------
 # Normalize
 # ---------------------------------------------------------------------------
@@ -306,6 +333,42 @@ def test_fetch_one_workspace(
     kwargs = fake.search_messages.call_args.kwargs
     assert "<@U-me>" in kwargs["query"]
     assert "after:" in kwargs["query"]
+
+
+def test_fetch_falls_back_to_mentions_when_full_mode_has_no_allowlist(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """Without an allowlist, full-pull on a large workspace silently fails
+    (every channel hits rate limit, per-channel except-block swallows it,
+    last_run_ok=true, queued=0). Refuse the footgun: fall back to mentions
+    so the user still gets @-mentions/DMs while they configure channels."""
+    from ghostbrain.connectors.slack import auth as auth_mod
+    import importlib
+    monkeypatch.setenv("GHOSTBRAIN_STATE_DIR", str(tmp_path))
+    importlib.reload(auth_mod)
+    auth_mod.save_token("acme", "xoxp-test")
+
+    from ghostbrain.connectors.slack import connector as conn_mod
+    importlib.reload(conn_mod)
+
+    fake = MagicMock()
+    fake.auth_test.return_value = {
+        "user_id": "U-me", "team_id": "T1", "team": "Acme",
+    }
+    fake.search_messages.return_value = {
+        "messages": {"matches": [_match()]},
+    }
+
+    c = conn_mod.SlackConnector(
+        config={"workspaces": {"acme": {"context": "work", "mode": "full"}}},
+        queue_dir=tmp_path / "q", state_dir=tmp_path / "s",
+        client_factory=lambda token: fake,
+    )
+
+    events = c.fetch(datetime.now(timezone.utc))
+    # search.messages (mentions path) was called, not conversations.history.
+    fake.search_messages.assert_called_once()
+    assert len(events) == 1
 
 
 def test_fetch_continues_after_workspace_error(
