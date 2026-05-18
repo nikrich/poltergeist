@@ -226,9 +226,11 @@ def test_render_emits_wikilinks_for_artifacts(vault: Path) -> None:
     inp = build_weekly_input(week_end)
     rendered = render_weekly_input_for_prompt(inp)
 
-    # Wikilink form should be aliased: [[path|alias]]
-    assert "[[20-contexts/sanlam/calendar/artifacts/decisions/" in rendered
-    assert "|defer-simi]]" in rendered or "defer-simi]" in rendered
+    # Wikilink form should be aliased: [[path|alias]]. The alias is the
+    # humanized form of the slug (see _humanize_slug in worker/digest.py),
+    # so "defer-simi" → "Defer simi".
+    assert "[[20-contexts/sanlam/calendar/artifacts/decisions/defer-simi|" in rendered
+    assert "|Defer simi]]" in rendered
     # Type grouping should appear
     assert "decisions (1):" in rendered
     assert "action_items (1):" in rendered

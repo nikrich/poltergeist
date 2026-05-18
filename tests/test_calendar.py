@@ -223,7 +223,12 @@ def test_macos_connector_normalizes_jxa_payload(vault: Path, tmp_path: Path) -> 
         stdout = json.dumps(fake_payload)
         stderr = ""
 
-    with patch("ghostbrain.connectors.calendar.macos.subprocess.run",
+    # Force the JXA fallback path: on dev machines with EventKit access
+    # granted, `_fetch_via_eventkit` would return real calendar data and
+    # bypass the subprocess mock entirely.
+    with patch("ghostbrain.connectors.calendar.macos._fetch_via_eventkit",
+               return_value=None), \
+         patch("ghostbrain.connectors.calendar.macos.subprocess.run",
                return_value=FakeProc()):
         events = connector.fetch(datetime(2026, 5, 9, tzinfo=timezone.utc))
 
