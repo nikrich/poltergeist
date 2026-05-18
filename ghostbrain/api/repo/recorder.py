@@ -233,9 +233,18 @@ def start(title: str | None, context: str | None) -> dict:
 
 def stop() -> dict:
     with _lock:
+        # Daemon-owned (calendar-driven) recording: SIGINT ffmpeg and let
+        # the recorder daemon's next tick run _finalize (transcribe, link
+        # to vault, restore audio output). status() drops the daemon
+        # record as soon as the pid is gone, so the UI flips to idle.
+        ds = daemon_state.load()
+        if ds.active is not None and audio_capture.is_running(ds.active.pid):
+            audio_capture.stop_capture(ds.active.pid)
+            return status()
+
         state = _read_state()
         if state is None or state.get("phase") not in ("recording", "transcribing"):
-            raise RecorderNotActive("no manual recording to stop")
+            raise RecorderNotActive("no recording to stop")
 
         if state.get("phase") == "recording":
             pid = state.get("pid")

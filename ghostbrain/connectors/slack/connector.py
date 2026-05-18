@@ -41,6 +41,11 @@ class SlackWorkspaceConfig:
     mode: str = "mentions"
     # Full-mode only:
     initial_lookback_days: int = DEFAULT_INITIAL_LOOKBACK_DAYS
+    # When non-empty, only these channels are pulled (whitelist). Required
+    # for workspaces with many channels — pulling every channel hits Slack's
+    # ~50 req/min Tier 3 rate limit hard. Names match channel name
+    # (case-insensitive). `denied_channels` is ignored when this is set.
+    allowed_channels: tuple[str, ...] = ()
     denied_channels: tuple[str, ...] = ()     # name match (case-insensitive)
     llm_filter: bool = True                   # run LLM gate on non-always-keep msgs
 
@@ -197,6 +202,7 @@ class SlackConnector(Connector):
             - timedelta(days=ws.initial_lookback_days)
         ).timestamp()
 
+        allowed = set(ws.allowed_channels)
         denied = set(ws.denied_channels)
         ambient: list[tuple[dict, dict]] = []  # (channel_dict, message_dict)
         kept_always: list[tuple[dict, dict, str]] = []  # (chan, msg, reason)
@@ -206,7 +212,10 @@ class SlackConnector(Connector):
             chan_name = (chan.get("name") or "").lower()
             if not chan_id:
                 continue
-            if chan_name and chan_name in denied:
+            if allowed:
+                if chan_name not in allowed:
+                    continue
+            elif chan_name and chan_name in denied:
                 continue
 
             cursor_ts = cursors.get(chan_id)
@@ -516,14 +525,20 @@ def _parse_workspaces(config: dict) -> Iterable[SlackWorkspaceConfig]:
     """``config['workspaces']`` shape::
 
         workspaces:
-          sft:
-            context: sanlam
+          acme:
+            context: work
             lookback_hours: 24
             mentions_only: true
-          codeship:
-            context: codeship
+          other:
+            context: personal
 
     Empty config → empty iterator.
+
+    The full-pull allowlist is read from ``SLACK_ALLOWED_CHANNELS_<UPPER_SLUG>``
+    if set (comma-separated channel names), falling back to the yaml
+    ``allowed_channels:`` list. Prefer the env var for workspaces where
+    channel names are sensitive — it keeps them out of any yaml that
+    might be synced or committed.
     """
     raw = (config or {}).get("workspaces") or {}
     for slug, cfg in raw.items():
@@ -549,8 +564,9 @@ def _parse_workspaces(config: dict) -> Iterable[SlackWorkspaceConfig]:
             )
             mode = "mentions"
 
+        allowed = _resolve_allowed_channels(str(slug), cfg)
         denied_raw = cfg.get("denied_channels") or ()
-        denied = tuple(str(d).lower() for d in denied_raw if d)
+        denied = tuple(_strip_hash(str(d)).lower() for d in denied_raw if d)
 
         yield SlackWorkspaceConfig(
             slug=str(slug),
@@ -563,9 +579,35 @@ def _parse_workspaces(config: dict) -> Iterable[SlackWorkspaceConfig]:
                 cfg.get("initial_lookback_days")
                 or DEFAULT_INITIAL_LOOKBACK_DAYS
             ),
+            allowed_channels=allowed,
             denied_channels=denied,
             llm_filter=bool(cfg.get("llm_filter", True)),
         )
+
+
+def _strip_hash(name: str) -> str:
+    return name[1:] if name.startswith("#") else name
+
+
+def _allowed_channels_env_var(slug: str) -> str:
+    safe = slug.upper().replace("-", "_").replace("/", "_").replace(" ", "_")
+    return f"SLACK_ALLOWED_CHANNELS_{safe}"
+
+
+def _resolve_allowed_channels(slug: str, cfg: dict) -> tuple[str, ...]:
+    """Whitelist of channel names for full-pull mode.
+
+    Resolution: ``SLACK_ALLOWED_CHANNELS_<UPPER_SLUG>`` (comma-separated)
+    wins when set, else falls back to yaml ``allowed_channels:``. Names
+    are lowercased and a leading ``#`` is stripped.
+    """
+    import os
+    env_value = os.environ.get(_allowed_channels_env_var(slug), "").strip()
+    if env_value:
+        raw: Iterable = (s for s in env_value.split(","))
+    else:
+        raw = cfg.get("allowed_channels") or ()
+    return tuple(_strip_hash(str(item).strip()).lower() for item in raw if str(item).strip())
 
 
 def _normalize_message(
