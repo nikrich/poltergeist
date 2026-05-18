@@ -629,6 +629,24 @@ gmail:
     # "sanlam.co.za": sanlam
     {}
 
+# Joplin notebooks → context. The connector polls the Joplin Data API
+# exposed by the desktop app's Web Clipper service. Enable in Joplin:
+# Tools → Options → Web Clipper → "Enable Web Clipper Service", then
+# paste the auth token below.
+#   - `notebooks` empty = ingest every notebook (router falls back to LLM).
+#   - non-empty = allowlist + fast-route table (notes outside listed
+#     notebooks are skipped at fetch time, no LLM cost).
+joplin:
+  # TODO: paste the token from Joplin's Web Clipper settings.
+  token: ""
+  # host: "http://localhost:41184"  # uncomment if you moved the port
+  notebooks:
+    # Example:
+    #   Sanlam: sanlam
+    #   Codeship: codeship
+    #   Personal: personal
+    {}
+
 # Calendar accounts → context. One block per provider.
 calendar:
   google:

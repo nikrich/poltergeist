@@ -152,6 +152,20 @@ def _fast_route(event: dict, routing: dict) -> RoutingDecision | None:
                     method="path",
                 )
 
+    if source == "joplin":
+        notebook = metadata.get("notebook")
+        if notebook:
+            ctx = (routing.get("joplin") or {}).get("notebooks", {}).get(notebook)
+            if ctx:
+                log.info("path-routed event=%s ctx=%s joplin notebook=%s",
+                         event.get("id"), ctx, notebook)
+                return RoutingDecision(
+                    context=ctx,
+                    confidence=1.0,
+                    reasoning=f"matched joplin notebook rule for {notebook}",
+                    method="path",
+                )
+
     if source == "gmail":
         # Sender domain has the strongest signal: an email from
         # @sanlam.co.za is sanlam regardless of label noise. Fall back to
