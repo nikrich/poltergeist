@@ -288,7 +288,7 @@ async def recorder_daemon(stop: asyncio.Event) -> None:
     from ghostbrain.recorder.daemon import DaemonConfig, run_once
 
     config = await asyncio.to_thread(DaemonConfig.load)
-    state = await asyncio.to_thread(state_mod.RecorderState.load)
+    state = await asyncio.to_thread(state_mod.load)
     log.info("in-process recorder started. poll=%ss", config.poll_interval_s)
 
     while not stop.is_set():
