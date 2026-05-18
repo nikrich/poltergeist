@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.0](https://github.com/nikrich/poltergeist/compare/v0.1.17...v0.2.0) (2026-05-18)
+
+
+### Features
+
+* **connectors:** add joplin connector ([5288037](https://github.com/nikrich/poltergeist/commit/5288037b5f31f8581c3b6973b4606c0d6802b01a))
+* **slack:** allowed_channels whitelist for high-volume workspaces ([8427ccc](https://github.com/nikrich/poltergeist/commit/8427ccc3a46e662a863dbf67128cf37ed3acbd22))
+
+
+### Bug Fixes
+
+* **recorder:** unblock daemon-owned recordings — stop button + auto-finalize ([a793033](https://github.com/nikrich/poltergeist/commit/a793033))
+
 ## [0.1.8](https://github.com/nikrich/poltergeist/compare/v0.1.7...v0.1.8) (2026-05-13)
 
 
