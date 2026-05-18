@@ -631,11 +631,10 @@ def _resolve_allowed_channels(slug: str, cfg: dict) -> tuple[str, ...]:
     1. State file ``~/.ghostbrain/state/slack.<slug>.allowed_channels.json``
        — JSON array of channel names. This is the recommended path for
        any deployment: it's per-user, never committed, never relies on
-       env-var propagation through the packaged-app launcher (a known
-       source of silent failures we've hit before).
+       env-var propagation through the packaged-app launcher.
     2. Env var ``SLACK_ALLOWED_CHANNELS_<UPPER_SLUG>`` — comma-separated.
-       Kept for `.env`-driven setups, but be aware the bundled sidecar's
-       dotenv load has been flaky in practice.
+       Kept for `.env`-driven setups, but the bundled sidecar's dotenv
+       load has been flaky in practice.
     3. yaml ``allowed_channels:`` under the workspace in routing.yaml.
 
     Names are lowercased and a leading ``#`` is stripped.
@@ -644,26 +643,57 @@ def _resolve_allowed_channels(slug: str, cfg: dict) -> tuple[str, ...]:
     import os
 
     raw: Iterable = ()
+    debug_source = "yaml-or-empty"
 
     state_file = _allowed_channels_state_file(slug)
-    if state_file.exists():
+    state_exists = state_file.exists()
+    if state_exists:
         try:
             data = json.loads(state_file.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as e:
             log.warning("slack allowlist %s unreadable: %s", state_file, e)
+            debug_source = f"state-file-unreadable:{e!r}"
         else:
             if isinstance(data, list):
                 raw = data
+                debug_source = "state-file"
+            else:
+                debug_source = f"state-file-not-list:{type(data).__name__}"
 
+    env_var_name = _allowed_channels_env_var(slug)
+    env_value = os.environ.get(env_var_name, "").strip()
+    if not raw and env_value:
+        raw = env_value.split(",")
+        debug_source = "env-var"
+
+    yaml_value = cfg.get("allowed_channels") or ()
     if not raw:
-        env_value = os.environ.get(_allowed_channels_env_var(slug), "").strip()
-        if env_value:
-            raw = env_value.split(",")
+        raw = yaml_value
+        if raw:
+            debug_source = "yaml"
 
-    if not raw:
-        raw = cfg.get("allowed_channels") or ()
+    result = tuple(_strip_hash(str(item).strip()).lower() for item in raw if str(item).strip())
 
-    return tuple(_strip_hash(str(item).strip()).lower() for item in raw if str(item).strip())
+    # v0.2.3 diagnostic: log each resolution attempt to a sentinel so we
+    # can see what the bundled sidecar is actually doing. Removed in
+    # v0.2.4 once the root cause is pinned down.
+    try:
+        from datetime import datetime
+        from ghostbrain.paths import state_dir as _sd
+        sentinel = _sd() / f"slack.{slug.lower()}.allowlist_debug.log"
+        with open(sentinel, "a", encoding="utf-8") as df:
+            df.write(
+                f"[{datetime.now().isoformat()}] slug={slug!r} "
+                f"source={debug_source} "
+                f"state_file={state_file} exists={state_exists} "
+                f"env_var_name={env_var_name} env_value_len={len(env_value)} "
+                f"yaml_count={len(yaml_value) if yaml_value else 0} "
+                f"result_count={len(result)}\n"
+            )
+    except Exception:  # noqa: BLE001 — diagnostic must never break the connector
+        pass
+
+    return result
 
 
 def _normalize_message(

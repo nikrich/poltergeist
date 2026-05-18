@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.3](https://github.com/nikrich/poltergeist/compare/v0.2.2...v0.2.3) (2026-05-18)
+
+
+### Diagnostics
+
+* **slack:** log the allowlist resolution path for each `_resolve_allowed_channels` call to `~/.ghostbrain/state/slack.<slug>.allowlist_debug.log`. v0.2.2 ships the state-file + env-var + yaml fallback chain, but the bundled sidecar keeps producing empty allowlists in production while the same code path with the same files works in dev. The sentinel writes which source resolved and the count from each, so we can see what the bundled runtime is actually doing.
+
 ## [0.2.2](https://github.com/nikrich/poltergeist/compare/v0.2.1...v0.2.2) (2026-05-18)
 
 
