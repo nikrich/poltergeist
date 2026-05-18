@@ -145,6 +145,36 @@ def test_parse_workspaces_skips_entries_without_context(caplog) -> None:
     assert "broken" not in slugs
 
 
+def test_parse_workspaces_normalizes_allowed_channels() -> None:
+    """allowed_channels accepts ``#foo`` or ``foo``, case-insensitive."""
+    from ghostbrain.connectors.slack.connector import _parse_workspaces
+    [ws] = list(_parse_workspaces({"workspaces": {
+        "acme": {
+            "context": "work",
+            "mode": "full",
+            "allowed_channels": ["#General", "Project-Alpha", "#general"],
+        },
+    }}))
+    assert ws.allowed_channels == ("general", "project-alpha", "general")
+
+
+def test_parse_workspaces_env_var_overrides_yaml_allowlist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SLACK_ALLOWED_CHANNELS_<SLUG> wins over routing.yaml so sensitive
+    channel names can stay out of any committed/synced yaml."""
+    monkeypatch.setenv("SLACK_ALLOWED_CHANNELS_ACME", "alpha, #beta , gamma")
+    from ghostbrain.connectors.slack.connector import _parse_workspaces
+    [ws] = list(_parse_workspaces({"workspaces": {
+        "acme": {
+            "context": "work",
+            "mode": "full",
+            "allowed_channels": ["ignored-because-env-wins"],
+        },
+    }}))
+    assert ws.allowed_channels == ("alpha", "beta", "gamma")
+
+
 # ---------------------------------------------------------------------------
 # Normalize
 # ---------------------------------------------------------------------------
