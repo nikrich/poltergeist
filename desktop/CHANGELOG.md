@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.5](https://github.com/nikrich/poltergeist/compare/v0.2.3...v0.2.5) (2026-05-19)
+
+
+### Bug Fixes
+
+* **answer:** per-type context cap so meeting transcripts reach the LLM uncapped. The previous flat 16 KB `PER_NOTE_CHAR_CAP` made sense for Confluence pages and Slack threads but chopped the back half off a ~40 KB workshop transcript — the LLM was reading the first 40 minutes of a 90-minute session and the user would ask about something said at minute 70 and get "the sources don't cover this". Notes under `transcripts/` now get a 48 KB budget; everything else keeps 16 KB. Worst-case 2 transcripts in the top-8 is 2×48 + 6×16 = 192 KB, inside Sonnet's 200 KB window.
+
+
+### Diagnostics
+
+* **slack:** extend the file-based sentinel into `_fetch_workspace_full`. v0.2.3 confirmed the allowlist resolves correctly in the bundled sidecar (11 channels) yet `slack_cursors.<slug>.json` is never advanced and `queued=0`, which means an exception is firing inside the full-pull path and being swallowed by the catch-all in `fetch()` as a `log.warning` that never reaches disk. This commit writes a one-line step trace (imports, `load_token`, `client_factory`, `auth_test`, `_list_channels`, channel loop, `score_messages`, `cursors.save`) plus the exception type + 8-frame traceback to `~/.ghostbrain/state/slack.<slug>.fetch_debug.log`. Removed in a later release once the failing step is identified.
+
 ## [0.2.3](https://github.com/nikrich/poltergeist/compare/v0.2.2...v0.2.3) (2026-05-18)
 
 
