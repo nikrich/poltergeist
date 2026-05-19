@@ -25,12 +25,14 @@ from ghostbrain.paths import vault_path
 
 log = logging.getLogger("ghostbrain.api.answer")
 
-# 3KB chops the body of a typical 18-minute meeting transcript at ~6
-# minutes in — the LLM then summarises only what it saw and the user
-# rightly complains the answer is shallow. Sonnet has a 200K context;
-# 8 sources × 16KB = 128KB, well within budget. Trade extra prompt
-# tokens for actually-useful answers.
+# Per-type caps. 16 KB is enough for a Confluence page, a Slack thread,
+# or a Jira ticket, but it slices the back half off a meeting transcript
+# (a 90-minute session is ~40 KB and the user asks about something said
+# at minute 70). Transcripts get a much bigger cap so the whole session
+# reaches the model. Worst case 2 transcripts in top-8 = 2×48 + 6×16 =
+# 192 KB, still inside Sonnet's 200 KB context window.
 PER_NOTE_CHAR_CAP = 16000
+TRANSCRIPT_CHAR_CAP = 48000
 DEFAULT_MODEL = "sonnet"
 PROMPT_TEMPLATE = """You are answering a question using ONLY the user's own vault notes below.
 The user is a software engineer working across four contexts: sanlam (Sanlam Digital), codeship (codeship.tech client + product), reducedrecipes, and personal projects.
@@ -63,8 +65,9 @@ def _load_body(rel_path: str) -> tuple[str, str]:
         return "", ""
     title = str(post.metadata.get("title") or path.stem)
     body = (post.content or "").strip()
-    if len(body) > PER_NOTE_CHAR_CAP:
-        body = body[:PER_NOTE_CHAR_CAP] + "\n\n[…truncated]"
+    cap = TRANSCRIPT_CHAR_CAP if "/transcripts/" in rel_path else PER_NOTE_CHAR_CAP
+    if len(body) > cap:
+        body = body[:cap] + "\n\n[…truncated]"
     return title, body
 
 
