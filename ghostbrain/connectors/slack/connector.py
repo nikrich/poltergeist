@@ -193,25 +193,93 @@ class SlackConnector(Connector):
         appended to this list (as ``MessageDecision``) for the CLI to print.
         In production it stays ``None`` and we just enqueue the kept events.
         """
-        from ghostbrain.connectors.slack.cursors import load_cursors
-        from ghostbrain.connectors.slack.filter import (
-            FilterableMessage, score_messages, KEEP_THRESHOLD,
-        )
+        # v0.2.4 diagnostic: file-based step trace + exception capture.
+        # The catch-all in fetch() turns exceptions here into log.warning,
+        # which the bundled sidecar routes to stderr → Electron's 4 KB ring
+        # buffer → /dev/null. The result is last_run_ok=true, queued=0, no
+        # signal in the UI. This sentinel records each step (and the
+        # exception type + traceback when one fires) to a file we can read.
+        # Removed in v0.2.5 once the root cause is pinned down.
+        _fetch_debug(ws.slug, "enter _fetch_workspace_full")
+        try:
+            return self._fetch_workspace_full_traced(
+                ws, dry_run_collector=dry_run_collector,
+            )
+        except BaseException as e:
+            import traceback as _tb
+            _fetch_debug(
+                ws.slug,
+                f"RAISED {type(e).__name__}: {e}\n{_tb.format_exc(limit=8)}",
+            )
+            raise
 
-        token = load_token(ws.slug)
-        client = self._client_factory(token)
+    def _fetch_workspace_full_traced(
+        self,
+        ws: SlackWorkspaceConfig,
+        *,
+        dry_run_collector: list | None = None,
+    ) -> list[dict]:
+        try:
+            from ghostbrain.connectors.slack.cursors import load_cursors
+            from ghostbrain.connectors.slack.filter import (
+                FilterableMessage, score_messages, KEEP_THRESHOLD,
+            )
+            _fetch_debug(ws.slug, "imports ok")
+        except Exception as e:
+            _fetch_debug(ws.slug, f"IMPORT FAILED: {type(e).__name__}: {e}")
+            raise
 
-        ident = client.auth_test()
+        try:
+            token = load_token(ws.slug)
+            _fetch_debug(ws.slug, f"load_token ok (len={len(token)})")
+        except Exception as e:
+            _fetch_debug(ws.slug, f"load_token FAILED: {type(e).__name__}: {e}")
+            raise
+
+        try:
+            client = self._client_factory(token)
+            _fetch_debug(
+                ws.slug,
+                f"client_factory ok ({type(client).__name__})",
+            )
+        except Exception as e:
+            _fetch_debug(
+                ws.slug,
+                f"client_factory FAILED: {type(e).__name__}: {e}",
+            )
+            raise
+
+        try:
+            ident = client.auth_test()
+        except Exception as e:
+            _fetch_debug(ws.slug, f"auth_test FAILED: {type(e).__name__}: {e}")
+            raise
         my_user_id = ident.get("user_id") or ident.get("user")
         team_id = ident.get("team_id") or ident.get("team")
         team_name = ident.get("team")
+        _fetch_debug(
+            ws.slug,
+            f"auth_test ok (user_id={my_user_id!r} team_id={team_id!r})",
+        )
         if not my_user_id:
             raise SlackAuthError(
                 f"slack auth.test for {ws.slug} returned no user_id"
             )
 
         cursors = load_cursors(self.state_dir, ws.slug)
-        channels = _list_channels(client)
+        _fetch_debug(
+            ws.slug,
+            f"load_cursors ok ({len(cursors.channels)} channels in state)",
+        )
+        try:
+            channels = _list_channels(client)
+        except Exception as e:
+            _fetch_debug(
+                ws.slug,
+                f"_list_channels FAILED: {type(e).__name__}: {e}",
+            )
+            raise
+        _fetch_debug(ws.slug, f"_list_channels ok ({len(channels)} channels)")
         log.info("slack full-pull %s: %d channels", ws.slug, len(channels))
 
         # First-run floor: don't pull more than initial_lookback_days when
@@ -272,6 +340,12 @@ class SlackConnector(Connector):
                 else:
                     ambient.append((chan, m))
 
+        _fetch_debug(
+            ws.slug,
+            f"channel loop done (kept_always={len(kept_always)} "
+            f"ambient={len(ambient)})",
+        )
+
         # LLM gate over ambient. Skipped when disabled — kept_always still ships.
         ambient_scores: list[int] = []
         if ambient and ws.llm_filter:
@@ -284,9 +358,21 @@ class SlackConnector(Connector):
                 )
                 for c, m in ambient
             ]
-            ambient_scores = score_messages(filterables)
+            try:
+                ambient_scores = score_messages(filterables)
+            except Exception as e:
+                _fetch_debug(
+                    ws.slug,
+                    f"score_messages FAILED: {type(e).__name__}: {e}",
+                )
+                raise
+            _fetch_debug(
+                ws.slug,
+                f"score_messages ok ({len(ambient_scores)} scores)",
+            )
         elif ambient:
             ambient_scores = [KEEP_THRESHOLD] * len(ambient)
+            _fetch_debug(ws.slug, "llm_filter disabled; keep-all ambient")
 
         events: list[dict] = []
         for chan, m, reason in kept_always:
@@ -328,13 +414,25 @@ class SlackConnector(Connector):
                 events.append(ev)
 
         if dry_run_collector is None:
-            cursors.save()
+            try:
+                cursors.save()
+                _fetch_debug(ws.slug, "cursors.save ok")
+            except Exception as e:
+                _fetch_debug(
+                    ws.slug,
+                    f"cursors.save FAILED: {type(e).__name__}: {e}",
+                )
+                raise
         log.info(
             "slack full-pull %s: %d kept (%d always, %d via LLM ≥ %d) "
             "out of %d ambient considered",
             ws.slug, len(events), len(kept_always),
             sum(1 for s in ambient_scores if s >= KEEP_THRESHOLD),
             KEEP_THRESHOLD, len(ambient),
+        )
+        _fetch_debug(
+            ws.slug,
+            f"return ok (events={len(events)})",
         )
         return events
 
@@ -607,6 +705,23 @@ def _parse_workspaces(config: dict) -> Iterable[SlackWorkspaceConfig]:
 
 def _strip_hash(name: str) -> str:
     return name[1:] if name.startswith("#") else name
+
+
+def _fetch_debug(slug: str, message: str) -> None:
+    """Append one line to ``slack.<slug>.fetch_debug.log``.
+
+    Companion to the allowlist sentinel — captures the step trace for
+    ``_fetch_workspace_full`` so we can see what the bundled sidecar is
+    doing past allowlist resolution. Must never raise: a diagnostic that
+    breaks the connector defeats its own purpose.
+    """
+    try:
+        from ghostbrain.paths import state_dir as _sd
+        sentinel = _sd() / f"slack.{slug.lower()}.fetch_debug.log"
+        with open(sentinel, "a", encoding="utf-8") as df:
+            df.write(f"[{datetime.now().isoformat()}] {slug}: {message}\n")
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _allowed_channels_env_var(slug: str) -> str:
