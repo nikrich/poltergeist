@@ -21,6 +21,12 @@ from ghostbrain.semantic.index import Index, load as load_index, metadata_path
 _lock = threading.Lock()
 _state: dict = {"index": None, "embedder": None, "index_mtime": 0.0}
 
+# See the boost block in `search()`. Tuned against the live vault — a workshop
+# transcript with raw cosine 0.376 (rank #5 for "yesterday's workshop") moves
+# to 0.456 with this boost, comfortably top-3 ahead of content-light calendar
+# stubs and irrelevant Slack DMs about other "yesterdays".
+TRANSCRIPT_PATH_BOOST = 0.08
+
 
 def _get_index() -> Index:
     """Return the embedding index, reloading from disk if it was refreshed."""
@@ -93,6 +99,20 @@ def search(q: str, limit: int = 10) -> dict:
 
     # row → path map (entries dict isn't necessarily ordered by row).
     by_row: dict[int, str] = {entry.row: rel for rel, entry in index.entries.items()}
+
+    # Path-prefix boost for meeting transcripts. Pure semantic ranking
+    # tends to put a content-light calendar event note above the actual
+    # transcript that has the meeting content — and on phrasings like
+    # "yesterday's workshop" the transcripts can fall out of top-K
+    # entirely because "yesterday" lexically anchors to other notes that
+    # literally say "yesterday". +0.08 is enough to bring the transcript
+    # to the top of the cluster without overpowering a query that's
+    # actually about something else.
+    boosts = np.zeros_like(scores)
+    for row, rel in by_row.items():
+        if "/transcripts/" in rel:
+            boosts[row] = TRANSCRIPT_PATH_BOOST
+    scores = scores + boosts
     take = min(limit * 3, scores.shape[0])  # over-fetch in case some files are gone
     top = np.argpartition(-scores, take - 1)[:take]
     top = top[np.argsort(-scores[top])]
