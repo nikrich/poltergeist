@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.6](https://github.com/nikrich/poltergeist/compare/v0.2.5...v0.2.6) (2026-05-20)
+
+
+### Bug Fixes
+
+* **sidecar:** point `SSL_CERT_FILE` and `REQUESTS_CA_BUNDLE` at `certifi`'s bundled `cacert.pem` at sidecar startup. The v0.2.5 fetch sentinel surfaced the actual root cause behind the long-running "Slack syncs but queues nothing" problem: `slack_sdk.auth_test` was failing with `[SSL: CERTIFICATE_VERIFY_FAILED] unable to get local issuer certificate`. PyInstaller-bundled Python has no system CA store; requests/httpx-based connectors (Gmail, Confluence, Jira, GitHub) ship `certifi` internally so they were fine, but `slack_sdk` uses stdlib `urllib`, which calls `ssl.create_default_context()` and dies without `SSL_CERT_FILE`. The catch-all in `fetch()` ate the exception as a `log.warning` that Electron then dropped, so the UI just kept showing `last_run_ok=true, queued=0`. Promoting `certifi` from transitive to direct dep so the bundle can't lose `cacert.pem` to an upstream reshuffle. The fetch sentinel stays in place for this release so we can confirm in the packaged app that `auth_test` now passes.
+
 ## [0.2.5](https://github.com/nikrich/poltergeist/compare/v0.2.3...v0.2.5) (2026-05-19)
 
 
