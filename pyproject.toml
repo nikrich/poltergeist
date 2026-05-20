@@ -20,6 +20,10 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "jinja2>=3.1.0",
     "requests>=2.31",
+    # Direct dep so the PyInstaller bundle is guaranteed to ship cacert.pem.
+    # ghostbrain.api.__main__ points SSL_CERT_FILE at certifi.where() to fix
+    # SSL verification for stdlib-urllib callers like slack_sdk in the bundle.
+    "certifi>=2024.0",
     "google-api-python-client>=2.100",
     "google-auth-oauthlib>=1.2",
     "slack-sdk>=3.27",

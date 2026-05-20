@@ -10,8 +10,25 @@ read-only sidecar it's always been.
 """
 from __future__ import annotations
 
-import logging
 import os
+
+# PyInstaller-bundled Python has no system CA store. requests/httpx-based
+# connectors ship certifi internally so they're fine, but slack_sdk falls
+# back to stdlib urllib, which calls ssl.create_default_context() — that
+# function reads SSL_CERT_FILE, and without it auth.test dies with
+# "CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate" in
+# the packaged sidecar. Pointing it at certifi's bundled cacert.pem (which
+# PyInstaller already collects) fixes Slack and any other stdlib SSL caller.
+# setdefault so corporate-MITM users with their own SSL_CERT_FILE keep theirs.
+try:
+    import certifi as _certifi
+    _ca = _certifi.where()
+    os.environ.setdefault("SSL_CERT_FILE", _ca)
+    os.environ.setdefault("REQUESTS_CA_BUNDLE", _ca)
+except Exception:  # noqa: BLE001
+    pass
+
+import logging
 import secrets
 import socket
 import sys
