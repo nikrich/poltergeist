@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.2.7](https://github.com/nikrich/poltergeist/compare/v0.2.6...v0.2.7) (2026-05-20)
+
+
+### Features
+
+* **answer:** audit-log every `/v1/answer` call with the query text, source paths actually loaded, answer length, error string, and duration. When the user says "the vault isn't finding anything" we now have one log line per call instead of guessing phrasings — same fix shape as the Slack fetch_debug sentinel, applied to the chat path.
+
+
+### Bug Fixes
+
+* **scheduler:** skip-if-already-running on `_invoke`. The v0.2.6 fetch_debug log showed two concurrent slack syncs running in parallel (manual sync + cron loop firing on the same job), each scoring 8 batches of Slack messages through `claude -p` separately. The second caller now returns a fast no-op `skipped_reason="already_running"` and the in-flight run keeps going.
+* **search:** path-prefix boost (+0.08) for notes under `*/transcripts/*`. Pure cosine ranking was putting content-light calendar event notes above the actual transcripts, and on phrasings like "yesterday's workshop" the transcripts were falling out of the top-K entirely because the word "yesterday" lexically anchors to other notes that literally say "yesterday". With the boost, workshop transcripts move from #5/#6 to #1/#2 on the user's actual reported query.
+
+
+### Chores
+
+* **slack:** strip the v0.2.3 + v0.2.4 diagnostic sentinels (`allowlist_debug.log`, `fetch_debug.log`) now that v0.2.6 confirmed the SSL fix works end-to-end. ~150 lines of traced wrapping back to clean shape.
+
 ## [0.2.6](https://github.com/nikrich/poltergeist/compare/v0.2.5...v0.2.6) (2026-05-20)
 
 
