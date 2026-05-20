@@ -348,7 +348,23 @@ class Scheduler:
                 pass
 
     async def _invoke(self, job: Job) -> RunResult:
+        # Skip-if-already-running: the user can press the sync button while the
+        # last invocation is still mid-flight (slack's LLM filter takes minutes
+        # for large workspaces), and the cron loop can collide with a manual
+        # run. Without this check both threads execute the connector in
+        # parallel, double-billing the LLM and racing on cursor writes. The
+        # second caller gets a `skipped_reason="already_running"` result and
+        # the existing run keeps going.
         with self._lock:
+            if self._status[job.name].running:
+                now = time.time()
+                return RunResult(
+                    connector=job.name,
+                    ok=True,
+                    started_at=now,
+                    finished_at=now,
+                    skipped_reason="already_running",
+                )
             self._status[job.name].running = True
         try:
             result = await asyncio.to_thread(job.fn)
