@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.8](https://github.com/nikrich/poltergeist/compare/v0.2.7...v0.2.8) (2026-05-21)
+
+
+### Bug Fixes
+
+* **sidecar:** call `multiprocessing.freeze_support()` at the top of `ghostbrain/api/__main__.py` so the PyInstaller bundle doesn't fork-bomb itself. The bundled ML stack (`torch`, `transformers`, `sentence-transformers`, `joblib`) touches `multiprocessing` at module load, and macOS defaults to the `spawn` start method, which re-execs `sys.executable -B -S -I -c "from multiprocessing.resource_tracker import main; main(N)"` to launch the resource_tracker helper. The PyInstaller bootloader silently ignores `-c`, so the "helper" was running a full second uvicorn + scheduler on a new random port — which then imported the same ML stack and spawned its own "helper", recursively. By morning there were ~10 orphaned `ghostbrain-api` processes, each still firing scheduler jobs and shelling out to `claude -p`, swamping CPU and RAM. PyInstaller's runtime hook installs a `_freeze_support` that detects the spawn argv and `sys.exit()`s in the helper — but only if `freeze_support()` is actually called. Adding the call short-circuits the helper subprocess immediately and stops the runaway re-spawn. In dev (non-frozen) Python it's a no-op, so the dev path is unaffected.
+
 ## [0.2.7](https://github.com/nikrich/poltergeist/compare/v0.2.6...v0.2.7) (2026-05-20)
 
 
