@@ -10,6 +10,26 @@ read-only sidecar it's always been.
 """
 from __future__ import annotations
 
+# PyInstaller fork-bomb guard. Must run BEFORE any other import.
+#
+# torch / transformers / sentence-transformers / joblib (all bundled) import
+# `multiprocessing` at module load. On macOS the default start method is
+# `spawn`, which re-execs `sys.executable -B -S -I -c "from
+# multiprocessing.resource_tracker import main; main(N)"` to launch the
+# resource_tracker helper. `sys.executable` is the PyInstaller binary, and
+# the bootloader does not honour `-c` — so unless freeze_support() short-
+# circuits, the bundle just runs `__main__.py` again: another full uvicorn
+# instance with its own scheduler firing connectors and shelling out to
+# `claude -p`. That child does the same on its own ML imports, and the
+# population grows on every interaction. PyInstaller's docs are explicit:
+# "if the program will use multiprocessing it must call freeze_support() at
+# the top of its main script. Otherwise it will go into an infinite loop
+# creating new copies of itself." The PyInstaller runtime hook installs a
+# `_freeze_support` that detects the spawn argv and sys.exit()s — but only
+# if we actually call it. In dev (non-frozen) this is a no-op.
+from multiprocessing import freeze_support
+freeze_support()
+
 import os
 
 # PyInstaller-bundled Python has no system CA store. requests/httpx-based
