@@ -81,3 +81,46 @@ def test_event_hash_changes_when_description_changes(vault):
     h3 = mp.event_hash({"start": "x", "end": "y", "description": "v1"})
     assert h1 != h2
     assert h1 == h3
+
+
+from unittest.mock import MagicMock
+
+
+def test_build_prep_happy_path(vault, monkeypatch):
+    """build_prep loads event, queries semantic index, calls LLM, returns Prep."""
+    # Mock semantic search to return one related item.
+    fake_search = MagicMock(return_value={
+        "query": "Eng standup",
+        "total": 1,
+        "items": [{
+            "path": "20-contexts/sanlam/meetings/2026-05-18-eng-standup.md",
+            "title": "Eng standup 2026-05-18",
+            "snippet": "agreed to spike auth",
+            "score": 0.82,
+        }],
+    })
+    monkeypatch.setattr(mp, "_semantic_search", fake_search)
+
+    # Mock the LLM to return a fixed brief.
+    fake_llm = MagicMock()
+    fake_llm.return_value = MagicMock(text="Continuing the auth spike.")
+    monkeypatch.setattr(mp, "_llm_run", fake_llm)
+
+    prep = mp.build_prep("20260525T090000-eng-standup")
+
+    assert prep.event_id == "20260525T090000-eng-standup"
+    assert prep.brief == "Continuing the auth spike."
+    assert prep.error is None
+    assert len(prep.related) == 1
+    assert prep.related[0].title == "Eng standup 2026-05-18"
+    assert prep.event_snapshot.title == "Eng standup"
+    assert prep.event_snapshot.with_ == ["alice@example.com", "bob@example.com"]
+    # The brief was generated, so the LLM was called exactly once.
+    assert fake_llm.call_count == 1
+    # Two queries to the semantic index (title-based and attendee-based).
+    assert fake_search.call_count >= 1
+
+
+def test_build_prep_unknown_event_raises(vault, monkeypatch):
+    with pytest.raises(mp.UnknownEvent):
+        mp.build_prep("not-a-real-id")
