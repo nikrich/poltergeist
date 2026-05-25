@@ -34,3 +34,50 @@ def test_prep_model_round_trips():
     assert dumped["related"][0]["path"].endswith("-eng-standup.md")
     assert dumped["eventSnapshot"]["with"] == ["alice@example.com", "bob@example.com"]
     assert dumped["generatedAt"] == "2026-05-25T08:55:00+02:00"
+
+
+import textwrap
+from pathlib import Path
+
+import pytest
+
+from ghostbrain.worker import meeting_prep as mp
+
+
+@pytest.fixture()
+def vault(tmp_path, monkeypatch):
+    """Create a fake vault with one calendar event note and one prior meeting."""
+    monkeypatch.setenv("VAULT_PATH", str(tmp_path))
+    cal = tmp_path / "20-contexts" / "sanlam" / "calendar"
+    cal.mkdir(parents=True)
+    (cal / "20260525T090000-eng-standup.md").write_text(textwrap.dedent("""\
+        ---
+        title: Eng standup
+        start: 2026-05-25T09:00:00+02:00
+        end: 2026-05-25T09:30:00+02:00
+        with:
+          - alice@example.com
+          - bob@example.com
+        location: Zoom
+        description: weekly sync — sprint plan
+        ---
+        """))
+    return tmp_path
+
+
+def test_resolve_event_path_finds_note(vault):
+    path = mp.resolve_event_path("20260525T090000-eng-standup")
+    assert path is not None
+    assert path.name == "20260525T090000-eng-standup.md"
+
+
+def test_resolve_event_path_missing_returns_none(vault):
+    assert mp.resolve_event_path("does-not-exist") is None
+
+
+def test_event_hash_changes_when_description_changes(vault):
+    h1 = mp.event_hash({"start": "x", "end": "y", "description": "v1"})
+    h2 = mp.event_hash({"start": "x", "end": "y", "description": "v2"})
+    h3 = mp.event_hash({"start": "x", "end": "y", "description": "v1"})
+    assert h1 != h2
+    assert h1 == h3
