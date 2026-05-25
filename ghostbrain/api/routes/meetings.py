@@ -1,8 +1,16 @@
-"""GET /v1/meetings."""
-from fastapi import APIRouter, Query
+"""GET /v1/meetings + /v1/meetings/prep/{event_id}."""
+from fastapi import APIRouter, HTTPException, Query
 
-from ghostbrain.api.models.meeting import MeetingsPage
+from ghostbrain.api.models.meeting import MeetingsPage, Prep
+from ghostbrain.api.repo.meeting_prep import get_prep, set_prep
 from ghostbrain.api.repo.meetings import list_meetings
+from ghostbrain.worker.meeting_prep import (
+    UnknownEvent,
+    build_prep,
+    event_hash,
+    resolve_event_path,
+)
+import frontmatter
 
 router = APIRouter(prefix="/v1/meetings", tags=["meetings"])
 
@@ -13,3 +21,27 @@ def meetings(
     offset: int = Query(0, ge=0),
 ) -> dict:
     return list_meetings(limit=limit, offset=offset)
+
+
+@router.get("/prep/{event_id}", response_model=Prep)
+def get_meeting_prep(event_id: str) -> Prep:
+    """Return cached prep (if hash matches) or generate synchronously."""
+    path = resolve_event_path(event_id)
+    if path is None:
+        raise HTTPException(status_code=404, detail=f"unknown event: {event_id}")
+    post = frontmatter.load(path)
+    fm = post.metadata or {}
+    expected = event_hash({
+        "start": str(fm.get("start") or ""),
+        "end": str(fm.get("end") or ""),
+        "description": str(fm.get("description") or ""),
+    })
+    cached = get_prep(event_id, expected_hash=expected)
+    if cached is not None:
+        return cached
+    try:
+        prep = build_prep(event_id)
+    except UnknownEvent as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    set_prep(prep)
+    return prep
