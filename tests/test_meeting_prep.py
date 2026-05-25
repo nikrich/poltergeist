@@ -143,3 +143,41 @@ def test_build_prep_llm_timeout_returns_prep_with_error(vault, monkeypatch):
     assert "Timeout" in prep.error
     assert prep.event_snapshot.title == "Eng standup"  # snapshot still built
     assert prep.related == []
+
+
+import json
+
+from ghostbrain.api.repo import meeting_prep as repo
+
+
+def test_cache_write_then_read(tmp_path, monkeypatch):
+    monkeypatch.setenv("GHOSTBRAIN_STATE_DIR", str(tmp_path))
+    snap = EventSnapshot(
+        title="t", start="s", end="e", with_=[], location="", description="", hash="h1",
+    )
+    p = Prep(
+        event_id="evt1", brief="hi", related=[], event_snapshot=snap,
+        generated_at="2026-05-25T00:00:00+00:00", error=None,
+    )
+    repo.set_prep(p)
+    got = repo.get_prep("evt1", expected_hash="h1")
+    assert got is not None
+    assert got.brief == "hi"
+
+
+def test_cache_returns_none_when_hash_mismatches(tmp_path, monkeypatch):
+    monkeypatch.setenv("GHOSTBRAIN_STATE_DIR", str(tmp_path))
+    snap = EventSnapshot(
+        title="t", start="s", end="e", with_=[], location="", description="", hash="oldhash",
+    )
+    repo.set_prep(Prep(
+        event_id="evt1", brief="hi", related=[], event_snapshot=snap,
+        generated_at="2026-05-25T00:00:00+00:00", error=None,
+    ))
+    # Same event_id, but the live event's fields produce a different hash.
+    assert repo.get_prep("evt1", expected_hash="newhash") is None
+
+
+def test_cache_returns_none_when_missing(tmp_path, monkeypatch):
+    monkeypatch.setenv("GHOSTBRAIN_STATE_DIR", str(tmp_path))
+    assert repo.get_prep("never-written", expected_hash="x") is None
