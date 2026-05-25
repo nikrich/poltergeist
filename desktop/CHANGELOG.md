@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.2.9](https://github.com/nikrich/poltergeist/compare/v0.2.8...v0.2.9) (2026-05-25)
+
+
+### Features
+
+* **desktop:** Handle meetings:openPrep IPC to focus prep panel ([1eb7665](https://github.com/nikrich/poltergeist/commit/1eb7665c8429efe27f111ced64f7f68de4a31124))
+* **desktop:** Install meeting-notifier on app start ([4f10c37](https://github.com/nikrich/poltergeist/commit/4f10c37b9a3e19297deeafd07619ec73d8eb29a2))
+* **desktop:** Meeting-notifier poll loop + native Notification + click handler ([ed0f507](https://github.com/nikrich/poltergeist/commit/ed0f507238971378b93da55cf4bb2a918b437154))
+* **desktop:** MeetingPrep component renders brief + related ([a15bb2a](https://github.com/nikrich/poltergeist/commit/a15bb2ab4efb4b55eb442aeb7e76fc1eb6c63b4d))
+* **desktop:** Prep / RelatedItem / EventSnapshot types ([4811921](https://github.com/nikrich/poltergeist/commit/481192128e3966f4fe9454e9573c956b4311e665))
+* **desktop:** Render UpcomingMeetings on the meetings screen ([fbd4fda](https://github.com/nikrich/poltergeist/commit/fbd4fda30a7e1f89afddfb401dd11a8f275716ac))
+* **desktop:** Selected-event store for prep panel auto-expand ([88bf9e3](https://github.com/nikrich/poltergeist/commit/88bf9e34b9ed96dd647e67cce6e8e8ef8b10eb3c))
+* **desktop:** ShouldFireNow predicate for meeting notifier ([2c2c403](https://github.com/nikrich/poltergeist/commit/2c2c4032adcef825c20cc2e85d1feede3d17c3a2))
+* **desktop:** UpcomingMeetings list with inline prep expansion ([d9aa751](https://github.com/nikrich/poltergeist/commit/d9aa75115f6804b54b0905e45a8f8e984b9ae9f4))
+* **desktop:** UseMeetingPrep + usePrewarmMeetingPrep hooks ([365596c](https://github.com/nikrich/poltergeist/commit/365596c8f61a15c9dca8a984311610f14c68cc3a))
+
+
+### Bug Fixes
+
+* **meeting-prep:** Allow default retry on useMeetingPrep ([4565c60](https://github.com/nikrich/poltergeist/commit/4565c60d6cce24a4926933a0fd2f565457bd479d))
+* **meeting-prep:** Satisfy react/no-unescaped-entities in MeetingPrep copy ([175781b](https://github.com/nikrich/poltergeist/commit/175781bd4993330094920c4a8f8d732f77a15341))
+
 ## [0.2.8](https://github.com/nikrich/poltergeist/compare/v0.2.7...v0.2.8) (2026-05-21)
 
 
