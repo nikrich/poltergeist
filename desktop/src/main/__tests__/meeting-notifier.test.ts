@@ -7,7 +7,11 @@ function makeEvent(time: string, status: AgendaItem['status'] = 'upcoming'): Age
 }
 
 describe('shouldFireNow', () => {
-  const now = new Date('2026-05-25T08:46:00+02:00');
+  // Build `now` from local components so the test is timezone-independent.
+  // `shouldFireNow` uses Date#setHours (local time) to match how the sidecar
+  // emits agenda HH:MM (also local — see ghostbrain/api/repo/agenda.py).
+  // An ISO string with a fixed offset only "looks right" in that same tz.
+  const now = new Date(2026, 4, 25, 8, 46, 0);  // May = month index 4
 
   it('fires when start is exactly 15 minutes away', () => {
     const event = makeEvent('09:01');  // 15 min from now
