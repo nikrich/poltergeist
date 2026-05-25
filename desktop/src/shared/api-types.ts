@@ -169,3 +169,30 @@ export interface UpdateRecorderSettings {
   excluded_titles?: string[];
   manual_context?: string;
 }
+
+export interface EventSnapshot {
+  title: string;
+  start: string;
+  end: string;
+  with: string[];
+  location: string;
+  description: string;
+  hash: string;
+}
+
+export interface RelatedItem {
+  path: string;
+  title: string;
+  source: string;  // "calendar" | "meeting" | "email" | "slack" | "jira" | …
+  snippet: string;
+  score: number;
+}
+
+export interface Prep {
+  eventId: string;
+  brief: string | null;
+  related: RelatedItem[];
+  eventSnapshot: EventSnapshot;
+  generatedAt: string;
+  error: string | null;
+}
