@@ -11,6 +11,7 @@ import type {
   DailyPage,
   MeetingsPage,
   Note,
+  Prep,
   RecorderSettings,
   RecorderStatus,
   SearchResponse,
@@ -287,5 +288,26 @@ export function useSyncAllConnectors() {
       qc.invalidateQueries({ queryKey: ['connectors'] });
       qc.invalidateQueries({ queryKey: ['scheduler', 'status'] });
     },
+  });
+}
+
+export function useMeetingPrep(eventId: string | null) {
+  return useQuery({
+    queryKey: ['meeting-prep', eventId],
+    queryFn: () => get<Prep>(`/v1/meetings/prep/${encodeURIComponent(eventId!)}`),
+    enabled: eventId !== null,
+    // The brief is cached on the sidecar side and only regenerates when the
+    // underlying event changes — no benefit to refetching client-side.
+    staleTime: Infinity,
+    retry: false,
+  });
+}
+
+export function usePrewarmMeetingPrep() {
+  return useMutation({
+    mutationFn: (eventId: string) =>
+      post<{ status: string }>(
+        `/v1/meetings/prep/${encodeURIComponent(eventId)}/prewarm`,
+      ),
   });
 }
