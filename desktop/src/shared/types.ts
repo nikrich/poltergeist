@@ -68,6 +68,7 @@ export interface GbBridge {
     channel: 'sidecar:failed',
     listener: (info: { reason: string }) => void,
   ): () => void;
+  on(channel: 'meetings:openPrep', listener: (eventId: string) => void): () => void;
 }
 
 declare global {

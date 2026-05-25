@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useSettings } from './stores/settings';
 import { useNavigation } from './stores/navigation';
+import { useSelectedEvent } from './stores/selected-event';
 import { useSidecar } from './stores/sidecar';
 import { useSchedulerStatus } from './lib/api/hooks';
 import { WindowChrome } from './components/WindowChrome';
@@ -48,6 +49,14 @@ export default function App() {
       offFailed();
     };
   }, [setReady, setFailed]);
+
+  useEffect(() => {
+    return window.gb.on('meetings:openPrep', (eventId: unknown) => {
+      if (typeof eventId !== 'string') return;
+      useNavigation.getState().setActive('meetings');
+      useSelectedEvent.getState().setSelectedEventId(eventId);
+    });
+  }, []);
 
   // Mirror scheduler health into the tray so the user sees the alert dot even
   // when the main window is hidden. The query polls every 15s; when scheduler
