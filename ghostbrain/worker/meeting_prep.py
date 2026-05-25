@@ -38,4 +38,4 @@ def event_hash(fields: dict[str, Any]) -> str:
     payload = "|".join(
         str(fields.get(k, "")) for k in ("start", "end", "description")
     )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:32]
