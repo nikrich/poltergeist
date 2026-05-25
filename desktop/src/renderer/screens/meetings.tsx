@@ -6,6 +6,7 @@ import { Pill } from '../components/Pill';
 import { Eyebrow } from '../components/Eyebrow';
 import { Panel } from '../components/Panel';
 import { Ghost } from '../components/Ghost';
+import { UpcomingMeetings } from '../components/UpcomingMeetings';
 import { useMeeting } from '../stores/meeting';
 import { useNavigation } from '../stores/navigation';
 import { useNoteView } from '../stores/note-view';
@@ -157,6 +158,10 @@ export function MeetingsScreen() {
           error={activeError}
           onClose={reset}
         />
+      )}
+
+      {phase === 'pre' && agenda.data && (
+        <UpcomingMeetings items={agenda.data} />
       )}
 
       <MeetingHistory />
