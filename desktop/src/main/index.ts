@@ -9,6 +9,10 @@ import { buildAppMenu } from './menu';
 import { Sidecar } from './sidecar';
 import { forward } from './api-forwarder';
 import { installTray, type TrayController } from './tray';
+import {
+  installMeetingNotifier,
+  type MeetingNotifierController,
+} from './meeting-notifier';
 
 // Repo root: in dev, that's one level up from the desktop/ project dir
 // (app.getAppPath() resolves to the desktop/ folder). In prod (Phase 2 bundles
@@ -22,6 +26,7 @@ const sidecar = new Sidecar(repoRoot(), {
 });
 
 let trayController: TrayController | null = null;
+let meetingNotifier: MeetingNotifierController | null = null;
 
 function showWindow(): void {
   let win = BrowserWindow.getAllWindows()[0];
@@ -174,6 +179,7 @@ app.whenReady().then(async () => {
     },
     onQuit: () => void quitApp(),
   });
+  meetingNotifier = installMeetingNotifier({ sidecar });
   console.log('[sidecar] starting; repoRoot =', repoRoot());
   try {
     const info = await sidecar.start();
@@ -201,6 +207,7 @@ sidecar.on('failed', (info: { reason: string }) => {
 
 let sidecarStopped = false;
 app.on('before-quit', (event) => {
+  meetingNotifier?.destroy();
   if (!sidecarStopped) {
     event.preventDefault();
     sidecarStopped = true;
