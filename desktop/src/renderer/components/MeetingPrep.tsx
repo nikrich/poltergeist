@@ -33,7 +33,7 @@ export function MeetingPrep({ eventId }: Props) {
   if (query.isError || !query.data) {
     return (
       <div className="rounded-md border border-oxblood/30 bg-paper p-4 text-12 text-oxblood">
-        couldn't load prep notes
+        {"couldn't load prep notes"}
       </div>
     );
   }
@@ -93,7 +93,7 @@ export function MeetingPrep({ eventId }: Props) {
           <p className="text-13 leading-[1.55] text-ink-0">{prep.brief}</p>
         ) : (
           <p className="text-12 text-oxblood">
-            couldn't generate brief — {prep.error ?? 'unknown error'}
+            {"couldn't generate brief — "}{prep.error ?? 'unknown error'}
           </p>
         )}
       </section>
