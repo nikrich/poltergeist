@@ -11,7 +11,7 @@ import json
 import logging
 import shutil
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from ghostbrain.connectors._runner import RunResult
@@ -149,7 +149,9 @@ def _meeting_prep_prewarm_job() -> RunResult:
 
         today = datetime.now().date().isoformat()
         agenda = list_agenda(date=today)
-        target = _select_prewarm_target(agenda, now=datetime.now(timezone.utc))
+        # Use system-local naive datetime to match the agenda's HH:MM encoding
+        # (see agenda.py — time_str = start.astimezone().strftime("%H:%M")).
+        target = _select_prewarm_target(agenda, now=datetime.now())
         if target is None:
             return {"skipped": "no-target"}
         event_id = target["id"]
