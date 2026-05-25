@@ -124,3 +124,22 @@ def test_build_prep_happy_path(vault, monkeypatch):
 def test_build_prep_unknown_event_raises(vault, monkeypatch):
     with pytest.raises(mp.UnknownEvent):
         mp.build_prep("not-a-real-id")
+
+
+from ghostbrain.llm.client import LLMTimeout
+
+
+def test_build_prep_llm_timeout_returns_prep_with_error(vault, monkeypatch):
+    monkeypatch.setattr(mp, "_semantic_search", MagicMock(return_value={"items": []}))
+    monkeypatch.setattr(
+        mp,
+        "_llm_run",
+        MagicMock(side_effect=LLMTimeout("claude -p timed out after 30s")),
+    )
+
+    prep = mp.build_prep("20260525T090000-eng-standup")
+    assert prep.brief is None
+    assert prep.error is not None
+    assert "Timeout" in prep.error
+    assert prep.event_snapshot.title == "Eng standup"  # snapshot still built
+    assert prep.related == []
