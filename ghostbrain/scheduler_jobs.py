@@ -11,6 +11,7 @@ import json
 import logging
 import shutil
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from ghostbrain.connectors._runner import RunResult
@@ -113,6 +114,62 @@ def _profile_monthly_job() -> RunResult:
     return _wrap_job("profile-monthly", work)
 
 
+def _select_prewarm_target(agenda: list[dict], *, now: datetime) -> dict | None:
+    """Return the soonest upcoming item starting in [now, now+20m], else None.
+
+    Agenda items carry ``time`` as ``HH:MM`` in the local timezone; we
+    compare on local-naive timestamps for the same day.
+    """
+    horizon = now + timedelta(minutes=20)
+    best: tuple[datetime, dict] | None = None
+    for item in agenda:
+        if item.get("status") != "upcoming":
+            continue
+        try:
+            hh, mm = item["time"].split(":")
+            start = now.replace(hour=int(hh), minute=int(mm), second=0, microsecond=0)
+        except (KeyError, ValueError):
+            continue
+        if start < now or start > horizon:
+            continue
+        if best is None or start < best[0]:
+            best = (start, item)
+    return best[1] if best else None
+
+
+def _meeting_prep_prewarm_job() -> RunResult:
+    def work() -> dict:
+        from ghostbrain.api.repo.agenda import list_agenda
+        from ghostbrain.api.repo.meeting_prep import get_prep, prewarm
+        from ghostbrain.worker.meeting_prep import (
+            event_hash,
+            resolve_event_path,
+        )
+        import frontmatter
+
+        today = datetime.now().date().isoformat()
+        agenda = list_agenda(date=today)
+        target = _select_prewarm_target(agenda, now=datetime.now(timezone.utc))
+        if target is None:
+            return {"skipped": "no-target"}
+        event_id = target["id"]
+        path = resolve_event_path(event_id)
+        if path is None:
+            return {"skipped": "no-note"}
+        fm = (frontmatter.load(path).metadata or {})
+        h = event_hash({
+            "start": str(fm.get("start") or ""),
+            "end": str(fm.get("end") or ""),
+            "description": str(fm.get("description") or ""),
+        })
+        if get_prep(event_id, expected_hash=h) is not None:
+            return {"skipped": "cached", "event_id": event_id}
+        launched = prewarm(event_id)
+        return {"launched": launched, "event_id": event_id}
+
+    return _wrap_job("meeting-prep-prewarm", work)
+
+
 def _semantic_refresh() -> RunResult:
     """Run a semantic index refresh and translate the result into RunResult.
 
@@ -188,6 +245,12 @@ def register_connectors(scheduler: Scheduler) -> None:
         MonthlyAt(day=1, hour=22, minute=0),
         _profile_monthly_job,
         "monthly day 1 22:00",
+    )
+    scheduler.add_job(
+        "meeting-prep-prewarm",
+        Interval(seconds=60),
+        _meeting_prep_prewarm_job,
+        "every 60s",
     )
 
 
