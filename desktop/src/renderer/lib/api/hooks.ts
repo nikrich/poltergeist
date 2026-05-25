@@ -299,7 +299,6 @@ export function useMeetingPrep(eventId: string | null) {
     // The brief is cached on the sidecar side and only regenerates when the
     // underlying event changes — no benefit to refetching client-side.
     staleTime: Infinity,
-    retry: false,
   });
 }
 
