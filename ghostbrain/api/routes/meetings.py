@@ -1,8 +1,9 @@
 """GET /v1/meetings + /v1/meetings/prep/{event_id}."""
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import JSONResponse
 
 from ghostbrain.api.models.meeting import MeetingsPage, Prep
-from ghostbrain.api.repo.meeting_prep import get_prep, set_prep
+from ghostbrain.api.repo.meeting_prep import get_prep, prewarm as prewarm_prep, set_prep
 from ghostbrain.api.repo.meetings import list_meetings
 from ghostbrain.worker.meeting_prep import (
     UnknownEvent,
@@ -45,3 +46,16 @@ def get_meeting_prep(event_id: str) -> Prep:
         raise HTTPException(status_code=404, detail=str(e)) from e
     set_prep(prep)
     return prep
+
+
+@router.post("/prep/{event_id}/prewarm")
+def prewarm_meeting_prep(event_id: str) -> JSONResponse:
+    """Fire-and-forget background generation. Returns 202."""
+    path = resolve_event_path(event_id)
+    if path is None:
+        raise HTTPException(status_code=404, detail=f"unknown event: {event_id}")
+    launched = prewarm_prep(event_id)
+    return JSONResponse(
+        status_code=202,
+        content={"status": "started" if launched else "in_progress"},
+    )

@@ -64,3 +64,53 @@ def test_get_prep_uses_cache_on_repeat(client, monkeypatch):
 def test_get_prep_unknown_event_returns_404(client):
     r = client.get("/v1/meetings/prep/nope", headers=_HEADERS)
     assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Prewarm tests
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=False)
+def clear_inflight():
+    """Reset the module-level _inflight set so tests don't leak state."""
+    from ghostbrain.api.repo import meeting_prep as repo
+    repo._inflight.clear()
+    yield
+    repo._inflight.clear()
+
+
+def test_prewarm_returns_202(client, monkeypatch, clear_inflight):
+    """Prewarm hands off to a background thread and returns 202 immediately."""
+    from ghostbrain.worker import meeting_prep as mp
+
+    monkeypatch.setattr(mp, "_llm_run", MagicMock(return_value=MagicMock(text="warm brief")))
+
+    r = client.post("/v1/meetings/prep/20260525T090000-eng-standup/prewarm", headers=_HEADERS)
+    assert r.status_code == 202
+    assert r.json()["status"] in {"started", "in_progress"}
+
+
+def test_prewarm_404_for_unknown_event(client, clear_inflight):
+    r = client.post("/v1/meetings/prep/never-existed/prewarm", headers=_HEADERS)
+    assert r.status_code == 404
+
+
+def test_prewarm_fills_cache_eventually(client, monkeypatch, tmp_path, clear_inflight):
+    """After prewarm completes, a subsequent GET sees the cached brief."""
+    import time
+    from ghostbrain.worker import meeting_prep as mp
+
+    monkeypatch.setattr(mp, "_llm_run", MagicMock(return_value=MagicMock(text="warm brief")))
+
+    r = client.post("/v1/meetings/prep/20260525T090000-eng-standup/prewarm", headers=_HEADERS)
+    assert r.status_code == 202
+
+    deadline = time.time() + 5
+    cache_file = tmp_path / "state" / "meeting-prep" / "20260525T090000-eng-standup.json"
+    while time.time() < deadline and not cache_file.exists():
+        time.sleep(0.05)
+    assert cache_file.exists(), "prewarm did not write the cache file in time"
+
+    r2 = client.get("/v1/meetings/prep/20260525T090000-eng-standup", headers=_HEADERS)
+    assert r2.status_code == 200
+    assert r2.json()["brief"] == "warm brief"
