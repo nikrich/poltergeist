@@ -22,6 +22,7 @@ import dataclasses
 import json
 import logging
 import os
+import sys
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -44,6 +45,11 @@ class RecorderBusy(Exception):
 
 
 class RecorderNotActive(Exception):
+    pass
+
+
+class RecorderUnsupportedError(Exception):
+    """Raised on non-darwin platforms — recorder is macOS-only at runtime."""
     pass
 
 
@@ -91,6 +97,10 @@ def _vault_relative(path: Path) -> str | None:
 
 def status() -> dict:
     """Snapshot the current recording phase across daemon + manual states."""
+    if sys.platform != "darwin":
+        raise RecorderUnsupportedError(
+            "recorder is macOS-only today (needs BlackHole + SwitchAudioSource)"
+        )
     daemon = _daemon_active()
     if daemon is not None:
         return {
@@ -179,6 +189,10 @@ def _current_calendar_event() -> dict | None:
 
 
 def start(title: str | None, context: str | None) -> dict:
+    if sys.platform != "darwin":
+        raise RecorderUnsupportedError(
+            "recorder is macOS-only today (needs BlackHole + SwitchAudioSource)"
+        )
     with _lock:
         if _daemon_active() is not None:
             raise RecorderBusy("calendar-driven recording is in progress")
@@ -232,6 +246,10 @@ def start(title: str | None, context: str | None) -> dict:
 
 
 def stop() -> dict:
+    if sys.platform != "darwin":
+        raise RecorderUnsupportedError(
+            "recorder is macOS-only today (needs BlackHole + SwitchAudioSource)"
+        )
     with _lock:
         # Daemon-owned (calendar-driven) recording: SIGINT ffmpeg and let
         # the recorder daemon's next tick run _finalize (transcribe, link
@@ -310,6 +328,10 @@ def _transcribe_in_background(snapshot: dict) -> None:
 
 def clear() -> dict:
     """Acknowledge a 'done' recording. UI calls this to reset to idle."""
+    if sys.platform != "darwin":
+        raise RecorderUnsupportedError(
+            "recorder is macOS-only today (needs BlackHole + SwitchAudioSource)"
+        )
     with _lock:
         state = _read_state()
         if state is None:
