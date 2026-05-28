@@ -67,7 +67,7 @@ See [SPEC §2](./spec/SPEC.md#section-2--system-overview) for the full picture.
   metered API.
 - **Obsidian** as the vault, with the Dataview, Templater, Periodic Notes, and
   Local REST API plugins.
-- **macOS launchd** for orchestration. No broker, no Docker.
+- **In-app asyncio scheduler** for orchestration (macOS launchd remains supported as a legacy path). No broker, no Docker.
 - **Filesystem queue** for events.
 
 Cross-platform: connectors, worker, daily digest, and desktop app run on macOS, Linux, and Windows. The meeting recorder (Phase 13) is macOS-only for now — see `docs/install/{linux,windows}.md` for what's supported on each OS.
