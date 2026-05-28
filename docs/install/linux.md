@@ -55,7 +55,7 @@ Edit `<vault>/90-meta/routing.yaml` to map your sources (GitHub orgs, Jira sites
 
 ### Option A: Desktop app (recommended)
 
-Download the AppImage from the latest release (or build it locally once available). Launch it, then enable the scheduler in **Settings → Scheduler → Background** to run connectors and the worker on a schedule.
+Once Linux AppImage artifacts ship from the planned `build-linux` CI release job (not built today), download the AppImage from the latest release. Launch it, then enable the scheduler in **Settings → Background** by toggling the "run scheduler in-app" switch to run connectors and the worker on a schedule.
 
 ### Option B: systemd user unit
 

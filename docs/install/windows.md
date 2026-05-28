@@ -61,7 +61,7 @@ Edit `<vault>\90-meta\routing.yaml` to map your sources (GitHub orgs, Jira sites
 
 ### Option A: Desktop app (recommended)
 
-Download the installer from the latest release (or build it locally once available). Launch it, then enable the scheduler in **Settings → Scheduler → Background** to run connectors and the worker on a schedule.
+Once Windows installer artifacts ship from the planned `build-win` CI release job (not built today), download the installer from the latest release. Launch it, then enable the scheduler in **Settings → Background** by toggling the "run scheduler in-app" switch to run connectors and the worker on a schedule.
 
 ### Option B: Task Scheduler
 
