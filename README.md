@@ -7,7 +7,7 @@
   <a href="https://github.com/nikrich/poltergeist/releases/latest"><img alt="latest release" src="https://img.shields.io/github/v/release/nikrich/poltergeist?display_name=tag&label=release&color=C5FF3D&labelColor=0E0F12"></a>
   <a href="https://github.com/nikrich/poltergeist/releases"><img alt="downloads" src="https://img.shields.io/github/downloads/nikrich/poltergeist/total?color=C5FF3D&labelColor=0E0F12"></a>
   <img alt="python" src="https://img.shields.io/badge/python-3.11%2B-3776ab?logo=python&logoColor=white&labelColor=0E0F12">
-  <img alt="platform" src="https://img.shields.io/badge/platform-macOS-f2f3f5?logo=apple&logoColor=white&labelColor=0E0F12">
+  <img alt="platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-f2f3f5?labelColor=0E0F12">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-C5FF3D?labelColor=0E0F12">
 </p>
 
@@ -70,7 +70,7 @@ See [SPEC §2](./spec/SPEC.md#section-2--system-overview) for the full picture.
 - **macOS launchd** for orchestration. No broker, no Docker.
 - **Filesystem queue** for events.
 
-Linux support is a goal but currently macOS-first. Windows is out of scope.
+Cross-platform: connectors, worker, daily digest, and desktop app run on macOS, Linux, and Windows. The meeting recorder (Phase 13) is macOS-only for now — see `docs/install/{linux,windows}.md` for what's supported on each OS.
 
 ## Setup
 
@@ -146,28 +146,17 @@ and any references in your local profile content; full configurability is
 ghostbrain-worker
 ```
 
-**Under launchd (always-on):**
+**Always-on (recommended): the in-app scheduler**
 
-The plists in `orchestration/launchd/` are templates with two placeholders:
-`__REPO_ROOT__` (your local clone path) and `__VAULT_PATH__` (your vault).
-Substitute and install them with:
+The desktop app's Python sidecar can run all connectors and the worker as an
+asyncio scheduler — no launchd, systemd, or Task Scheduler required. Enable it
+in **Settings → Scheduler** inside the desktop app, or set
+`GHOSTBRAIN_SCHEDULER_ENABLED=1` before launching `ghostbrain-worker`.
 
-```bash
-mkdir -p logs ~/Library/LaunchAgents
-
-for f in orchestration/launchd/*.plist; do
-  sed \
-    -e "s|__REPO_ROOT__|$PWD|g" \
-    -e "s|__VAULT_PATH__|${VAULT_PATH:-$HOME/ghostbrain/vault}|g" \
-    "$f" > "$HOME/Library/LaunchAgents/$(basename $f)"
-done
-
-launchctl load ~/Library/LaunchAgents/com.ghostbrain.worker.plist
-launchctl load ~/Library/LaunchAgents/com.ghostbrain.claudemd.plist
-```
-
-Stop them with `launchctl unload <path>`. (A templated `setup.sh` will
-encapsulate this in Phase 14.)
+Per-OS notes:
+- **macOS:** see `docs/install/macos-launchd.md` if you prefer the legacy launchd path. Recommended only if you're not running the desktop app.
+- **Linux:** see `docs/install/linux.md` for a systemd user-unit template.
+- **Windows:** see `docs/install/windows.md` for a Task Scheduler template.
 
 ## Profile and CLAUDE.md generation
 
