@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.10](https://github.com/nikrich/poltergeist/compare/v0.2.9...v0.2.10) (2026-05-28)
+
+
+### Bug Fixes
+
+* **meeting-prep:** Make shouldFireNow test timezone-independent ([a478a06](https://github.com/nikrich/poltergeist/commit/a478a06039736e3bec6c73d6a68b67da1cc2d8c3))
+
 ## [0.2.9](https://github.com/nikrich/poltergeist/compare/v0.2.8...v0.2.9) (2026-05-25)
 
 
