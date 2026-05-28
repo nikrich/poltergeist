@@ -101,6 +101,7 @@ jobs:
             --distpath desktop/resources/sidecar \
             --workpath packaging/build \
             --noconfirm
+          # shellcheck disable=SC2012  # ls is fine here, the dir is ours
           ls -la desktop/resources/sidecar/ghostbrain-api | head -20
 
       - name: Install desktop deps
@@ -173,6 +174,7 @@ jobs:
             --distpath desktop/resources/sidecar \
             --workpath packaging/build \
             --noconfirm
+          # shellcheck disable=SC2012  # ls is fine here, the dir is ours
           ls -la desktop/resources/sidecar/ghostbrain-api | head -20
 
       - name: Install desktop deps
@@ -243,6 +245,7 @@ jobs:
             --distpath desktop/resources/sidecar \
             --workpath packaging/build \
             --noconfirm
+          # shellcheck disable=SC2012  # ls is fine here, the dir is ours
           ls -la desktop/resources/sidecar/ghostbrain-api | head -20
 
       - name: Install desktop deps
