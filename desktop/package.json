@@ -9,6 +9,8 @@
     "preview": "electron-vite preview",
     "pack": "electron-vite build && electron-builder --mac --arm64",
     "pack:unsigned": "SKIP_NOTARIZE=1 CSC_IDENTITY_AUTO_DISCOVERY=false electron-vite build && electron-builder --mac --arm64 -c.mac.identity=null",
+    "pack:linux": "electron-vite build && electron-builder --linux --x64",
+    "pack:win": "electron-vite build && electron-builder --win --x64",
     "typecheck": "tsc -b tsconfig.json",
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,html}\"",

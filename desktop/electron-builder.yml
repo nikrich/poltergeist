@@ -54,9 +54,20 @@ dmg:
 
 win:
   icon: build/icon.ico
+  target:
+    - target: nsis
+      arch: x64
+    - target: zip
+      arch: x64
 
 linux:
   icon: build/icon.png
+  category: Utility
+  target:
+    - target: AppImage
+      arch: x64
+    - target: deb
+      arch: x64
 
 # Auto-update is wired off for now; flip publish to "github" to enable.
 # See docs/release.md.
