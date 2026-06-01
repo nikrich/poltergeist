@@ -50,6 +50,16 @@ from ghostbrain.recorder.transcribe import _NOISE_TOKEN_RE, _scrub_noise_tokens
     "[_BEG_]",
     "[_END_]",
     "  [BLANK_AUDIO]  ",
+    # whisper-cli's -otxt prefixes each segment with " >> " (the speaker
+    # marker). A noise segment must still be scrubbed even with that prefix
+    # — without this, every meeting recorded with trailing silence ends up
+    # with a wall of " >> [INAUDIBLE]" lines in the saved transcript.
+    " >> [INAUDIBLE]",
+    ">> [BLANK_AUDIO]",
+    "  >>   [ Silence ]  ",
+    # whisper sometimes packs multiple noise tokens into a single segment.
+    " >> [INAUDIBLE] [INAUDIBLE] [INAUDIBLE]",
+    "[BLANK_AUDIO] [BLANK_AUDIO]",
 ])
 def test_noise_token_regex_matches(line: str) -> None:
     assert _NOISE_TOKEN_RE.match(line), f"expected match: {line!r}"

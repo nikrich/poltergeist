@@ -21,8 +21,14 @@ DEFAULT_TIMEOUT_S = 30 * 60  # 30 min for a long meeting; whisper is fast on App
 # becomes 100+ lines of "[BLANK_AUDIO]" with no content. We strip them and
 # collapse repeated noise markers; if the WHOLE transcript was noise the
 # caller sees an empty file and can warn rather than save a junk note.
+#
+# Lines also commonly carry whisper-cli's " >> " speaker prefix and may pack
+# multiple noise tokens into a single segment (e.g. " >> [INAUDIBLE]
+# [INAUDIBLE]"), so the regex tolerates a leading ">>" and matches one-or-more
+# bracketed markers — anything mixed with real text still falls through.
 _NOISE_TOKEN_RE = re.compile(
-    r"^\s*\[\s*(?:"
+    r"^\s*(?:>>\s*)?"
+    r"(?:\[\s*(?:"
     r"BLANK_AUDIO|"
     r"SILENCE|silence|"
     r"MUSIC|music|"
@@ -30,7 +36,7 @@ _NOISE_TOKEN_RE = re.compile(
     r"INAUDIBLE|inaudible|"
     r"PAUSE|pause|"
     r"_BEG_|_END_"
-    r")\s*\]\s*$",
+    r")\s*\]\s*)+$",
     re.IGNORECASE,
 )
 
