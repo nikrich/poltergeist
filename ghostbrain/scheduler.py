@@ -323,8 +323,13 @@ class Scheduler:
     async def _run(self) -> None:
         assert self._stop_event is not None
         now = datetime.now()
+        # Preserve persisted next_run_at across restarts — past-due values
+        # must stay past-due so the missed firing actually runs on the first
+        # loop iteration. Only compute a fresh next_run_at for jobs we've
+        # never scheduled before (no persisted state).
         for name, job in self._jobs.items():
-            self._status[name].next_run_at = next_fire_at(job.schedule, now).timestamp()
+            if self._status[name].next_run_at is None:
+                self._status[name].next_run_at = next_fire_at(job.schedule, now).timestamp()
         self._save_status()
         while not self._stop_event.is_set():
             now = datetime.now()
