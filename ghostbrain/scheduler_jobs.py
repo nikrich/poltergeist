@@ -10,6 +10,7 @@ import asyncio
 import json
 import logging
 import shutil
+import sys
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -337,6 +338,12 @@ async def worker_daemon(stop: asyncio.Event) -> None:
 def recorder_prereqs_ok() -> tuple[bool, list[str]]:
     """Returns (ok, missing) — `missing` lists human-readable prereq gaps."""
     missing: list[str] = []
+    if sys.platform != "darwin":
+        missing.append(
+            "recorder is macOS-only today (needs BlackHole + SwitchAudioSource); "
+            "Linux/Windows support is tracked in docs/install/"
+        )
+        return (False, missing)
     if shutil.which("ffmpeg") is None:
         missing.append("ffmpeg not on PATH (install via Homebrew: brew install ffmpeg)")
     # BlackHole detection is slow + flaky; we let the daemon surface that on

@@ -5,6 +5,7 @@ from ghostbrain.api.models.recorder import RecorderStatus, StartRequest
 from ghostbrain.api.repo.recorder import (
     RecorderBusy,
     RecorderNotActive,
+    RecorderUnsupportedError,
     clear,
     start,
     status,
@@ -17,13 +18,18 @@ router = APIRouter(prefix="/v1/recorder", tags=["recorder"])
 
 @router.get("/status", response_model=RecorderStatus)
 def get_status() -> dict:
-    return status()
+    try:
+        return status()
+    except RecorderUnsupportedError as e:
+        raise HTTPException(status_code=501, detail=str(e))
 
 
 @router.post("/start", response_model=RecorderStatus)
 def post_start(payload: StartRequest) -> dict:
     try:
         return start(title=payload.title, context=payload.context)
+    except RecorderUnsupportedError as e:
+        raise HTTPException(status_code=501, detail=str(e))
     except RecorderBusy as e:
         raise HTTPException(status_code=409, detail=str(e))
     except AudioRoutingError as e:
@@ -41,6 +47,8 @@ def post_start(payload: StartRequest) -> dict:
 def post_stop() -> dict:
     try:
         return stop()
+    except RecorderUnsupportedError as e:
+        raise HTTPException(status_code=501, detail=str(e))
     except RecorderNotActive as e:
         raise HTTPException(status_code=409, detail=str(e))
 
@@ -49,5 +57,7 @@ def post_stop() -> dict:
 def post_clear() -> dict:
     try:
         return clear()
+    except RecorderUnsupportedError as e:
+        raise HTTPException(status_code=501, detail=str(e))
     except RecorderBusy as e:
         raise HTTPException(status_code=409, detail=str(e))
