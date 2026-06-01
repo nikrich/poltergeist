@@ -27,7 +27,12 @@ from ghostbrain.recorder.audio_capture import (
     assert_output_routes_to_blackhole,
     output_likely_reaches_blackhole,
 )
-from ghostbrain.recorder.transcribe import _NOISE_TOKEN_RE, _scrub_noise_tokens
+from ghostbrain.recorder.transcribe import (
+    _NOISE_TOKEN_RE,
+    _collapse_phrase_loops,
+    _scrub_noise_tokens,
+    _whisper_cmd,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +126,86 @@ def test_scrub_missing_file_is_noop(tmp_path: Path) -> None:
     """A racy whisper failure that leaves no .txt should not crash the
     scrubber — the caller will have its own missing-file error."""
     _scrub_noise_tokens(tmp_path / "does-not-exist.txt")  # no raise
+
+
+# ---------------------------------------------------------------------------
+# Phrase-loop collapse (whisper context hallucinations)
+# ---------------------------------------------------------------------------
+
+
+def test_whisper_cmd_includes_no_context_flag() -> None:
+    """-nc is the canonical mitigation for whisper.cpp riding a single
+    hallucinated short phrase across an entire file. Without it whisper
+    feeds each segment's text into the next as a prompt, snowballing
+    "Okay." into hundreds of "Okay. Okay. Okay." lines."""
+    cmd = _whisper_cmd("/bin/whisper-cli", Path("/m.bin"), Path("/w.wav"), Path("/w"))
+    assert "-nc" in cmd
+
+
+def test_collapse_short_phrase_loop() -> None:
+    raw = "I'll try direct debit. Okay. Okay. Okay. Okay. Okay. Okay. Okay."
+    out = _collapse_phrase_loops(raw)
+    assert "Okay." in out
+    assert "[...repeated 7x]" in out
+    # Real text before the loop survives.
+    assert "I'll try direct debit." in out
+
+
+def test_collapse_long_phrase_without_terminator() -> None:
+    """The May-29 / Jun-01 transcripts looped on "And then we had our third
+    one last quarter" — 9 words, no terminating punctuation. Must collapse."""
+    phrase = "And then we had our third one last quarter"
+    raw = "Opening sentence. " + " ".join([phrase] * 12)
+    out = _collapse_phrase_loops(raw)
+    assert "[...repeated 12x]" in out
+    # Phrase appears exactly once in the collapsed output.
+    assert out.count(phrase) == 1
+    assert "Opening sentence." in out
+
+
+def test_collapse_spans_newlines() -> None:
+    """whisper-cli writes one segment per line; loops typically span many
+    segments and therefore many file lines. The regex must traverse \\s+
+    (which includes newlines) to collapse those cross-line runs."""
+    raw = "\n".join([" >> Okay."] * 8)
+    out = _collapse_phrase_loops(raw)
+    assert "[...repeated 8x]" in out
+
+
+def test_collapse_preserves_short_runs() -> None:
+    """Three repeats of "Yeah." can occur naturally in conversation and
+    must NOT be collapsed. The collapse threshold is intentionally
+    conservative."""
+    raw = "Yeah. Yeah. Yeah. Yeah."  # 4 reps, below the 5-rep threshold
+    out = _collapse_phrase_loops(raw)
+    assert out == raw
+
+
+def test_collapse_preserves_unrelated_text() -> None:
+    raw = "The deploy worked. Tests passed. Shipping it now."
+    out = _collapse_phrase_loops(raw)
+    assert out == raw
+
+
+def test_scrub_collapses_loop_in_full_pipeline(tmp_path: Path) -> None:
+    """End-to-end: the file-level scrub applies the loop collapser before
+    the per-line noise filter, so a whisper-cli output containing both a
+    loop and noise markers comes out clean."""
+    p = tmp_path / "x.txt"
+    p.write_text(
+        " >> So I'll try direct debit. "
+        + ("Okay. " * 30).rstrip() + "\n"
+        " >> [INAUDIBLE]\n"
+        " >> Sounds good.\n",
+        encoding="utf-8",
+    )
+    _scrub_noise_tokens(p)
+    out = p.read_text(encoding="utf-8")
+    assert "Okay." in out  # one canonical copy
+    assert "[...repeated" in out  # loop marker present
+    assert out.count("Okay.") <= 2  # not 30
+    assert "[INAUDIBLE]" not in out
+    assert "Sounds good." in out
 
 
 # ---------------------------------------------------------------------------

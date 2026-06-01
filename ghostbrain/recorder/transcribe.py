@@ -40,6 +40,68 @@ _NOISE_TOKEN_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Whisper sometimes falls into a context-loop on ambiguous audio: it emits
+# "Okay." (or "And then we had our third one last quarter", or any short
+# phrase) for one segment, then each subsequent segment is decoded with the
+# prior text as a prompt, biasing the model toward re-emitting the same
+# phrase — for hundreds of segments. `-nc` on the whisper-cli side prevents
+# new transcripts from looping; this regex collapses any loop that slips
+# through (and cleans historical transcripts written before -nc was added).
+#
+# Threshold: ≥5 back-to-back exact repetitions of a 1–15-word phrase. Natural
+# speech doesn't repeat the same multi-word phrase five times in a row — the
+# false-positive rate at this threshold is essentially zero, while the
+# false-negative rate against whisper's actual hallucination patterns is low.
+_PHRASE_LOOP_RE = re.compile(
+    # Lazy inner quantifier so the SHORTEST repeating unit is captured. That
+    # makes the `[...repeated Nx]` marker reflect actual occurrence count
+    # ("Okay. [...repeated 30x]") rather than a greedy multi-copy unit.
+    # No trailing `\b` because phrases often end in punctuation, and `\W\W`
+    # transitions don't carry a word boundary.
+    r"(\S+(?:\s+\S+){0,14}?)(?:\s+\1){4,}",
+)
+
+
+def _collapse_phrase_loops(text: str) -> str:
+    """Collapse runs of identical short phrases into one copy plus a marker."""
+    def repl(m: re.Match) -> str:
+        phrase = m.group(1)
+        # Count non-overlapping occurrences across the matched run. Safe for
+        # whole-phrase matches at word boundaries — the regex ensures every
+        # repetition is a full \b…\b copy of group(1).
+        n = m.group(0).count(phrase)
+        return f"{phrase} [...repeated {n}x]"
+    return _PHRASE_LOOP_RE.sub(repl, text)
+
+
+def _whisper_cmd(
+    binary: str,
+    model: Path,
+    wav_path: Path,
+    output_base: Path,
+    *,
+    threads: int | None = None,
+) -> list[str]:
+    """Build the whisper-cli command line.
+
+    `-nc` (no-context) is critical: without it, whisper feeds each segment's
+    decoded text into the next segment as a prompt. That carry-over is the
+    root cause of "Okay. Okay. Okay." loops in the saved transcript when
+    the model briefly stalls on ambiguous audio.
+    """
+    cmd = [
+        binary,
+        "-m", str(model),
+        "-f", str(wav_path),
+        "-otxt",
+        "-of", str(output_base),
+        "-l", "en",
+        "-nc",
+    ]
+    if threads:
+        cmd.extend(["-t", str(threads)])
+    return cmd
+
 
 class TranscribeError(RuntimeError):
     pass
@@ -68,16 +130,7 @@ def transcribe(
     model = _resolve_model(model_path)
     output_base = wav_path.with_suffix("")  # whisper-cli appends .txt itself
 
-    cmd = [
-        binary,
-        "-m", str(model),
-        "-f", str(wav_path),
-        "-otxt",
-        "-of", str(output_base),
-        "-l", "en",
-    ]
-    if threads:
-        cmd.extend(["-t", str(threads)])
+    cmd = _whisper_cmd(binary, model, wav_path, output_base, threads=threads)
 
     log.info("transcribing %s with %s", wav_path.name, model.name)
     try:
@@ -127,13 +180,18 @@ def _scrub_noise_tokens(txt_path: Path) -> None:
         if not line.strip():
             continue
         kept.append(line)
+    # Collapse hallucination loops AFTER the per-line noise filter. Doing it
+    # before would consolidate runs of "[BLANK_AUDIO]" into a single line
+    # with a "[...repeated]" suffix that the noise filter then can't drop,
+    # so an all-noise recording wouldn't collapse to an empty file.
+    body = _collapse_phrase_loops("\n".join(kept))
     if dropped:
         log.info(
             "scrubbed %d noise marker(s) from %s (%d real line(s) kept)",
             dropped, txt_path.name, len(kept),
         )
     # Preserve trailing newline for tools that expect it.
-    txt_path.write_text("\n".join(kept) + ("\n" if kept else ""), encoding="utf-8")
+    txt_path.write_text(body + ("\n" if body else ""), encoding="utf-8")
 
 
 def _resolve_model(model_path: Path | None) -> Path:
