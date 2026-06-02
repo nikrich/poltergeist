@@ -1,10 +1,21 @@
-"""Tests for ghostbrain.llm.client. Subprocess-free — tests pure parsing logic."""
+"""Tests for ghostbrain.llm.client. Subprocess calls are mocked."""
 
 from __future__ import annotations
 
+import json
+import subprocess
+from unittest.mock import patch
+
 import pytest
 
-from ghostbrain.llm.client import LLMError, LLMResult, _parse_json_tolerant
+from ghostbrain.llm import client as llm_client
+from ghostbrain.llm.client import (
+    LLMError,
+    LLMRateLimit,
+    LLMResult,
+    _parse_json_tolerant,
+    _run_once,
+)
 
 
 def _result(text: str) -> LLMResult:
@@ -75,3 +86,101 @@ def test_llmresult_falls_back_to_text_when_no_structured() -> None:
         model="haiku", cost_usd=0.0, duration_ms=0, session_id="s", raw={},
     )
     assert r.as_json() == {"x": 1}
+
+
+# ---------------------------------------------------------------------------
+# _run_once: subprocess invocation + error surfacing
+# ---------------------------------------------------------------------------
+
+
+class _FakeProc:
+    def __init__(self, *, returncode: int = 0, stdout: str = "", stderr: str = "") -> None:
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+def _ok_payload() -> str:
+    return json.dumps({
+        "result": "hi",
+        "total_cost_usd": 0.01,
+        "duration_ms": 100,
+        "session_id": "s",
+        "modelUsage": {"claude-haiku-4-5-20251001": {}},
+    })
+
+
+def test_run_once_closes_stdin() -> None:
+    """Without stdin=DEVNULL, claude-cli waits 3s for piped data and prints
+    a misleading 'no stdin data received' warning to stderr — which then
+    masks the real error in the wrapper's exception text."""
+    captured: dict = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["kwargs"] = kwargs
+        return _FakeProc(stdout=_ok_payload())
+
+    with patch.object(llm_client.subprocess, "run", side_effect=fake_run):
+        _run_once(["claude"], timeout_s=10)
+
+    assert captured["kwargs"].get("stdin") == subprocess.DEVNULL
+
+
+def test_run_once_surfaces_budget_error_from_stdout_json() -> None:
+    """claude exits 1 with a structured `is_error: true` JSON on stdout
+    when --max-budget-usd is exceeded. The wrapper must surface that real
+    cause, not the unrelated stdin warning that happens to be in stderr."""
+    stdout = json.dumps({
+        "is_error": True,
+        "subtype": "error_max_budget_usd",
+        "errors": ["Reached maximum budget ($0.05)"],
+        "result": "",
+    })
+    stderr = "Warning: no stdin data received in 3s, proceeding without it."
+    proc = _FakeProc(returncode=1, stdout=stdout, stderr=stderr)
+
+    with patch.object(llm_client.subprocess, "run", return_value=proc):
+        with pytest.raises(LLMError) as exc_info:
+            _run_once(["claude"], timeout_s=10)
+
+    msg = str(exc_info.value)
+    assert "budget" in msg.lower()
+    assert "$0.05" in msg
+    assert "stdin" not in msg.lower()  # the irrelevant warning is suppressed
+
+
+def test_run_once_detects_rate_limit_in_structured_json() -> None:
+    """Rate-limit detection must work when the message comes through
+    claude's structured error JSON, not only when it shows up in stderr."""
+    stdout = json.dumps({
+        "is_error": True,
+        "errors": ["API rate limit exceeded; retry after 30s"],
+    })
+    proc = _FakeProc(returncode=1, stdout=stdout, stderr="")
+
+    with patch.object(llm_client.subprocess, "run", return_value=proc):
+        with pytest.raises(LLMRateLimit):
+            _run_once(["claude"], timeout_s=10)
+
+
+def test_run_once_falls_back_to_stderr_when_no_json() -> None:
+    """When stdout has no parseable JSON at all (e.g. claude crashed before
+    emitting structured output), use stderr text in the error message."""
+    proc = _FakeProc(returncode=2, stdout="", stderr="cli launch failure foo")
+
+    with patch.object(llm_client.subprocess, "run", return_value=proc):
+        with pytest.raises(LLMError) as exc_info:
+            _run_once(["claude"], timeout_s=10)
+
+    assert "cli launch failure foo" in str(exc_info.value)
+
+
+def test_run_once_succeeds_with_valid_payload() -> None:
+    """The happy path still works after the error-handling refactor."""
+    proc = _FakeProc(returncode=0, stdout=_ok_payload())
+
+    with patch.object(llm_client.subprocess, "run", return_value=proc):
+        result = _run_once(["claude"], timeout_s=10)
+
+    assert result.text == "hi"
+    assert result.cost_usd == pytest.approx(0.01)

@@ -278,7 +278,10 @@ def _default_relevance_gate(model: str):
             prompt,
             model=model,
             json_schema=GMAIL_RELEVANCE_SCHEMA,
-            budget_usd=0.05,
+            # ~$0.06 of cache-creation overhead per `claude -p` call means
+            # $0.05 silently busts every relevance check before the model
+            # speaks. $0.15 gives haiku headroom for one short JSON reply.
+            budget_usd=0.15,
         )
         payload = result.as_json()
         return bool(payload.get("relevant")), str(payload.get("reason") or "")

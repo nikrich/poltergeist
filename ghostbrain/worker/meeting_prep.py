@@ -57,7 +57,11 @@ def event_hash(fields: dict[str, Any]) -> str:
 
 LLM_MODEL = "haiku"
 LLM_TIMEOUT_S = 30
-LLM_BUDGET_USD = 0.05
+# Each `claude -p` invocation pays ~$0.06 of cache-creation overhead on
+# top of the actual prompt cost (the base system prompt is recomputed every
+# call because we run with `--no-session-persistence`). $0.05 was less than
+# the floor and every brief silently failed with `error_max_budget_usd`.
+LLM_BUDGET_USD = 0.15
 RELATED_LIMIT = 8
 
 

@@ -142,6 +142,10 @@ def _run_once(cmd: list[str], *, timeout_s: int) -> LLMResult:
     try:
         proc = subprocess.run(
             cmd,
+            # Close stdin explicitly. Otherwise claude-cli waits 3s for piped
+            # input, prints a "no stdin data received" warning to stderr, and
+            # that warning then masks the real error in our exception text.
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             timeout=timeout_s,
@@ -150,24 +154,40 @@ def _run_once(cmd: list[str], *, timeout_s: int) -> LLMResult:
     except subprocess.TimeoutExpired as e:
         raise LLMTimeout(f"`claude -p` timed out after {timeout_s}s") from e
 
+    # Try to parse stdout as JSON before deciding what kind of failure (if
+    # any) this is. claude emits structured error info on stdout — including
+    # `error_max_budget_usd` and rate-limit subtypes — even when it exits
+    # non-zero. Surfacing that JSON gives us actionable error messages
+    # instead of whatever happened to land on stderr.
+    payload: dict | None = None
+    if proc.stdout:
+        try:
+            payload = json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            payload = None
+
+    if isinstance(payload, dict) and payload.get("is_error"):
+        errors = payload.get("errors") or []
+        subtype = str(payload.get("subtype") or "")
+        msg = "; ".join(str(e) for e in errors) or str(payload.get("result") or subtype)
+        haystack = (msg + " " + subtype).lower()
+        if "rate" in haystack and "limit" in haystack:
+            raise LLMRateLimit(msg)
+        raise LLMError(f"claude reported error ({subtype or 'unknown'}): {msg}")
+
     if proc.returncode != 0:
         stderr = (proc.stderr or "").strip()
+        stdout = (proc.stdout or "").strip()
         if "rate" in stderr.lower() and "limit" in stderr.lower():
             raise LLMRateLimit(stderr)
-        raise LLMError(
-            f"`claude -p` exited {proc.returncode}: {stderr or proc.stdout[:300]}"
-        )
+        # No parseable error JSON — surface stderr (and stdout as fallback)
+        # so the operator sees whatever claude actually printed.
+        detail = stderr or stdout[:300]
+        raise LLMError(f"`claude -p` exited {proc.returncode}: {detail}")
 
-    try:
-        payload = json.loads(proc.stdout)
-    except json.JSONDecodeError as e:
+    if payload is None:
         raise LLMError(
             f"could not parse claude -p stdout as JSON: {proc.stdout[:300]!r}"
-        ) from e
-
-    if payload.get("is_error"):
-        raise LLMError(
-            f"claude reported error: {payload.get('result', payload)}"
         )
 
     return LLMResult(
