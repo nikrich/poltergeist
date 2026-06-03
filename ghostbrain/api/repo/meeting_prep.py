@@ -10,12 +10,20 @@ import json
 import logging
 import os
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 
 from ghostbrain.api.models.meeting import Prep
 from ghostbrain.paths import state_dir
 
 log = logging.getLogger("ghostbrain.api.repo.meeting_prep")
+
+# How long to keep serving a failed prep before treating it as a cache miss
+# and retrying. Successful preps (with a brief) are never expired by this —
+# only the calendar event's hash invalidates those. The point of this TTL is
+# to stop a transient LLM failure (e.g. claude binary missing during one
+# build) from getting frozen in the cache and surviving the underlying fix.
+ERROR_TTL_S = 300
 
 _executor_lock = threading.Lock()
 _inflight: set[str] = set()
@@ -45,6 +53,18 @@ def get_prep(event_id: str, *, expected_hash: str) -> Prep | None:
         return None
     if prep.event_snapshot.hash != expected_hash:
         return None
+    # If the cached entry is an error-only result, only serve it within the
+    # retry window — past that, return None so prewarm can try again. This
+    # prevents stale errors (e.g. from a previous broken build) from being
+    # re-served forever after the underlying issue has been fixed.
+    if prep.error and not prep.brief:
+        try:
+            generated = datetime.fromisoformat(prep.generated_at)
+        except ValueError:
+            return None
+        age_s = (datetime.now(timezone.utc) - generated).total_seconds()
+        if age_s > ERROR_TTL_S:
+            return None
     return prep
 
 

@@ -181,3 +181,57 @@ def test_cache_returns_none_when_hash_mismatches(tmp_path, monkeypatch):
 def test_cache_returns_none_when_missing(tmp_path, monkeypatch):
     monkeypatch.setenv("GHOSTBRAIN_STATE_DIR", str(tmp_path))
     assert repo.get_prep("never-written", expected_hash="x") is None
+
+
+from datetime import datetime, timedelta, timezone
+
+
+def test_cache_serves_recent_error_within_ttl(tmp_path, monkeypatch):
+    """A failed prep from a few seconds ago is still cached — otherwise
+    we'd retry the LLM every UI refresh while the failure is fresh."""
+    monkeypatch.setenv("GHOSTBRAIN_STATE_DIR", str(tmp_path))
+    snap = EventSnapshot(
+        title="t", start="s", end="e", with_=[], location="", description="", hash="h1",
+    )
+    fresh = datetime.now(timezone.utc).isoformat()
+    repo.set_prep(Prep(
+        event_id="evt1", brief=None, related=[], event_snapshot=snap,
+        generated_at=fresh, error="LLMError: transient failure",
+    ))
+    got = repo.get_prep("evt1", expected_hash="h1")
+    assert got is not None
+    assert got.error == "LLMError: transient failure"
+
+
+def test_cache_treats_stale_error_as_miss(tmp_path, monkeypatch):
+    """An error older than ERROR_TTL_S becomes a cache miss — otherwise a
+    failure mode that has been fixed stays visible to the user forever."""
+    monkeypatch.setenv("GHOSTBRAIN_STATE_DIR", str(tmp_path))
+    snap = EventSnapshot(
+        title="t", start="s", end="e", with_=[], location="", description="", hash="h1",
+    )
+    stale = (
+        datetime.now(timezone.utc) - timedelta(seconds=repo.ERROR_TTL_S + 60)
+    ).isoformat()
+    repo.set_prep(Prep(
+        event_id="evt1", brief=None, related=[], event_snapshot=snap,
+        generated_at=stale, error="LLMError: bug we've since fixed",
+    ))
+    assert repo.get_prep("evt1", expected_hash="h1") is None
+
+
+def test_cache_serves_old_success_indefinitely(tmp_path, monkeypatch):
+    """Successful preps must not be expired by the error-TTL path — only
+    a hash mismatch invalidates them."""
+    monkeypatch.setenv("GHOSTBRAIN_STATE_DIR", str(tmp_path))
+    snap = EventSnapshot(
+        title="t", start="s", end="e", with_=[], location="", description="", hash="h1",
+    )
+    stale = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    repo.set_prep(Prep(
+        event_id="evt1", brief="real content", related=[], event_snapshot=snap,
+        generated_at=stale, error=None,
+    ))
+    got = repo.get_prep("evt1", expected_hash="h1")
+    assert got is not None
+    assert got.brief == "real content"
