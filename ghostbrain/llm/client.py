@@ -19,6 +19,7 @@ import re
 import shutil
 import subprocess
 import time
+from pathlib import Path
 from typing import Any
 
 log = logging.getLogger("ghostbrain.llm.client")
@@ -27,6 +28,39 @@ DEFAULT_TIMEOUT_S = 120
 DEFAULT_BUDGET_USD = 0.50  # safety cap per call; raise via env if needed
 DEFAULT_MODEL = "haiku"
 RETRY_DELAYS_S = (5, 30, 120)
+
+
+def _find_claude_binary() -> str | None:
+    """Locate the `claude` CLI, tolerant of the stripped PATH macOS hands
+    Finder/Spotlight-launched apps.
+
+    Lookup order:
+    1. ``GHOSTBRAIN_CLAUDE_BIN`` — explicit override for non-standard installs.
+    2. ``shutil.which("claude")`` — honors PATH when it's been augmented.
+    3. Well-known install locations checked in order — the desktop sidecar
+       inherits a bare ``/usr/bin:/bin:/usr/sbin:/sbin`` from launchd when
+       the app is opened from Finder, so a regular PATH search misses
+       claude even when it's installed.
+    """
+    override = os.environ.get("GHOSTBRAIN_CLAUDE_BIN")
+    if override and Path(override).is_file():
+        return override
+
+    found = shutil.which("claude")
+    if found:
+        return found
+
+    home = Path.home()
+    candidates = (
+        home / ".local" / "bin" / "claude",
+        Path("/opt/homebrew/bin/claude"),
+        Path("/usr/local/bin/claude"),
+        home / ".claude" / "bin" / "claude",
+    )
+    for c in candidates:
+        if c.is_file():
+            return str(c)
+    return None
 
 MINIMAL_SYSTEM_PROMPT = (
     "You are an automation backend, not a chat assistant. The user's prompts "
@@ -98,11 +132,14 @@ def run(
     budget_usd: hard cap for this call. Defaults to ``DEFAULT_BUDGET_USD``.
     timeout_s: subprocess timeout.
     """
-    binary = shutil.which("claude")
+    binary = _find_claude_binary()
     if binary is None:
         raise LLMError(
-            "`claude` binary not on PATH. Install Claude Code or adjust PATH "
-            "in the launchd plist."
+            "`claude` binary not found. Install Claude Code "
+            "(`npm i -g @anthropic-ai/claude-code`), or set "
+            "`GHOSTBRAIN_CLAUDE_BIN` to its absolute path. "
+            "Common install locations (~/.local/bin, /opt/homebrew/bin, "
+            "/usr/local/bin) are searched automatically."
         )
 
     cmd: list[str] = [

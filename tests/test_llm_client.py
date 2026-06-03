@@ -184,3 +184,46 @@ def test_run_once_succeeds_with_valid_payload() -> None:
 
     assert result.text == "hi"
     assert result.cost_usd == pytest.approx(0.01)
+
+
+# ---------------------------------------------------------------------------
+# _find_claude_binary: PATH lookup with fallback to known install locations
+# ---------------------------------------------------------------------------
+
+
+def test_find_claude_prefers_env_override(monkeypatch, tmp_path) -> None:
+    """An explicit env var beats everything — operators need an escape hatch
+    when claude lives in a non-standard place."""
+    fake = tmp_path / "my-claude"
+    fake.touch()
+    monkeypatch.setenv("GHOSTBRAIN_CLAUDE_BIN", str(fake))
+    # which() should NOT be consulted when the override is valid.
+    with patch.object(llm_client.shutil, "which", return_value="/should/not/win"):
+        assert llm_client._find_claude_binary() == str(fake)
+
+
+def test_find_claude_uses_path_when_present(monkeypatch) -> None:
+    monkeypatch.delenv("GHOSTBRAIN_CLAUDE_BIN", raising=False)
+    with patch.object(llm_client.shutil, "which", return_value="/opt/homebrew/bin/claude"):
+        assert llm_client._find_claude_binary() == "/opt/homebrew/bin/claude"
+
+
+def test_find_claude_falls_back_to_local_bin(monkeypatch, tmp_path) -> None:
+    """When PATH is bare (Finder launch on macOS strips it), `shutil.which`
+    misses `claude` even though it's installed under ~/.local/bin. The
+    fallback must find it there before giving up."""
+    monkeypatch.delenv("GHOSTBRAIN_CLAUDE_BIN", raising=False)
+    fake_home = tmp_path
+    (fake_home / ".local" / "bin").mkdir(parents=True)
+    fake_claude = fake_home / ".local" / "bin" / "claude"
+    fake_claude.touch()
+    monkeypatch.setattr(llm_client.Path, "home", classmethod(lambda cls: fake_home))
+    with patch.object(llm_client.shutil, "which", return_value=None):
+        assert llm_client._find_claude_binary() == str(fake_claude)
+
+
+def test_find_claude_returns_none_when_truly_missing(monkeypatch, tmp_path) -> None:
+    monkeypatch.delenv("GHOSTBRAIN_CLAUDE_BIN", raising=False)
+    monkeypatch.setattr(llm_client.Path, "home", classmethod(lambda cls: tmp_path))
+    with patch.object(llm_client.shutil, "which", return_value=None):
+        assert llm_client._find_claude_binary() is None

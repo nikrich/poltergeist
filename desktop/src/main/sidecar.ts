@@ -151,10 +151,15 @@ export class Sidecar extends EventEmitter {
       const { exe, args, cwd } = target;
       // macOS launchd hands the .app a stripped PATH (`/usr/bin:/bin:/usr/sbin:/sbin`),
       // so the sidecar can't find `claude`, `whisper-cli`, `gh`, or `ffmpeg` —
-      // all of which live in `/opt/homebrew/bin` (Apple Silicon) or `/usr/local/bin`
-      // (Intel + manual installs). Prepend those so the sidecar can shell out to
-      // them regardless of how the app was launched (Dock, Finder, terminal).
-      const extraPath = ['/opt/homebrew/bin', '/usr/local/bin'].join(':');
+      // all of which live in `/opt/homebrew/bin` (Apple Silicon), `/usr/local/bin`
+      // (Intel + manual installs), or `~/.local/bin` (Claude Code's default
+      // install path). Prepend those so the sidecar can shell out to them
+      // regardless of how the app was launched (Dock, Finder, terminal).
+      const home = process.env.HOME ?? '';
+      const userLocalBin = home ? `${home}/.local/bin` : '';
+      const extraPath = ['/opt/homebrew/bin', '/usr/local/bin', userLocalBin]
+        .filter(Boolean)
+        .join(':');
       const inheritedPath = process.env.PATH ?? '';
       const proc = spawn(exe, args, {
         cwd,
