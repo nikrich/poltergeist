@@ -218,6 +218,67 @@ Email to evaluate:
 """
 
 
+_OUTLOOK_MAIL_RELEVANCE_PROMPT = """\
+<!-- Outlook mail relevance gate. Used by ghostbrain.connectors.microsoft.outlook_mail
+to decide whether a work email should be ingested. Rejected mail is dropped silently. -->
+
+RESPOND WITH JSON ONLY. NO PROSE. NO MARKDOWN FENCES. NO PREAMBLE.
+Your entire response must be a single JSON object exactly matching:
+`{"relevant": true|false, "reason": "<one short sentence>"}`
+
+You are gating which work emails from the Sanlam Microsoft 365 tenant enter a
+software engineer's personal knowledge system. The user works on Sanlam Digital
+(ASCP, claims, policy admin, RBAC, capstone team, regulatory work).
+
+Mark `relevant: true` ONLY when the email is plausibly worth surfacing in a
+daily digest of work follow-ups: direct questions, decisions, action items,
+incident/PR/ticket discussion, meeting follow-ups, anything you'd act on.
+
+NOT relevant (set `relevant: false`):
+- Automated notifications (build/deploy/monitoring/calendar reminders).
+- Mass announcements, all-staff newsletters, HR/marketing blasts.
+- Routine "FYI" cc's with no action.
+- Anything you'd archive without reading.
+
+Be conservative on dropping but decisive on noise: when in real doubt, prefer
+`relevant: true` so signal is never silently swallowed.
+
+`reason` is one short sentence (<= 120 chars) the user can read in the digest.
+
+Email to judge:
+{{content}}
+"""
+
+_TEAMS_CHAT_RELEVANCE_PROMPT = """\
+<!-- Teams chat relevance gate. Used by ghostbrain.connectors.microsoft.teams_chat
+to decide whether a chat message should be ingested. Rejected messages are dropped. -->
+
+RESPOND WITH JSON ONLY. NO PROSE. NO MARKDOWN FENCES. NO PREAMBLE.
+Your entire response must be a single JSON object exactly matching:
+`{"relevant": true|false, "reason": "<one short sentence>"}`
+
+You are gating which Teams chat messages from the Sanlam Microsoft 365 tenant
+enter a software engineer's personal knowledge system.
+
+Mark `relevant: true` ONLY when the message carries durable signal worth a daily
+digest: a decision, a request/action item directed at the user, a question
+needing follow-up, or a substantive technical/work discussion.
+
+NOT relevant (set `relevant: false`):
+- Pleasantries, reactions, "thanks", "ok", "lol", emoji-only.
+- Logistics already captured elsewhere (calendar invites, meeting join links).
+- Idle chatter with no follow-up.
+
+Be conservative on dropping but decisive on noise: when in real doubt, prefer
+`relevant: true`.
+
+`reason` is one short sentence (<= 120 chars).
+
+Message to judge:
+{{content}}
+"""
+
+
 _WEEKLY_DIGEST_PROMPT = """\
 <!-- Weekly digest prompt. Used by ghostbrain.worker.weekly_digest. The
 output is a markdown document written to vault/10-daily/weekly/<week>.md
@@ -669,6 +730,26 @@ claude_code:
 
 # Fallback when no rule matches. Worker sends low-confidence events to review queue.
 default: needs_review
+
+microsoft:
+  # REQUIRED: your Entra app registration (public client) and tenant.
+  # Not secrets, but not shipped in the repo. Fill these in (or set env
+  # MS_GRAPH_CLIENT_ID / MS_GRAPH_TENANT_ID), then run ghostbrain-microsoft-auth.
+  client_id: ""
+  tenant_id: ""
+  outlook_mail:
+    unread_lookback_hours: 24
+    denylist_domains: []
+    relevance_gate: true
+    relevance_model: haiku
+    max_messages_per_run: 50
+  teams_chat:
+    max_messages_per_run: 100
+    relevance_gate: true
+    relevance_model: haiku
+  teams_meetings:
+    calendar_lookback_days: 7
+    body_cap_chars: 200000
 """,
     "90-meta/config.yaml": """\
 # Pipeline thresholds. See SPEC §5.4.
@@ -737,6 +818,8 @@ recorder:
     "90-meta/prompts/extractor.md": _EXTRACTOR_PROMPT,
     "90-meta/prompts/transcript-extractor.md": _TRANSCRIPT_EXTRACTOR_PROMPT,
     "90-meta/prompts/gmail-relevance.md": _GMAIL_RELEVANCE_PROMPT,
+    "90-meta/prompts/outlook-mail-relevance.md": _OUTLOOK_MAIL_RELEVANCE_PROMPT,
+    "90-meta/prompts/teams-chat-relevance.md": _TEAMS_CHAT_RELEVANCE_PROMPT,
     "90-meta/prompts/reversal-check.md": _REVERSAL_CHECK_PROMPT,
     "90-meta/prompts/profile-updater.md": _PROFILE_UPDATER_PROMPT,
     "90-meta/prompts/digest.md": _DIGEST_PROMPT,

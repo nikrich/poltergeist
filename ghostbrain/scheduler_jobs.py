@@ -23,6 +23,9 @@ from ghostbrain.connectors.gmail import runner as gmail_runner
 from ghostbrain.connectors.jira import runner as jira_runner
 from ghostbrain.connectors.joplin import runner as joplin_runner
 from ghostbrain.connectors.slack import runner as slack_runner
+from ghostbrain.connectors.microsoft.outlook_mail import runner as outlook_mail_runner
+from ghostbrain.connectors.microsoft.teams_chat import runner as teams_chat_runner
+from ghostbrain.connectors.microsoft.teams_meetings import runner as teams_meetings_runner
 from ghostbrain.paths import queue_dir
 from ghostbrain.scheduler import (
     DailyAt,
@@ -222,6 +225,9 @@ def register_connectors(scheduler: Scheduler) -> None:
     scheduler.add_job("jira", Interval(seconds=14400), jira_runner.run, "every 4h")
     scheduler.add_job("confluence", DailyAt(hour=6, minute=0), confluence_runner.run, "daily 06:00")
     scheduler.add_job("joplin", Interval(seconds=3600), joplin_runner.run, "every 1h")
+    scheduler.add_job("outlook_mail", Interval(seconds=3600), outlook_mail_runner.run, "every 1h")
+    scheduler.add_job("teams_chat", Interval(seconds=3600), teams_chat_runner.run, "every 1h")
+    scheduler.add_job("teams_meetings", Interval(seconds=7200), teams_meetings_runner.run, "every 2h")
     # Semantic refresh runs frequently — embedding cost is paid only for new
     # or modified notes (mtime + hash short-circuit). Steady-state runs are
     # seconds. Keeping search/answer queries up-to-date with new transcripts
