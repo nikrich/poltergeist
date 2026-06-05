@@ -25,3 +25,6 @@ logs/
 # PyInstaller / desktop packaging artifacts
 packaging/build/
 desktop/resources/sidecar/
+
+# Claude Code linked worktrees (skills under .claude/skills/ ARE tracked)
+.claude/worktrees/
