@@ -112,13 +112,48 @@ def test_fetch_uses_calendarview_with_date_range(tmp_path) -> None:
     assert "$filter" not in params
 
 
-def test_resolve_meeting_escapes_single_quotes(tmp_path) -> None:
+def test_resolve_meeting_ref_escapes_single_quotes(tmp_path) -> None:
     client = MagicMock()
     client.get.return_value = {"value": [{"id": "m1", "subject": "S"}]}
     conn = _conn(tmp_path, client)
-    conn._resolve_meeting(client, "https://teams/jo'in")
+    conn._resolve_meeting_ref(client, "https://teams/jo'in")
     sent = client.get.call_args.args[1]["$filter"]
     assert "jo''in" in sent  # single quote doubled for OData
+
+
+def test_extract_meeting_id() -> None:
+    from ghostbrain.connectors.microsoft.teams_meetings.connector import extract_meeting_id
+    assert extract_meeting_id("https://teams.microsoft.com/meet/335252331326?p=x") == "335252331326"
+    assert extract_meeting_id("335252331326") == "335252331326"
+    assert extract_meeting_id(
+        "https://teams.microsoft.com/l/meetup-join/19%3ameeting_abc%40thread.v2/0?context=y"
+    ) is None
+
+
+def test_fetch_uses_configured_meetings_without_touching_calendar(tmp_path) -> None:
+    from ghostbrain.connectors.microsoft.teams_meetings.connector import (
+        TeamsMeetingsConnector,
+    )
+    client = MagicMock()
+    # resolve by meeting id -> /me/onlineMeetings, then its transcripts
+    client.get.side_effect = [
+        {"value": [{"id": "m1", "subject": "Standup", "joinWebUrl": "u"}]},
+        {"value": [{"id": "new", "createdDateTime": "2026-06-04T09:00:00Z"}]},
+    ]
+    conn = TeamsMeetingsConnector(
+        config={"meetings": ["335252331326"], "body_cap_chars": 100},
+        queue_dir=tmp_path / "q",
+        state_dir=tmp_path / "s",
+        client=client,
+    )
+    conn._fetch_transcript_text = lambda client, mid, tid: "WEBVTT\n\nbody"
+    events = conn.fetch(datetime(2026, 6, 3, tzinfo=timezone.utc))
+    assert [e["id"] for e in events] == ["microsoft:transcript:m1:new"]
+    # A configured list means NO calendar walk (works on transcripts-only scope).
+    client.get_all.assert_not_called()
+    # Resolution used the joinMeetingId filter, not JoinWebUrl.
+    first_filter = client.get.call_args_list[0].args[1]["$filter"]
+    assert "joinMeetingId" in first_filter and "335252331326" in first_filter
 
 
 def test_health_check_false_without_token(tmp_path, monkeypatch) -> None:
