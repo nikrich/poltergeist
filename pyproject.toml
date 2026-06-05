@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [
-    { name = "Jannik", email = "jannik@codeship.tech" },
+    { name = "nikrich", email = "nikrich@users.noreply.github.com" },
 ]
 dependencies = [
     "anthropic>=0.40.0",

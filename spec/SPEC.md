@@ -1,7 +1,7 @@
 # Second Brain System — Build Spec
 
 **Version:** 1.0
-**Owner:** Jannik (jannik@codeship.tech)
+**Owner:** the owner (owner@example.com)
 **Target:** macOS, Python 3.11+, Obsidian
 **License:** MIT (intended open source)
 **Status:** Ready to build
@@ -25,12 +25,12 @@ This document specifies a complete personal knowledge automation system. It is d
 - File paths starting with `vault/` refer to the Obsidian vault root.
 - File paths starting with `secondbrain/` refer to the source code repo root.
 - Code blocks marked `# stub` are scaffolding; replace with real implementation.
-- `TODO(jannik)` markers indicate places where Jannik must provide values (org IDs, paths, etc.).
+- `TODO(owner)` markers indicate places where the owner must provide values (org IDs, paths, etc.).
 
 **Important constraints:**
 
-- Sanlam compliance is **out of scope** — Jannik confirmed everything runs locally on his machine. Do not add extra encryption layers or compliance gates beyond what is specified.
-- The system runs only on Jannik's local machine. No cloud deployment.
+- the company compliance is **out of scope** — the owner confirmed everything runs locally on his machine. Do not add extra encryption layers or compliance gates beyond what is specified.
+- The system runs only on the owner's local machine. No cloud deployment.
 - Open source readiness is a **goal, not a phase 1 requirement**. Build it cleanly, package it last.
 - Aim for portability (macOS first, Linux later) but don't over-engineer for Linux until macOS works end-to-end.
 
@@ -42,9 +42,9 @@ This document specifies a complete personal knowledge automation system. It is d
 
 A second brain that:
 
-- **Captures everything** Jannik does in Claude Code, Claude desktop, GitHub, Jira, Confluence, Slack, Gmail, Teams, Calendar — automatically.
-- **Routes content to context** (Sanlam, Codeship, ReducedRecipes, Personal) with high accuracy.
-- **Learns Jannik's working style** by maintaining an evolving profile that future Claude sessions automatically load.
+- **Captures everything** the owner does in Claude Code, Claude desktop, GitHub, Jira, Confluence, Slack, Gmail, Teams, Calendar — automatically.
+- **Routes content to context** (the company, the consultancy, a personal side-project, Personal) with high accuracy.
+- **Learns the owner's working style** by maintaining an evolving profile that future Claude sessions automatically load.
 - **Surfaces what matters** through a daily digest and Obsidian dashboards.
 - **Operates invisibly** — no manual triggers required after setup. Trust through observability (audit logs), not approval flows.
 - **Extensible** via a connector pattern so new sources (Linear, Notion, etc.) can be added without core changes.
@@ -89,7 +89,7 @@ A second brain that:
 │  20-contexts/{ctx}/{source}/  — raw notes per source         │
 │  10-daily/  — daily digests                                  │
 │  60-dashboards/  — Dataview queries                          │
-│  80-profile/  — evolving Jannik profile                      │
+│  80-profile/  — evolving the owner profile                      │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -310,8 +310,8 @@ All connectors emit events in this shape:
   "type": "pr",
   "subtype": "opened|merged|reviewed|commented",
   "timestamp": "2026-05-06T14:23:11Z",
-  "actorId": "github:jannik",
-  "actorEmail": "jannik@codeship.tech",
+  "actorId": "github:you",
+  "actorEmail": "owner@example.com",
   "title": "Short title",
   "body": "Full content / description",
   "url": "https://...",
@@ -478,12 +478,12 @@ All prompts live in `vault/90-meta/prompts/` as markdown files. They use Jinja2-
 ```markdown
 # vault/90-meta/prompts/router.md
 
-You are a routing classifier for Jannik's personal knowledge system.
+You are a routing classifier for the owner's personal knowledge system.
 
 Available contexts:
-- **sanlam**: work at Sanlam (financial services, internal projects, team)
-- **codeship**: Jannik's company, clients, products like Hive
-- **reducedrecipes**: ReducedRecipes product (recipe aggregation)
+- **sanlam**: work at the company (financial services, internal projects, team)
+- **codeship**: the owner's company, clients, products
+- **reducedrecipes**: a personal side-project product (recipe aggregation)
 - **personal**: life, family, hobbies, health, music, cooking
 
 Given the following content, output JSON:
@@ -536,7 +536,7 @@ Conversation:
 ```markdown
 # vault/90-meta/prompts/profile-updater.md
 
-You are maintaining a profile of Jannik. Read this conversation and propose
+You are maintaining a profile of the owner. Read this conversation and propose
 profile changes only for facts you're confident about.
 
 Current profile:
@@ -567,7 +567,7 @@ Be conservative. Single offhand mentions are NOT confident updates.
 ```markdown
 # vault/90-meta/prompts/digest.md
 
-Generate Jannik's daily digest for {{date}}.
+Generate the owner's daily digest for {{date}}.
 
 Inputs:
 - Yesterday's events: {{events}}
@@ -580,7 +580,7 @@ Output structure (markdown):
 
 1. **⚠ Decisions needed** (only if review_queue not empty)
 2. **📅 Today** (calendar events, top 3 priorities)
-3. **Per-context overnight** (Sanlam, Codeship, ReducedRecipes, Personal)
+3. **Per-context overnight** (the company, the consultancy, a personal side-project, Personal)
    - Highlights (2-3 bullets max)
    - Needs you (PRs to review, mentions, blockers)
    - Skip section if no activity
@@ -672,13 +672,13 @@ def generate_claude_md(project_path: Path) -> None:
 ## 📅 Today
 {{calendar_events}}
 
-## 🏢 Sanlam
+## 🏢 the company
 {{sanlam_section}}
 
-## 🚀 Codeship
+## 🚀 the consultancy
 {{codeship_section}}
 
-## 🍳 ReducedRecipes
+## 🍳 a personal side-project
 {{reducedrecipes_section}}
 
 ## 🏠 Personal
@@ -699,7 +699,7 @@ Generated only if context has meaningful activity (>5 events or >1 needs-attenti
 
 A person warrants check-in suggestion if any of:
 
-- They have a PR open >3 days waiting for Jannik's review
+- They have a PR open >3 days waiting for the owner's review
 - They have a Jira ticket in same status >7 days
 - They haven't shipped anything in 5+ working days (could be stuck)
 - They were mentioned in Slack with negative sentiment / escalation language
@@ -720,7 +720,7 @@ Each phase has a goal, deliverables, and acceptance criteria. **Do not move to t
 **Deliverables:**
 - [ ] Vault directory structure created (Section 3.1)
 - [ ] Obsidian plugins installed: Dataview, Templater, Periodic Notes, Local REST API
-- [ ] `vault/90-meta/routing.yaml` with placeholder values (use `TODO(jannik)` for org IDs)
+- [ ] `vault/90-meta/routing.yaml` with placeholder values (use `TODO(owner)` for org IDs)
 - [ ] `vault/90-meta/config.yaml` with thresholds (Section 5.4)
 - [ ] Python project scaffolded: `secondbrain/` with `pyproject.toml`, basic deps (anthropic, watchdog, pyyaml, frontmatter, python-dotenv)
 - [ ] `connectors/_base.py` implementing the base class (Section 4.1)
@@ -737,13 +737,13 @@ Each phase has a goal, deliverables, and acceptance criteria. **Do not move to t
 **Goal:** Hand-written initial profile, CLAUDE.md generation working.
 
 **Deliverables:**
-- [ ] Hand-write `vault/80-profile/_index.md`, `working-style.md`, `preferences.md`, `current-projects.md` based on Jannik's user memories
+- [ ] Hand-write `vault/80-profile/_index.md`, `working-style.md`, `preferences.md`, `current-projects.md` based on the owner's user memories
 - [ ] `secondbrain/profile/claude_md.py` (Section 7.3)
 - [ ] launchd timer for nightly CLAUDE.md regeneration
 - [ ] Test directory: create `~/code/test-project/` with a stub `package.json`, run generator
 
 **Acceptance:**
-- Open Claude Code in `~/code/test-project/`. Without any prompt from Jannik, Claude greets him with awareness of his role, working style, and current projects (e.g., "I see you're working on ReducedRecipes…").
+- Open Claude Code in `~/code/test-project/`. Without any prompt from the owner, Claude greets him with awareness of his role, working style, and current projects (e.g., "I see you're working on a personal side-project…").
 
 ### Phase 3 — Claude Code Capture (Week 2)
 
@@ -772,12 +772,12 @@ Each phase has a goal, deliverables, and acceptance criteria. **Do not move to t
 **Deliverables:**
 - [ ] `connectors/github/__init__.py` (PR + issue + commit fetching)
 - [ ] Note templates for PR, issue, repo
-- [ ] Routing config updated with org→context mapping (`TODO(jannik)`: provide actual orgs)
+- [ ] Routing config updated with org→context mapping (`TODO(owner)`: provide actual orgs)
 - [ ] launchd timer (every 2 hours)
 - [ ] One Dataview query in `vault/60-dashboards/all.md` showing open PRs
 
 **Acceptance:**
-- Open a PR in a Codeship repo. Within 2 hours, it appears in `vault/20-contexts/codeship/github/prs/` with correct frontmatter. Dataview dashboard shows it.
+- Open a PR in a the consultancy repo. Within 2 hours, it appears in `vault/20-contexts/codeship/github/prs/` with correct frontmatter. Dataview dashboard shows it.
 
 ### Phase 5 — Daily Digest v1 (Week 3-4)
 
@@ -786,7 +786,7 @@ Each phase has a goal, deliverables, and acceptance criteria. **Do not move to t
 **Deliverables:**
 - [ ] `worker/digest.py` implementing digest generation
 - [ ] launchd timer (06:30 daily)
-- [ ] Digest prompt (Section 6.4) refined for Jannik's voice preference
+- [ ] Digest prompt (Section 6.4) refined for the owner's voice preference
 - [ ] Per-context digest generator (only when activity exists)
 - [ ] System health line generator (counts from audit log)
 
@@ -804,14 +804,14 @@ Each phase has a goal, deliverables, and acceptance criteria. **Do not move to t
 - [ ] Digest integration: review items appear in Monday morning digest
 
 **Acceptance:**
-- After 2 weeks of running, profile `current-projects.md` reflects what Jannik has actually been working on, without him editing it. Audit log shows each change with evidence.
+- After 2 weeks of running, profile `current-projects.md` reflects what the owner has actually been working on, without him editing it. Audit log shows each change with evidence.
 
 ### Phase 7 — Jira + Confluence (Week 5-6)
 
 **Deliverables:**
 - [ ] `connectors/jira/__init__.py`
 - [ ] `connectors/confluence/__init__.py`
-- [ ] Per-site auth (different credentials for Sanlam vs Codeship Atlassian instances)
+- [ ] Per-site auth (different credentials for the company vs the consultancy Atlassian instances)
 - [ ] launchd timers (Jira every 4h, Confluence daily 06:00)
 - [ ] Digest sections for Jira tickets and Confluence updates
 
@@ -846,11 +846,11 @@ Each phase has a goal, deliverables, and acceptance criteria. **Do not move to t
 - [ ] Digest filter: mentions only, not raw message volume
 
 **Acceptance:**
-- A Slack mention of Jannik triggers a vault note. An email from a known sanlam.co.za address routes to Sanlam context.
+- A Slack mention of the owner triggers a vault note. An email from a known company.example.com address routes to the company context.
 
 ### Phase 10 — Metrics & Velocity (Week 9-10)
 
-**Goal:** Engineering visibility for Sanlam team plus check-in heuristics.
+**Goal:** Engineering visibility for the company team plus check-in heuristics.
 
 **Deliverables:**
 - [ ] `worker/metrics.py` calculating cycle time, review latency, stale items
@@ -873,7 +873,7 @@ Each phase has a goal, deliverables, and acceptance criteria. **Do not move to t
 
 ### Phase 12 — Teams (Week 12, optional)
 
-**Deliverables (only if Sanlam tenant allows app registration):**
+**Deliverables (only if the company tenant allows app registration):**
 - [ ] `connectors/teams/__init__.py` (MS Graph API)
 - [ ] Auth via Entra ID app registration
 - [ ] Mentions and important channel posts
@@ -923,7 +923,7 @@ All plists live in `secondbrain/orchestration/launchd/`. Loaded via `launchctl l
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.jannik.secondbrain.worker</string>
+    <string>com.example.secondbrain.worker</string>
     <key>ProgramArguments</key>
     <array>
         <string>/usr/local/bin/python3</string>
@@ -931,19 +931,19 @@ All plists live in `secondbrain/orchestration/launchd/`. Loaded via `launchctl l
         <string>secondbrain.worker.main</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>/Users/jannik/secondbrain</string>
+    <string>/Users/you/secondbrain</string>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>/Users/jannik/secondbrain/logs/worker.log</string>
+    <string>/Users/you/secondbrain/logs/worker.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/jannik/secondbrain/logs/worker.err</string>
+    <string>/Users/you/secondbrain/logs/worker.err</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>VAULT_PATH</key>
-        <string>/Users/jannik/ghostbrain/vault</string>
+        <string>/Users/you/ghostbrain/vault</string>
         <!-- LLM calls go through `claude -p` (uses Max). No API key needed. -->
     </dict>
 </dict>
@@ -1088,7 +1088,7 @@ secondbrain/
 ### 12.1 LLM Backend and Costs
 
 **Decision (post-Phase 2):** all LLM calls shell out to the Claude Code CLI
-(`claude -p "<prompt>" --output-format json`) so they bill against Jannik's
+(`claude -p "<prompt>" --output-format json`) so they bill against the owner's
 Claude Max subscription rather than a metered Anthropic API key. This is a
 deviation from the original spec, taken to avoid double-paying for usage that
 Max already covers.
@@ -1140,12 +1140,12 @@ Sonnet, less with Haiku for routing.
 
 ## Section 13 — Open Questions / Decisions Pending
 
-These need answers from Jannik before relevant phases:
+These need answers from the owner before relevant phases:
 
 1. **Atlassian site URLs** — needed for Phase 7 routing config. Defer until Phase 7.
 2. **GitHub org names** — needed for Phase 4 routing config. Defer until Phase 4.
 3. **Slack workspace IDs** — needed for Phase 9. Defer until Phase 9.
-4. **Sanlam Teams tenant policy** — does Entra allow app registration? Resolved or skipped at Phase 12.
+4. **the company Teams tenant policy** — does Entra allow app registration? Resolved or skipped at Phase 12.
 5. **LLM backend** — *Resolved (post-Phase 2):* use the Claude Code CLI
    (`claude -p`) so calls bill against Claude Max. No `ANTHROPIC_API_KEY` is
    needed. See §12.1.
@@ -1158,7 +1158,7 @@ These need answers from Jannik before relevant phases:
 
 The full system is "done" when:
 
-1. Jannik wakes up to a daily digest with no manual intervention required.
+1. the owner wakes up to a daily digest with no manual intervention required.
 2. All 4 contexts have meaningful activity flowing in from at least 3 sources each.
 3. Profile updates automatically without breaking Stable layer.
 4. Audit log shows zero failed events for 7 consecutive days.

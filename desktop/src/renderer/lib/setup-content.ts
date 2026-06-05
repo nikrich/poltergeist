@@ -37,7 +37,7 @@ export const RECIPES: ConnectorRecipe[] = [
       {
         text: 'Add this entry to ~/.claude/settings.json under "hooks":',
         command:
-          '"SessionEnd": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "/Users/jannik/development/nikrich/ghost-brain/orchestration/hooks/session-end.sh", "shell": "bash", "async": true }] }]',
+          '"SessionEnd": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "/Users/you/development/ghost-brain/orchestration/hooks/session-end.sh", "shell": "bash", "async": true }] }]',
       },
       {
         text:
@@ -89,13 +89,13 @@ export const RECIPES: ConnectorRecipe[] = [
       },
       {
         text:
-          'Add to ~/.ghostbrain/.env (or your shell env). <SITE> is the site slug uppercased — e.g. sft.atlassian.net → SFT.',
+          'Add to ~/.ghostbrain/.env (or your shell env). <SITE> is the site slug uppercased — e.g. yourco.atlassian.net → SFT.',
         command:
           'ATLASSIAN_EMAIL=your.email@example.com\nATLASSIAN_TOKEN_SFT=<api token>',
       },
       {
         text: 'Map your Jira site(s) to contexts in routing.yaml:',
-        command: 'jira:\n  sites:\n    sft.atlassian.net: sanlam',
+        command: 'jira:\n  sites:\n    yourco.atlassian.net: sanlam',
       },
       {
         text: 'Load the launchd schedule:',
@@ -121,7 +121,7 @@ export const RECIPES: ConnectorRecipe[] = [
       {
         text: 'Map them to contexts in routing.yaml:',
         command:
-          'confluence:\n  sites:\n    sft.atlassian.net: sanlam\n  spaces:\n    DIG: sanlam\n    ASCP: sanlam',
+          'confluence:\n  sites:\n    yourco.atlassian.net: sanlam\n  spaces:\n    DOCS: sanlam\n    PROJ: sanlam',
       },
       {
         text: 'Load the launchd schedule:',
@@ -177,7 +177,7 @@ export const RECIPES: ConnectorRecipe[] = [
       {
         text: 'Configure accounts + routing in routing.yaml:',
         command:
-          'gmail:\n  accounts:\n    you@gmail.com:\n      monitored_labels: ["sanlam/policies"]\n      unread_lookback_hours: 24\n  sender_domains:\n    sanlam.co.za: sanlam\n  label_prefixes:\n    "sanlam/": sanlam',
+          'gmail:\n  accounts:\n    you@gmail.com:\n      monitored_labels: ["work/important"]\n      unread_lookback_hours: 24\n  sender_domains:\n    company.example.com: sanlam\n  label_prefixes:\n    "sanlam/": sanlam',
       },
       {
         text: 'Run consent once per account:',
@@ -212,7 +212,7 @@ export const RECIPES: ConnectorRecipe[] = [
       {
         text: 'Configure the workspace in routing.yaml:',
         command:
-          'slack:\n  workspaces:\n    sft:\n      context: sanlam\n      lookback_hours: 24\n      mentions_only: true',
+          'slack:\n  workspaces:\n    work-workspace:\n      context: sanlam\n      lookback_hours: 24\n      mentions_only: true',
       },
     ],
     manualCommand: 'ghostbrain-slack-fetch --dry-run',

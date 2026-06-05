@@ -310,7 +310,7 @@ ATLASSIAN_EMAIL=your.email@example.com
 ATLASSIAN_TOKEN_<SITE>=<api token from id.atlassian.com>
 ```
 
-`<SITE>` is the site slug uppercased — e.g. `sft.atlassian.net` →
+`<SITE>` is the site slug uppercased — e.g. `yourco.atlassian.net` →
 `ATLASSIAN_TOKEN_SFT`. A single shared `ATLASSIAN_TOKEN` works as a
 fallback if you only have one site.
 
@@ -319,13 +319,13 @@ Configure sites + spaces in `<vault>/90-meta/routing.yaml`:
 ```yaml
 jira:
   sites:
-    sft.atlassian.net: sanlam      # site → context
+    yourco.atlassian.net: sanlam      # site → context
 confluence:
   sites:
-    sft.atlassian.net: sanlam
+    yourco.atlassian.net: sanlam
   spaces:
-    DIG: sanlam                    # space key → context
-    ASCP: sanlam
+    DOCS: sanlam                    # space key → context
+    PROJ: sanlam
 ```
 
 Find space keys in any Confluence page URL: `.../wiki/spaces/<KEY>/...`.
@@ -427,11 +427,11 @@ Cloud project + OAuth consent screen + Desktop OAuth client at
    gmail:
      accounts:
        you@gmail.com:
-         monitored_labels: ["sanlam/policies", "codeship/internal"]
+         monitored_labels: ["work/important", "codeship/internal"]
          unread_lookback_hours: 24
      sender_domains:
-       sanlam.co.za: sanlam
-       codeship.tech: codeship
+       company.example.com: sanlam
+       a consultancy: codeship
      label_prefixes:
        "sanlam/": sanlam
        "codeship/": codeship
@@ -454,8 +454,8 @@ Threads land in `<vault>/00-inbox/raw/gmail/` and route to
 ### Filtering philosophy
 
 Gmail is noisy, so the connector deliberately doesn't pull "all mail":
-- Domain-routed mail (e.g., `@sanlam.co.za`) lands no matter what.
-- Labeled mail (e.g., `sanlam/policies`) lands no matter what.
+- Domain-routed mail (e.g., `@company.example.com`) lands no matter what.
+- Labeled mail (e.g., `work/important`) lands no matter what.
 - Everything else only shows up while it's still **unread** within the
   configured lookback window — once you've read a newsletter, it stops
   appearing in future fetches.
@@ -467,7 +467,7 @@ label rule rather than widening the unread filter.
 
 Polls one or more Slack workspaces for `@`-mentions of the
 authenticated user over the last 24h. Only mentions — no raw channel
-volume. Each mention routes via workspace slug (e.g., `sft → sanlam`)
+volume. Each mention routes via workspace slug (e.g., `work → sanlam`)
 without an LLM call.
 
 ### One-time setup per workspace
@@ -495,7 +495,7 @@ without an LLM call.
    ```yaml
    slack:
      workspaces:
-       sft:
+       work-workspace:
          context: sanlam
          lookback_hours: 24
          mentions_only: true
