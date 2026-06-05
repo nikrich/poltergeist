@@ -182,16 +182,11 @@ Your entire response must be a single JSON object exactly matching:
 You are gating which emails enter a personal knowledge system for a
 software engineer working across these contexts:
 
-- **sanlam** — Sanlam Digital (financial services, ASCP, claims, RBAC,
-  policy admin, funeral product, Confluence specs, Jira tickets,
-  capstone team, regulatory work).
-- **codeship** — codeship.tech client services and Codeship's own
-  product work (multiple clients, AI infra, contract delivery).
-- **reducedrecipes** — ReducedRecipes app/site (recipes, social
-  publishing, Cloudflare).
-- **personal** — personal projects (HungryGhost, Slenderware,
-  IndieGlue, Greenlight, hobby code, real-life logistics that need
-  follow-up).
+- **sanlam** — the user's primary employer / day-job work.
+- **codeship** — consulting and product work for clients.
+- **reducedrecipes** — a personal side-project app/site.
+- **personal** — personal projects, hobby code, and real-life logistics
+  that need follow-up.
 
 Mark `relevant: true` ONLY when the thread is plausibly worth surfacing
 in a daily digest of work + life follow-ups.
@@ -226,9 +221,8 @@ RESPOND WITH JSON ONLY. NO PROSE. NO MARKDOWN FENCES. NO PREAMBLE.
 Your entire response must be a single JSON object exactly matching:
 `{"relevant": true|false, "reason": "<one short sentence>"}`
 
-You are gating which work emails from the Sanlam Microsoft 365 tenant enter a
-software engineer's personal knowledge system. The user works on Sanlam Digital
-(ASCP, claims, policy admin, RBAC, capstone team, regulatory work).
+You are gating which work emails from the user's Microsoft 365 tenant enter
+their personal knowledge system.
 
 Mark `relevant: true` ONLY when the email is plausibly worth surfacing in a
 daily digest of work follow-ups: direct questions, decisions, action items,
@@ -257,8 +251,8 @@ RESPOND WITH JSON ONLY. NO PROSE. NO MARKDOWN FENCES. NO PREAMBLE.
 Your entire response must be a single JSON object exactly matching:
 `{"relevant": true|false, "reason": "<one short sentence>"}`
 
-You are gating which Teams chat messages from the Sanlam Microsoft 365 tenant
-enter a software engineer's personal knowledge system.
+You are gating which Teams chat messages from the user's Microsoft 365 tenant
+enter their personal knowledge system.
 
 Mark `relevant: true` ONLY when the message carries durable signal worth a daily
 digest: a decision, a request/action item directed at the user, a question
@@ -621,8 +615,8 @@ version: 1
 # GitHub orgs → context. Phase 4.
 github:
   orgs:
-    # TODO: "sanlam-org": sanlam
-    # TODO: "codeship-tech": codeship
+    # TODO: "your-org": sanlam
+    # TODO: "your-org": codeship
     # TODO: "reducedrecipes": reducedrecipes
     {}
 
@@ -641,7 +635,7 @@ confluence:
     # TODO: "your-site.atlassian.net": your-context
     {}
   spaces:
-    # TODO: e.g. "ASCP": sanlam
+    # TODO: e.g. "PROJ": sanlam
     {}
 
 # Slack workspaces → context. The connector polls each workspace for
@@ -653,7 +647,7 @@ confluence:
 slack:
   workspaces:
     # Example:
-    #   sft:
+    #   your-workspace:
     #     context: sanlam
     #     lookback_hours: 24
     #     mentions_only: true
@@ -673,8 +667,8 @@ gmail:
     # TODO: add Gmail accounts you want to ingest. Run
     # `ghostbrain-gmail-auth <email>` once per account to authorize.
     # Example:
-    #   jannik@example.com:
-    #     monitored_labels: ["sanlam/policies", "codeship"]
+    #   you@example.com:
+    #     monitored_labels: ["work/important", "personal"]
     #     unread_lookback_hours: 24
     {}
   # Drop these senders entirely before they reach the LLM gate.
@@ -684,10 +678,10 @@ gmail:
   # denylist still applies.
   relevance_gate: true
   label_prefixes:
-    # "sanlam/": sanlam
+    # "work/": sanlam
     {}
   sender_domains:
-    # "sanlam.co.za": sanlam
+    # "company.example.com": sanlam
     {}
 
 # Joplin notebooks → context. The connector polls the Joplin Data API
@@ -703,7 +697,7 @@ joplin:
   # host: "http://localhost:41184"  # uncomment if you moved the port
   notebooks:
     # Example:
-    #   Sanlam: sanlam
+    #   Work: sanlam
     #   Codeship: codeship
     #   Personal: personal
     {}
@@ -722,9 +716,9 @@ claude_code:
   project_paths:
     # TODO: adjust these to your actual development tree.
     # Examples:
-    # "~/development/sft-capstone-hive": sanlam
-    # "~/development/sanlam-digisure": sanlam
-    # "~/development/nikrich": codeship
+    # "~/development/work-monorepo": sanlam
+    # "~/development/work-repo": sanlam
+    # "~/development/consulting": codeship
     # "~/development/reducedrecipes": reducedrecipes
     {}
 
@@ -791,13 +785,13 @@ profile:
 inverse_search:
   watched_names: {}
   # Example:
-  #   jannik811:
-  #     - jannik
-  #     - jannik richter
-  #     - jr
+  #   your-handle:
+  #     - firstname
+  #     - firstname lastname
+  #     - initials
   expected_contexts: {}
   # Example:
-  #   jannik811: [sanlam, codeship, personal]
+  #   your-handle: [sanlam, codeship, personal]
   lookback_days: 7
 
 # Autonomous meeting recorder (Phase 12). Watches Apple Calendar, records

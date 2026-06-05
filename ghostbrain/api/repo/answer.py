@@ -36,7 +36,7 @@ PER_NOTE_CHAR_CAP = 16000
 TRANSCRIPT_CHAR_CAP = 48000
 DEFAULT_MODEL = "sonnet"
 PROMPT_TEMPLATE = """You are answering a question using ONLY the user's own vault notes below.
-The user is a software engineer working across four contexts: sanlam (Sanlam Digital), codeship (codeship.tech client + product), reducedrecipes, and personal projects.
+The user is a software engineer working across four contexts: sanlam (day-job/employer), codeship (consulting + product), reducedrecipes (side project), and personal projects.
 
 Question: {question}
 

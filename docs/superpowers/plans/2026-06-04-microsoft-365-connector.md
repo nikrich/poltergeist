@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ingest Outlook mail, Teams chat messages, and Teams meeting transcripts from the Sanlam work Microsoft 365 tenant into Poltergeist's event queue as three sibling connectors sharing one Microsoft Graph device-code auth core.
+**Goal:** Ingest Outlook mail, Teams chat messages, and Teams meeting transcripts from the work Microsoft 365 tenant into Poltergeist's event queue as three sibling connectors sharing one Microsoft Graph device-code auth core.
 
 **Architecture:** A new `ghostbrain/connectors/microsoft/` family. A shared `graph/` sub-package holds MSAL device-code auth (keychain-cached) and a thin Graph HTTP client. Three connectors (`outlook_mail`, `teams_chat`, `teams_meetings`) each subclass the existing `Connector` base, with their own routing key, schedule cadence, and `.last_run` dedup. Mail and chat run a shared LLM relevance gate; transcripts are pulled deliberately via calendar walk and are not gated.
 
@@ -163,7 +163,7 @@ def test_get_token_returns_cached_token_silently(monkeypatch, tmp_path) -> None:
     from ghostbrain.connectors.microsoft.graph import auth
 
     fake_app = MagicMock()
-    fake_app.get_accounts.return_value = [{"username": "me@sanlam.com"}]
+    fake_app.get_accounts.return_value = [{"username": "me@example.com"}]
     fake_app.acquire_token_silent.return_value = {"access_token": "tok-123"}
     with patch.object(auth, "_build_app", return_value=fake_app):
         assert auth.get_token({}) == "tok-123"
@@ -197,7 +197,7 @@ from pathlib import Path
 
 log = logging.getLogger("ghostbrain.connectors.microsoft.auth")
 
-# Defaults from the working pull_transcript.py prototype (Sanlam tenant).
+# Defaults from the working pull_transcript.py prototype (work tenant).
 # Overridable via routing.yaml:microsoft.client_id / .tenant_id.
 DEFAULT_CLIENT_ID = "<entra-client-id>"
 DEFAULT_TENANT_ID = "<entra-tenant-id>"
@@ -1112,37 +1112,37 @@ def _msg(mid, sender, subject="Hi", read=False):
         "receivedDateTime": "2026-06-04T09:00:00Z",
         "bodyPreview": "preview text",
         "from": {"emailAddress": {"address": sender, "name": "Someone"}},
-        "toRecipients": [{"emailAddress": {"address": "me@sanlam.com"}}],
+        "toRecipients": [{"emailAddress": {"address": "me@example.com"}}],
         "webLink": "https://outlook/x",
     }
 
 
 def test_normalize_message_shape(tmp_path) -> None:
     from ghostbrain.connectors.microsoft.outlook_mail.connector import _normalize_message
-    ev = _normalize_message(_msg("a1", "boss@sanlam.com"), body_cap=4000)
+    ev = _normalize_message(_msg("a1", "boss@example.com"), body_cap=4000)
     assert ev["id"] == "microsoft:mail:a1"
     assert ev["source"] == "outlook_mail"
     assert ev["type"] == "email"
-    assert ev["metadata"]["from_domain"] == "sanlam.com"
-    assert ev["actorId"] == "microsoft:boss@sanlam.com"
+    assert ev["metadata"]["from_domain"] == "example.com"
+    assert ev["actorId"] == "microsoft:boss@example.com"
 
 
 def test_fetch_applies_denylist(tmp_path) -> None:
     client = MagicMock()
     client.get_all.return_value = [
-        _msg("a", "ok@sanlam.com"),
+        _msg("a", "ok@example.com"),
         _msg("b", "spam@noisy.com"),
     ]
     conn = _conn(tmp_path, client, denylist=["noisy.com"])
     events = conn.fetch(datetime(2026, 6, 3, tzinfo=timezone.utc))
-    assert [e["metadata"]["from_address"] for e in events] == ["ok@sanlam.com"]
+    assert [e["metadata"]["from_address"] for e in events] == ["ok@example.com"]
 
 
 def test_fetch_applies_relevance_gate(tmp_path) -> None:
     client = MagicMock()
     client.get_all.return_value = [
-        _msg("a", "boss@sanlam.com", subject="Project update"),
-        _msg("b", "newsletter@sanlam.com", subject="Weekly digest"),
+        _msg("a", "boss@example.com", subject="Project update"),
+        _msg("b", "newsletter@example.com", subject="Weekly digest"),
     ]
 
     def gate(ev):
@@ -1841,9 +1841,9 @@ RESPOND WITH JSON ONLY. NO PROSE. NO MARKDOWN FENCES. NO PREAMBLE.
 Your entire response must be a single JSON object exactly matching:
 `{"relevant": true|false, "reason": "<one short sentence>"}`
 
-You are gating which work emails from the Sanlam Microsoft 365 tenant enter a
-software engineer's personal knowledge system. The user works on Sanlam Digital
-(ASCP, claims, policy admin, RBAC, capstone team, regulatory work).
+You are gating which work emails from the work Microsoft 365 tenant enter a
+software engineer's personal knowledge system. The user works on their employer's projects
+(their work areas).
 
 Mark `relevant: true` ONLY when the email is plausibly worth surfacing in a
 daily digest of work follow-ups: direct questions, decisions, action items,
@@ -1872,7 +1872,7 @@ RESPOND WITH JSON ONLY. NO PROSE. NO MARKDOWN FENCES. NO PREAMBLE.
 Your entire response must be a single JSON object exactly matching:
 `{"relevant": true|false, "reason": "<one short sentence>"}`
 
-You are gating which Teams chat messages from the Sanlam Microsoft 365 tenant
+You are gating which Teams chat messages from the work Microsoft 365 tenant
 enter a software engineer's personal knowledge system.
 
 Mark `relevant: true` ONLY when the message carries durable signal worth a daily
@@ -1907,7 +1907,7 @@ Find the routing.yaml content in the bootstrap files dict (the entry whose value
 
 ```yaml
 microsoft:
-  # client_id / tenant_id default to the registered Sanlam Entra app; override here if needed.
+  # client_id / tenant_id default to the registered Entra app; override here if needed.
   outlook_mail:
     unread_lookback_hours: 24
     denylist_domains: []
@@ -1993,7 +1993,7 @@ git commit -m "test(microsoft): verify connector suite and manual smoke"
 
 ---
 
-## ⚠️ Prerequisite before Task 11 Steps 3–4 (you / Sanlam tenant admin, outside the code)
+## ⚠️ Prerequisite before Task 11 Steps 3–4 (you / tenant admin, outside the code)
 
 The prototype's Entra app (the prototype app) only has `OnlineMeetings.Read` + `OnlineMeetingTranscript.Read.All`. Before mail/chat fetch works, the app registration needs, as **delegated** permissions:
 - `Mail.Read`

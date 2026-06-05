@@ -15,7 +15,7 @@ proved Graph delegated auth + keychain token caching + transcript fetch. The
 prototype's auth and `resolve_meeting`/transcript logic carry over largely
 intact; mail and chat are new.
 
-The Microsoft tenant here is the **Sanlam work tenant** (Entra app
+The Microsoft tenant here is the **work tenant** (Entra app
 `<entra-client-id>`, tenant
 `<entra-tenant-id>`). This is distinct from the existing
 Gmail connector, which targets the user's **personal Google** account.
@@ -223,7 +223,7 @@ The prototype's Entra app only has `OnlineMeetings.Read` +
 `OnlineMeetingTranscript.Read.All`. Before mail/chat work, the app registration
 needs, as **delegated** permissions, `Mail.Read`, `Chat.Read`,
 `Calendars.Read` added, "Allow public client flows" enabled, and **admin
-consent** re-granted on the Sanlam tenant.
+consent** re-granted on the work tenant.
 
 ## Out of scope (YAGNI)
 

@@ -71,7 +71,7 @@ def test_get_token_returns_cached_token_silently(monkeypatch, tmp_path) -> None:
     from ghostbrain.connectors.microsoft.graph import auth
 
     fake_app = MagicMock()
-    fake_app.get_accounts.return_value = [{"username": "me@sanlam.com"}]
+    fake_app.get_accounts.return_value = [{"username": "me@example.com"}]
     fake_app.acquire_token_silent.return_value = {"access_token": "tok-123"}
     with patch.object(auth, "_build_app", return_value=fake_app):
         assert auth.get_token({}) == "tok-123"

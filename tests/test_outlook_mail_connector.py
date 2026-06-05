@@ -32,37 +32,37 @@ def _msg(mid, sender, subject="Hi", read=False):
         "receivedDateTime": "2026-06-04T09:00:00Z",
         "bodyPreview": "preview text",
         "from": {"emailAddress": {"address": sender, "name": "Someone"}},
-        "toRecipients": [{"emailAddress": {"address": "me@sanlam.com"}}],
+        "toRecipients": [{"emailAddress": {"address": "me@example.com"}}],
         "webLink": "https://outlook/x",
     }
 
 
 def test_normalize_message_shape(tmp_path) -> None:
     from ghostbrain.connectors.microsoft.outlook_mail.connector import _normalize_message
-    ev = _normalize_message(_msg("a1", "boss@sanlam.com"), body_cap=4000)
+    ev = _normalize_message(_msg("a1", "boss@example.com"), body_cap=4000)
     assert ev["id"] == "microsoft:mail:a1"
     assert ev["source"] == "outlook_mail"
     assert ev["type"] == "email"
-    assert ev["metadata"]["from_domain"] == "sanlam.com"
-    assert ev["actorId"] == "microsoft:boss@sanlam.com"
+    assert ev["metadata"]["from_domain"] == "example.com"
+    assert ev["actorId"] == "microsoft:boss@example.com"
 
 
 def test_fetch_applies_denylist(tmp_path) -> None:
     client = MagicMock()
     client.get_all.return_value = [
-        _msg("a", "ok@sanlam.com"),
+        _msg("a", "ok@example.com"),
         _msg("b", "spam@noisy.com"),
     ]
     conn = _conn(tmp_path, client, denylist=["noisy.com"])
     events = conn.fetch(datetime(2026, 6, 3, tzinfo=timezone.utc))
-    assert [e["metadata"]["from_address"] for e in events] == ["ok@sanlam.com"]
+    assert [e["metadata"]["from_address"] for e in events] == ["ok@example.com"]
 
 
 def test_fetch_applies_relevance_gate(tmp_path) -> None:
     client = MagicMock()
     client.get_all.return_value = [
-        _msg("a", "boss@sanlam.com", subject="Project update"),
-        _msg("b", "newsletter@sanlam.com", subject="Weekly digest"),
+        _msg("a", "boss@example.com", subject="Project update"),
+        _msg("b", "newsletter@example.com", subject="Weekly digest"),
     ]
 
     def gate(ev):
