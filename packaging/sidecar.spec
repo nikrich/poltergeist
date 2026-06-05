@@ -52,6 +52,11 @@ hiddenimports += collect_submodules('sklearn')
 # Connector deps — pulled in conditionally by routes but worth including so the
 # packaged sidecar matches dev behavior.
 hiddenimports += collect_submodules('slack_sdk')
+# Microsoft Graph connectors: msal / msal-extensions are imported lazily inside
+# auth.py, and msal-extensions loads platform-specific keychain backends
+# dynamically — collect the full trees so device-code auth works when frozen.
+hiddenimports += collect_submodules('msal')
+hiddenimports += collect_submodules('msal_extensions')
 hiddenimports += ['frontmatter', 'yaml', 'markdownify', 'dotenv', 'jinja2', 'requests']
 # jaraco.context (pulled in by pkg_resources at runtime hook time) imports
 # backports.tarfile dynamically, which PyInstaller's analyzer misses.
