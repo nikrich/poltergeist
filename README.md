@@ -24,12 +24,52 @@ with an LLM, and serves it back as a daily digest.
 > use the legacy `ghostbrain` namespace (e.g. `ghostbrain-worker`,
 > `~/ghostbrain/vault/`). The product itself is Poltergeist.
 
-> **Status: alpha.** Phases 1–7 + 11 (Calendar) of the
-> [build sequence](./spec/SPEC.md#section-9--build-sequence-phased) are
-> complete: foundation, profile, Claude Code capture, GitHub, daily
-> digest, profile auto-update, Jira + Confluence, Google Calendar.
-> Slack, Gmail, Teams, metrics are next. The system is designed to be
-> incrementally adopted phase by phase.
+> **Status: alpha.** Connectors available today: Claude Code, GitHub, Jira,
+> Confluence, Google + macOS Calendar, Gmail, Slack, Joplin, and Microsoft 365
+> (Outlook mail, Teams chat, Teams meeting transcripts), plus daily/weekly
+> digests and profile auto-update. The meeting recorder and richer metrics are
+> the main work still in progress. The system is designed to be incrementally
+> adopted — wire up only the connectors you want.
+
+## Quick start
+
+Get a connector flowing in ~5 minutes. Full per-connector prerequisites are in [Setup](#setup) below; for an agent-guided walkthrough of any connector, use the **`onboarding-poltergeist`** skill in `.claude/skills/`.
+
+```bash
+# 1. Install
+git clone <repo-url> ghost-brain && cd ghost-brain
+python3.11 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+
+# 2. Bootstrap the vault (idempotent) — creates ~/ghostbrain/vault/
+ghostbrain-bootstrap
+export VAULT_PATH="$HOME/ghostbrain/vault"
+```
+
+Then connect a source. **Every connector is the same shape:** create a credential → authenticate → add its block to `<vault>/90-meta/routing.yaml` → fetch. GitHub is the quickest first one (it just reuses your `gh` login):
+
+```bash
+gh auth login                                   # if not already logged in
+# add to <vault>/90-meta/routing.yaml:
+#   github:
+#     orgs: { your-org: personal }
+ghostbrain-github-fetch --dry-run               # preview — queues nothing
+ghostbrain-github-fetch                         # queue events
+ghostbrain-worker                               # turn queued events into vault notes
+```
+
+| Connector | Authenticate | Create first |
+|---|---|---|
+| GitHub | uses `gh` | `gh auth login` |
+| Gmail | `ghostbrain-gmail-auth <email>` | Google Desktop OAuth client JSON |
+| Calendar (Google) | `ghostbrain-calendar-auth google <email>` | same Google OAuth client |
+| Slack | `ghostbrain-slack-token-add <slug> <xoxp>` | Slack app + user token (`xoxp-…`) |
+| Jira / Confluence | env `ATLASSIAN_EMAIL` + `ATLASSIAN_TOKEN` | Atlassian API token |
+| Joplin | token in `routing.yaml` | Joplin Web Clipper token |
+| Microsoft (Outlook / Teams) | `ghostbrain-microsoft-auth` | Entra app (client id + tenant id) |
+| Claude Code | SessionEnd hook | — |
+
+> **The desktop app's "connect" buttons are placeholders** — connectors are wired up from the CLI + `routing.yaml`, as above. Detailed prerequisites, OAuth scopes, and per-connector config live in [Setup](#setup) and the connector sections further down.
 
 ## Why
 
