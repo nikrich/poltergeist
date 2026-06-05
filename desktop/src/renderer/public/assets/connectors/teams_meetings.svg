@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <rect x="20" y="44" width="168" height="168" rx="30" fill="#5059C9"/>
+  <rect x="52" y="86" width="104" height="20" rx="7" fill="#fff"/>
+  <text x="104" y="186" font-family="Arial, Helvetica, sans-serif" font-size="104" font-weight="700" fill="#fff" text-anchor="middle">T</text>
+  <circle cx="198" cy="88" r="46" fill="#7B83EB"/>
+  <rect x="170" y="72" width="40" height="32" rx="7" fill="#fff"/>
+  <path d="M214 80 L232 70 L232 106 L214 96 Z" fill="#fff"/>
+</svg>

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <rect x="92" y="60" width="148" height="136" rx="14" fill="#fff" stroke="#0F6CBD" stroke-width="12"/>
+  <path d="M104 84 L166 134 L228 84" fill="none" stroke="#0F6CBD" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="8" y="52" width="128" height="152" rx="22" fill="#0F6CBD"/>
+  <text x="72" y="158" font-family="Arial, Helvetica, sans-serif" font-size="118" font-weight="700" fill="#fff" text-anchor="middle">O</text>
+</svg>
