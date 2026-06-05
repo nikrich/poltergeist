@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import uuid
@@ -48,7 +49,7 @@ class Connector(ABC):
         timestamp = event.get("timestamp") or _utcnow_iso()
         # Slugify so the filename is safe (event ids may contain `:`, `/`,
         # `#`, etc. — common in github:pr:owner/repo#42 style ids).
-        filename = f"{_safe(timestamp)}-{self.name}-{_safe(event_id)}.json"
+        filename = _queue_filename(_safe(timestamp), self.name, event_id)
         path = self.queue_dir / "pending" / filename
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(event, indent=2))
@@ -78,3 +79,27 @@ _FILENAME_UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
 def _safe(value: str) -> str:
     """Make `value` filesystem-safe. Collapses runs of unsafe chars into '-'."""
     return _FILENAME_UNSAFE.sub("-", value).strip("-")
+
+
+# Most filesystems cap a single path component at 255 bytes. Keep a margin
+# below that for the `.json` suffix and any callers that prefix the name.
+_MAX_STEM_LEN = 200
+
+
+def _queue_filename(safe_ts: str, name: str, event_id: str) -> str:
+    """Build a `<timestamp>-<connector>-<id>.json` queue filename, bounded to a
+    filesystem-safe length.
+
+    Some sources mint very long ids — e.g. a Teams meeting transcript id is a
+    300+ char base64 blob — which would overflow the 255-byte name limit. When
+    the slugified id is too long we keep a readable prefix and append a short
+    stable hash of the full id, preserving determinism (a given event always
+    maps to the same filename, so re-enqueue stays idempotent)."""
+    safe_id = _safe(event_id)
+    stem = f"{safe_ts}-{name}-{safe_id}"
+    if len(stem) <= _MAX_STEM_LEN:
+        return f"{stem}.json"
+    digest = hashlib.sha1(event_id.encode("utf-8")).hexdigest()[:16]
+    prefix = f"{safe_ts}-{name}-"
+    keep = max(0, _MAX_STEM_LEN - len(prefix) - len(digest) - 1)
+    return f"{prefix}{safe_id[:keep]}-{digest}.json"

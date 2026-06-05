@@ -12,7 +12,12 @@ def _build(routing: dict, queue_dir: Path, state_dir: Path):
     cfg = ms.get("teams_meetings")
     if cfg is None:
         return None
-    cfg = {**cfg, "client_id": ms.get("client_id"), "tenant_id": ms.get("tenant_id")}
+    cfg = {
+        **cfg,
+        "client_id": ms.get("client_id"),
+        "tenant_id": ms.get("tenant_id"),
+        "scopes": ms.get("scopes"),
+    }
     return TeamsMeetingsConnector(config=cfg, queue_dir=queue_dir, state_dir=state_dir)
 
 

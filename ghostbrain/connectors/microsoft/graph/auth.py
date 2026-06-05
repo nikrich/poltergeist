@@ -76,6 +76,18 @@ def resolve_app_config(config: dict) -> tuple[str, str]:
     return client_id, tenant_id
 
 
+def resolve_scopes(config: dict) -> list[str]:
+    """Delegated Graph scopes to request. Defaults to the full union, but can
+    be narrowed via ``microsoft.scopes`` — useful when only some scopes have
+    tenant consent (e.g. transcripts-only until mail/chat are approved).
+    Token cache lookups must use the same scope set that was consented, so
+    both sign-in and silent refresh read this."""
+    scopes = (config or {}).get("scopes")
+    if scopes:
+        return [str(s) for s in scopes]
+    return list(SCOPES)
+
+
 def _build_token_cache():
     """OS-secure persistent token cache, with a chmod-600 plaintext
     fallback that warns (never a silent downgrade)."""
@@ -117,7 +129,7 @@ def get_token(config: dict) -> str:
         raise MicrosoftAuthError(
             "No cached Microsoft sign-in. Run: ghostbrain-microsoft-auth"
         )
-    result = app.acquire_token_silent(SCOPES, account=accounts[0])
+    result = app.acquire_token_silent(resolve_scopes(config), account=accounts[0])
     if not result or "access_token" not in result:
         raise MicrosoftAuthError(
             "Cached Microsoft sign-in could not be refreshed. "
@@ -139,7 +151,7 @@ def run_device_flow(config: dict) -> str:
     """Interactive one-time device-code sign-in. Returns the signed-in
     username. Called only from auth_cli.py."""
     app = _build_app(config)
-    flow = app.initiate_device_flow(scopes=SCOPES)
+    flow = app.initiate_device_flow(scopes=resolve_scopes(config))
     if "user_code" not in flow:
         raise MicrosoftAuthError(f"Could not start device flow: {flow}")
     print(flow["message"])

@@ -36,6 +36,17 @@ def test_resolve_app_config_prefers_routing_over_default() -> None:
     assert tid == "tid-override"
 
 
+def test_resolve_scopes_defaults_to_full_union() -> None:
+    from ghostbrain.connectors.microsoft.graph import auth
+    assert auth.resolve_scopes({}) == list(auth.SCOPES)
+
+
+def test_resolve_scopes_honors_config_override() -> None:
+    from ghostbrain.connectors.microsoft.graph import auth
+    narrow = ["OnlineMeetings.Read", "OnlineMeetingTranscript.Read.All"]
+    assert auth.resolve_scopes({"scopes": narrow}) == narrow
+
+
 def test_resolve_app_config_raises_when_unconfigured(monkeypatch) -> None:
     monkeypatch.delenv("MS_GRAPH_CLIENT_ID", raising=False)
     monkeypatch.delenv("MS_GRAPH_TENANT_ID", raising=False)
