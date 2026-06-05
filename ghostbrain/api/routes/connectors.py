@@ -13,7 +13,10 @@ router = APIRouter(prefix="/v1/connectors", tags=["connectors"])
 
 # Mirror of the scheduler's job registry. Kept here so the sync endpoints can
 # 404 unknown connector ids without touching the (maybe-not-running) scheduler.
-SYNCABLE = {"github", "gmail", "slack", "calendar", "jira", "confluence"}
+SYNCABLE = {
+    "github", "gmail", "slack", "calendar", "jira", "confluence",
+    "outlook_mail", "teams_chat", "teams_meetings",
+}
 
 
 @router.get("", response_model=list[Connector])

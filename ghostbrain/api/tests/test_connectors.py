@@ -18,6 +18,21 @@ def test_empty_connectors_list(client: TestClient, auth_headers: dict[str, str])
         assert {"id", "displayName", "state", "count", "lastSyncAt", "account", "throughput", "error"}.issubset(item.keys())
 
 
+def test_microsoft_connectors_are_listed(client: TestClient, auth_headers: dict[str, str]):
+    """The Outlook/Teams connectors must surface in the desktop list."""
+    data = client.get("/v1/connectors", headers=auth_headers).json()
+    by_id = {c["id"]: c for c in data}
+    assert {"outlook_mail", "teams_chat", "teams_meetings"}.issubset(by_id)
+    assert by_id["outlook_mail"]["displayName"] == "Outlook Mail"
+    assert by_id["teams_chat"]["displayName"] == "Teams Chat"
+    assert by_id["teams_meetings"]["displayName"] == "Teams Meetings"
+
+
+def test_microsoft_connectors_are_syncable():
+    from ghostbrain.api.routes.connectors import SYNCABLE
+    assert {"outlook_mail", "teams_chat", "teams_meetings"}.issubset(SYNCABLE)
+
+
 def test_connector_state_off_when_no_state_file(
     client: TestClient, auth_headers: dict[str, str], tmp_state_dir: Path
 ):

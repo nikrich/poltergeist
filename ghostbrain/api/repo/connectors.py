@@ -56,6 +56,24 @@ _DISPLAY: dict[str, dict] = {
         "pulls": ["threads", "attachments"],
         "vaultDestination": "20-contexts/{ctx}/gmail/",
     },
+    "outlook_mail": {
+        "displayName": "Outlook Mail",
+        "scopes": ["Mail.Read"],
+        "pulls": ["emails"],
+        "vaultDestination": "20-contexts/{ctx}/outlook_mail/",
+    },
+    "teams_chat": {
+        "displayName": "Teams Chat",
+        "scopes": ["Chat.Read"],
+        "pulls": ["messages"],
+        "vaultDestination": "20-contexts/{ctx}/teams_chat/",
+    },
+    "teams_meetings": {
+        "displayName": "Teams Meetings",
+        "scopes": ["OnlineMeetingTranscript.Read.All"],
+        "pulls": ["transcripts"],
+        "vaultDestination": "20-contexts/{ctx}/teams_meetings/",
+    },
 }
 
 # Connector id → state-file key. Most connectors use their id; one exception:

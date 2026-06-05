@@ -17,7 +17,10 @@ router = APIRouter(prefix="/v1/scheduler", tags=["scheduler"])
 
 # Mirror the runner registry so /v1/connectors/:id/sync knows what's valid
 # without reaching into the scheduler instance.
-KNOWN_CONNECTORS = ("github", "gmail", "slack", "calendar", "jira", "confluence")
+KNOWN_CONNECTORS = (
+    "github", "gmail", "slack", "calendar", "jira", "confluence",
+    "outlook_mail", "teams_chat", "teams_meetings",
+)
 
 
 def _scheduler(request: Request) -> Scheduler | None:
