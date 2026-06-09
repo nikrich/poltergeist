@@ -7,7 +7,7 @@ import type { Settings } from '../shared/types';
 import { loadInitialState, attachStatePersistence } from './window-state';
 import { buildAppMenu } from './menu';
 import { Sidecar } from './sidecar';
-import { forward } from './api-forwarder';
+import { forward, isAllowedMethod } from './api-forwarder';
 import { installTray, type TrayController } from './tray';
 import {
   installMeetingNotifier,
@@ -229,7 +229,7 @@ ipcMain.handle(
       return { ok: false, error: 'Invalid request shape' };
     }
     const m = method.toUpperCase();
-    if (m !== 'GET' && m !== 'POST') {
+    if (!isAllowedMethod(m)) {
       return { ok: false, error: 'Method not allowed' };
     }
     if (!path.startsWith('/v1/')) {

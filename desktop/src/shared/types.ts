@@ -1,3 +1,5 @@
+export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
+
 export type Theme = 'dark' | 'light';
 export type Density = 'comfortable' | 'compact';
 export type LlmProvider = 'local' | 'anthropic' | 'openai';
@@ -48,7 +50,7 @@ export interface GbBridge {
   platform: NodeJS.Platform;
   api: {
     request<T = unknown>(
-      method: 'GET' | 'POST',
+      method: HttpMethod,
       path: string,
       body?: unknown,
     ): Promise<
