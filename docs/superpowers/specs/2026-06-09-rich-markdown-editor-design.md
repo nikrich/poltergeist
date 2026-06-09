@@ -90,3 +90,8 @@ PATCH /v1/notes/body   { path: string, body: string }
 None blocking. Implementation plan should confirm:
 1. Whether `tiptap-markdown` preserves task-list checkbox state round-trip; if not, add a small serialiser patch.
 2. Bundle-size impact of TipTap in the renderer (lazy-load the editor chunk if it is heavy).
+
+## Implementation status
+
+- 2026-06-09: Backend E2E pass (live sidecar, real vault, scratch note) — PATCH /v1/notes/body preserved frontmatter (id/source/tags), bumped `updated`, kept task-list + wikilink markdown intact; traversal 400; unknown 404. Full gates: 104 pytest, 72 vitest (incl. 12 round-trip fixtures), typecheck clean, production build emits index+overlay (renderer chunk ~4 MB with TipTap — acceptable, lazy-load not needed). In-app WYSIWYG/copy-paste verification pending human hands.
+- Known follow-up: wikilink click-to-navigate in NoteView lost with MarkdownBody removal (wikilinks render literally but survive saves); needs a custom TipTap node if wanted.
