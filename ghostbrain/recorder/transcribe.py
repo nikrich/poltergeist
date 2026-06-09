@@ -84,10 +84,16 @@ def _whisper_cmd(
 ) -> list[str]:
     """Build the whisper-cli command line.
 
-    `-nc` (no-context) is critical: without it, whisper feeds each segment's
-    decoded text into the next segment as a prompt. That carry-over is the
-    root cause of "Okay. Okay. Okay." loops in the saved transcript when
-    the model briefly stalls on ambiguous audio.
+    `-mc 0` (max-context = 0) is critical: without it, whisper carries each
+    segment's decoded text into the next segment as a prompt. That carry-over
+    is the root cause of "Okay. Okay. Okay." loops in the saved transcript
+    when the model briefly stalls on ambiguous audio.
+
+    NOTE: older whisper.cpp spelled this `-nc`/`--no-context`. Current
+    whisper-cli builds (e.g. Homebrew `whisper-cpp`) dropped that flag — an
+    unknown flag makes whisper-cli print its help and exit 0 WITHOUT
+    transcribing, which surfaces downstream as a misleading "ran but no .txt".
+    `-mc 0` is the supported equivalent.
     """
     cmd = [
         binary,
@@ -96,7 +102,7 @@ def _whisper_cmd(
         "-otxt",
         "-of", str(output_base),
         "-l", "en",
-        "-nc",
+        "-mc", "0",
     ]
     if threads:
         cmd.extend(["-t", str(threads)])
@@ -210,6 +216,18 @@ def _resolve_model(model_path: Path | None) -> Path:
     default = DEFAULT_MODEL_DIR / DEFAULT_MODEL
     if default.exists():
         return default
+    # Fall back to ANY ggml-*.bin in the model dir, matching the glob this
+    # function's error message has always advertised. Without this, the daemon
+    # only ever found the one hard-coded DEFAULT_MODEL name — so a perfectly
+    # valid `ggml-small.en.bin` (or any other size) sitting right there still
+    # raised "No whisper model found". Prefer the largest file (≈ best model).
+    candidates = sorted(
+        DEFAULT_MODEL_DIR.glob("ggml-*.bin"),
+        key=lambda p: p.stat().st_size,
+        reverse=True,
+    )
+    if candidates:
+        return candidates[0]
     raise TranscribeError(
         f"No whisper model found. Drop a ggml-*.bin file at "
         f"{DEFAULT_MODEL_DIR}/ or set GHOSTBRAIN_WHISPER_MODEL."
