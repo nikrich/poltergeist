@@ -140,6 +140,16 @@ export interface Note {
   frontmatter: Record<string, unknown>;
 }
 
+export interface UpdateNoteBodyRequest {
+  path: string;
+  body: string;
+}
+
+export interface UpdateNoteBodyResponse {
+  path: string;
+  updated: string | null;
+}
+
 export type RecorderPhase = 'idle' | 'recording' | 'transcribing' | 'done';
 export type RecorderOwner = 'manual' | 'daemon';
 

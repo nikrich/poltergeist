@@ -20,6 +20,8 @@ import type {
   SearchResponse,
   StartRecordingRequest,
   Suggestion,
+  UpdateNoteBodyRequest,
+  UpdateNoteBodyResponse,
   UpdateRecorderSettings,
   VaultStats,
 } from '../../../shared/api-types';
@@ -385,5 +387,19 @@ export function useDeleteJot() {
   return useMutation({
     mutationFn: (id: string) => del(`/v1/notes/${encodeURIComponent(id)}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: JOTS_KEY }),
+  });
+}
+
+export function useUpdateNoteByPath() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: UpdateNoteBodyRequest) =>
+      patch<UpdateNoteBodyResponse>('/v1/notes/body', vars),
+    onSuccess: () => {
+      // Both caches read GET /v1/notes?path= — ['note'] (useNote/NoteView)
+      // and ['note-by-path'] (useJot/jots screen).
+      qc.invalidateQueries({ queryKey: ['note'] });
+      qc.invalidateQueries({ queryKey: ['note-by-path'] });
+    },
   });
 }

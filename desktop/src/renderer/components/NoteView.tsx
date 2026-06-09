@@ -1,31 +1,28 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useRef } from 'react';
+import type { Editor } from '@tiptap/core';
 
-import { useNote } from '../lib/api/hooks';
+import { useNote, useUpdateNoteByPath } from '../lib/api/hooks';
 import { useNoteView } from '../stores/note-view';
 import { useSettings } from '../stores/settings';
 import { toast } from '../stores/toast';
 import { Lucide } from './Lucide';
 import { Btn } from './Btn';
-import { Eyebrow } from './Eyebrow';
-import { MarkdownBody } from './MarkdownBody';
+import { Pill } from './Pill';
+import { RichMarkdownEditor } from './RichMarkdownEditor';
 import { SkeletonRows } from './SkeletonRows';
 import { PanelError } from './PanelError';
 
-const WIKILINK_RE = /\[\[([^\]]+)\]\]/g;
-
-/** Strip the Obsidian-only `[[wikilink]]` syntax that react-markdown can't render. */
-function stripWikilinks(body: string): string {
-  return body.replace(WIKILINK_RE, (_, target: string) => {
-    const label = target.split('|').pop() ?? target;
-    return label.split('/').pop() ?? label;
-  });
+interface Props {
+  /** Test hook: receives the TipTap Editor instance once created. */
+  onEditorReady?: (editor: Editor) => void;
 }
 
-export function NoteView() {
+export function NoteView({ onEditorReady }: Props = {}) {
   const path = useNoteView((s) => s.path);
   const close = useNoteView((s) => s.close);
   const note = useNote(path);
   const vaultPath = useSettings((s) => s.vaultPath);
+  const updateNote = useUpdateNoteByPath();
 
   useEffect(() => {
     if (path === null) return;
@@ -36,17 +33,45 @@ export function NoteView() {
     return () => window.removeEventListener('keydown', onKey);
   }, [path, close]);
 
-  const bodyClean = useMemo(
-    () => (note.data ? stripWikilinks(note.data.body) : ''),
-    [note.data],
-  );
+  // Freeze the FIRST fetched body per path (same pattern as JotsScreen):
+  // useUpdateNoteByPath invalidates ['note'] after every autosave, and a
+  // refetched body flowing back into the editor as a prop change would reset
+  // it mid-typing. key={path} below remounts the editor on note switch.
+  const initialBodyRef = useRef<{ path: string; body: string } | null>(null);
+  if (
+    note.data &&
+    path &&
+    (initialBodyRef.current === null || initialBodyRef.current.path !== path)
+  ) {
+    initialBodyRef.current = { path, body: note.data.body };
+  }
+  if (path === null && initialBodyRef.current !== null) {
+    initialBodyRef.current = null;
+  }
+  const editorBody =
+    initialBodyRef.current?.path === path ? initialBodyRef.current.body : undefined;
 
   if (path === null) return null;
+
+  // Connector-managed warning (spec): frontmatter `source` present and not
+  // "manual" → best-effort edits, may be overwritten by the next sync.
+  const source = note.data?.frontmatter?.source;
+  const isSynced = typeof source === 'string' && source !== 'manual';
 
   const openInEditor = async () => {
     const target = `${vaultPath}/${path}`;
     const result = await window.gb.shell.openPath(target);
     if (!result.ok) toast.error(result.error);
+  };
+
+  // Closing the dialog mid-debounce cancels the pending save (editor unmount
+  // clears its timer) — deliberate: same JotEditor trade-off, a flush-on-close
+  // could write a half-edited doc. Edits within the last ~1s of closing are lost.
+  const handleSaveBody = (next: string) => {
+    updateNote.mutate(
+      { path, body: next },
+      { onError: (err) => toast.error(`save failed: ${err.message}`) },
+    );
   };
 
   return (
@@ -68,6 +93,11 @@ export function NoteView() {
             </div>
             <div className="truncate font-mono text-10 text-ink-3">{path}</div>
           </div>
+          {isSynced && (
+            <Pill tone="oxblood">
+              synced note — edits may be overwritten by the next sync
+            </Pill>
+          )}
           <Btn
             variant="ghost"
             size="sm"
@@ -85,7 +115,7 @@ export function NoteView() {
           />
         </header>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex flex-1 flex-col overflow-hidden">
           {note.isLoading && (
             <div className="p-6">
               <SkeletonRows count={6} />
@@ -101,34 +131,16 @@ export function NoteView() {
               />
             </div>
           )}
-          {note.data && (
-            <div className="mx-auto max-w-[680px] px-8 py-8 text-14 leading-[1.65] text-ink-0">
-              <FrontmatterStrip fm={note.data.frontmatter} />
-              <MarkdownBody>{bodyClean}</MarkdownBody>
-            </div>
+          {editorBody !== undefined && (
+            <RichMarkdownEditor
+              key={path}
+              markdown={editorBody}
+              onSave={handleSaveBody}
+              onEditorReady={onEditorReady}
+            />
           )}
         </div>
       </div>
-    </div>
-  );
-}
-
-function FrontmatterStrip({ fm }: { fm: Record<string, unknown> }) {
-  // Show a compact metadata row above the body — only the keys most useful
-  // for quick scanning. Full frontmatter is still in the file on disk.
-  const candidates: Array<[string, unknown]> = [];
-  for (const key of ['date', 'context', 'source', 'type', 'durationSeconds']) {
-    if (key in fm) candidates.push([key, fm[key]]);
-  }
-  if (candidates.length === 0) return null;
-  return (
-    <div className="mb-6 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-b border-hairline pb-3">
-      {candidates.map(([k, v]) => (
-        <div key={k} className="flex items-baseline gap-1">
-          <Eyebrow>{k}</Eyebrow>
-          <span className="font-mono text-11 text-ink-1">{String(v)}</span>
-        </div>
-      ))}
     </div>
   );
 }
