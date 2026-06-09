@@ -14,6 +14,7 @@ import {
   type MeetingNotifierController,
 } from './meeting-notifier';
 import { installJotOverlay } from './jot-overlay';
+import { installClipboardBridge } from './clipboard';
 
 // Repo root: in dev, that's one level up from the desktop/ project dir
 // (app.getAppPath() resolves to the desktop/ folder). In prod (Phase 2 bundles
@@ -122,6 +123,8 @@ ipcMain.handle('gb:settings:set', async (_e, key: unknown, value: unknown) => {
 });
 
 ipcMain.handle('gb:dialogs:pickVaultFolder', () => pickVaultFolder());
+
+installClipboardBridge();
 
 ipcMain.handle('gb:shell:openPath', async (_e, p: unknown) => {
   if (typeof p !== 'string' || p === '') {
