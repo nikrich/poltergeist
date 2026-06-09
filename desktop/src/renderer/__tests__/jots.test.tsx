@@ -85,4 +85,17 @@ describe('JotsScreen', () => {
     // The list auto-selects the first item and loads its body.
     await waitFor(() => expect(screen.getByText(/full body here/)).toBeInTheDocument());
   });
+
+  it('renders the rich editor with the source-mode escape hatch and copy button', async () => {
+    apiRequest.mockImplementation(async (_m: string, path: string) => {
+      if (path.includes('source=manual')) return { ok: true, status: 200, data: page };
+      return { ok: true, status: 200, data: detail };
+    });
+
+    render(withQuery(<JotsScreen />));
+    await waitFor(() => expect(screen.getByText(/full body here/)).toBeInTheDocument());
+    expect(screen.getByTestId('rich-markdown-editor')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'src' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /copy formatted/ })).toBeInTheDocument();
+  });
 });

@@ -4,7 +4,7 @@ import { Btn } from '../components/Btn';
 import { Lucide } from '../components/Lucide';
 import { Pill } from '../components/Pill';
 import { JotTree } from '../components/JotTree';
-import { JotEditor } from '../components/JotEditor';
+import { RichMarkdownEditor } from '../components/RichMarkdownEditor';
 import {
   useCreateJot,
   useDeleteJot,
@@ -158,13 +158,13 @@ export function JotsScreen() {
           {editorBody !== undefined ? (
             <>
               <div className="flex-1 overflow-auto">
-                {/* key={selectedId} remounts JotEditor on jot switch, wiping
-                    internal debounce timers. The body prop is frozen to the
-                    initial fetch so mid-session RQ refetches never reset the
-                    editor's internal value. */}
-                <JotEditor
+                {/* key={selectedId} remounts the editor on jot switch, wiping
+                    internal debounce timers. The markdown prop is frozen to
+                    the initial fetch so mid-session RQ refetches never reset
+                    the editor's internal value. */}
+                <RichMarkdownEditor
                   key={selectedId!}
-                  body={editorBody}
+                  markdown={editorBody}
                   onSave={handleSaveBody}
                 />
               </div>
