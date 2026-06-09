@@ -305,6 +305,110 @@ def list_jots(
     return {"items": items[offset : offset + limit], "total": total}
 
 
+# ---------------------------------------------------------------------------
+# Orchestration: create + route in one call
+# ---------------------------------------------------------------------------
+
+from ghostbrain.worker.audit import audit_log  # noqa: E402
+from ghostbrain.worker.router import route_event  # noqa: E402
+
+REJECT_BELOW = 0.5  # below this confidence, jot falls back to manual_review
+
+
+def _audit_safe(event_type: str, **fields: Any) -> None:
+    """audit_log that never raises — an unwritable audit dir (OSError) must
+    not break the never-raise contract of create_and_route_jot."""
+    try:
+        audit_log(event_type, **fields)
+    except Exception as exc:
+        log.warning("audit_log failed event_type=%s: %s", event_type, exc)
+
+
+def _mark_review_safe(jot_id: str, reasoning: str) -> None:
+    """mark_manual_review that never raises — the file may have vanished
+    (vault is watched/synced) between the inbox write and this update."""
+    try:
+        mark_manual_review(jot_id, reasoning=reasoning)
+    except Exception:
+        log.exception("mark_manual_review failed id=%s", jot_id)
+
+
+def create_and_route_jot(
+    body: str, *, captured_at: "datetime | None" = None
+) -> dict:
+    """Write a jot to the inbox, classify it, and (on success) move it to a
+    context folder. Returns the public response payload.
+
+    Routing errors and low-confidence results both leave the file in the inbox
+    with routingStatus="manual_review" — never raises to the caller. The hotkey
+    overlay is fire-and-forget, so callers need a stable contract.
+    """
+    record = write_inbox_jot(body, captured_at=captured_at)
+    jot_id = record["id"]
+
+    try:
+        decision = route_event({"source": "manual", "id": jot_id, "body": body})
+    except Exception as exc:
+        log.exception("manual jot routing failed id=%s", jot_id)
+        _mark_review_safe(jot_id, reasoning=f"router error: {exc}")
+        _audit_safe("manual_jot_route_failed", event_id=jot_id, error=str(exc))
+        return {
+            "id": jot_id,
+            "path": record["path"],
+            "routingStatus": "manual_review",
+        }
+
+    if decision.context == "needs_review" or decision.confidence < REJECT_BELOW:
+        _mark_review_safe(jot_id, reasoning=decision.reasoning)
+        _audit_safe(
+            "manual_jot_routed",
+            event_id=jot_id,
+            status="manual_review",
+            confidence=decision.confidence,
+            reasoning=decision.reasoning,
+        )
+        return {
+            "id": jot_id,
+            "path": record["path"],
+            "routingStatus": "manual_review",
+        }
+
+    try:
+        moved = move_jot(
+            jot_id,
+            to_context=decision.context,
+            confidence=decision.confidence,
+            method=decision.method,
+            reasoning=decision.reasoning,
+        )
+    except Exception as exc:
+        # Covers unsafe context names (ValueError), the file vanishing under a
+        # watched/synced vault (JotNotFound), and disk/permission failures
+        # (OSError) — all fall back to manual_review rather than 500ing.
+        log.exception("move_jot failed context=%r id=%s", decision.context, jot_id)
+        _mark_review_safe(jot_id, reasoning=f"move failed: {exc}")
+        _audit_safe(
+            "manual_jot_route_failed",
+            event_id=jot_id,
+            error=f"move failed: {exc}",
+        )
+        return {
+            "id": jot_id,
+            "path": record["path"],
+            "routingStatus": "manual_review",
+        }
+
+    _audit_safe(
+        "manual_jot_routed",
+        event_id=jot_id,
+        status="routed",
+        context=decision.context,
+        confidence=decision.confidence,
+        reasoning=decision.reasoning,
+    )
+    return {"id": jot_id, "path": moved["path"], "routingStatus": "routed"}
+
+
 def _iter_manual_files() -> Iterable[Path]:
     vault = _vault()
     inbox = vault / INBOX_REL
