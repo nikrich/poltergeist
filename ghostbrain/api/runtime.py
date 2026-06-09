@@ -33,6 +33,10 @@ def write_descriptor(
     """Atomically write the descriptor with 0600 perms. Returns its path."""
     d = run_dir()
     d.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(d, 0o700)
+    except OSError:
+        pass
     target = descriptor_path()
     tmp = target.with_name(target.name + ".tmp")
     payload = json.dumps(
@@ -44,8 +48,11 @@ def write_descriptor(
             "started_at": started_at,
         }
     )
-    tmp.write_text(payload)
-    os.chmod(tmp, 0o600)
+    fd = os.open(tmp, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, payload.encode())
+    finally:
+        os.close(fd)
     os.replace(tmp, target)
     return target
 
@@ -60,6 +67,9 @@ def load_descriptor() -> dict | None:
     pid = data.get("pid")
     if not isinstance(pid, int):
         return None
+    # NOTE: liveness only — if the sidecar crashed and the OS recycled its PID
+    # to an unrelated process, this still reads as "running". Acceptable for a
+    # local single-user tool; revisit with a start-time fingerprint if needed.
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
