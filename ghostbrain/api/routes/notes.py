@@ -1,23 +1,45 @@
-"""GET /v1/notes?path=<vault-relative> and POST /v1/notes."""
+"""Notes endpoints — read by path (legacy), and the manual-jot family."""
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Query, status
 
-from ghostbrain.api.models.note import CreateNoteRequest, Note
+from ghostbrain.api.models.note import CreateNoteRequest
 from ghostbrain.api.repo.note import NoteInvalidPath, NoteNotFound, get_note
-from ghostbrain.api.repo.notes_manual import create_and_route_jot
+from ghostbrain.api.repo.notes_manual import create_and_route_jot, list_jots
 
 router = APIRouter(prefix="/v1/notes", tags=["notes"])
 
 
-@router.get("", response_model=Note)
-def note(path: str = Query(..., min_length=1, max_length=500)) -> dict:
-    try:
-        return get_note(path)
-    except NoteInvalidPath as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except NoteNotFound:
-        raise HTTPException(status_code=404, detail=f"Note not found: {path}")
+@router.get("")
+def get_notes(
+    path: str | None = Query(None, min_length=1, max_length=500),
+    source: str | None = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    q: str | None = Query(None),
+    context: str | None = Query(None),
+    tag: str | None = Query(None),
+):
+    """Dispatcher:
+    - `?path=...`  → single-note read (legacy markdown viewer).
+    - `?source=manual` → list manual jots for the Jot screen.
+    """
+    if path is not None:
+        try:
+            return get_note(path)
+        except NoteInvalidPath as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except NoteNotFound:
+            raise HTTPException(status_code=404, detail=f"Note not found: {path}")
+    if source == "manual":
+        return list_jots(limit=limit, offset=offset, q=q, context=context, tag=tag)
+    if source is None:
+        raise HTTPException(
+            status_code=400, detail="provide `path` or `source=manual`",
+        )
+    raise HTTPException(
+        status_code=400, detail=f"unsupported source filter: {source}",
+    )
 
 
 @router.post("", status_code=status.HTTP_200_OK)
