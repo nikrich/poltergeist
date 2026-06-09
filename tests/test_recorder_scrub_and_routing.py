@@ -27,9 +27,11 @@ from ghostbrain.recorder.audio_capture import (
     assert_output_routes_to_blackhole,
     output_likely_reaches_blackhole,
 )
+from ghostbrain.recorder import transcribe as _transcribe_mod
 from ghostbrain.recorder.transcribe import (
     _NOISE_TOKEN_RE,
     _collapse_phrase_loops,
+    _resolve_model,
     _scrub_noise_tokens,
     _whisper_cmd,
 )
@@ -134,12 +136,40 @@ def test_scrub_missing_file_is_noop(tmp_path: Path) -> None:
 
 
 def test_whisper_cmd_includes_no_context_flag() -> None:
-    """-nc is the canonical mitigation for whisper.cpp riding a single
-    hallucinated short phrase across an entire file. Without it whisper
-    feeds each segment's text into the next as a prompt, snowballing
-    "Okay." into hundreds of "Okay. Okay. Okay." lines."""
+    """`-mc 0` (max-context = 0) is the canonical mitigation for whisper.cpp
+    riding a single hallucinated short phrase across an entire file. Without it
+    whisper feeds each segment's text into the next as a prompt, snowballing
+    "Okay." into hundreds of "Okay. Okay. Okay." lines.
+
+    NOTE: older whisper.cpp spelled this `-nc`/`--no-context`; current builds
+    (e.g. Homebrew whisper-cpp 1.8.x) dropped that flag and an unknown flag
+    makes whisper-cli print help and exit 0 WITHOUT transcribing. `-mc 0` is
+    the supported equivalent."""
     cmd = _whisper_cmd("/bin/whisper-cli", Path("/m.bin"), Path("/w.wav"), Path("/w"))
-    assert "-nc" in cmd
+    assert "-mc" in cmd
+    assert cmd[cmd.index("-mc") + 1] == "0"
+    assert "-nc" not in cmd
+
+
+def test_resolve_model_globs_any_ggml_when_default_name_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The daemon calls _resolve_model(None). It must find ANY ggml-*.bin in
+    the model dir, not only the hard-coded DEFAULT_MODEL name — otherwise a
+    perfectly valid `ggml-small.en.bin` sitting right there still raised
+    "No whisper model found" (the exact regression that disabled transcription
+    in prod). Picks the largest file when several exist."""
+    monkeypatch.delenv("GHOSTBRAIN_WHISPER_MODEL", raising=False)
+    monkeypatch.setattr(_transcribe_mod, "DEFAULT_MODEL_DIR", tmp_path)
+    small = tmp_path / "ggml-small.en.bin"
+    small.write_bytes(b"x" * 10)
+    big = tmp_path / "ggml-medium.en.bin"
+    big.write_bytes(b"x" * 100)
+    # DEFAULT_MODEL ("ggml-medium.en.bin") happens to exist here -> exact match.
+    assert _resolve_model(None) == big
+    # Remove the default-named file: must still resolve via the glob fallback.
+    big.unlink()
+    assert _resolve_model(None) == small
 
 
 def test_collapse_short_phrase_loop() -> None:
