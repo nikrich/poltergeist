@@ -48,10 +48,12 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
+import atexit  # noqa: E402
 import logging
 import secrets
 import socket
 import sys
+from datetime import datetime  # noqa: E402
 
 import uvicorn
 
@@ -78,10 +80,32 @@ def _include_recorder() -> bool:
     return raw in ("1", "true", "yes", "on")
 
 
+def _publish_descriptor(port: int, token: str) -> None:
+    """Write the runtime descriptor and remove it on normal exit.
+
+    Cleanup relies on atexit: during the process lifetime uvicorn owns
+    SIGTERM/SIGINT and shuts down gracefully, after which the interpreter exits
+    normally and atexit fires. On SIGKILL or a crash the stale descriptor is
+    harmless — load_descriptor() pid-liveness-checks it.
+    """
+    from ghostbrain.api import runtime
+    from ghostbrain.api.main import API_VERSION
+
+    runtime.write_descriptor(
+        port=port,
+        token=token,
+        pid=os.getpid(),
+        version=API_VERSION,
+        started_at=datetime.now().astimezone().isoformat(),
+    )
+    atexit.register(runtime.remove_descriptor)
+
+
 def main() -> int:
     token = secrets.token_hex(32)
     port = _pick_port()
     app = create_app(token=token)
+    _publish_descriptor(port=port, token=token)
 
     # Wire the scheduler lifecycle BEFORE printing READY, so the desktop can
     # query /v1/scheduler/status immediately and get a real answer.

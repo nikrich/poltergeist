@@ -71,6 +71,29 @@ ghostbrain-worker                               # turn queued events into vault 
 
 > **The desktop app's "connect" buttons are placeholders** — connectors are wired up from the CLI + `routing.yaml`, as above. Detailed prerequisites, OAuth scopes, and per-connector config live in [Setup](#setup) and the connector sections further down.
 
+## Query from Claude Code / Desktop (MCP)
+
+Poltergeist ships an MCP server so Claude Code & Desktop can query your vault
+mid-task — ask it questions, search it, read notes.
+
+```bash
+pip install -e ".[mcp]"     # adds the ghostbrain-mcp entrypoint
+```
+
+Add to your `.mcp.json` (project scope) or `~/.claude.json` (user scope):
+
+```json
+{ "mcpServers": { "poltergeist": { "command": "ghostbrain-mcp" } } }
+```
+
+The server forwards to the running desktop-app sidecar (it must be open). Tools:
+`poltergeist_ask` (RAG answer + citations), `poltergeist_search` (ranked hits),
+`poltergeist_get_note` (full note by path). The `poltergeist-recall` skill in
+`.claude/skills/` automates the wiring and tells Claude when to use it.
+
+> Writing notes from Claude (`poltergeist_capture`) is a planned follow-on once
+> Poltergeist Jots lands.
+
 ## Why
 
 Most "second brain" tools are either manual (you stop adding things) or
