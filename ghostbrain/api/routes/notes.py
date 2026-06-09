@@ -5,8 +5,18 @@ from fastapi import APIRouter, HTTPException, Query, status
 from fastapi import Path as PathParam
 from fastapi.responses import Response
 
-from ghostbrain.api.models.note import CreateNoteRequest, RouteNoteRequest, UpdateNoteRequest
-from ghostbrain.api.repo.note import NoteInvalidPath, NoteNotFound, get_note
+from ghostbrain.api.models.note import (
+    CreateNoteRequest,
+    RouteNoteRequest,
+    UpdateNoteBodyRequest,
+    UpdateNoteRequest,
+)
+from ghostbrain.api.repo.note import (
+    NoteInvalidPath,
+    NoteNotFound,
+    get_note,
+    save_note_body,
+)
 from ghostbrain.api.repo.notes_manual import (
     JotNotFound,
     create_and_route_jot,
@@ -75,6 +85,29 @@ def create_note(req: CreateNoteRequest) -> dict:
                 detail="capturedAt must include a timezone offset (e.g. 2026-05-14T09:30:15+00:00)",
             )
     return create_and_route_jot(body, captured_at=captured)
+
+
+# ── Order-sensitive: /body must be registered BEFORE /{jot_id} ──────────────
+# Starlette matches routes in registration order, and the literal segment
+# "body" satisfies the /{jot_id} path regex ([^/]+). The jot route's
+# min_length=8 validator would then 422 the request ("string_too_short")
+# instead of falling through to this handler. Pinned by
+# test_patch_body_not_shadowed_by_jot_route.
+@router.patch("/body")
+def patch_note_body(req: UpdateNoteBodyRequest) -> dict:
+    """Rewrite the markdown body of any vault note by path.
+
+    Frontmatter is preserved; `updated` bumped when the key exists. Unlike the
+    jot PATCH, this does NOT re-derive tags — connector files own their schema.
+    """
+    if not req.body.strip():
+        raise HTTPException(status_code=422, detail="body must not be empty")
+    try:
+        return save_note_body(req.path, req.body)
+    except NoteInvalidPath as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except NoteNotFound:
+        raise HTTPException(status_code=404, detail=f"Note not found: {req.path}")
 
 
 @router.patch("/{jot_id}")
