@@ -51,7 +51,6 @@ except Exception:  # noqa: BLE001
 import atexit  # noqa: E402
 import logging
 import secrets
-import signal  # noqa: E402
 import socket
 import sys
 from datetime import datetime  # noqa: E402
@@ -82,7 +81,13 @@ def _include_recorder() -> bool:
 
 
 def _publish_descriptor(port: int, token: str) -> None:
-    """Write the runtime descriptor and register removal on exit."""
+    """Write the runtime descriptor and remove it on normal exit.
+
+    Cleanup relies on atexit: during the process lifetime uvicorn owns
+    SIGTERM/SIGINT and shuts down gracefully, after which the interpreter exits
+    normally and atexit fires. On SIGKILL or a crash the stale descriptor is
+    harmless — load_descriptor() pid-liveness-checks it.
+    """
     from ghostbrain.api import runtime
     from ghostbrain.api.main import API_VERSION
 
@@ -94,17 +99,6 @@ def _publish_descriptor(port: int, token: str) -> None:
         started_at=datetime.now().astimezone().isoformat(),
     )
     atexit.register(runtime.remove_descriptor)
-
-    def _on_signal(signum, frame):  # noqa: ANN001, ARG001
-        runtime.remove_descriptor()
-        raise SystemExit(0)
-
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        try:
-            signal.signal(sig, _on_signal)
-        except (ValueError, OSError):
-            # signal() only works on the main thread; ignore if not.
-            pass
 
 
 def main() -> int:
