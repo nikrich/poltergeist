@@ -35,6 +35,10 @@ export const useSettings = create<SettingsState>((set) => ({
 
   schedulerEnabled: false,
 
+  hotkeys: {
+    jotOverlay: 'Alt+J',
+  },
+
   ready: false,
   hydrate: async () => {
     const all = await window.gb.settings.getAll();

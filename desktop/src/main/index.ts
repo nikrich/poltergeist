@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
 import { join } from 'node:path';
 import * as settings from './settings';
 import { pickVaultFolder } from './dialogs';
@@ -7,12 +7,13 @@ import type { Settings } from '../shared/types';
 import { loadInitialState, attachStatePersistence } from './window-state';
 import { buildAppMenu } from './menu';
 import { Sidecar } from './sidecar';
-import { forward } from './api-forwarder';
+import { forward, isAllowedMethod } from './api-forwarder';
 import { installTray, type TrayController } from './tray';
 import {
   installMeetingNotifier,
   type MeetingNotifierController,
 } from './meeting-notifier';
+import { installJotOverlay } from './jot-overlay';
 
 // Repo root: in dev, that's one level up from the desktop/ project dir
 // (app.getAppPath() resolves to the desktop/ folder). In prod (Phase 2 bundles
@@ -180,6 +181,19 @@ app.whenReady().then(async () => {
     onQuit: () => void quitApp(),
   });
   meetingNotifier = installMeetingNotifier({ sidecar });
+
+  const hotkey = settings.getAll().hotkeys?.jotOverlay ?? 'Alt+J';
+  installJotOverlay({
+    accelerator: hotkey,
+    sidecar,
+    rendererUrl: process.env.ELECTRON_RENDERER_URL
+      ? `${process.env.ELECTRON_RENDERER_URL}/overlay.html`
+      : undefined,
+    rendererFile: !process.env.ELECTRON_RENDERER_URL
+      ? join(__dirname, '../renderer/overlay.html')
+      : undefined,
+  });
+
   console.log('[sidecar] starting; repoRoot =', repoRoot());
   try {
     const info = await sidecar.start();
@@ -215,6 +229,10 @@ app.on('before-quit', (event) => {
   }
 });
 
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+});
+
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
@@ -229,7 +247,7 @@ ipcMain.handle(
       return { ok: false, error: 'Invalid request shape' };
     }
     const m = method.toUpperCase();
-    if (m !== 'GET' && m !== 'POST') {
+    if (!isAllowedMethod(m)) {
       return { ok: false, error: 'Method not allowed' };
     }
     if (!path.startsWith('/v1/')) {

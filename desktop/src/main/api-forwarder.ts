@@ -1,4 +1,18 @@
 import type { Sidecar } from './sidecar';
+import type { HttpMethod } from '../shared/types';
+
+export type { HttpMethod };
+
+export const ALLOWED_METHODS: readonly HttpMethod[] = [
+  'GET',
+  'POST',
+  'PATCH',
+  'DELETE',
+];
+
+export function isAllowedMethod(method: string): method is HttpMethod {
+  return (ALLOWED_METHODS as readonly string[]).includes(method);
+}
 
 export type ApiResult<T = unknown> =
   | { ok: true; data: T }
@@ -6,26 +20,30 @@ export type ApiResult<T = unknown> =
 
 export async function forward<T = unknown>(
   sidecar: Sidecar,
-  method: 'GET' | 'POST',
+  method: HttpMethod,
   path: string,
   body?: unknown,
 ): Promise<ApiResult<T>> {
   const info = sidecar.getInfo();
   if (!info) return { ok: false, error: 'Sidecar not ready' };
   try {
+    const hasBody = body !== undefined;
     const res = await fetch(`http://127.0.0.1:${info.port}${path}`, {
       method,
       headers: {
-        'Content-Type': 'application/json',
+        ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
         Authorization: `Bearer ${info.token}`,
       },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      body: hasBody ? JSON.stringify(body) : undefined,
       // 5min ceiling. /v1/answer (RAG + LLM synthesis) and the first /v1/search
       // call (cold-loads sentence-transformers) can legitimately take a minute
       // or two. Everything else returns in milliseconds; we'd rather wait too
       // long than chop off a genuine answer.
       signal: AbortSignal.timeout(300_000),
     });
+    if (res.status === 204) {
+      return { ok: true, data: null as T };
+    }
     if (!res.ok) {
       const text = await res.text();
       // FastAPI errors come back as ``{"detail": "..."}`` — extract that so
