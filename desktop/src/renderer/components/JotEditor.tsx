@@ -10,9 +10,17 @@ interface Props {
   debounceMs?: number;
   /** Called once when the CodeMirror EditorView is created; useful for tests. */
   onCreateEditor?: (view: EditorView) => void;
+  /** Render the source read-only (no edits, no autosave). */
+  readOnly?: boolean;
 }
 
-export function JotEditor({ body, onSave, debounceMs = 1000, onCreateEditor }: Props) {
+export function JotEditor({
+  body,
+  onSave,
+  debounceMs = 1000,
+  onCreateEditor,
+  readOnly = false,
+}: Props) {
   const [value, setValue] = useState(body);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSaved = useRef(body);
@@ -55,7 +63,9 @@ export function JotEditor({ body, onSave, debounceMs = 1000, onCreateEditor }: P
       value={value}
       extensions={[markdown()]}
       basicSetup={{ lineNumbers: false, foldGutter: false }}
+      readOnly={readOnly}
       onChange={(next) => {
+        if (readOnly) return;
         setValue(next);
         scheduleSave(next);
       }}
