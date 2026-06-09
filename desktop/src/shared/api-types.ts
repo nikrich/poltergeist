@@ -196,3 +196,35 @@ export interface Prep {
   generatedAt: string;
   error: string | null;
 }
+
+// ── Jots ──────────────────────────────────────────────────────────────────
+
+export type JotRoutingStatus = 'pending' | 'routed' | 'manual_review';
+
+export interface JotListItem {
+  id: string;
+  path: string;
+  title: string;
+  excerpt: string;
+  context: string | null;
+  routingStatus: JotRoutingStatus;
+  tags: string[];
+  created: string;
+  updated: string;
+}
+
+export interface JotsPage {
+  items: JotListItem[];
+  total: number;
+}
+
+export interface CreateJotRequest {
+  body: string;
+  capturedAt?: string;
+}
+
+export interface CreateJotResponse {
+  id: string;
+  path: string;
+  routingStatus: JotRoutingStatus;
+}
