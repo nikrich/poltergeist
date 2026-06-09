@@ -24,6 +24,10 @@ const defaultSettings: Settings = {
   folderStructure: 'by-source',
 
   schedulerEnabled: false,
+
+  hotkeys: {
+    jotOverlay: 'Alt+J',
+  },
 };
 
 const stubBridge: GbBridge = {

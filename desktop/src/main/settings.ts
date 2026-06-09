@@ -33,6 +33,10 @@ const defaults: Settings = {
   folderStructure: 'by-source',
 
   schedulerEnabled: false,
+
+  hotkeys: {
+    jotOverlay: 'Alt+J',
+  },
 };
 
 function configPath(): string {

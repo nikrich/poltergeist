@@ -30,6 +30,10 @@ export interface Settings {
   folderStructure: FolderStructure;
 
   schedulerEnabled: boolean;
+
+  hotkeys: {
+    jotOverlay: string;
+  };
 }
 
 export interface GbBridge {
