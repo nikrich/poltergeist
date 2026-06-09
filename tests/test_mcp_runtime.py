@@ -62,3 +62,15 @@ def test_remove_is_idempotent():
     runtime.remove_descriptor()
     runtime.remove_descriptor()  # second call must not raise
     assert runtime.load_descriptor() is None
+
+
+def test_publish_descriptor_writes_current_process(monkeypatch, tmp_path):
+    monkeypatch.setenv("GHOSTBRAIN_RUN_DIR", str(tmp_path / "run2"))
+    from ghostbrain.api.__main__ import _publish_descriptor
+
+    _publish_descriptor(port=40404, token="abc123")
+    d = runtime.load_descriptor()
+    assert d is not None
+    assert d["port"] == 40404
+    assert d["token"] == "abc123"
+    assert d["pid"] == os.getpid()

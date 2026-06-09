@@ -48,10 +48,13 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
+import atexit  # noqa: E402
 import logging
 import secrets
+import signal  # noqa: E402
 import socket
 import sys
+from datetime import datetime  # noqa: E402
 
 import uvicorn
 
@@ -78,10 +81,37 @@ def _include_recorder() -> bool:
     return raw in ("1", "true", "yes", "on")
 
 
+def _publish_descriptor(port: int, token: str) -> None:
+    """Write the runtime descriptor and register removal on exit."""
+    from ghostbrain.api import runtime
+    from ghostbrain.api.main import API_VERSION
+
+    runtime.write_descriptor(
+        port=port,
+        token=token,
+        pid=os.getpid(),
+        version=API_VERSION,
+        started_at=datetime.now().astimezone().isoformat(),
+    )
+    atexit.register(runtime.remove_descriptor)
+
+    def _on_signal(signum, frame):  # noqa: ANN001, ARG001
+        runtime.remove_descriptor()
+        raise SystemExit(0)
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            signal.signal(sig, _on_signal)
+        except (ValueError, OSError):
+            # signal() only works on the main thread; ignore if not.
+            pass
+
+
 def main() -> int:
     token = secrets.token_hex(32)
     port = _pick_port()
     app = create_app(token=token)
+    _publish_descriptor(port=port, token=token)
 
     # Wire the scheduler lifecycle BEFORE printing READY, so the desktop can
     # query /v1/scheduler/status immediately and get a real answer.
