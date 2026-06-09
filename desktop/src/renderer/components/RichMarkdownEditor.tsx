@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { Editor } from '@tiptap/core';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { buildEditorExtensions } from '../lib/editor/extensions';
-import { getMarkdown } from '../lib/editor/markdown';
+import { clipboardPayload, getMarkdown } from '../lib/editor/markdown';
 import { toast } from '../stores/toast';
+import { Btn } from './Btn';
 import { JotEditor } from './JotEditor';
+import { Lucide } from './Lucide';
 
 interface Props {
   markdown: string;
@@ -47,6 +49,9 @@ export function RichMarkdownEditor({
   // Latest content from either mode — handed over when toggling so no
   // keystrokes are lost.
   const current = useRef(markdown);
+  // editorProps.handleKeyDown is captured once at editor creation — route the
+  // shortcut through a ref so it always sees the latest closure.
+  const handleCopyRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     if (parseFailed) {
@@ -73,6 +78,20 @@ export function RichMarkdownEditor({
     extensions: buildEditorExtensions(),
     content: parseFailed ? '' : markdown,
     editable: !readOnly,
+    editorProps: {
+      handleKeyDown: (_view, event) => {
+        if (
+          (event.metaKey || event.ctrlKey) &&
+          event.shiftKey &&
+          event.key.toLowerCase() === 'c'
+        ) {
+          event.preventDefault();
+          handleCopyRef.current();
+          return true;
+        }
+        return false;
+      },
+    },
     onUpdate: ({ editor: updated }) => {
       scheduleSave(getMarkdown(updated));
     },
@@ -85,6 +104,30 @@ export function RichMarkdownEditor({
   useEffect(() => {
     if (editor) onEditorReady?.(editor);
   }, [editor]);
+
+  async function handleCopy() {
+    if (!editor || editor.isDestroyed || mode !== 'rich') return;
+    const payload = clipboardPayload(editor);
+    try {
+      const result = await window.gb.clipboard.writeRich({
+        html: payload.html,
+        text: payload.markdown,
+      });
+      if (result.ok) {
+        toast.success('copied — paste anywhere');
+      } else {
+        toast.error(`copy failed: ${result.error}`);
+      }
+    } catch (err) {
+      // ipcRenderer.invoke rejects if the channel is gone — never leave an
+      // unhandled rejection behind a fire-and-forget void call.
+      toast.error(`copy failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  useEffect(() => {
+    handleCopyRef.current = () => void handleCopy();
+  });
 
   // Cross-write guard (mirrors JotEditor): if the markdown prop switches
   // while a save is pending, the stale timer would fire with the previous
@@ -152,6 +195,16 @@ export function RichMarkdownEditor({
         )}
       </div>
       <div className="flex flex-shrink-0 items-center gap-2 border-t border-hairline px-3 py-[6px]">
+        {mode === 'rich' && (
+          <Btn
+            variant="ghost"
+            size="sm"
+            icon={<Lucide name="clipboard-copy" size={12} />}
+            onClick={() => void handleCopy()}
+          >
+            copy formatted
+          </Btn>
+        )}
         <div className="ml-auto flex items-center gap-1 font-mono text-10 text-ink-3">
           <button
             type="button"

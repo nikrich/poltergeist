@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, act, fireEvent } from '@testing-library/react';
+import { render, screen, act, fireEvent, waitFor } from '@testing-library/react';
 import type { Editor } from '@tiptap/core';
 import { RichMarkdownEditor } from '../components/RichMarkdownEditor';
+import { useToasts } from '../stores/toast';
 
 vi.useFakeTimers();
 
@@ -156,5 +157,113 @@ describe('RichMarkdownEditor', () => {
     fireEvent.click(screen.getByRole('button', { name: 'rich' }));
     expect(container.querySelector('.cm-editor')).toBeNull();
     expect(container.querySelector('h1')).not.toBeNull();
+  });
+});
+
+describe('RichMarkdownEditor copy-formatted', () => {
+  beforeEach(() => {
+    // waitFor cannot poll under vitest fake timers (testing-library's
+    // detection requires a `jest` global), and these tests await microtask
+    // results — run them on real timers.
+    vi.useRealTimers();
+    useToasts.setState({ toasts: [] });
+  });
+
+  afterEach(() => {
+    vi.useFakeTimers();
+  });
+
+  it('copies the whole note when there is no selection', async () => {
+    const writeRich = vi.fn().mockResolvedValue({ ok: true });
+    window.gb = { ...window.gb, clipboard: { writeRich } };
+    render(
+      <RichMarkdownEditor markdown={'# title\n\nsome **bold** text'} onSave={() => {}} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /copy formatted/ }));
+    await waitFor(() => expect(writeRich).toHaveBeenCalledTimes(1));
+    const payload = writeRich.mock.calls[0]![0] as { html: string; text: string };
+    expect(payload.html).toContain('<h1>title</h1>');
+    expect(payload.html).toContain('<strong>bold</strong>');
+    expect(payload.text).toBe('# title\n\nsome **bold** text');
+  });
+
+  it('copies only the selection when one exists', async () => {
+    const writeRich = vi.fn().mockResolvedValue({ ok: true });
+    window.gb = { ...window.gb, clipboard: { writeRich } };
+    let editor: Editor | undefined;
+    render(
+      <RichMarkdownEditor
+        markdown={'# title\n\nsecond paragraph'}
+        onSave={() => {}}
+        onEditorReady={(e) => {
+          editor = e;
+        }}
+      />,
+    );
+    act(() => {
+      // Select the full second paragraph. Doc layout: heading node occupies
+      // positions [0, headingNodeSize); the paragraph's inline content starts
+      // one position inside the paragraph node.
+      const doc = editor!.state.doc;
+      const para = doc.child(1);
+      const start = doc.firstChild!.nodeSize + 1;
+      editor!.commands.setTextSelection({ from: start, to: start + para.content.size });
+    });
+    fireEvent.click(screen.getByRole('button', { name: /copy formatted/ }));
+    await waitFor(() => expect(writeRich).toHaveBeenCalledTimes(1));
+    const payload = writeRich.mock.calls[0]![0] as { html: string; text: string };
+    expect(payload.html).toContain('second paragraph');
+    expect(payload.html).not.toContain('title');
+    expect(payload.text.trim()).toBe('second paragraph');
+  });
+
+  it('copies via meta+shift+C inside the editor', async () => {
+    const writeRich = vi.fn().mockResolvedValue({ ok: true });
+    window.gb = { ...window.gb, clipboard: { writeRich } };
+    let editor: Editor | undefined;
+    render(
+      <RichMarkdownEditor
+        markdown="shortcut me"
+        onSave={() => {}}
+        onEditorReady={(e) => {
+          editor = e;
+        }}
+      />,
+    );
+    fireEvent.keyDown(editor!.view.dom, { key: 'c', metaKey: true, shiftKey: true });
+    await waitFor(() => expect(writeRich).toHaveBeenCalledTimes(1));
+    expect((writeRich.mock.calls[0]![0] as { text: string }).text).toBe('shortcut me');
+  });
+
+  it('shows a success toast after copying', async () => {
+    const writeRich = vi.fn().mockResolvedValue({ ok: true });
+    window.gb = { ...window.gb, clipboard: { writeRich } };
+    render(<RichMarkdownEditor markdown="x" onSave={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: /copy formatted/ }));
+    await waitFor(() =>
+      expect(
+        useToasts.getState().toasts.some((t) => t.message.includes('copied')),
+      ).toBe(true),
+    );
+  });
+
+  it('shows an error toast when the clipboard write fails', async () => {
+    const writeRich = vi.fn().mockResolvedValue({ ok: false, error: 'nope' });
+    window.gb = { ...window.gb, clipboard: { writeRich } };
+    render(<RichMarkdownEditor markdown="x" onSave={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: /copy formatted/ }));
+    await waitFor(() =>
+      expect(
+        useToasts
+          .getState()
+          .toasts.some((t) => t.kind === 'error' && t.message.includes('copy failed')),
+      ).toBe(true),
+    );
+  });
+
+  it('hides the copy button in source mode', () => {
+    render(<RichMarkdownEditor markdown="x" onSave={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'src' }));
+    expect(screen.queryByRole('button', { name: /copy formatted/ })).toBeNull();
   });
 });
