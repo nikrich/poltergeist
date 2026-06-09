@@ -68,6 +68,12 @@ export interface GbBridge {
   tray: {
     setFailing(names: string[]): Promise<{ ok: true } | { ok: false; error: string }>;
   };
+  jot: {
+    save(body: string): Promise<{ ok: true }>;
+    cancel(): Promise<{ ok: true }>;
+    onFocus(cb: () => void): () => void;
+    onSaveFailed(cb: (payload: { body: string; error: string }) => void): () => void;
+  };
   on(channel: 'nav:settings', listener: () => void): () => void;
   on(channel: 'sidecar:ready', listener: () => void): () => void;
   on(

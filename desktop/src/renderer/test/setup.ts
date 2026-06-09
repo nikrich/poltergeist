@@ -44,6 +44,12 @@ const stubBridge: GbBridge = {
   api: { request: (async () => ({ ok: true, data: null })) as GbBridge['api']['request'] },
   sidecar: { retry: async () => ({ ok: true }) },
   tray: { setFailing: async () => ({ ok: true }) },
+  jot: {
+    save: async () => ({ ok: true as const }),
+    cancel: async () => ({ ok: true as const }),
+    onFocus: () => () => {},
+    onSaveFailed: () => () => {},
+  },
   on: (() => () => {}) as GbBridge['on'],
 };
 
