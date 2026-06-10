@@ -1,5 +1,60 @@
 # Changelog
 
+## [0.3.1](https://github.com/nikrich/poltergeist/compare/v0.3.0...v0.3.1) (2026-06-10)
+
+
+### Features
+
+* Atlassian import — in-app Confluence/Jira picker with bulk import ([c201daf](https://github.com/nikrich/poltergeist/commit/c201daf4e1bd97d87340f17f8282017925ea082b))
+* Atlassian import — land PR [#22](https://github.com/nikrich/poltergeist/issues/22) onto main ([77ca8c8](https://github.com/nikrich/poltergeist/commit/77ca8c8773264a42624e31bb9bcfd2cfffe10b1f))
+* **chat:** Chat screen — conversation list, streaming thread, composer ([df8df16](https://github.com/nikrich/poltergeist/commit/df8df168bdf9a95d9fc8778ed96f66f01e4b4a36))
+* **chat:** Conversation query/mutation hooks ([94132b7](https://github.com/nikrich/poltergeist/commit/94132b7ebb9e008a44f6d3a5d820afa322b66395))
+* **chat:** PATCH/DELETE support through the api bridge ([75e6b82](https://github.com/nikrich/poltergeist/commit/75e6b829a082ad33d59fdcf1067b9f3a65aa2b45))
+* **chat:** Renderer streaming state store ([0b79649](https://github.com/nikrich/poltergeist/commit/0b796498122612d0b0c0dab6a8229b65fc8d6829))
+* **chat:** Replace AskPanel with the chat screen (⌘K opens chat) ([9dc8faf](https://github.com/nikrich/poltergeist/commit/9dc8fafa460d02dd1621d2aebe5a69481f165079))
+* **chat:** Retry button on turn errors ([901180f](https://github.com/nikrich/poltergeist/commit/901180fec9191e21989c7e02f4f83c087c19dbb9))
+* **chat:** SSE relay main↔renderer with per-conversation abort ([9de360c](https://github.com/nikrich/poltergeist/commit/9de360c9ae5fbd88b98c5af848c3013076eb561d))
+* **desktop:** 12-week activity heatmap tile on today dashboard ([bd60c3c](https://github.com/nikrich/poltergeist/commit/bd60c3c907151ecfe3dcab97942a14f4a54cd055))
+* **desktop:** Activity screen with year heatmap, day log, source chips ([a20626b](https://github.com/nikrich/poltergeist/commit/a20626bd50d32dcd50b7047a5a7a959590dbacc6))
+* **desktop:** ActivityHeatmap component with 5 intensity buckets ([987fc2d](https://github.com/nikrich/poltergeist/commit/987fc2d8a43f917390a49f10c92995588568c524))
+* **desktop:** API hooks for jot list/get/create/update/route/delete ([d5e4169](https://github.com/nikrich/poltergeist/commit/d5e416920063a76707e37e08a4d4241d0d9ad023))
+* **desktop:** Copy-formatted — selection-aware HTML+markdown clipboard with ⌘⇧C ([3e837f7](https://github.com/nikrich/poltergeist/commit/3e837f7fa0bb18206a157cfa64dd5802928bcb80))
+* **desktop:** Editable vault note viewer — PATCH by path + synced-note warning chip ([e6d642c](https://github.com/nikrich/poltergeist/commit/e6d642c72274c671570697aeb654ff3f579a8f63))
+* **desktop:** Gb:clipboard:write-rich IPC — html + markdown clipboard flavours ([5d6008b](https://github.com/nikrich/poltergeist/commit/5d6008b46e8479c3e9ebac7dc677ed598d77196a))
+* **desktop:** Global Alt+J hotkey + jot overlay window lifecycle ([0a19902](https://github.com/nikrich/poltergeist/commit/0a1990205128a1193bb8dd620358e1d4e6ee9152))
+* **desktop:** Heatmap api types + useActivityHeatmap/useActivityForDate hooks ([be3679e](https://github.com/nikrich/poltergeist/commit/be3679ef1fb0c8837539b5431d223c7a3304d707))
+* **desktop:** Import api types, ApiError with status, import hooks ([50e67e6](https://github.com/nikrich/poltergeist/commit/50e67e601c5886ca1098f611fa1c01304157bb00))
+* **desktop:** Import screen — tabs, checkbox lists, search, selection bar, progress ([f8b7f9a](https://github.com/nikrich/poltergeist/commit/f8b7f9ad3cf83d02b363c90bd2e37f78d8375787))
+* **desktop:** Jot overlay renderer + preload bridge ([c6bf464](https://github.com/nikrich/poltergeist/commit/c6bf46471e58bc3abd6bf14bc618962c4484312f))
+* **desktop:** JotEditor — CodeMirror markdown with 1s autosave ([168e34e](https://github.com/nikrich/poltergeist/commit/168e34e7cbd9359c3cf8914025b0400952cc3132))
+* **desktop:** Jots screen — tree + editor + re-route + delete ([2a6f3d9](https://github.com/nikrich/poltergeist/commit/2a6f3d91a895d55162b3276c259d225745f487b1))
+* **desktop:** Jots screen uses RichMarkdownEditor (CodeMirror stays as src mode) ([e21e157](https://github.com/nikrich/poltergeist/commit/e21e1578c24cd5403fec5c099befe6746a123c4d))
+* **desktop:** JotTree component (context → month grouping) ([6bedd2a](https://github.com/nikrich/poltergeist/commit/6bedd2a383213d190870e16be21d99cd0fe98c19))
+* **desktop:** RichMarkdownEditor — TipTap WYSIWYG with autosave + source toggle ([bb7b399](https://github.com/nikrich/poltergeist/commit/bb7b39904c344a342474477abb7a95ffd4ab6b2a))
+* **desktop:** TipTap v2 stack + markdown round-trip fixture gate ([d67627e](https://github.com/nikrich/poltergeist/commit/d67627e1123a6a319b92eb906d20839e3ab578d9))
+* **desktop:** Widen api-forwarder to PATCH/DELETE for jot mutations ([483ee07](https://github.com/nikrich/poltergeist/commit/483ee07a6f9f746f46c3c4e171272730801b23b1))
+* GitHub-style activity heatmap — dashboard tile + activity screen ([1abad0c](https://github.com/nikrich/poltergeist/commit/1abad0c29b01b120cf687e0de9ac68791fc73e5e))
+* Poltergeist chat — agentic multi-turn chat with the vault ([60a6096](https://github.com/nikrich/poltergeist/commit/60a6096cd8defe7ab41b831fd96d5e4787bcf323))
+* Rich markdown editor (TipTap WYSIWYG) + copy-formatted for Slack/Confluence/Teams ([2f475d7](https://github.com/nikrich/poltergeist/commit/2f475d70c7aa9fd5b20c57099049ac9df9fd705c))
+* Wikilink click-to-navigate in rich editor + CI workflow ([cef1991](https://github.com/nikrich/poltergeist/commit/cef199168f02154c9f1648ff29abd7c8f2f9478d))
+
+
+### Bug Fixes
+
+* Activity feed shows ghost icon instead of broken image for internal sources ([b3a6605](https://github.com/nikrich/poltergeist/commit/b3a6605f213db50b8fe1f255c23d85047ede4370))
+* **chat:** Abort chat stream on window destroy; surface error detail ([50d4c8f](https://github.com/nikrich/poltergeist/commit/50d4c8f4c2742d35a9f0173248c4aefde5d06686))
+* **chat:** Let gb-note: wikilink hrefs through react-markdown's sanitizer ([f4256a5](https://github.com/nikrich/poltergeist/commit/f4256a5a36d29be5a057316635ea465e9e93abdb))
+* **chat:** Stop button + window close also stop the sidecar turn ([ba27734](https://github.com/nikrich/poltergeist/commit/ba27734e902876b649fbb524127fc111f5b12f36))
+* Close function/interface bodies broken by rebase conflict seams ([9780478](https://github.com/nikrich/poltergeist/commit/97804782a4ee57fbd22a4e2a5a67f546cf7c71b8))
+* **desktop:** Activity feed icon — ghost fallback for sourceless svgs + dash/underscore asset mapping ([68b44a8](https://github.com/nikrich/poltergeist/commit/68b44a876dd14b2c133bb24f50939b82297fced8))
+* **desktop:** Cap heatmap cells at 18px and centre the grid; tile shows 26 weeks ([8bb2c9b](https://github.com/nikrich/poltergeist/commit/8bb2c9b426b1f28e75f562a583ff95a083233411))
+* **desktop:** Fluid full-width heatmap — cells scale to container, squares kept via aspect-ratio ([1dad839](https://github.com/nikrich/poltergeist/commit/1dad839bb093a54bad068d777a9bb78fbfada044))
+* **desktop:** Harden wikilink regex against malformed nesting + second-link test ([1b2b70e](https://github.com/nikrich/poltergeist/commit/1b2b70e25823f09f7ad7a67b86f4dfe948325754))
+* **desktop:** Restore list markers in gb-prose — Tailwind preflight strips list-style ([77717c1](https://github.com/nikrich/poltergeist/commit/77717c1531937281bf28118cbe581ea694e5ebd2))
+* **editor:** Restore wikilink click-to-navigate in RichMarkdownEditor ([d37be12](https://github.com/nikrich/poltergeist/commit/d37be127cf4dfcd2f51f1943288814dcaf277198))
+* **jots:** Auto-route on leave — new-button jots were routed on placeholder content and never again ([e3b9302](https://github.com/nikrich/poltergeist/commit/e3b93026352e410939de189c884a32d74a1c3665))
+* **merge:** Restore useDeleteConversation closing braces lost in merge resolution ([c29a178](https://github.com/nikrich/poltergeist/commit/c29a178fd97b7cb0a1c4ad49e88feadd838e11ad))
+
 ## [0.2.10](https://github.com/nikrich/poltergeist/compare/v0.2.9...v0.2.10) (2026-05-28)
 
 
