@@ -206,18 +206,10 @@ export function RichMarkdownEditor({
       replaceWith(md: string, target: 'selection' | 'doc'): void {
         if (mode === 'rich' && editor && !editor.isDestroyed) {
           if (target === 'selection') {
-            // insertContent with a markdown string: tiptap-markdown's
-            // transformPastedText:true makes setContent work, but insertContent
-            // takes HTML/JSON — use setContent on a temporary doc is too
-            // destructive.  Instead, delete the selection and use
-            // editor.commands.setContent for the full replacement path, or for
-            // selection-only replacement we use the same mechanism as
-            // setContent but scoped:  insert the markdown as-is (tiptap-markdown
-            // serialises back so the round-trip is preserved at next read).
-            // The simplest reliable path for v1: focus, replace with insertContent
-            // which accepts strings interpreted as HTML by default.  The sidecar
-            // already returns proper markdown — convert to HTML via a headless
-            // parse to preserve formatting.
+            // tiptap-markdown@0.8.10 overrides insertContentAt (and setContent)
+            // in the merged command registry to parse strings through
+            // editor.storage.markdown.parser — so insertContent(md) parses
+            // markdown into rich content, replacing the current selection.
             editor.chain().focus().insertContent(md).run();
           } else {
             // Whole-doc replacement: same mechanism the markdown-prop resync

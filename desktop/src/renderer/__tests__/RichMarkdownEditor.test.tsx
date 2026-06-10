@@ -521,4 +521,44 @@ describe('RichMarkdownEditor EditorHandle', () => {
     // The saved markdown should reflect the new content (not the original).
     expect(lastMarkdown(onSave)).toContain('replaced');
   });
+
+  it('replaceWith(md, selection) parses markdown into rich content (not literal text)', () => {
+    // Pins the tiptap-markdown@0.8.10 contract: the Markdown extension
+    // overrides insertContentAt to parse strings through its markdown parser,
+    // so replaceWith('**bold** …', 'selection') must round-trip as markdown —
+    // the saved doc keeps the ** syntax instead of escaped literal \*\* text.
+    const onSave = vi.fn();
+    const handleRef = { current: null as EditorHandle | null };
+    let editor: Editor | undefined;
+    render(
+      <RichMarkdownEditor
+        markdown={'# keep\n\nreplace me'}
+        onSave={onSave}
+        debounceMs={500}
+        handleRef={handleRef}
+        onEditorReady={(e) => {
+          editor = e;
+        }}
+      />,
+    );
+    act(() => {
+      // Select the full second paragraph (same layout math as the copy test).
+      const doc = editor!.state.doc;
+      const para = doc.child(1);
+      const start = doc.firstChild!.nodeSize + 1;
+      editor!.commands.setTextSelection({ from: start, to: start + para.content.size });
+    });
+    act(() => {
+      handleRef.current?.replaceWith('**bold** text', 'selection');
+    });
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    expect(onSave).toHaveBeenCalledTimes(1);
+    const saved = lastMarkdown(onSave);
+    expect(saved).toContain('# keep');
+    expect(saved).toContain('**bold** text');
+    expect(saved).not.toContain('replace me');
+    expect(saved).not.toContain('\\*\\*');
+  });
 });

@@ -200,4 +200,58 @@ describe('DocsAssistPanel', () => {
       expect(window.gb.docs.assistStop).toHaveBeenCalledWith(JOTID);
     });
   });
+
+  it('a pending proposal is discarded when the jotId switches (never written to the new jot)', async () => {
+    // Regression: a proposal generated for jot A must not survive a switch to
+    // jot B — Accept would write A's text into B's editor via the handle.
+    const { fire } = captureDocsListener();
+    const handle = makeHandle();
+    const { rerender } = render(<DocsAssistPanel jotId={JOTID} editorHandle={handle} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'polish' }));
+    await waitFor(() => expect(useDocsAssist.getState().phase).toBe('streaming'));
+
+    act(() => {
+      fire({ jotId: JOTID, event: { type: 'done', text: "jot A's proposal" } });
+    });
+    await waitFor(() => expect(useDocsAssist.getState().phase).toBe('proposal'));
+
+    // Switch to a different jot while the proposal is pending.
+    rerender(<DocsAssistPanel jotId="j-other" editorHandle={handle} />);
+
+    await waitFor(() => {
+      expect(useDocsAssist.getState().phase).toBe('idle');
+    });
+    // No accept UI remains, and nothing was ever written into an editor.
+    expect(screen.queryByRole('button', { name: /accept/i })).toBeNull();
+    expect(handle.current?.replaceWith).not.toHaveBeenCalled();
+    // The proposal phase needed no sidecar stop — only streams do.
+    expect(window.gb.docs.assistStop).not.toHaveBeenCalled();
+  });
+
+  it('finish with empty done text accepts the accumulated delta text', async () => {
+    // The sidecar may emit done without a final text payload — the proposal
+    // (and accept) must then use the concatenated deltas.
+    const { fire } = captureDocsListener();
+    const handle = makeHandle();
+    render(<DocsAssistPanel jotId={JOTID} editorHandle={handle} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'polish' }));
+    await waitFor(() => expect(useDocsAssist.getState().phase).toBe('streaming'));
+
+    act(() => {
+      fire({ jotId: JOTID, event: { type: 'delta', text: 'accumulated ' } });
+      fire({ jotId: JOTID, event: { type: 'delta', text: 'deltas' } });
+      fire({ jotId: JOTID, event: { type: 'done', text: '' } });
+    });
+    await waitFor(() => expect(useDocsAssist.getState().phase).toBe('proposal'));
+
+    fireEvent.click(screen.getByRole('button', { name: /accept/i }));
+
+    expect(handle.current?.replaceWith).toHaveBeenCalledWith(
+      'accumulated deltas',
+      expect.stringMatching(/^(selection|doc)$/),
+    );
+    expect(useDocsAssist.getState().phase).toBe('idle');
+  });
 });

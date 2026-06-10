@@ -30,7 +30,6 @@ export function DocsAssistPanel({ jotId, editorHandle }: Props) {
   const finish = useDocsAssist((s) => s.finish);
   const fail = useDocsAssist((s) => s.fail);
   const reset = useDocsAssist((s) => s.reset);
-  const storeJotId = useDocsAssist((s) => s.jotId);
 
   const [instruction, setInstruction] = useState('');
   // Last tool summary received during streaming — shown as a subtle status line.
@@ -72,15 +71,21 @@ export function DocsAssistPanel({ jotId, editorHandle }: Props) {
     });
   }, [jotId, appendDelta, finish, fail]);
 
-  // When the jotId changes mid-stream, stop the previous stream and reset.
+  // When the jotId changes, reset ANY non-idle state — a surviving proposal
+  // (or error) from jot A could otherwise be accepted into jot B's editor,
+  // since editorHandle now points at the new jot. Only an active stream needs
+  // an explicit sidecar stop.
   const prevJotIdRef = useRef(jotId);
   useEffect(() => {
     const prev = prevJotIdRef.current;
     prevJotIdRef.current = jotId;
-    if (prev !== jotId && phase === 'streaming') {
-      void window.gb.docs.assistStop(prev);
+    if (prev !== jotId && phase !== 'idle') {
+      if (phase === 'streaming') void window.gb.docs.assistStop(prev);
       reset();
       setToolHint(null);
+      // The retry target is gone too — a stale request must not be re-sent
+      // against the new jot.
+      lastRequest.current = null;
     }
   }, [jotId, phase, reset]);
 
@@ -249,8 +254,10 @@ export function DocsAssistPanel({ jotId, editorHandle }: Props) {
         <PanelError message={error ?? 'something went wrong'} onRetry={handleRetry} />
       )}
 
-      {/* Idle hint when nothing has happened yet */}
-      {isIdle && !storeJotId && (
+      {/* Idle hint until the first request is made in this panel. The ref read
+          at render is safe: every return to idle comes with a phase re-render,
+          and the jot-switch effect nulls the ref before its re-render too. */}
+      {isIdle && !lastRequest.current && (
         <div className="text-12 text-ink-3">
           select text in the editor to assist a specific passage, or use the actions above to
           process the whole document.
