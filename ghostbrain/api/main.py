@@ -18,6 +18,7 @@ from ghostbrain.api.routes import settings as settings_routes
 from ghostbrain.api.routes import meetings as meetings_routes
 from ghostbrain.api.routes import projects as projects_routes
 from ghostbrain.api.routes import suggestions as suggestions_routes
+from ghostbrain.api.routes import docs as docs_routes
 from ghostbrain.api.routes import vault as vault_routes
 
 API_VERSION = "1.0.0"
@@ -48,4 +49,5 @@ def create_app(token: str) -> FastAPI:
     app.include_router(chat_routes.router)
     app.include_router(suggestions_routes.router)
     app.include_router(projects_routes.router)
+    app.include_router(docs_routes.router)
     return app
