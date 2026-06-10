@@ -16,18 +16,12 @@ import {
   useDeleteConversation,
 } from '../lib/api/hooks';
 import { useChat } from '../stores/chat';
+import type { StreamState } from '../stores/chat';
 import type {
   ChatMessage,
   ChatToolUse,
   ConversationSummary,
 } from '../../shared/api-types';
-
-// Local mirror of the store's StreamState (not exported from api-types).
-type Stream = {
-  userText: string;
-  text: string;
-  tools: ChatToolUse[];
-};
 
 export function ChatScreen() {
   const qc = useQueryClient();
@@ -51,6 +45,9 @@ export function ChatScreen() {
     return window.gb.on('chat:event', ({ convId, event }) => {
       applyEvent(convId, event);
       if (event.type === 'done' || event.type === 'error') {
+        // Known cosmetic flicker: on done the optimistic bubble clears before
+        // the ['chat'] prefix-invalidation refetch lands (sub-100ms locally) —
+        // accepted for v1.
         qc.invalidateQueries({ queryKey: ['chat'] });
       }
     });
@@ -72,7 +69,8 @@ export function ChatScreen() {
         applyEvent(activeId, { type: 'error', message: res.error });
       }
       // Finalizer: covers user-stop / relay teardown where no terminal event
-      // arrives. No-op when done/error already cleared the stream.
+      // arrives. No-op when done/error already cleared the stream. Same
+      // cosmetic flicker window as the done|error path above applies here.
       endStream(activeId);
       qc.invalidateQueries({ queryKey: ['chat'] });
     });
@@ -272,7 +270,7 @@ function ConversationRow({
 
 interface ThreadProps {
   conversation: ReturnType<typeof useConversation>;
-  stream: Stream | undefined;
+  stream: StreamState | undefined;
   error: string | undefined;
   onStop: () => void;
 }
@@ -354,7 +352,7 @@ function Message({ message }: { message: ChatMessage }) {
   );
 }
 
-function StreamingTurn({ stream, onStop }: { stream: Stream; onStop: () => void }) {
+function StreamingTurn({ stream, onStop }: { stream: StreamState; onStop: () => void }) {
   return (
     <>
       <div className="flex justify-end">

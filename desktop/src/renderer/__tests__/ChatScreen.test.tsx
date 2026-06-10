@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
@@ -107,6 +107,39 @@ describe('ChatScreen', () => {
     expect(
       screen.getByRole('button', { name: /stop/i }),
     ).toBeInTheDocument();
+  });
+
+  it('composer is disabled while streaming', async () => {
+    useChat.setState({
+      activeId: 'c1',
+      streams: {
+        c1: { userText: 'q', text: '', tools: [] },
+      },
+      errors: {},
+    });
+
+    render(wrap(<ChatScreen />));
+
+    const textarea = await screen.findByPlaceholderText(/poltergeist is responding/);
+    expect(textarea).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'send' })).toBeDisabled();
+  });
+
+  it('send flow finalizes the stream when the send promise resolves', async () => {
+    render(wrap(<ChatScreen />));
+
+    const textarea = await screen.findByPlaceholderText(/message poltergeist/);
+    fireEvent.change(textarea, { target: { value: 'hello ghost' } });
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+
+    expect(window.gb.chat.send).toHaveBeenCalledWith('c1', 'hello ghost');
+
+    // The send promise resolves on ANY stream end (done, error, user stop,
+    // relay teardown). The screen's finalizer must clear the stream so the
+    // UI never sticks in "streaming" — this locks in the user-stop contract.
+    await waitFor(() => {
+      expect(useChat.getState().streams.c1).toBeUndefined();
+    });
   });
 
   it('renders a turn error inline', async () => {
