@@ -479,6 +479,10 @@ export function useUpdateNoteByPath() {
       // and ['note-by-path'] (useJot/jots screen).
       qc.invalidateQueries({ queryKey: ['note'] });
       qc.invalidateQueries({ queryKey: ['note-by-path'] });
+    },
+  });
+}
+
 // ── Atlassian import ──────────────────────────────────────────────────────
 
 export function useImportSpaces() {

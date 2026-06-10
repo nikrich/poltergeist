@@ -295,6 +295,8 @@ export interface AutoRouteResponse {
   path: string;
   routingStatus: JotRoutingStatus;
   context?: string | null;
+}
+
 // ── Atlassian import (mirrors ghostbrain/api/models/import_atlassian.py) ──
 
 export interface ImportSpace {
