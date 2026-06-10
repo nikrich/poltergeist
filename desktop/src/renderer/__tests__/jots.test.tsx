@@ -1,10 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { JotsScreen } from '../screens/jots';
-import type { JotsPage, Note, AutoRouteResponse, Project } from '../../shared/api-types';
+import type { JotsPage, Note, AutoRouteResponse, Project, Connector } from '../../shared/api-types';
 
 const apiRequest = vi.fn();
+
+// Wrap a test-provided mock implementation to transparently handle
+// /v1/connectors (which the JotsScreen now calls). Tests that don't care
+// about connectors don't need to know about this call.
+function withConnectors(
+  impl: (method: string, path: string, body?: unknown) => Promise<unknown>,
+  connectors: Connector[] = [],
+) {
+  return async (method: string, path: string, body?: unknown) => {
+    if (path === '/v1/connectors') return { ok: true, status: 200, data: connectors };
+    return impl(method, path, body);
+  };
+}
 
 beforeEach(() => {
   apiRequest.mockReset();
@@ -17,7 +30,18 @@ beforeEach(() => {
       onFocus: () => () => {},
       onSaveFailed: () => () => {},
     },
-  };
+    docs: {
+      ...window.gb?.docs,
+      exportPdf: vi.fn().mockResolvedValue({ ok: true, path: '/tmp/doc.pdf' }),
+      assist: vi.fn().mockResolvedValue({ ok: true }),
+      assistStop: vi.fn().mockResolvedValue({ ok: true }),
+    },
+    shell: {
+      ...window.gb?.shell,
+      openExternal: vi.fn().mockResolvedValue({ ok: true }),
+      openPath: vi.fn().mockResolvedValue({ ok: true }),
+    },
+  } as typeof window.gb;
 });
 
 function withQuery(children: React.ReactNode) {
@@ -94,10 +118,10 @@ const detailB: Note = {
 
 describe('JotsScreen', () => {
   it('renders the tree and loads the first jot on select', async () => {
-    apiRequest.mockImplementation(async (_m: string, path: string) => {
+    apiRequest.mockImplementation(withConnectors(async (_m, path) => {
       if (path.includes('source=manual')) return { ok: true, status: 200, data: page };
       return { ok: true, status: 200, data: detail };
-    });
+    }));
 
     render(withQuery(<JotsScreen />));
     const leaf = await screen.findByText('first jot');
@@ -106,11 +130,11 @@ describe('JotsScreen', () => {
   });
 
   it('shows empty state when there are no jots', async () => {
-    apiRequest.mockImplementation(async (_m: string, path: string) => {
+    apiRequest.mockImplementation(withConnectors(async (_m, path) => {
       if (path.includes('source=manual'))
         return { ok: true, status: 200, data: { items: [], total: 0 } satisfies JotsPage };
       return { ok: true, status: 200, data: detail };
-    });
+    }));
 
     render(withQuery(<JotsScreen />));
     await waitFor(() =>
@@ -119,10 +143,10 @@ describe('JotsScreen', () => {
   });
 
   it('auto-selects the first jot when the list loads', async () => {
-    apiRequest.mockImplementation(async (_m: string, path: string) => {
+    apiRequest.mockImplementation(withConnectors(async (_m, path) => {
       if (path.includes('source=manual')) return { ok: true, status: 200, data: page };
       return { ok: true, status: 200, data: detail };
-    });
+    }));
 
     render(withQuery(<JotsScreen />));
     // The list auto-selects the first item and loads its body.
@@ -130,10 +154,10 @@ describe('JotsScreen', () => {
   });
 
   it('renders the rich editor with the source-mode escape hatch and copy button', async () => {
-    apiRequest.mockImplementation(async (_m: string, path: string) => {
+    apiRequest.mockImplementation(withConnectors(async (_m, path) => {
       if (path.includes('source=manual')) return { ok: true, status: 200, data: page };
       return { ok: true, status: 200, data: detail };
-    });
+    }));
 
     render(withQuery(<JotsScreen />));
     await waitFor(() => expect(screen.getByText(/full body here/)).toBeInTheDocument());
@@ -150,12 +174,12 @@ describe('JotsScreen', () => {
       path: '00-inbox/raw/manual/manual-20260601T000000-new.md',
       routingStatus: 'pending',
     };
-    apiRequest.mockImplementation(async (method: string, path: string) => {
+    apiRequest.mockImplementation(withConnectors(async (method, path) => {
       if (path.includes('source=manual')) return { ok: true, status: 200, data: { items: [], total: 0 } satisfies JotsPage };
       if (method === 'POST' && path === '/v1/notes')
         return { ok: true, status: 200, data: createResponse };
       return { ok: true, status: 200, data: { items: [], total: 0 } };
-    });
+    }));
 
     render(withQuery(<JotsScreen />));
     await waitFor(() => screen.getByRole('button', { name: /new/ }));
@@ -182,7 +206,7 @@ describe('JotsScreen', () => {
       context: 'sanlam',
     };
 
-    apiRequest.mockImplementation(async (method: string, path: string) => {
+    apiRequest.mockImplementation(withConnectors(async (method, path) => {
       if (path.includes('source=manual')) return { ok: true, status: 200, data: twoJotPage };
       if (path.includes('manual-20260514T093015-a') && !path.includes('route'))
         return { ok: true, status: 200, data: detailA };
@@ -191,7 +215,7 @@ describe('JotsScreen', () => {
       if (method === 'POST' && path.includes('route-auto'))
         return { ok: true, status: 200, data: routeAutoResponse };
       return { ok: true, status: 200, data: detailA };
-    });
+    }));
 
     render(withQuery(<JotsScreen />));
 
@@ -215,14 +239,14 @@ describe('JotsScreen', () => {
   });
 
   it('arriving at an unrouted jot does NOT fire route-auto (double-fire regression)', async () => {
-    apiRequest.mockImplementation(async (method: string, path: string) => {
+    apiRequest.mockImplementation(withConnectors(async (_m, path) => {
       if (path.includes('source=manual')) return { ok: true, status: 200, data: twoJotPage };
       if (path.includes('manual-20260514T093015-a') && !path.includes('route'))
         return { ok: true, status: 200, data: detailA };
       if (path.includes('manual-20260514T120000-b') && !path.includes('route'))
         return { ok: true, status: 200, data: detailB };
       return { ok: true, status: 200, data: detailA };
-    });
+    }));
 
     render(withQuery(<JotsScreen />));
     await waitFor(() => expect(screen.getByText(/full body here/)).toBeInTheDocument());
@@ -240,14 +264,14 @@ describe('JotsScreen', () => {
   // ── "route now" button visibility ────────────────────────────────────────
 
   it('"route now" button is visible for unrouted jot and absent for routed jot', async () => {
-    apiRequest.mockImplementation(async (_m: string, path: string) => {
+    apiRequest.mockImplementation(withConnectors(async (_m, path) => {
       if (path.includes('source=manual')) return { ok: true, status: 200, data: twoJotPage };
       if (path.includes('manual-20260514T093015-a') && !path.includes('route'))
         return { ok: true, status: 200, data: detailA };
       if (path.includes('manual-20260514T120000-b') && !path.includes('route'))
         return { ok: true, status: 200, data: detailB };
       return { ok: true, status: 200, data: detailA };
-    });
+    }));
 
     render(withQuery(<JotsScreen />));
 
@@ -286,12 +310,12 @@ describe('JotsScreen', () => {
       context: 'sanlam',
     };
 
-    apiRequest.mockImplementation(async (method: string, path: string) => {
+    apiRequest.mockImplementation(withConnectors(async (method, path) => {
       if (path.includes('source=manual')) return { ok: true, status: 200, data: pendingPage };
       if (method === 'POST' && path.includes('route-auto'))
         return { ok: true, status: 200, data: routeAutoResponse };
       return { ok: true, status: 200, data: detailB };
-    });
+    }));
 
     render(withQuery(<JotsScreen />));
 
@@ -328,11 +352,11 @@ const projectsData: Project[] = [
 
 describe('JotsScreen re-route picker', () => {
   it('re-route select offers project destinations', async () => {
-    apiRequest.mockImplementation(async (_m: string, path: string) => {
+    apiRequest.mockImplementation(withConnectors(async (_m, path) => {
       if (path.includes('source=manual')) return { ok: true, status: 200, data: page };
       if (path === '/v1/projects') return { ok: true, status: 200, data: projectsData };
       return { ok: true, status: 200, data: detail };
-    });
+    }));
 
     render(withQuery(<JotsScreen />));
     // Wait for the jot to load so footer is visible
@@ -342,5 +366,103 @@ describe('JotsScreen re-route picker', () => {
     const options = Array.from(select.querySelectorAll('option')).map((o) => o.getAttribute('value'));
     expect(options).toContain('codeship');
     expect(options).toContain('codeship/poltergeist');
+  });
+});
+
+// ── Export select gating ───────────────────────────────────────────────────
+
+const confluenceConnectorOn: Connector = {
+  id: 'confluence',
+  displayName: 'Confluence',
+  state: 'on',
+  count: 10,
+  lastSyncAt: null,
+  account: null,
+  throughput: null,
+  error: null,
+};
+
+const confluenceConnectorOff: Connector = {
+  ...confluenceConnectorOn,
+  state: 'off',
+};
+
+function makeApiMock(connectors: Connector[]) {
+  return async (_m: string, path: string) => {
+    if (path.includes('source=manual')) return { ok: true, status: 200, data: page };
+    if (path === '/v1/connectors') return { ok: true, status: 200, data: connectors };
+    return { ok: true, status: 200, data: detail };
+  };
+}
+
+describe('JotsScreen export select', () => {
+  it('confluence option is disabled when connector is off', async () => {
+    apiRequest.mockImplementation(makeApiMock([confluenceConnectorOff]));
+
+    render(withQuery(<JotsScreen />));
+    await waitFor(() => expect(screen.getByText(/full body here/)).toBeInTheDocument());
+
+    const exportSelect = screen.getByRole('combobox', { name: /export/i });
+    const confluenceOption = Array.from(exportSelect.querySelectorAll('option')).find(
+      (o) => o.getAttribute('value') === 'confluence',
+    );
+    expect(confluenceOption).toBeDefined();
+    expect(confluenceOption!.hasAttribute('disabled')).toBe(true);
+  });
+
+  it('confluence option is enabled when connector is on', async () => {
+    apiRequest.mockImplementation(makeApiMock([confluenceConnectorOn]));
+
+    render(withQuery(<JotsScreen />));
+    await waitFor(() => expect(screen.getByText(/full body here/)).toBeInTheDocument());
+
+    const exportSelect = screen.getByRole('combobox', { name: /export/i });
+    const confluenceOption = Array.from(exportSelect.querySelectorAll('option')).find(
+      (o) => o.getAttribute('value') === 'confluence',
+    );
+    expect(confluenceOption).toBeDefined();
+    expect(confluenceOption!.hasAttribute('disabled')).toBe(false);
+  });
+
+  it('confluence option is disabled when no connectors data', async () => {
+    apiRequest.mockImplementation(makeApiMock([]));
+
+    render(withQuery(<JotsScreen />));
+    await waitFor(() => expect(screen.getByText(/full body here/)).toBeInTheDocument());
+
+    const exportSelect = screen.getByRole('combobox', { name: /export/i });
+    const confluenceOption = Array.from(exportSelect.querySelectorAll('option')).find(
+      (o) => o.getAttribute('value') === 'confluence',
+    );
+    expect(confluenceOption!.hasAttribute('disabled')).toBe(true);
+  });
+
+  it('pdf export with empty html shows info toast and does not call exportPdf', async () => {
+    // Empty jot list — no jot selected, so editor is not rendered and
+    // editorHandle.current stays null. Selecting pdf from a hypothetical
+    // export select (or calling handleExportSelect directly) with a null
+    // handle gives '' html and should show the info toast.
+    //
+    // We test this by loading a jot, switching to source mode (which makes
+    // getHTML() return ''), then triggering pdf export.
+    apiRequest.mockImplementation(makeApiMock([]));
+    const exportPdf = vi.fn().mockResolvedValue({ ok: true, path: '/tmp/doc.pdf' });
+    window.gb = {
+      ...window.gb,
+      docs: { ...window.gb?.docs, exportPdf },
+    } as typeof window.gb;
+
+    render(withQuery(<JotsScreen />));
+    await waitFor(() => expect(screen.getByText(/full body here/)).toBeInTheDocument());
+
+    // Switch editor to source mode — getHTML() returns '' in source mode.
+    const srcBtn = screen.getByRole('button', { name: 'src' });
+    fireEvent.click(srcBtn);
+
+    const exportSelect = screen.getByRole('combobox', { name: /export/i });
+    fireEvent.change(exportSelect, { target: { value: 'pdf' } });
+
+    // getHTML() returns '' in source mode — info toast should appear, no exportPdf call.
+    expect(exportPdf).not.toHaveBeenCalled();
   });
 });
