@@ -12,6 +12,7 @@ import { Toaster } from './components/Toaster';
 import { NoteView } from './components/NoteView';
 import { SidecarSetup } from './components/SidecarSetup';
 import { TodayScreen } from './screens/today';
+import { ChatScreen } from './screens/chat';
 import { ConnectorsScreen } from './screens/connectors';
 import { MeetingsScreen } from './screens/meetings';
 import { CaptureScreen } from './screens/capture';
@@ -100,6 +101,7 @@ export default function App() {
         <Sidebar />
         <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {active === 'today' && <TodayScreen />}
+          {active === 'chat' && <ChatScreen />}
           {active === 'connectors' && <ConnectorsScreen />}
           {active === 'meetings' && <MeetingsScreen />}
           {active === 'capture' && <CaptureScreen />}

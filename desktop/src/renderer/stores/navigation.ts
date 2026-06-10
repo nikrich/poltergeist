@@ -2,6 +2,7 @@ import { create } from 'zustand';
 
 export type ScreenId =
   | 'today'
+  | 'chat'
   | 'connectors'
   | 'meetings'
   | 'capture'

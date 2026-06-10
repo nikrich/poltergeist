@@ -43,6 +43,10 @@ const stubBridge: GbBridge = {
   platform: 'darwin',
   api: { request: (async () => ({ ok: true, data: null })) as GbBridge['api']['request'] },
   sidecar: { retry: async () => ({ ok: true }) },
+  chat: {
+    send: async () => ({ ok: true }),
+    stop: async () => ({ ok: true }),
+  },
   tray: { setFailing: async () => ({ ok: true }) },
   clipboard: { writeRich: async () => ({ ok: true }) },
   jot: {

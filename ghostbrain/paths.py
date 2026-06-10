@@ -34,3 +34,13 @@ def state_dir() -> Path:
     if raw:
         return Path(raw).expanduser().resolve()
     return (Path.home() / ".ghostbrain" / "state").resolve()
+
+
+def chats_dir() -> Path:
+    """Chat conversations live outside the vault (not synced, not indexed).
+
+    Override with GHOSTBRAIN_CHATS_DIR (tests)."""
+    raw = os.environ.get("GHOSTBRAIN_CHATS_DIR")
+    if raw:
+        return Path(raw).expanduser().resolve()
+    return (Path.home() / "ghostbrain" / "chats").resolve()

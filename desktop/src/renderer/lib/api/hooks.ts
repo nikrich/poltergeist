@@ -3,12 +3,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   ActivityRow,
   AgendaItem,
-  AnswerResponse,
   AutoRouteResponse,
   Capture,
   CapturesPage,
   Connector,
   ConnectorDetail,
+  Conversation,
+  ConversationSummary,
   CreateJotRequest,
   CreateJotResponse,
   DailyPage,
@@ -146,13 +147,6 @@ export function useSearch() {
   return useMutation({
     mutationFn: (vars: { q: string; limit?: number }) =>
       post<SearchResponse>('/v1/search', { q: vars.q, limit: vars.limit ?? 10 }),
-  });
-}
-
-export function useAsk() {
-  return useMutation({
-    mutationFn: (vars: { q: string; limit?: number }) =>
-      post<AnswerResponse>('/v1/answer', { q: vars.q, limit: vars.limit ?? 8 }),
   });
 }
 
@@ -314,6 +308,53 @@ export function usePrewarmMeetingPrep() {
       post<{ status: string }>(
         `/v1/meetings/prep/${encodeURIComponent(eventId)}/prewarm`,
       ),
+  });
+}
+
+// ── Chat ──────────────────────────────────────────────────────────────────
+
+export function useConversations() {
+  return useQuery({
+    queryKey: ['chat'],
+    queryFn: () => get<ConversationSummary[]>('/v1/chat'),
+    staleTime: 10_000,
+  });
+}
+
+export function useConversation(id: string | null) {
+  return useQuery({
+    queryKey: ['chat', id],
+    queryFn: () => get<Conversation>(`/v1/chat/${encodeURIComponent(id!)}`),
+    enabled: id !== null,
+    // Refetched explicitly when a turn completes — no background polling.
+    staleTime: Infinity,
+  });
+}
+
+export function useCreateConversation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => post<Conversation>('/v1/chat'),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['chat'] }),
+  });
+}
+
+export function useRenameConversation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { id: string; title: string }) =>
+      patch<Conversation>(`/v1/chat/${encodeURIComponent(vars.id)}`, {
+        title: vars.title,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['chat'] }),
+  });
+}
+
+export function useDeleteConversation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => del<{ ok: boolean }>(`/v1/chat/${encodeURIComponent(id)}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['chat'] }),
   });
 }
 
