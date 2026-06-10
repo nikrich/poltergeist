@@ -388,9 +388,9 @@ function StreamingTurn({ stream, onStop }: { stream: StreamState; onStop: () => 
         )}
         <div>
           <Btn
-            variant="ghost"
+            variant="danger"
             size="sm"
-            icon={<Lucide name="square" size={12} />}
+            icon={<Lucide name="square" size={10} />}
             onClick={onStop}
           >
             stop
@@ -465,12 +465,15 @@ function Composer({
   const [text, setText] = useState('');
   const ref = useRef<HTMLTextAreaElement>(null);
 
-  // Grow the textarea up to ~5 rows, then scroll internally.
+  // Grow the textarea up to ~5 rows, then scroll internally. Keep overflow
+  // hidden below the cap — otherwise a phantom scrollbar gutter renders at
+  // one line.
   const autosize = () => {
     const el = ref.current;
     if (!el) return;
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, 132)}px`;
+    el.style.overflowY = el.scrollHeight > 132 ? 'auto' : 'hidden';
   };
 
   const submit = () => {
@@ -483,7 +486,9 @@ function Composer({
 
   return (
     <div className="flex-shrink-0 border-t border-hairline bg-paper px-6 py-4">
-      <div className="mx-auto flex max-w-[760px] items-end gap-2">
+      {/* AskPanel-style chrome: one bordered container, borderless textarea
+          inside, compact send button embedded — no double borders or rings. */}
+      <div className="mx-auto flex max-w-[760px] items-end gap-2 rounded-r10 border border-hairline-2 bg-vellum py-[6px] pl-[14px] pr-[6px] transition-colors duration-[120ms] focus-within:border-ink-3">
         <textarea
           ref={ref}
           value={text}
@@ -502,16 +507,17 @@ function Composer({
               submit();
             }
           }}
-          className="flex-1 resize-none rounded-r10 border border-hairline-2 bg-vellum px-[14px] py-[10px] text-14 leading-[1.5] text-ink-0 placeholder:text-ink-3 focus:outline-none focus:ring-1 focus:ring-neon/40 disabled:opacity-60"
+          className="flex-1 resize-none overflow-y-hidden border-none bg-transparent py-[7px] text-14 leading-[1.5] text-ink-0 placeholder:text-ink-3 focus:outline-none disabled:opacity-60"
         />
-        <Btn
-          variant="primary"
-          size="md"
-          ariaLabel="send"
+        <button
+          type="button"
+          aria-label="send"
           disabled={disabled || text.trim().length === 0}
-          icon={<Lucide name="send" size={14} color="#0E0F12" />}
           onClick={submit}
-        />
+          className="mb-[1px] flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-r6 bg-neon transition-all duration-[120ms] hover:bg-neon-dark disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <Lucide name="arrow-up" size={15} color="#0E0F12" />
+        </button>
       </div>
     </div>
   );
