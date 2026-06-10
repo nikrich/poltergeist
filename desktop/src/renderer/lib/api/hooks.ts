@@ -566,6 +566,9 @@ export function useImportItems() {
       qc.invalidateQueries({ queryKey: ['captures'] });
       qc.invalidateQueries({ queryKey: ['activity'] });
       qc.invalidateQueries({ queryKey: ['vault'] });
+      // Browse lists (spaces/pages/search/issues) — updatedAt/version data
+      // shown there can change once an item is imported.
+      qc.invalidateQueries({ queryKey: ['import'] });
     },
   });
 }
