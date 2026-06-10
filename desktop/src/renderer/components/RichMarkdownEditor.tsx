@@ -168,10 +168,13 @@ export function RichMarkdownEditor({
   // Call onEditorReady via useEffect so it fires synchronously inside React's
   // act() in tests. TipTap fires onCreate via window.setTimeout(0), which with
   // fake timers would require advancing the clock — useEffect avoids that.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // onEditorReady intentionally excluded: it is a callback that changes every
+  // render but must only fire once per editor instance.
+  /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     if (editor) onEditorReady?.(editor);
   }, [editor]);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   // Populate the imperative handle so docs-assist panel and PDF export can
   // programmatically read/replace editor content without prop drilling.
