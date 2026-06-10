@@ -26,6 +26,8 @@ import type {
 import { SkeletonRows } from '../components/SkeletonRows';
 import { PanelEmpty } from '../components/PanelEmpty';
 import { PanelError } from '../components/PanelError';
+import { ActivityFeedRow } from '../components/ActivityFeedRow';
+import { ActivityHeatmapTile } from '../components/ActivityHeatmapTile';
 
 export function TodayScreen() {
   const setActive = useNavigation((s) => s.setActive);
@@ -270,6 +272,9 @@ export function TodayScreen() {
           </Panel>
         </div>
 
+        {/* 12-week activity heatmap */}
+        <ActivityHeatmapTile />
+
         {/* Connector pulse strip */}
         <Panel
           title="connectors"
@@ -462,42 +467,6 @@ function AgendaItemRow({ time, dur, title, people, status, cta }: AgendaItemRowP
   );
 }
 
-interface ActivityRowCompProps {
-  source: ActivityRow['source'];
-  verb: ActivityRow['verb'];
-  subject: ActivityRow['subject'];
-  time: string;
-  onClick?: () => void;
-}
-
-function ActivityRowComp({ source, verb, subject, time, onClick }: ActivityRowCompProps) {
-  const className =
-    'flex w-full items-center gap-[10px] rounded-sm px-[6px] py-2 text-left' +
-    (onClick ? ' cursor-pointer hover:bg-paper' : '');
-  const content = (
-    <>
-      <img
-        src={`assets/connectors/${source}.svg`}
-        alt=""
-        className="h-[14px] w-[14px] opacity-90"
-      />
-      <span className="font-mono text-10 text-ink-2">{verb}</span>
-      <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-12 text-ink-0">
-        {subject}
-      </span>
-      <span className="font-mono text-10 text-ink-3">{time}</span>
-    </>
-  );
-  if (onClick) {
-    return (
-      <button type="button" onClick={onClick} className={className}>
-        {content}
-      </button>
-    );
-  }
-  return <div className={className}>{content}</div>;
-}
-
 const ACTIVITY_INITIAL_LIMIT = 10;
 
 function ActivityList({ items }: { items: ActivityRow[] }) {
@@ -511,7 +480,7 @@ function ActivityList({ items }: { items: ActivityRow[] }) {
   return (
     <>
       {visible.map((row) => (
-        <ActivityRowComp
+        <ActivityFeedRow
           key={row.id}
           source={row.source}
           verb={row.verb}

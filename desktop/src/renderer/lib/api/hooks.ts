@@ -13,6 +13,7 @@ import type {
   CreateJotRequest,
   CreateJotResponse,
   DailyPage,
+  HeatmapResponse,
   JotsPage,
   MeetingsPage,
   Note,
@@ -121,6 +122,23 @@ export function useRecentActivity(windowMinutes = 240) {
     queryFn: () => get<ActivityRow[]>(`/v1/activity?windowMinutes=${windowMinutes}`),
     staleTime: 30_000,
     refetchInterval: 30_000,
+  });
+}
+
+export function useActivityHeatmap(days = 365) {
+  return useQuery({
+    queryKey: ['activity', 'heatmap', days],
+    queryFn: () => get<HeatmapResponse>(`/v1/activity/heatmap?days=${days}`),
+    staleTime: 60_000,
+  });
+}
+
+export function useActivityForDate(date: string | null) {
+  return useQuery({
+    queryKey: ['activity', 'date', date],
+    queryFn: () => get<ActivityRow[]>(`/v1/activity?date=${date!}`),
+    enabled: !!date,
+    staleTime: 60_000,
   });
 }
 
