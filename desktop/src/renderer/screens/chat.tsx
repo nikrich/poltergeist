@@ -14,6 +14,7 @@ import {
   useCreateConversation,
   useRenameConversation,
   useDeleteConversation,
+  useExportChatToJot,
 } from '../lib/api/hooks';
 import { useChat } from '../stores/chat';
 import type { StreamState, TurnError } from '../stores/chat';
@@ -22,6 +23,7 @@ import type {
   ChatToolUse,
   ConversationSummary,
 } from '../../shared/api-types';
+import { toast } from '../stores/toast';
 
 export function ChatScreen() {
   const qc = useQueryClient();
@@ -35,6 +37,7 @@ export function ChatScreen() {
 
   const conversations = useConversations();
   const conversation = useConversation(activeId);
+  const exportJot = useExportChatToJot();
 
   const stream = activeId ? streams[activeId] : undefined;
   const error = activeId ? errors[activeId] : undefined;
@@ -89,6 +92,36 @@ export function ChatScreen() {
         <TopBar
           title="chat"
           subtitle={conversation.data?.title ?? 'with poltergeist'}
+          right={
+            <div className="flex gap-2">
+              <Btn
+                variant="ghost"
+                size="sm"
+                icon={<Lucide name="file-output" size={13} />}
+                disabled={
+                  activeId === null ||
+                  exportJot.isPending ||
+                  (conversation.data?.messages ?? []).every((m) => m.role !== 'assistant')
+                }
+                onClick={() => {
+                  if (!activeId) return;
+                  exportJot.mutate(activeId, {
+                    onSuccess: (res) => {
+                      const dest =
+                        res.routingStatus === 'routed'
+                          ? [res.context, res.project].filter(Boolean).join(' / ')
+                          : 'inbox (needs review)';
+                      toast.success(`exported to jots → ${dest}`);
+                    },
+                    onError: (e) =>
+                      toast.error(e instanceof Error ? e.message : 'export failed'),
+                  });
+                }}
+              >
+                {exportJot.isPending ? 'exporting…' : 'export to jots'}
+              </Btn>
+            </div>
+          }
         />
 
         {activeId === null ? (
