@@ -3,7 +3,7 @@ import { useChat } from '../stores/chat';
 
 describe('chat store', () => {
   beforeEach(() => {
-    useChat.setState({ activeId: null, streams: {}, errors: {} });
+    useChat.setState({ activeId: null, streams: {}, errors: {}, exporting: {} });
   });
 
   it('beginStream snapshots the pending user text and clears prior error', () => {
@@ -68,5 +68,14 @@ describe('chat store', () => {
   it('endStream is a no-op when no stream exists', () => {
     useChat.getState().endStream('nope');
     expect(useChat.getState().streams).toEqual({});
+  });
+
+  it('export pending state is store-global (survives component unmount)', () => {
+    useChat.getState().beginExport('c1');
+    expect(useChat.getState().exporting.c1).toBe(true);
+    // a remounted screen reads the same store — nothing component-scoped
+    expect(useChat.getState().exporting.c2).toBeUndefined();
+    useChat.getState().endExport('c1');
+    expect(useChat.getState().exporting.c1).toBeUndefined();
   });
 });

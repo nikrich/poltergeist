@@ -28,6 +28,11 @@ interface ChatState {
   /** Finalizer for streams that end without a terminal event (user stop,
    *  relay teardown). No-op when the stream is already gone. */
   endStream: (id: string) => void;
+  /** In-flight jot exports per conversation. Lives here (not in a component
+   *  mutation) so the pending state survives navigating away and back. */
+  exporting: Record<string, true>;
+  beginExport: (id: string) => void;
+  endExport: (id: string) => void;
 }
 
 export const useChat = create<ChatState>((set) => ({
@@ -89,5 +94,14 @@ export const useChat = create<ChatState>((set) => ({
       const streams = { ...s.streams };
       delete streams[id];
       return { streams };
+    }),
+  exporting: {},
+  beginExport: (id) =>
+    set((s) => ({ exporting: { ...s.exporting, [id]: true } })),
+  endExport: (id) =>
+    set((s) => {
+      const exporting = { ...s.exporting };
+      delete exporting[id];
+      return { exporting };
     }),
 }));

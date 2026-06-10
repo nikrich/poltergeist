@@ -6,7 +6,6 @@ import type {
   AutoRouteResponse,
   Capture,
   CapturesPage,
-  ChatExportResponse,
   ConfluencePagesResponse,
   Connector,
   ConnectorDetail,
@@ -614,11 +613,3 @@ export function useUpdateProject() {
   });
 }
 
-export function useExportChatToJot() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (convId: string) =>
-      post<ChatExportResponse>(`/v1/chat/${encodeURIComponent(convId)}/export-jot`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: JOTS_KEY }),
-  });
-}
