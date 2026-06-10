@@ -19,3 +19,15 @@ export async function post<T>(path: string, body?: unknown): Promise<T> {
   if (!result.ok) throw new Error(result.error);
   return result.data;
 }
+
+export async function patch<T>(path: string, body?: unknown): Promise<T> {
+  const result = await window.gb.api.request<T>('PATCH', path, body);
+  if (!result.ok) throw new Error(result.error);
+  return result.data;
+}
+
+export async function del<T>(path: string): Promise<T> {
+  const result = await window.gb.api.request<T>('DELETE', path);
+  if (!result.ok) throw new Error(result.error);
+  return result.data;
+}

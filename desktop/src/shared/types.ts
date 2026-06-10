@@ -48,7 +48,7 @@ export interface GbBridge {
   platform: NodeJS.Platform;
   api: {
     request<T = unknown>(
-      method: 'GET' | 'POST',
+      method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
       path: string,
       body?: unknown,
     ): Promise<

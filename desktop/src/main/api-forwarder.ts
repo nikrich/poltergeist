@@ -6,7 +6,7 @@ export type ApiResult<T = unknown> =
 
 export async function forward<T = unknown>(
   sidecar: Sidecar,
-  method: 'GET' | 'POST',
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
   path: string,
   body?: unknown,
 ): Promise<ApiResult<T>> {

@@ -229,7 +229,7 @@ ipcMain.handle(
       return { ok: false, error: 'Invalid request shape' };
     }
     const m = method.toUpperCase();
-    if (m !== 'GET' && m !== 'POST') {
+    if (m !== 'GET' && m !== 'POST' && m !== 'PATCH' && m !== 'DELETE') {
       return { ok: false, error: 'Method not allowed' };
     }
     if (!path.startsWith('/v1/')) {
