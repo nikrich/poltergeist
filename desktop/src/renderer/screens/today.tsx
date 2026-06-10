@@ -5,7 +5,6 @@ import { Pill } from '../components/Pill';
 import { Eyebrow } from '../components/Eyebrow';
 import { Panel } from '../components/Panel';
 import { TopBar } from '../components/TopBar';
-import { AskPanel } from '../components/AskPanel';
 import { useNavigation } from '../stores/navigation';
 import { useNoteView } from '../stores/note-view';
 import { stub } from '../stores/toast';
@@ -37,18 +36,16 @@ export function TodayScreen() {
   const connectors = useConnectors();
   const captures = useCaptures({ limit: 3 });
   const suggestions = useSuggestions();
-  const [askOpen, setAskOpen] = useState(false);
-
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        setAskOpen(true);
+        setActive('chat');
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [setActive]);
 
   const upcomingCount =
     agenda.data?.filter((e) => e.status === 'upcoming').length ?? 0;
@@ -70,7 +67,6 @@ export function TodayScreen() {
 
   return (
     <div className="flex-1 overflow-y-auto bg-paper">
-      <AskPanel open={askOpen} onClose={() => setAskOpen(false)} />
       <TopBar
         title="today"
         subtitle={todaySubtitle}
@@ -80,7 +76,7 @@ export function TodayScreen() {
               variant="ghost"
               size="sm"
               icon={<Lucide name="search" size={14} />}
-              onClick={() => setAskOpen(true)}
+              onClick={() => setActive('chat')}
             >
               ask…
               <kbd className="ml-2 rounded-xs bg-fog px-[5px] py-[1px] font-mono text-9 text-ink-2">
@@ -130,7 +126,7 @@ export function TodayScreen() {
                 size="md"
                 // intentional fixed color: icon must read dark on the always-bright neon button
                 icon={<Lucide name="search" size={14} color="#0E0F12" />}
-                onClick={() => setAskOpen(true)}
+                onClick={() => setActive('chat')}
               >
                 ask the archive
               </Btn>
