@@ -295,4 +295,61 @@ export interface AutoRouteResponse {
   path: string;
   routingStatus: JotRoutingStatus;
   context?: string | null;
+// ── Atlassian import (mirrors ghostbrain/api/models/import_atlassian.py) ──
+
+export interface ImportSpace {
+  site: string;
+  siteSlug: string;
+  key: string;
+  name: string;
+  context: string;
+}
+
+export interface ImportPage {
+  site: string;
+  id: string;
+  title: string;
+  parentId: string | null;
+  hasChildren: boolean;
+  updatedAt: string | null;
+  version: number | null;
+  space: string | null;
+}
+
+export interface ConfluencePagesResponse {
+  items: ImportPage[];
+  nextCursor: string | null;
+}
+
+export interface ImportJiraIssue {
+  site: string;
+  key: string;
+  summary: string;
+  status: string | null;
+  project: string | null;
+  updatedAt: string | null;
+}
+
+export type ImportItemKind = 'confluence_page' | 'jira_issue';
+
+export interface ImportItem {
+  kind: ImportItemKind;
+  site: string;
+  id?: string;
+  key?: string;
+}
+
+export interface ImportItemResult {
+  kind: ImportItemKind;
+  id?: string | null;
+  key?: string | null;
+  ok: boolean;
+  path?: string | null;
+  context?: string | null;
+  updated?: boolean | null;
+  error?: string | null;
+}
+
+export interface ImportResponse {
+  results: ImportItemResult[];
 }

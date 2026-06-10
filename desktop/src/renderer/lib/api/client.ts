@@ -1,3 +1,18 @@
+/** Error from the sidecar API, carrying the HTTP status when one exists.
+ * The main-process forwarder already extracts FastAPI's `detail` string and
+ * the status code; previously the renderer threw a plain Error and dropped
+ * the status — the import screen needs it to tell "409 connector not
+ * configured" (call-to-action) apart from real failures (error panel). */
+export class ApiError extends Error {
+  readonly status?: number;
+
+  constructor(message: string, status?: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 export async function get<T>(
   path: string,
   opts?: { signal?: AbortSignal },
@@ -10,13 +25,13 @@ export async function get<T>(
   if (opts?.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
   const result = await window.gb.api.request<T>('GET', path);
   if (opts?.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-  if (!result.ok) throw new Error(result.error);
+  if (!result.ok) throw new ApiError(result.error, result.status);
   return result.data;
 }
 
 export async function post<T>(path: string, body?: unknown): Promise<T> {
   const result = await window.gb.api.request<T>('POST', path, body);
-  if (!result.ok) throw new Error(result.error);
+  if (!result.ok) throw new ApiError(result.error, result.status);
   return result.data;
 }
 
