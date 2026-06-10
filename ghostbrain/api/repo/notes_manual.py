@@ -69,6 +69,7 @@ log = logging.getLogger("ghostbrain.api.repo.notes_manual")
 
 INBOX_REL = "00-inbox/raw/manual"
 CONTEXT_NOTES_TEMPLATE = "20-contexts/{context}/notes"
+PROJECT_NOTES_TEMPLATE = "20-contexts/{context}/projects/{project}"
 
 
 class JotNotFound(Exception):
@@ -142,11 +143,19 @@ def _find_file(jot_id: str) -> Path:
     if contexts_root.exists():
         for ctx_dir in contexts_root.iterdir():
             notes_dir = ctx_dir / "notes"
-            if not notes_dir.is_dir():
-                continue
-            candidate = _guard_inside_vault(notes_dir / f"{jot_id}.md")
-            if candidate.exists():
-                return candidate
+            if notes_dir.is_dir():
+                candidate = _guard_inside_vault(notes_dir / f"{jot_id}.md")
+                if candidate.exists():
+                    return candidate
+            # Also scan project folders under this context.
+            projects_dir = ctx_dir / "projects"
+            if projects_dir.is_dir():
+                for proj_dir in projects_dir.iterdir():
+                    if not proj_dir.is_dir():
+                        continue
+                    candidate = _guard_inside_vault(proj_dir / f"{jot_id}.md")
+                    if candidate.exists():
+                        return candidate
     raise JotNotFound(jot_id)
 
 
@@ -164,7 +173,7 @@ def _jsonable(value: Any) -> Any:
     return str(value)
 
 
-def write_inbox_jot(body: str, *, captured_at: "datetime | None" = None) -> dict:
+def write_inbox_jot(body: str, *, captured_at: "datetime | None" = None, extra: dict | None = None) -> dict:
     """Write a new jot to the inbox folder. Returns {id, path}."""
     captured_at = captured_at or datetime.now(timezone.utc)
     first_line = title_from_body(body)
@@ -190,6 +199,9 @@ def write_inbox_jot(body: str, *, captured_at: "datetime | None" = None) -> dict
         routingReasoning=None,
         tags=extract_tags(body),
     )
+    if extra:
+        for k, v in extra.items():
+            post[k] = v
     target.write_text(frontmatter.dumps(post) + "\n", encoding="utf-8")
     log.info("wrote inbox jot id=%s", jot_id)
     return {"id": jot_id, "path": _vault_rel(target)}
@@ -221,14 +233,23 @@ def move_jot(
     jot_id: str,
     *,
     to_context: str,
+    to_project: str | None = None,
     confidence: float,
     method: str,
     reasoning: str,
 ) -> dict:
     src = _find_file(jot_id)
-    dst = _guard_inside_vault(_context_dir(to_context) / f"{jot_id}.md")
+    if to_project:
+        _safe_component(to_project)
+        dst_dir = _guard_inside_vault(
+            _vault() / PROJECT_NOTES_TEMPLATE.format(context=to_context, project=to_project)
+        )
+        dst_dir.mkdir(parents=True, exist_ok=True)
+        dst = dst_dir / f"{jot_id}.md"
+    else:
+        dst = _guard_inside_vault(_context_dir(to_context) / f"{jot_id}.md")
     if src.resolve() == dst:
-        return {"id": jot_id, "path": _vault_rel(dst), "context": to_context}
+        return {"id": jot_id, "path": _vault_rel(dst), "context": to_context, "project": to_project}
     post = frontmatter.load(src)
     post["context"] = to_context
     post["routingStatus"] = "routed"
@@ -236,13 +257,17 @@ def move_jot(
     post["routingMethod"] = method
     post["routingReasoning"] = reasoning
     post["updated"] = _now_iso()
+    if to_project:
+        post["project"] = to_project
+    elif "project" in post.metadata:
+        del post.metadata["project"]
     dst.write_text(frontmatter.dumps(post) + "\n", encoding="utf-8")
     # Logged before unlink so a crash between dst write and src unlink
     # leaves a trace of the duplicate pair.
     log.info("moving jot id=%s: wrote %s, removing %s", jot_id, dst, src)
     src.unlink()
-    log.info("moved jot id=%s -> %s", jot_id, to_context)
-    return {"id": jot_id, "path": _vault_rel(dst), "context": to_context}
+    log.info("moved jot id=%s -> %s (project=%s)", jot_id, to_context, to_project)
+    return {"id": jot_id, "path": _vault_rel(dst), "context": to_context, "project": to_project}
 
 
 def mark_manual_review(jot_id: str, reasoning: str) -> dict:
@@ -268,8 +293,9 @@ def list_jots(
     q: str | None = None,
     context: str | None = None,
     tag: str | None = None,
+    project: str | None = None,
 ) -> dict:
-    """Walk inbox + every context folder, filter to source=manual."""
+    """Walk inbox + every context folder, filter to source=manual or chat-summary."""
     items: list[dict] = []
     for path in _iter_manual_files():
         try:
@@ -277,7 +303,7 @@ def list_jots(
         except Exception as exc:
             log.warning("skipping malformed jot %s: %s", path, exc)
             continue
-        if post.get("source") != "manual":
+        if post.get("source") not in ("manual", "chat-summary"):
             continue
         body = post.content or ""
         item = {
@@ -290,10 +316,13 @@ def list_jots(
             "tags": list(post.get("tags") or []),
             "created": post.get("created") or "",
             "updated": post.get("updated") or "",
+            "project": post.get("project"),
         }
         if context is not None and item["context"] != context:
             continue
         if tag is not None and tag not in item["tags"]:
+            continue
+        if project is not None and item["project"] != project:
             continue
         if q is not None:
             needle = q.lower()
@@ -372,6 +401,7 @@ def _route_jot_core(jot_id: str, body: str, *, path_hint: str) -> dict:
         moved = move_jot(
             jot_id,
             to_context=decision.context,
+            to_project=decision.project,
             confidence=decision.confidence,
             method=decision.method,
             reasoning=decision.reasoning,
@@ -394,6 +424,7 @@ def _route_jot_core(jot_id: str, body: str, *, path_hint: str) -> dict:
         "path": moved["path"],
         "routingStatus": "routed",
         "context": decision.context,
+        "project": decision.project,
     }
 
 
@@ -490,3 +521,8 @@ def _iter_manual_files() -> Iterable[Path]:
             notes_dir = ctx_dir / "notes"
             if notes_dir.is_dir():
                 yield from notes_dir.glob("manual-*.md")
+            projects_dir = ctx_dir / "projects"
+            if projects_dir.is_dir():
+                for proj_dir in projects_dir.iterdir():
+                    if proj_dir.is_dir():
+                        yield from proj_dir.glob("manual-*.md")
