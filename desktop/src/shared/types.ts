@@ -68,6 +68,12 @@ export interface GbBridge {
   tray: {
     setFailing(names: string[]): Promise<{ ok: true } | { ok: false; error: string }>;
   };
+  clipboard: {
+    writeRich(payload: {
+      html: string;
+      text: string;
+    }): Promise<{ ok: true } | { ok: false; error: string }>;
+  };
   jot: {
     save(body: string): Promise<{ ok: true }>;
     cancel(): Promise<{ ok: true }>;

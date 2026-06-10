@@ -38,9 +38,17 @@ class NotesPage(BaseModel):
 class CreateNoteRequest(BaseModel):
     body: str
     capturedAt: str | None = None  # ISO8601; omit to let the server timestamp the jot
+    route: bool = True  # set False to skip routing (stays pending in inbox)
 
 
 class UpdateNoteRequest(BaseModel):
+    body: str
+
+
+class UpdateNoteBodyRequest(BaseModel):
+    """PATCH /v1/notes/body — rich-editor save for any vault note by path."""
+
+    path: str  # vault-relative
     body: str
 
 

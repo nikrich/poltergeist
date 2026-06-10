@@ -4,8 +4,9 @@ import { Btn } from '../components/Btn';
 import { Lucide } from '../components/Lucide';
 import { Pill } from '../components/Pill';
 import { JotTree } from '../components/JotTree';
-import { JotEditor } from '../components/JotEditor';
+import { RichMarkdownEditor } from '../components/RichMarkdownEditor';
 import {
+  useAutoRouteJot,
   useCreateJot,
   useDeleteJot,
   useJot,
@@ -59,6 +60,7 @@ export function JotsScreen() {
   const createJot = useCreateJot();
   const updateJot = useUpdateJot();
   const routeJot = useRouteJot();
+  const autoRoute = useAutoRouteJot();
   const deleteJot = useDeleteJot();
 
   // Auto-select the newest jot when the list first loads.
@@ -68,9 +70,82 @@ export function JotsScreen() {
     }
   }, [list.data, selectedId]);
 
+  // Auto-route on leave: when the user moves away from an unrouted jot, fire
+  // route-auto in the background.
+  //
+  // currentSelectionRef always holds the latest {id, status} so the unmount
+  // cleanup and the selectedId-change effect can both read it without stale
+  // closures. It is updated on every render (not just inside an effect) so it
+  // always reflects the current list state.
+  const currentSelectionRef = useRef<{ id: string; status: string; excerpt: string } | null>(
+    null,
+  );
+  currentSelectionRef.current =
+    selectedId && selectedItem
+      ? {
+          id: selectedId,
+          status: selectedItem.routingStatus,
+          excerpt: selectedItem.excerpt,
+        }
+      : null;
+
+  // Placeholder/empty jots would just round-trip to manual_review — skip the
+  // LLM call entirely until there's real content.
+  const isRoutableContent = (excerpt: string) => {
+    const t = excerpt.trim();
+    return t !== '' && t !== 'new jot';
+  };
+
+  const fireAutoRoute = (id: string) => {
+    autoRoute.mutate(id, {
+      onSuccess: (res) => {
+        if (res.routingStatus === 'routed' && res.context) {
+          toast.info(`filed to ${res.context}`);
+        }
+        // No toast when it stays manual_review — ambiguous content, silent is fine
+      },
+      // No error toast — fire-and-forget, don't alarm the user
+    });
+  };
+
+  // prevIdRef tracks the id that was selected *before* the latest selectedId change.
+  const prevIdRef = useRef<string | null>(null);
+
+  // Leave-by-switch lives in the effect BODY. Deliberately no cleanup here:
+  // an effect cleanup also runs on every selectedId change, at which point the
+  // ref already points at the NEWLY selected jot — routing it on arrival was a
+  // double-fire bug. Unmount is handled by the mount-once effect below.
+  useEffect(() => {
+    const prevId = prevIdRef.current;
+    prevIdRef.current = selectedId;
+
+    if (prevId && prevId !== selectedId) {
+      const prevItem = list.data?.items.find((i) => i.id === prevId);
+      if (
+        prevItem &&
+        prevItem.routingStatus !== 'routed' &&
+        isRoutableContent(prevItem.excerpt)
+      ) {
+        fireAutoRoute(prevId);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId]);
+
+  // Unmount-only: route the jot the user was holding when they left the screen.
+  useEffect(() => {
+    return () => {
+      const current = currentSelectionRef.current;
+      if (current && current.status !== 'routed' && isRoutableContent(current.excerpt)) {
+        autoRoute.mutate(current.id);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function handleNew() {
     createJot.mutate(
-      { body: 'new jot\n\n' },
+      { body: 'new jot\n\n', route: false },
       {
         onSuccess: (res) => {
           setSelectedId(res.id);
@@ -158,13 +233,13 @@ export function JotsScreen() {
           {editorBody !== undefined ? (
             <>
               <div className="flex-1 overflow-auto">
-                {/* key={selectedId} remounts JotEditor on jot switch, wiping
-                    internal debounce timers. The body prop is frozen to the
-                    initial fetch so mid-session RQ refetches never reset the
-                    editor's internal value. */}
-                <JotEditor
+                {/* key={selectedId} remounts the editor on jot switch, wiping
+                    internal debounce timers. The markdown prop is frozen to
+                    the initial fetch so mid-session RQ refetches never reset
+                    the editor's internal value. */}
+                <RichMarkdownEditor
                   key={selectedId!}
-                  body={editorBody}
+                  markdown={editorBody}
                   onSave={handleSaveBody}
                 />
               </div>
@@ -172,6 +247,28 @@ export function JotsScreen() {
                 {selectedItem?.context && <Pill>{selectedItem.context}</Pill>}
                 {selectedItem?.routingStatus && <Pill>{selectedItem.routingStatus}</Pill>}
                 <div className="ml-auto flex items-center gap-2">
+                  {selectedItem?.routingStatus !== 'routed' && (
+                    <Btn
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        if (!selectedId) return;
+                        autoRoute.mutate(selectedId, {
+                          onSuccess: (res) => {
+                            if (res.routingStatus === 'routed' && res.context) {
+                              toast.info(`filed to ${res.context}`);
+                            } else {
+                              toast.info('kept for manual review — content too ambiguous');
+                            }
+                          },
+                          onError: (err) => toast.error(`auto-route failed: ${err.message}`),
+                        });
+                      }}
+                      disabled={autoRoute.isPending}
+                    >
+                      route now
+                    </Btn>
+                  )}
                   <select
                     onChange={(e) => {
                       if (e.target.value) {

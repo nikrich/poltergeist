@@ -5,15 +5,27 @@ from fastapi import APIRouter, HTTPException, Query, status
 from fastapi import Path as PathParam
 from fastapi.responses import Response
 
-from ghostbrain.api.models.note import CreateNoteRequest, RouteNoteRequest, UpdateNoteRequest
-from ghostbrain.api.repo.note import NoteInvalidPath, NoteNotFound, get_note
+from ghostbrain.api.models.note import (
+    CreateNoteRequest,
+    RouteNoteRequest,
+    UpdateNoteBodyRequest,
+    UpdateNoteRequest,
+)
+from ghostbrain.api.repo.note import (
+    NoteInvalidPath,
+    NoteNotFound,
+    get_note,
+    save_note_body,
+)
 from ghostbrain.api.repo.notes_manual import (
     JotNotFound,
     create_and_route_jot,
     delete_jot,
     list_jots,
     move_jot,
+    route_existing_jot,
     update_jot_body,
+    write_inbox_jot,
 )
 
 # Known contexts must match the router's enum — keep this list in sync with
@@ -59,7 +71,13 @@ def get_notes(
 
 @router.post("", status_code=status.HTTP_200_OK)
 def create_note(req: CreateNoteRequest) -> dict:
-    """Create a manual jot and route it synchronously."""
+    """Create a manual jot, optionally routing it synchronously.
+
+    When ``route=false`` the jot is written to the inbox with
+    routingStatus="pending" and no LLM call is made.  The caller is expected
+    to fire ``POST /v1/notes/{id}/route-auto`` once the user has finished
+    editing (auto-route on leave).
+    """
     body = req.body.strip()
     if not body:
         raise HTTPException(status_code=422, detail="body must not be empty")
@@ -74,7 +92,37 @@ def create_note(req: CreateNoteRequest) -> dict:
                 status_code=422,
                 detail="capturedAt must include a timezone offset (e.g. 2026-05-14T09:30:15+00:00)",
             )
+    if not req.route:
+        record = write_inbox_jot(body, captured_at=captured)
+        return {
+            "id": record["id"],
+            "path": record["path"],
+            "routingStatus": "pending",
+        }
     return create_and_route_jot(body, captured_at=captured)
+
+
+# ── Order-sensitive: /body must be registered BEFORE /{jot_id} ──────────────
+# Starlette matches routes in registration order, and the literal segment
+# "body" satisfies the /{jot_id} path regex ([^/]+). The jot route's
+# min_length=8 validator would then 422 the request ("string_too_short")
+# instead of falling through to this handler. Pinned by
+# test_patch_body_not_shadowed_by_jot_route.
+@router.patch("/body")
+def patch_note_body(req: UpdateNoteBodyRequest) -> dict:
+    """Rewrite the markdown body of any vault note by path.
+
+    Frontmatter is preserved; `updated` bumped when the key exists. Unlike the
+    jot PATCH, this does NOT re-derive tags — connector files own their schema.
+    """
+    if not req.body.strip():
+        raise HTTPException(status_code=422, detail="body must not be empty")
+    try:
+        return save_note_body(req.path, req.body)
+    except NoteInvalidPath as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except NoteNotFound:
+        raise HTTPException(status_code=404, detail=f"Note not found: {req.path}")
 
 
 @router.patch("/{jot_id}")
@@ -88,6 +136,22 @@ def patch_note(
         raise HTTPException(status_code=422, detail="body must not be empty")
     try:
         return update_jot_body(jot_id, body)
+    except JotNotFound:
+        raise HTTPException(status_code=404, detail=f"Jot not found: {jot_id}")
+
+
+@router.post("/{jot_id}/route-auto")
+def route_note_auto(
+    jot_id: str = PathParam(..., min_length=8, max_length=128),
+) -> dict:
+    """LLM-auto-route an existing jot by re-reading its current body.
+
+    Returns {id, path, routingStatus, context?}. Routing errors and
+    low-confidence results fall back to manual_review (never 500s).
+    404 when the jot does not exist.
+    """
+    try:
+        return route_existing_jot(jot_id)
     except JotNotFound:
         raise HTTPException(status_code=404, detail=f"Jot not found: {jot_id}")
 
