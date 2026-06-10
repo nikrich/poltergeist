@@ -46,6 +46,7 @@ def get_notes(
     q: str | None = Query(None),
     context: str | None = Query(None),
     tag: str | None = Query(None),
+    project: str | None = Query(None),
 ):
     """Dispatcher:
     - `?path=...`  → single-note read (legacy markdown viewer).
@@ -59,7 +60,7 @@ def get_notes(
         except NoteNotFound:
             raise HTTPException(status_code=404, detail=f"Note not found: {path}")
     if source == "manual":
-        return list_jots(limit=limit, offset=offset, q=q, context=context, tag=tag)
+        return list_jots(limit=limit, offset=offset, q=q, context=context, tag=tag, project=project)
     if source is None:
         raise HTTPException(
             status_code=400, detail="provide `path` or `source=manual`",
@@ -161,16 +162,24 @@ def route_note(
     req: RouteNoteRequest,
     jot_id: str = PathParam(..., min_length=8, max_length=128),
 ) -> dict:
-    """Manually re-route a jot to a known context."""
+    """Manually re-route a jot to a known context, optionally into a project."""
     if req.context not in _KNOWN_CONTEXTS:
         raise HTTPException(
             status_code=400,
             detail=f"unknown context: {req.context!r}; valid: {sorted(_KNOWN_CONTEXTS)}",
         )
+    if req.project is not None:
+        from ghostbrain.api.repo import projects as projects_repo
+        if projects_repo.get_project(req.context, req.project, active_only=True) is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"unknown or archived project: {req.context}/{req.project}",
+            )
     try:
         return move_jot(
             jot_id,
             to_context=req.context,
+            to_project=req.project,
             confidence=1.0,
             method="user",
             reasoning="manual re-route by user",

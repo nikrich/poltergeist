@@ -68,3 +68,25 @@ def test_delete_removes_file(tmp_vault, client, auth_headers):
         f"/v1/notes/{rec['id']}", json={"body": "x"}, headers=auth_headers
     )
     assert resp2.status_code == 404
+
+
+def test_manual_route_with_project(client, auth_headers, tmp_vault):
+    from ghostbrain.api.repo import projects
+    (tmp_vault / "00-inbox" / "raw" / "manual").mkdir(parents=True, exist_ok=True)
+    projects.create_project("codeship", "Poltergeist")
+    created = client.post(
+        "/v1/notes", json={"body": "note", "route": False}, headers=auth_headers
+    ).json()
+    r = client.post(
+        f"/v1/notes/{created['id']}/route",
+        json={"context": "codeship", "project": "poltergeist"},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    assert r.json()["project"] == "poltergeist"
+    bad = client.post(
+        f"/v1/notes/{created['id']}/route",
+        json={"context": "codeship", "project": "ghost-project"},
+        headers=auth_headers,
+    )
+    assert bad.status_code == 400
