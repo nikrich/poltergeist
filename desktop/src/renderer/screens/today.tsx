@@ -28,6 +28,7 @@ import { SkeletonRows } from '../components/SkeletonRows';
 import { PanelEmpty } from '../components/PanelEmpty';
 import { PanelError } from '../components/PanelError';
 import { ActivityFeedRow } from '../components/ActivityFeedRow';
+import { ActivityHeatmapTile } from '../components/ActivityHeatmapTile';
 
 export function TodayScreen() {
   const setActive = useNavigation((s) => s.setActive);
@@ -274,6 +275,9 @@ export function TodayScreen() {
             )}
           </Panel>
         </div>
+
+        {/* 12-week activity heatmap */}
+        <ActivityHeatmapTile />
 
         {/* Connector pulse strip */}
         <Panel
