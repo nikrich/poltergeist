@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import yaml
 from pathlib import Path
 from typing import Iterator
 
@@ -82,3 +83,64 @@ def tmp_chats_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     chats = tmp_path / "chats"
     monkeypatch.setenv("GHOSTBRAIN_CHATS_DIR", str(chats))
     return chats
+
+
+def write_import_routing(vault: Path, *, jira: bool = True, confluence: bool = True) -> Path:
+    """Write a routing.yaml mirroring the real shape: dicts keyed by host/space."""
+    routing: dict = {"version": 1}
+    if jira:
+        routing["jira"] = {"sites": {"sft.atlassian.net": "sanlam"}}
+    if confluence:
+        routing["confluence"] = {
+            "sites": {"sft.atlassian.net": "sanlam"},
+            "spaces": {"DIG": "sanlam", "SPE": "sanlam"},
+        }
+    p = vault / "90-meta" / "routing.yaml"
+    p.write_text(yaml.safe_dump(routing))
+    return p
+
+
+def write_live_config(vault: Path) -> Path:
+    """routing_mode live so write_note also writes the context copy."""
+    p = vault / "90-meta" / "config.yaml"
+    p.write_text(yaml.safe_dump({"worker": {"routing_mode": "live"}}))
+    return p
+
+
+@pytest.fixture
+def fake_atlassian(monkeypatch: pytest.MonkeyPatch):
+    """Replace AtlassianClient + auth_for_site in the import-repo namespace.
+
+    Register URL-path prefixes on ``registry.routes`` (payload dict, or a
+    callable ``(path, params) -> dict`` that may raise); the longest matching
+    prefix wins. Every GET is recorded on ``registry.calls`` as
+    ``(host, path, params)``.
+    """
+    from ghostbrain.api.repo import import_atlassian as repo
+
+    class Registry:
+        def __init__(self) -> None:
+            self.routes: dict[str, object] = {}
+            self.calls: list[tuple[str, str, dict | None]] = []
+
+    registry = Registry()
+
+    class FakeClient:
+        def __init__(self, host: str, email: str, token: str) -> None:
+            self.host = host
+
+        def get(self, path: str, params: dict | None = None, **_kw) -> dict:
+            registry.calls.append((self.host, path, params))
+            match = max(
+                (p for p in registry.routes if path.startswith(p)),
+                key=len,
+                default=None,
+            )
+            if match is None:
+                raise AssertionError(f"unexpected atlassian GET {path}")
+            payload = registry.routes[match]
+            return payload(path, params) if callable(payload) else payload  # type: ignore[operator]
+
+    monkeypatch.setattr(repo, "AtlassianClient", FakeClient)
+    monkeypatch.setattr(repo, "auth_for_site", lambda host: ("u@example.com", "tok"))
+    return registry

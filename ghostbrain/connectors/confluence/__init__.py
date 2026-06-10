@@ -1,5 +1,9 @@
 """Confluence Cloud connector. Fetches pages updated in monitored spaces
-within the last day."""
+within the last day.
+
+``normalize_page``, ``page_url``, ``_strip_html``, and ``PAGE_EXPAND`` are
+module-level so the import endpoints (ghostbrain/api/repo/import_atlassian.py)
+reuse the exact scheduled-sync conversion."""
 
 from __future__ import annotations
 
@@ -7,7 +11,7 @@ import logging
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Iterable
 
 from ghostbrain.connectors._base import Connector
 from ghostbrain.connectors.atlassian._base import (
@@ -22,6 +26,9 @@ log = logging.getLogger("ghostbrain.connectors.confluence")
 FIRST_RUN_LOOKBACK_HOURS = 24
 WINDOW_OVERLAP_HOURS = 2
 MAX_RESULTS = 25
+# Expansions required by normalize_page; shared with the import endpoints.
+PAGE_EXPAND = "body.storage,version,space,history"
+BODY_TRUNCATE_CHARS = 5000
 
 
 class ConfluenceConnector(Connector):
@@ -98,66 +105,74 @@ class ConfluenceConnector(Connector):
 
         params = {
             "cql": cql,
-            "expand": "body.storage,version,space,history",
+            "expand": PAGE_EXPAND,
             "limit": MAX_RESULTS,
         }
         data = client.get("/wiki/rest/api/content/search", params=params)
         results = data.get("results", []) or []
         for page in results:
-            ev = self._normalize_page(page, host=host)
+            ev = normalize_page(page, host=host, space_map=self.space_map)
             if ev is not None:
                 yield ev
 
-    def _normalize_page(self, raw: dict, *, host: str) -> dict | None:
-        page_id = raw.get("id")
-        if not page_id:
-            return None
-        title = (raw.get("title") or "").strip()
-        space = (raw.get("space") or {}).get("key", "")
-        if space and space not in self.space_map:
-            return None  # space not in our routing — skip
 
-        version = (raw.get("version") or {})
-        last_modified = version.get("when") or raw.get("lastModified")
+def normalize_page(raw: dict, *, host: str, space_map: dict[str, str]) -> dict | None:
+    """Normalize one raw Confluence page into the standard event shape.
 
-        body_html = ((raw.get("body") or {}).get("storage") or {}).get("value", "")
-        body_text = _strip_html(body_html)
-        # Truncate aggressively — pages can be huge.
-        if len(body_text) > 5000:
-            body_text = body_text[:5000] + "\n\n[…truncated]"
+    Module-level (rather than a connector method) so the import endpoints
+    run the exact conversion the scheduled sync runs. Returns None for pages
+    without an id or in a space outside ``space_map``.
+    """
+    page_id = raw.get("id")
+    if not page_id:
+        return None
+    title = (raw.get("title") or "").strip()
+    space = (raw.get("space") or {}).get("key", "")
+    if space and space not in space_map:
+        return None  # space not in our routing — skip
 
-        url = self._page_url(host, raw)
-        site_slug = slug_for_host(host)
+    version = (raw.get("version") or {})
+    last_modified = version.get("when") or raw.get("lastModified")
 
-        return {
-            "id": f"confluence:{site_slug}:{page_id}",
-            "source": "confluence",
-            "type": "page",
-            "subtype": "updated",
-            "timestamp": last_modified or _now_iso(),
-            "actorId": f"confluence:{(version.get('by') or {}).get('accountId', '?')}",
-            "title": title,
-            "body": body_text,
-            "url": url,
-            "rawData": raw,
-            "metadata": {
-                "site": host,
-                "siteSlug": site_slug,
-                "space": space,
-                "pageId": page_id,
-                "version": version.get("number"),
-                "lastModifiedBy": (version.get("by") or {}).get("displayName"),
-            },
-        }
+    body_html = ((raw.get("body") or {}).get("storage") or {}).get("value", "")
+    body_text = _strip_html(body_html)
+    # Truncate aggressively — pages can be huge.
+    if len(body_text) > BODY_TRUNCATE_CHARS:
+        body_text = body_text[:BODY_TRUNCATE_CHARS] + "\n\n[…truncated]"
 
-    def _page_url(self, host: str, raw: dict) -> str:
-        links = raw.get("_links") or {}
-        webui = links.get("webui")
-        if webui:
-            base = links.get("base") or f"https://{host}/wiki"
-            return base.rstrip("/") + webui
-        page_id = raw.get("id", "")
-        return f"https://{host}/wiki/spaces/{((raw.get('space') or {}).get('key') or '')}/pages/{page_id}"
+    url = page_url(host, raw)
+    site_slug = slug_for_host(host)
+
+    return {
+        "id": f"confluence:{site_slug}:{page_id}",
+        "source": "confluence",
+        "type": "page",
+        "subtype": "updated",
+        "timestamp": last_modified or _now_iso(),
+        "actorId": f"confluence:{(version.get('by') or {}).get('accountId', '?')}",
+        "title": title,
+        "body": body_text,
+        "url": url,
+        "rawData": raw,
+        "metadata": {
+            "site": host,
+            "siteSlug": site_slug,
+            "space": space,
+            "pageId": page_id,
+            "version": version.get("number"),
+            "lastModifiedBy": (version.get("by") or {}).get("displayName"),
+        },
+    }
+
+
+def page_url(host: str, raw: dict) -> str:
+    links = raw.get("_links") or {}
+    webui = links.get("webui")
+    if webui:
+        base = links.get("base") or f"https://{host}/wiki"
+        return base.rstrip("/") + webui
+    page_id = raw.get("id", "")
+    return f"https://{host}/wiki/spaces/{((raw.get('space') or {}).get('key') or '')}/pages/{page_id}"
 
 
 _BLANK_LINES_RE = re.compile(r"\n{3,}")
