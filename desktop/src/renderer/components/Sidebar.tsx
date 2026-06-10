@@ -11,6 +11,7 @@ import { APP_VERSION } from '../lib/version';
 
 const NAV_ITEMS: Array<{ id: ScreenId; icon: string; label: string }> = [
   { id: 'today', icon: 'sparkles', label: 'today' },
+  { id: 'chat', icon: 'message-circle', label: 'chat' },
   { id: 'setup', icon: 'compass', label: 'setup' },
   { id: 'connectors', icon: 'plug', label: 'connectors' },
   { id: 'meetings', icon: 'mic', label: 'meetings' },
