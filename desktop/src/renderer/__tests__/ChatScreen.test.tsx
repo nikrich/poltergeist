@@ -142,11 +142,16 @@ describe('ChatScreen', () => {
     });
   });
 
-  it('renders a turn error inline', async () => {
+  it('renders a turn error inline with a retry button', async () => {
     useChat.setState({
       activeId: 'c1',
       streams: {},
-      errors: { c1: 'LLMTimeout: claude -p timed out' },
+      errors: {
+        c1: {
+          message: 'LLMTimeout: claude -p timed out',
+          userText: 'how does auth work?',
+        },
+      },
     });
 
     render(wrap(<ChatScreen />));
@@ -154,5 +159,33 @@ describe('ChatScreen', () => {
     expect(
       await screen.findByText(/LLMTimeout: claude -p timed out/),
     ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
+  });
+
+  it('clicking retry re-sends the original user text', async () => {
+    useChat.setState({
+      activeId: 'c1',
+      streams: {},
+      errors: {
+        c1: {
+          message: 'LLMTimeout: claude -p timed out',
+          userText: 'how does auth work?',
+        },
+      },
+    });
+
+    render(wrap(<ChatScreen />));
+
+    fireEvent.click(await screen.findByRole('button', { name: /retry/i }));
+
+    expect(window.gb.chat.send).toHaveBeenCalledWith('c1', 'how does auth work?');
+    // The send path goes through beginStream, which clears the error.
+    expect(useChat.getState().errors.c1).toBeUndefined();
+
+    // Flush the resolved send promise (finalizer clears the new stream) so
+    // no state updates land after the test body.
+    await waitFor(() => {
+      expect(useChat.getState().streams.c1).toBeUndefined();
+    });
   });
 });

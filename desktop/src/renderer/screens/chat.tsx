@@ -16,7 +16,7 @@ import {
   useDeleteConversation,
 } from '../lib/api/hooks';
 import { useChat } from '../stores/chat';
-import type { StreamState } from '../stores/chat';
+import type { StreamState, TurnError } from '../stores/chat';
 import type {
   ChatMessage,
   ChatToolUse,
@@ -100,6 +100,7 @@ export function ChatScreen() {
               stream={stream}
               error={error}
               onStop={() => window.gb.chat.stop(activeId)}
+              onRetry={sendMessage}
             />
             <Composer
               disabled={!!stream}
@@ -271,11 +272,15 @@ function ConversationRow({
 interface ThreadProps {
   conversation: ReturnType<typeof useConversation>;
   stream: StreamState | undefined;
-  error: string | undefined;
+  error: TurnError | undefined;
   onStop: () => void;
+  /** Re-sends the failed turn's user text through the normal send path —
+   *  beginStream clears the error. Standard resend semantics: the user
+   *  message appears again in the transcript. */
+  onRetry: (text: string) => void;
 }
 
-function Thread({ conversation, stream, error, onStop }: ThreadProps) {
+function Thread({ conversation, stream, error, onStop, onRetry }: ThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const messages = conversation.data?.messages ?? [];
 
@@ -316,8 +321,16 @@ function Thread({ conversation, stream, error, onStop }: ThreadProps) {
         {stream && <StreamingTurn stream={stream} onStop={onStop} />}
 
         {error && (
-          <div className="rounded-md border border-oxblood/30 bg-oxblood/10 p-3 text-12 text-oxblood">
-            {error}
+          <div className="flex items-center gap-3 rounded-md border border-oxblood/30 bg-oxblood/10 p-3 text-12 text-oxblood">
+            <span className="min-w-0 flex-1">{error.message}</span>
+            <Btn
+              variant="ghost"
+              size="sm"
+              icon={<Lucide name="rotate-ccw" size={12} />}
+              onClick={() => onRetry(error.userText)}
+            >
+              retry
+            </Btn>
           </div>
         )}
 
