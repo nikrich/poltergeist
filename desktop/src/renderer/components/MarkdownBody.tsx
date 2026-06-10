@@ -1,7 +1,14 @@
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { toast } from '../stores/toast';
 import { useNoteView } from '../stores/note-view';
+
+// react-markdown's default sanitizer only lets http(s)/mailto-style schemes
+// through and rewrites anything else — including our gb-note: scheme — to an
+// empty href, which made wikilinks render but click dead. Pass our scheme
+// through; everything else keeps the default sanitization.
+const urlTransform = (url: string): string =>
+  url.startsWith('gb-note:') ? url : defaultUrlTransform(url);
 
 interface Props {
   children: string;
@@ -44,6 +51,7 @@ export function MarkdownBody({ children, className }: Props) {
     <article className={`gb-prose ${className ?? ''}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
+        urlTransform={urlTransform}
         components={{
           a: ({ href, children, ...rest }) => {
             const onClick = async (e: React.MouseEvent<HTMLAnchorElement>) => {

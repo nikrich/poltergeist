@@ -152,6 +152,16 @@ export interface Note {
   frontmatter: Record<string, unknown>;
 }
 
+export interface UpdateNoteBodyRequest {
+  path: string;
+  body: string;
+}
+
+export interface UpdateNoteBodyResponse {
+  path: string;
+  updated: string | null;
+}
+
 export type RecorderPhase = 'idle' | 'recording' | 'transcribing' | 'done';
 export type RecorderOwner = 'manual' | 'daemon';
 
@@ -207,4 +217,82 @@ export interface Prep {
   eventSnapshot: EventSnapshot;
   generatedAt: string;
   error: string | null;
+}
+
+// ── Chat ──────────────────────────────────────────────────────────────────
+
+export interface ChatToolUse {
+  name: string;
+  summary: string;
+}
+
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  text: string;
+  tools?: ChatToolUse[];
+  interrupted?: boolean;
+}
+
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  created_at: number;
+  updated_at: number;
+  message_count: number;
+}
+
+export interface Conversation {
+  id: string;
+  title: string;
+  created_at: number;
+  updated_at: number;
+  claude_session_id: string | null;
+  messages: ChatMessage[];
+}
+
+/** Mirrors the event vocabulary of ghostbrain/llm/agent.py. */
+export type ChatStreamEvent =
+  | { type: 'session'; session_id: string }
+  | { type: 'delta'; text: string }
+  | { type: 'tool'; name: string; summary: string }
+  | { type: 'done'; text: string; session_id?: string }
+  | { type: 'error'; message: string; interrupted?: boolean };
+// ── Jots ──────────────────────────────────────────────────────────────────
+
+export type JotRoutingStatus = 'pending' | 'routed' | 'manual_review';
+
+export interface JotListItem {
+  id: string;
+  path: string;
+  title: string;
+  excerpt: string;
+  context: string | null;
+  routingStatus: JotRoutingStatus;
+  tags: string[];
+  created: string;
+  updated: string;
+}
+
+export interface JotsPage {
+  items: JotListItem[];
+  total: number;
+}
+
+export interface CreateJotRequest {
+  body: string;
+  capturedAt?: string;
+  route?: boolean;  // omit or true = route on create; false = stay pending
+}
+
+export interface CreateJotResponse {
+  id: string;
+  path: string;
+  routingStatus: JotRoutingStatus;
+}
+
+export interface AutoRouteResponse {
+  id: string;
+  path: string;
+  routingStatus: JotRoutingStatus;
+  context?: string | null;
 }

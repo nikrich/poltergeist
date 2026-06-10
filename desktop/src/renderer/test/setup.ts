@@ -24,6 +24,10 @@ const defaultSettings: Settings = {
   folderStructure: 'by-source',
 
   schedulerEnabled: false,
+
+  hotkeys: {
+    jotOverlay: 'Alt+J',
+  },
 };
 
 const stubBridge: GbBridge = {
@@ -39,7 +43,18 @@ const stubBridge: GbBridge = {
   platform: 'darwin',
   api: { request: (async () => ({ ok: true, data: null })) as GbBridge['api']['request'] },
   sidecar: { retry: async () => ({ ok: true }) },
+  chat: {
+    send: async () => ({ ok: true }),
+    stop: async () => ({ ok: true }),
+  },
   tray: { setFailing: async () => ({ ok: true }) },
+  clipboard: { writeRich: async () => ({ ok: true }) },
+  jot: {
+    save: async () => ({ ok: true as const }),
+    cancel: async () => ({ ok: true as const }),
+    onFocus: () => () => {},
+    onSaveFailed: () => () => {},
+  },
   on: (() => () => {}) as GbBridge['on'],
 };
 

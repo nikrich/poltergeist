@@ -1,3 +1,7 @@
+import type { ChatStreamEvent } from './api-types';
+
+export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
+
 export type Theme = 'dark' | 'light';
 export type Density = 'comfortable' | 'compact';
 export type LlmProvider = 'local' | 'anthropic' | 'openai';
@@ -28,6 +32,10 @@ export interface Settings {
   folderStructure: FolderStructure;
 
   schedulerEnabled: boolean;
+
+  hotkeys: {
+    jotOverlay: string;
+  };
 }
 
 export interface GbBridge {
@@ -48,7 +56,7 @@ export interface GbBridge {
   platform: NodeJS.Platform;
   api: {
     request<T = unknown>(
-      method: 'GET' | 'POST',
+      method: HttpMethod,
       path: string,
       body?: unknown,
     ): Promise<
@@ -59,8 +67,27 @@ export interface GbBridge {
   sidecar: {
     retry(): Promise<{ ok: true } | { ok: false; error: string }>;
   };
+  chat: {
+    send(
+      convId: string,
+      text: string,
+    ): Promise<{ ok: true } | { ok: false; error: string }>;
+    stop(convId: string): Promise<{ ok: true } | { ok: false; error: string }>;
+  };
   tray: {
     setFailing(names: string[]): Promise<{ ok: true } | { ok: false; error: string }>;
+  };
+  clipboard: {
+    writeRich(payload: {
+      html: string;
+      text: string;
+    }): Promise<{ ok: true } | { ok: false; error: string }>;
+  };
+  jot: {
+    save(body: string): Promise<{ ok: true }>;
+    cancel(): Promise<{ ok: true }>;
+    onFocus(cb: () => void): () => void;
+    onSaveFailed(cb: (payload: { body: string; error: string }) => void): () => void;
   };
   on(channel: 'nav:settings', listener: () => void): () => void;
   on(channel: 'sidecar:ready', listener: () => void): () => void;
@@ -69,6 +96,10 @@ export interface GbBridge {
     listener: (info: { reason: string }) => void,
   ): () => void;
   on(channel: 'meetings:openPrep', listener: (eventId: string) => void): () => void;
+  on(
+    channel: 'chat:event',
+    listener: (payload: { convId: string; event: ChatStreamEvent }) => void,
+  ): () => void;
 }
 
 declare global {

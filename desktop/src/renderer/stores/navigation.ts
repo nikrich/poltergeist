@@ -3,13 +3,15 @@ import { create } from 'zustand';
 export type ScreenId =
   | 'today'
   | 'activity'
+  | 'chat'
   | 'connectors'
   | 'meetings'
   | 'capture'
   | 'vault'
   | 'daily'
   | 'setup'
-  | 'settings';
+  | 'settings'
+  | 'jots';
 
 interface NavState {
   active: ScreenId;

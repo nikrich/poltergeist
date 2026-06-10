@@ -12,10 +12,12 @@ import { APP_VERSION } from '../lib/version';
 const NAV_ITEMS: Array<{ id: ScreenId; icon: string; label: string }> = [
   { id: 'today', icon: 'sparkles', label: 'today' },
   { id: 'activity', icon: 'calendar-days', label: 'activity' },
+  { id: 'chat', icon: 'message-circle', label: 'chat' },
   { id: 'setup', icon: 'compass', label: 'setup' },
   { id: 'connectors', icon: 'plug', label: 'connectors' },
   { id: 'meetings', icon: 'mic', label: 'meetings' },
   { id: 'capture', icon: 'inbox', label: 'capture' },
+  { id: 'jots', icon: 'pencil', label: 'jots' },
   { id: 'vault', icon: 'book-open', label: 'vault' },
   { id: 'settings', icon: 'settings', label: 'settings' },
 ];
