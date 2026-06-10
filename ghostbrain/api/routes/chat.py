@@ -49,6 +49,11 @@ def delete_conversation(conv_id: str) -> dict:
     return {"ok": True}
 
 
+@router.post("/{conv_id}/stop")
+def stop_turn(conv_id: str) -> dict:
+    return {"stopped": repo_chat.cancel(conv_id)}
+
+
 @router.post("/{conv_id}/messages")
 def send_message(conv_id: str, payload: ChatMessageRequest) -> StreamingResponse:
     if chat_store.get(conv_id) is None:

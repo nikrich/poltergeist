@@ -73,10 +73,15 @@ def _with_history(conv: dict, text: str) -> str:
     )
 
 
+def cancel(conv_id: str) -> bool:
+    """Kill the in-flight turn for this conversation, if any."""
+    return agent.cancel_turn(conv_id)
+
+
 def _stream_turn(conv: dict, prompt: str, session_id: str | None) -> Iterator[dict]:
     parts: list[str] = []
     tools: list[dict] = []
-    for event in agent.run_chat_turn(prompt, session_id=session_id):
+    for event in agent.run_chat_turn(prompt, session_id=session_id, turn_key=conv["id"]):
         if event["type"] == "session":
             chat_store.set_session_id(conv, event["session_id"])
         elif event["type"] == "delta":

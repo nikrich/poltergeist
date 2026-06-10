@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from ghostbrain.llm import agent as agent_mod
 from ghostbrain.llm.agent import ResumeFailed, run_chat_turn
 
 
@@ -80,3 +81,81 @@ sleep 30
     assert [e["type"] for e in events[:2]] == ["session", "delta"]
     assert events[-1]["type"] == "error"
     assert events[-1].get("interrupted") is True
+
+
+def test_cancel_turn_kills_subprocess_and_yields_stopped(tmp_path: Path):
+    """cancel_turn() kills the claude subprocess and the generator yields a
+    stopped error event.  Wall clock must be well under 30s."""
+    body = r"""
+cat <<'EOF'
+{"type":"system","subtype":"init","session_id":"sess-1"}
+{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"hi"}}}
+EOF
+sleep 30
+"""
+    binary = fake_claude(tmp_path, body)
+    start = time.monotonic()
+    gen = run_chat_turn("q", binary=binary, mcp_binary=None, turn_key="conv-1")
+
+    # Pull the two events that arrive before the sleep — generator is now
+    # SUSPENDED at a yield (not blocked in readline), so cancel_turn can reach it.
+    e1 = next(gen)
+    e2 = next(gen)
+    assert e1["type"] == "session"
+    assert e2["type"] == "delta"
+
+    # Kill the subprocess while the generator is suspended.
+    assert agent_mod.cancel_turn("conv-1") is True
+
+    # Exhaust the generator — readline unblocks immediately on EOF.
+    remaining = list(gen)
+    elapsed = time.monotonic() - start
+
+    assert elapsed < 5
+    assert remaining[-1] == {"type": "error", "message": "stopped", "interrupted": True}
+    # Unregistered after generator exits.
+    assert agent_mod.cancel_turn("conv-1") is False
+
+
+def test_cancel_turn_on_resumed_turn_with_no_output_yields_stopped_not_resume_failed(
+    tmp_path: Path,
+):
+    """A cancelled resumed turn that produced no parsed events must NOT raise
+    ResumeFailed — cancelled takes priority in the post-loop classification.
+
+    Mechanics: fake claude prints one non-JSON line then sleeps 30s (no events
+    parse, so saw_any stays False).  We start the generator in a background
+    thread, wait briefly for the subprocess to register, cancel it, then join
+    and assert the stopped error was yielded instead of ResumeFailed.
+    """
+    import threading as _threading
+
+    body = 'echo warming-up\nsleep 30\n'
+    binary = fake_claude(tmp_path, body)
+
+    gen = run_chat_turn(
+        "q", session_id="s1", binary=binary, mcp_binary=None, turn_key="conv-2"
+    )
+
+    events: list[dict] = []
+    exc_holder: list[BaseException] = []
+
+    def drain():
+        try:
+            events.extend(gen)
+        except BaseException as exc:  # noqa: BLE001
+            exc_holder.append(exc)
+
+    t = _threading.Thread(target=drain)
+    t.start()
+
+    # Give the subprocess time to start and register itself.
+    time.sleep(0.3)
+    agent_mod.cancel_turn("conv-2")
+
+    t.join(timeout=5)
+    assert not t.is_alive(), "generator did not finish after cancel"
+
+    # Must not have raised ResumeFailed.
+    assert not exc_holder, f"unexpected exception: {exc_holder[0]}"
+    assert events[-1] == {"type": "error", "message": "stopped", "interrupted": True}

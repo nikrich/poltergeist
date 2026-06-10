@@ -7,6 +7,7 @@ yields SSE-ready event dicts as lines arrive. Sessions persist CLI-side so
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import os
@@ -16,10 +17,35 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
+from typing import Callable
 
 from ghostbrain.llm.client import _find_claude_binary
 
 log = logging.getLogger("ghostbrain.llm.agent")
+
+
+@dataclasses.dataclass
+class _RunningTurn:
+    cancelled: threading.Event
+    kill: Callable[[], None]
+
+
+_running_lock = threading.Lock()
+_running: dict[str, _RunningTurn] = {}
+
+
+def cancel_turn(key: str) -> bool:
+    """Kill the in-flight turn for ``key`` (if any). Returns True if one was
+    running. The killed run yields a terminal 'stopped' error event, which
+    persists any partial text as interrupted and releases the busy guard."""
+    with _running_lock:
+        entry = _running.get(key)
+    if entry is None:
+        return False
+    entry.cancelled.set()
+    entry.kill()
+    return True
+
 
 # tool name → (short name, human summary template over the tool input)
 TOOL_SUMMARIES: dict[str, tuple[str, str]] = {
@@ -184,6 +210,7 @@ def run_chat_turn(
     timeout_s: int = CHAT_TIMEOUT_S,
     binary: str | None = None,
     mcp_binary: str | None = "auto",
+    turn_key: str | None = None,
 ):
     """Yield event dicts for one agentic chat turn.
 
@@ -228,10 +255,18 @@ def run_chat_turn(
             proc.kill()
 
     timed_out = threading.Event()
+    cancelled = threading.Event()
 
     def _kill() -> None:
         timed_out.set()
         _kill_group()
+
+    # Register this turn in the cancellation registry so an external caller
+    # can kill the subprocess (and unblock the read loop) while we're blocked
+    # on proc.stdout — GeneratorExit alone can't reach a running generator.
+    if turn_key is not None:
+        with _running_lock:
+            _running[turn_key] = _RunningTurn(cancelled=cancelled, kill=_kill_group)
 
     # Watchdog instead of readline timeouts: if claude wedges with no output,
     # a blocking readline would hang forever. The timer fires once, kills the
@@ -257,10 +292,19 @@ def run_chat_turn(
         if proc.poll() is None:
             _kill_group()
             proc.wait()
+        if turn_key is not None:
+            with _running_lock:
+                _running.pop(turn_key, None)
 
     if saw_terminal:
         return
     stderr = (proc.stderr.read() if proc.stderr else "")[:500].strip()
+    # cancelled is checked FIRST: a cancelled resumed turn that died before any
+    # output must NOT be misclassified as ResumeFailed (which would trigger a
+    # pointless retry).
+    if cancelled.is_set():
+        yield {"type": "error", "message": "stopped", "interrupted": True}
+        return
     if timed_out.is_set():
         yield {
             "type": "error",

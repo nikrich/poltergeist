@@ -82,3 +82,23 @@ def test_send_message_validates_text(client, tmp_chats_dir, auth_headers):
         f"/v1/chat/{conv['id']}/messages", json={"text": ""}, headers=auth_headers
     )
     assert resp.status_code == 422
+
+
+def test_stop_turn_idle_returns_false(client, tmp_chats_dir, auth_headers):
+    """POST /{id}/stop on an idle conversation returns {"stopped": false}."""
+    conv = client.post("/v1/chat", headers=auth_headers).json()
+    resp = client.post(f"/v1/chat/{conv['id']}/stop", headers=auth_headers)
+    assert resp.status_code == 200
+    assert resp.json() == {"stopped": False}
+
+
+def test_stop_turn_active_returns_true(client, tmp_chats_dir, auth_headers, monkeypatch):
+    """When the turn is in-flight, cancel() is called and returns {"stopped": true}."""
+    import ghostbrain.api.repo.chat as repo_chat
+
+    monkeypatch.setattr(repo_chat.agent, "cancel_turn", lambda conv_id: True)
+
+    conv = client.post("/v1/chat", headers=auth_headers).json()
+    resp = client.post(f"/v1/chat/{conv['id']}/stop", headers=auth_headers)
+    assert resp.status_code == 200
+    assert resp.json() == {"stopped": True}
