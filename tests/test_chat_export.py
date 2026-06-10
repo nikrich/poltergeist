@@ -72,6 +72,42 @@ def test_export_unknown_conversation(env):
         chat_export.export_conversation("nope")
 
 
+def test_concurrent_export_busy_guard(env, monkeypatch):
+    conv = _conv_with_messages()
+    other = _conv_with_messages()
+    probed: list[bool] = []
+
+    def fake_run(prompt, **kw):
+        if not probed:
+            probed.append(True)
+            # While conv's export is "running" (we're inside its LLM call),
+            # a second export of the SAME conversation bounces off the busy
+            # guard — the re-entrant call proves the guard covers the whole
+            # export window...
+            with pytest.raises(chat_export.ExportInProgress):
+                chat_export.export_conversation(conv["id"])
+            # ...while a DIFFERENT conversation is not blocked (the probe
+            # flag keeps this nested export from recursing again).
+            inner = chat_export.export_conversation(other["id"])
+            assert inner["jot_id"]
+        return FakeLLMResult()
+
+    monkeypatch.setattr(chat_export.llm, "run", fake_run)
+    monkeypatch.setattr(
+        chat_export,
+        "route_existing_jot",
+        lambda jot_id: {"id": jot_id, "path": f"00-inbox/raw/manual/{jot_id}.md",
+                        "routingStatus": "manual_review"},
+    )
+    result = chat_export.export_conversation(conv["id"])
+    assert result["jot_id"]
+    assert probed  # the in-flight assertions above actually ran
+
+    # Guard releases on completion: the same conversation exports fine again.
+    again = chat_export.export_conversation(conv["id"])
+    assert again["jot_id"]
+
+
 def test_llm_failure_writes_nothing(env, monkeypatch):
     conv = _conv_with_messages()
 

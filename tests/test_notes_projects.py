@@ -83,6 +83,17 @@ def test_write_inbox_jot_extra_frontmatter(vault: Path):
     assert post["chat_id"] == "c1"
 
 
+def test_move_jot_project_branch_rejects_traversal_context(vault: Path, tmp_path: Path):
+    jot = write_inbox_jot("stay put")
+    with pytest.raises(ValueError):
+        move_jot(jot["id"], to_context="../../outside", to_project="x",
+                 confidence=1.0, method="user", reasoning="evil")
+    assert not (tmp_path / "outside").exists()
+    assert not (tmp_path.parent / "outside").exists()
+    # file untouched in the inbox
+    assert (vault / "00-inbox/raw/manual" / f"{jot['id']}.md").exists()
+
+
 def test_route_jot_core_passes_project(vault, monkeypatch):
     import ghostbrain.api.repo.notes_manual as nm
     from ghostbrain.worker.router import RoutingDecision

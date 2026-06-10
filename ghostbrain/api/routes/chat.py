@@ -65,6 +65,11 @@ def export_jot(conv_id: str) -> dict:
         raise HTTPException(status_code=404, detail="conversation not found")
     except repo_chat_export.NothingToExport:
         raise HTTPException(status_code=400, detail="conversation has no answers to summarize")
+    except repo_chat_export.ExportInProgress:
+        raise HTTPException(
+            status_code=409,
+            detail="an export is already running for this conversation",
+        )
     except LLMError as e:
         raise HTTPException(status_code=502, detail=f"summary failed: {e}")
 
