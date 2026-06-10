@@ -28,7 +28,7 @@ def _tool_event(block: dict) -> dict:
     short, template = TOOL_SUMMARIES.get(name, (name, name))
     try:
         summary = template.format(**(block.get("input") or {}))
-    except (KeyError, IndexError):
+    except Exception:
         summary = short
     return {"type": "tool", "name": short, "summary": summary}
 
