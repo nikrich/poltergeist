@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { JotsScreen } from '../screens/jots';
+import { toast } from '../stores/toast';
 import type { JotsPage, Note, AutoRouteResponse, Project, Connector } from '../../shared/api-types';
 
 const apiRequest = vi.fn();
@@ -438,19 +439,16 @@ describe('JotsScreen export select', () => {
   });
 
   it('pdf export with empty html shows info toast and does not call exportPdf', async () => {
-    // Empty jot list — no jot selected, so editor is not rendered and
-    // editorHandle.current stays null. Selecting pdf from a hypothetical
-    // export select (or calling handleExportSelect directly) with a null
-    // handle gives '' html and should show the info toast.
-    //
-    // We test this by loading a jot, switching to source mode (which makes
-    // getHTML() return ''), then triggering pdf export.
+    // Load a jot, switch to source mode (getHTML() returns '' there), then
+    // trigger pdf export — the empty-html guard must toast and skip the IPC.
     apiRequest.mockImplementation(makeApiMock([]));
     const exportPdf = vi.fn().mockResolvedValue({ ok: true, path: '/tmp/doc.pdf' });
     window.gb = {
       ...window.gb,
       docs: { ...window.gb?.docs, exportPdf },
     } as typeof window.gb;
+    // The Toaster component is not rendered here — spy on the store helper.
+    const infoSpy = vi.spyOn(toast, 'info');
 
     render(withQuery(<JotsScreen />));
     await waitFor(() => expect(screen.getByText(/full body here/)).toBeInTheDocument());
@@ -462,7 +460,9 @@ describe('JotsScreen export select', () => {
     const exportSelect = screen.getByRole('combobox', { name: /export/i });
     fireEvent.change(exportSelect, { target: { value: 'pdf' } });
 
-    // getHTML() returns '' in source mode — info toast should appear, no exportPdf call.
+    // getHTML() returns '' in source mode — info toast appears, no exportPdf call.
+    expect(infoSpy).toHaveBeenCalledWith('switch to rich mode to export pdf');
     expect(exportPdf).not.toHaveBeenCalled();
+    infoSpy.mockRestore();
   });
 });

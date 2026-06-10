@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ApiError } from '../lib/api/client';
 import { useExportConfluence, useImportSpaces } from '../lib/api/hooks';
 import { toast } from '../stores/toast';
@@ -29,6 +29,16 @@ export function ConfluenceExportDialog({ jotId, defaultTitle, onClose }: Props) 
   const spaceList = spaces.data ?? [];
   const resolvedSpaceKey = spaceKey || spaceList[0]?.key || '';
 
+  // Escape dismisses the dialog (same overlay pattern as NoteView), except
+  // while an export is in flight — closing then would orphan the result.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !exporter.isPending) onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [exporter.isPending, onClose]);
+
   function doExport(forceNew = false) {
     const key = resolvedSpaceKey;
     if (!key) return;
@@ -41,7 +51,7 @@ export function ConfluenceExportDialog({ jotId, defaultTitle, onClose }: Props) 
         space_key: key,
         parent_id: parentId || undefined,
         title: defaultTitle,
-        force_new: forceNew || undefined,
+        force_new: forceNew ? true : undefined,
       },
       {
         onSuccess: (res) => {
