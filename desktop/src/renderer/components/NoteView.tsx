@@ -20,6 +20,7 @@ interface Props {
 export function NoteView({ onEditorReady }: Props = {}) {
   const path = useNoteView((s) => s.path);
   const close = useNoteView((s) => s.close);
+  const openNote = useNoteView((s) => s.open);
   const note = useNote(path);
   const vaultPath = useSettings((s) => s.vaultPath);
   const updateNote = useUpdateNoteByPath();
@@ -137,6 +138,7 @@ export function NoteView({ onEditorReady }: Props = {}) {
               markdown={editorBody}
               onSave={handleSaveBody}
               onEditorReady={onEditorReady}
+              onWikilinkClick={openNote}
             />
           )}
         </div>

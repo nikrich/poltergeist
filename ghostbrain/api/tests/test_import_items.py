@@ -236,6 +236,12 @@ def test_import_output_identical_to_scheduled_sync(
     from ghostbrain.connectors.confluence import ConfluenceConnector
     from ghostbrain.worker.pipeline import process_event
 
+    # Hermetic auth: the connector's per-site auth_for_site reads env vars —
+    # without these the site is silently skipped (caught by CI, where no
+    # developer ~/.ghostbrain/.env leaks in).
+    monkeypatch.setenv("ATLASSIAN_EMAIL", "u@example.com")
+    monkeypatch.setenv("ATLASSIAN_TOKEN_SFT", "test-token")
+
     # 1) Scheduled-sync path: connector fetch (mocked HTTP) → worker pipeline.
     monkeypatch.setattr(
         "ghostbrain.connectors.confluence.AtlassianClient.get",

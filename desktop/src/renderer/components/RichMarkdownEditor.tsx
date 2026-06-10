@@ -8,6 +8,27 @@ import { Btn } from './Btn';
 import { JotEditor } from './JotEditor';
 import { Lucide } from './Lucide';
 
+// Regex matching Obsidian-style wikilinks: [[path]] or [[path|alias]]
+// Paths may contain slashes and colons; `[` excluded so a malformed
+// "[[a [[b]]" can never parse as one span with path "a [[b".
+const WIKILINK_RE = /\[\[([^\][|]+?)(?:\|[^\]]+)?\]\]/g;
+
+/** Given the full text of a text node and a character offset within it,
+ * return the wikilink target (path portion before `|`) if the offset falls
+ * inside a `[[...]]` span; otherwise return null. */
+function wikilinkAtOffset(text: string, offset: number): string | null {
+  WIKILINK_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = WIKILINK_RE.exec(text)) !== null) {
+    const start = match.index;
+    const end = start + match[0].length;
+    if (offset >= start && offset < end) {
+      return match[1]!.trim();
+    }
+  }
+  return null;
+}
+
 interface Props {
   markdown: string;
   onSave: (markdown: string) => void;
@@ -16,6 +37,9 @@ interface Props {
   debounceMs?: number;
   /** Called once when the TipTap Editor instance is created; useful for tests. */
   onEditorReady?: (editor: Editor) => void;
+  /** Called when the user clicks a [[wikilink]] in the rich view; receives the
+   * path portion (before any `|` alias).  Clicks outside wikilinks are ignored. */
+  onWikilinkClick?: (target: string) => void;
 }
 
 type Mode = 'rich' | 'source';
@@ -39,6 +63,7 @@ export function RichMarkdownEditor({
   readOnly = false,
   debounceMs = 1000,
   onEditorReady,
+  onWikilinkClick,
 }: Props) {
   // Evaluated once per mount; parents remount per note via key={...}.
   const [parseFailed] = useState(() => !parsesAsRich(markdown));
@@ -52,6 +77,8 @@ export function RichMarkdownEditor({
   // editorProps.handleKeyDown is captured once at editor creation — route the
   // shortcut through a ref so it always sees the latest closure.
   const handleCopyRef = useRef<() => void>(() => {});
+  // Same pattern for wikilink click — ref keeps the callback fresh.
+  const onWikilinkClickRef = useRef<((target: string) => void) | undefined>(undefined);
 
   useEffect(() => {
     if (parseFailed) {
@@ -91,6 +118,33 @@ export function RichMarkdownEditor({
         }
         return false;
       },
+      handleClick: (view, pos) => {
+        const cb = onWikilinkClickRef.current;
+        if (!cb) return false;
+        // Resolve the position to the parent text block and inspect the text.
+        const resolved = view.state.doc.resolve(pos);
+        const parent = resolved.parent;
+        if (!parent || !parent.isTextblock) return false;
+        // Walk inline children to find the text node at this offset and the
+        // character position within it.
+        const offsetInParent = resolved.parentOffset;
+        let walked = 0;
+        for (let i = 0; i < parent.childCount; i++) {
+          const child = parent.child(i);
+          const childEnd = walked + child.nodeSize;
+          if (child.isText && child.text && offsetInParent >= walked && offsetInParent < childEnd) {
+            const charOffset = offsetInParent - walked;
+            const target = wikilinkAtOffset(child.text, charOffset);
+            if (target) {
+              cb(target);
+              return true;
+            }
+            break;
+          }
+          walked += child.nodeSize;
+        }
+        return false;
+      },
     },
     onUpdate: ({ editor: updated }) => {
       scheduleSave(getMarkdown(updated));
@@ -127,6 +181,7 @@ export function RichMarkdownEditor({
 
   useEffect(() => {
     handleCopyRef.current = () => void handleCopy();
+    onWikilinkClickRef.current = onWikilinkClick;
   });
 
   // Cross-write guard (mirrors JotEditor): if the markdown prop switches
