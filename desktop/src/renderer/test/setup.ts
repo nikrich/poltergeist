@@ -24,6 +24,10 @@ const defaultSettings: Settings = {
   folderStructure: 'by-source',
 
   schedulerEnabled: false,
+
+  hotkeys: {
+    jotOverlay: 'Alt+J',
+  },
 };
 
 const stubBridge: GbBridge = {
@@ -44,6 +48,13 @@ const stubBridge: GbBridge = {
     stop: async () => ({ ok: true }),
   },
   tray: { setFailing: async () => ({ ok: true }) },
+  clipboard: { writeRich: async () => ({ ok: true }) },
+  jot: {
+    save: async () => ({ ok: true as const }),
+    cancel: async () => ({ ok: true as const }),
+    onFocus: () => () => {},
+    onSaveFailed: () => () => {},
+  },
   on: (() => () => {}) as GbBridge['on'],
 };
 

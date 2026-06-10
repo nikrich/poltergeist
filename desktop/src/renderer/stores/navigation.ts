@@ -9,7 +9,8 @@ export type ScreenId =
   | 'vault'
   | 'daily'
   | 'setup'
-  | 'settings';
+  | 'settings'
+  | 'jots';
 
 interface NavState {
   active: ScreenId;

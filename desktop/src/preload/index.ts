@@ -28,6 +28,24 @@ const bridge: GbBridge = {
   tray: {
     setFailing: (names: string[]) => ipcRenderer.invoke('gb:tray:setFailing', names),
   },
+  clipboard: {
+    writeRich: (payload: { html: string; text: string }) =>
+      ipcRenderer.invoke('gb:clipboard:write-rich', payload),
+  },
+  jot: {
+    save: (body: string) => ipcRenderer.invoke('gb:jot:save', body),
+    cancel: () => ipcRenderer.invoke('gb:jot:cancel'),
+    onFocus: (cb: () => void) => {
+      const handler = () => cb();
+      ipcRenderer.on('gb:jot:focus', handler);
+      return () => ipcRenderer.removeListener('gb:jot:focus', handler);
+    },
+    onSaveFailed: (cb: (payload: { body: string; error: string }) => void) => {
+      const handler = (_: unknown, payload: { body: string; error: string }) => cb(payload);
+      ipcRenderer.on('gb:jot:save-failed', handler as Parameters<typeof ipcRenderer.on>[1]);
+      return () => ipcRenderer.removeListener('gb:jot:save-failed', handler as Parameters<typeof ipcRenderer.on>[1]);
+    },
+  },
   on: ((channel: string, listener: (...args: unknown[]) => void) => {
     const wrapped = (_e: Electron.IpcRendererEvent, ...args: unknown[]) =>
       listener(...args);

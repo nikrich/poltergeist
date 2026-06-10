@@ -3,13 +3,17 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   ActivityRow,
   AgendaItem,
+  AutoRouteResponse,
   Capture,
   CapturesPage,
   Connector,
   ConnectorDetail,
   Conversation,
   ConversationSummary,
+  CreateJotRequest,
+  CreateJotResponse,
   DailyPage,
+  JotsPage,
   MeetingsPage,
   Note,
   Prep,
@@ -18,6 +22,8 @@ import type {
   SearchResponse,
   StartRecordingRequest,
   Suggestion,
+  UpdateNoteBodyRequest,
+  UpdateNoteBodyResponse,
   UpdateRecorderSettings,
   VaultStats,
 } from '../../../shared/api-types';
@@ -349,5 +355,103 @@ export function useDeleteConversation() {
   return useMutation({
     mutationFn: (id: string) => del<{ ok: boolean }>(`/v1/chat/${encodeURIComponent(id)}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['chat'] }),
+
+// ── Jots ──────────────────────────────────────────────────────────────────
+
+const JOTS_KEY = ['jots'] as const;
+
+export function useJots(params: { q?: string; context?: string; tag?: string } = {}) {
+  return useQuery({
+    queryKey: [...JOTS_KEY, params],
+    queryFn: async () => {
+      const search = new URLSearchParams({ source: 'manual' });
+      if (params.q) search.set('q', params.q);
+      if (params.context) search.set('context', params.context);
+      if (params.tag) search.set('tag', params.tag);
+      return get<JotsPage>(`/v1/notes?${search.toString()}`);
+    },
+    refetchInterval: 5000,  // pick up overlay-captured jots
+  });
+}
+
+export function useJot(path: string | null) {
+  return useQuery({
+    queryKey: ['note-by-path', path],
+    queryFn: () => get<Note>(`/v1/notes?path=${encodeURIComponent(path!)}`),
+    enabled: !!path,
+  });
+}
+
+export function useCreateJot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: CreateJotRequest) =>
+      post<CreateJotResponse>('/v1/notes', req),
+    onSuccess: () => qc.invalidateQueries({ queryKey: JOTS_KEY }),
+  });
+}
+
+export function useUpdateJot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { id: string; body: string }) =>
+      patch<{ id: string; path: string; updated: string }>(
+        `/v1/notes/${encodeURIComponent(vars.id)}`,
+        { body: vars.body },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: JOTS_KEY });
+      qc.invalidateQueries({ queryKey: ['note-by-path'] });
+    },
+  });
+}
+
+export function useRouteJot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { id: string; context: string }) =>
+      post<{ id: string; path: string; context: string }>(
+        `/v1/notes/${encodeURIComponent(vars.id)}/route`,
+        { context: vars.context },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: JOTS_KEY });
+      // Routing moves the file — the open detail view's path is now stale.
+      qc.invalidateQueries({ queryKey: ['note-by-path'] });
+    },
+  });
+}
+
+export function useAutoRouteJot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      post<AutoRouteResponse>(`/v1/notes/${encodeURIComponent(id)}/route-auto`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: JOTS_KEY });
+      qc.invalidateQueries({ queryKey: ['note-by-path'] });
+    },
+  });
+}
+
+export function useDeleteJot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => del(`/v1/notes/${encodeURIComponent(id)}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: JOTS_KEY }),
+  });
+}
+
+export function useUpdateNoteByPath() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: UpdateNoteBodyRequest) =>
+      patch<UpdateNoteBodyResponse>('/v1/notes/body', vars),
+    onSuccess: () => {
+      // Both caches read GET /v1/notes?path= — ['note'] (useNote/NoteView)
+      // and ['note-by-path'] (useJot/jots screen).
+      qc.invalidateQueries({ queryKey: ['note'] });
+      qc.invalidateQueries({ queryKey: ['note-by-path'] });
+    },
   });
 }

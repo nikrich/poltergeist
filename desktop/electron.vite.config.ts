@@ -34,7 +34,12 @@ export default defineConfig({
     base: './',
     build: {
       outDir: 'out/renderer',
-      rollupOptions: { input: resolve(__dirname, 'src/renderer/index.html') },
+      rollupOptions: {
+        input: {
+          index: resolve(__dirname, 'src/renderer/index.html'),
+          overlay: resolve(__dirname, 'src/renderer/overlay.html'),
+        },
+      },
     },
   },
 });

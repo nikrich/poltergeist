@@ -233,6 +233,13 @@ body[data-theme='light'] {
 .gb-prose p { margin: 0 0 0.9em; color: var(--ink-0); }
 .gb-prose ul,
 .gb-prose ol { margin: 0 0 0.9em 1.2em; padding: 0; }
+/* Tailwind preflight sets `list-style: none` on ul/ol — restore markers. */
+.gb-prose ul { list-style: disc outside; }
+.gb-prose ol { list-style: decimal outside; }
+.gb-prose li::marker { color: var(--ink-2); }
+/* TipTap task lists carry their own checkboxes — no bullets. */
+.gb-prose ul[data-type='taskList'] { list-style: none; margin-left: 0.2em; }
+.gb-prose ul[data-type='taskList'] li { display: flex; gap: 6px; }
 .gb-prose li { margin: 0.2em 0; }
 .gb-prose code {
   font-family: var(--font-mono, ui-monospace, monospace);

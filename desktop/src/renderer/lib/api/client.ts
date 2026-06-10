@@ -26,8 +26,8 @@ export async function patch<T>(path: string, body?: unknown): Promise<T> {
   return result.data;
 }
 
-export async function del<T>(path: string): Promise<T> {
+export async function del<T = null>(path: string): Promise<T> {
   const result = await window.gb.api.request<T>('DELETE', path);
   if (!result.ok) throw new Error(result.error);
-  return result.data;
+  return result.data as T;
 }

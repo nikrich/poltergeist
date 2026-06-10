@@ -269,3 +269,7 @@ The list endpoint walks both `00-inbox/raw/manual/` and `20-contexts/*/notes/` f
 None at design time. Implementation plan should confirm:
 1. The default for `routing.yaml:reject_below` — does it already produce the desired behaviour for short manual jots, or does the `source: manual` branch need its own threshold?
 2. The Obsidian URI scheme handoff — works on macOS with the user's existing vault registration; verify in the manual E2E.
+
+## Implementation status
+
+- 2026-06-09: E2E pass (live sidecar from feat/poltergeist-jots, real vault, real LLM router) — POST /v1/notes routed to codeship at 0.95 confidence with reasoning; frontmatter + audit (`manual_jot_routed`) verified; list `?source=manual&q=` filter OK; PATCH re-derived tags; manual re-route moved the file to personal; traversal context rejected 400; DELETE 204 → 404; test jot cleaned up. Overlay keypress (⌥-J) pending in-app human verification.

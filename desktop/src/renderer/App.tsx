@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { toast } from './stores/toast';
 import { useSettings } from './stores/settings';
 import { useNavigation } from './stores/navigation';
 import { useSelectedEvent } from './stores/selected-event';
@@ -19,6 +20,7 @@ import { VaultScreen } from './screens/vault';
 import { DailyScreen } from './screens/daily';
 import { SetupScreen } from './screens/setup';
 import { SettingsScreen } from './screens/settings';
+import { JotsScreen } from './screens/jots';
 
 export default function App() {
   const { theme, density, ready, hydrate } = useSettings();
@@ -56,6 +58,15 @@ export default function App() {
       if (typeof eventId !== 'string') return;
       useNavigation.getState().setActive('meetings');
       useSelectedEvent.getState().setSelectedEventId(eventId);
+    });
+  }, []);
+
+  // Surface overlay autosave failures as a toast. The overlay broadcasts
+  // window.gb.jot.onSaveFailed whenever the sidecar write fails; without this
+  // listener the error is silently swallowed.
+  useEffect(() => {
+    return window.gb.jot.onSaveFailed(({ error }) => {
+      toast.error(`jot save failed: ${error}`);
     });
   }, []);
 
@@ -98,6 +109,7 @@ export default function App() {
           {active === 'daily' && <DailyScreen />}
           {active === 'setup' && <SetupScreen />}
           {active === 'settings' && <SettingsScreen />}
+          {active === 'jots' && <JotsScreen />}
         </main>
       </div>
       <StatusBar />

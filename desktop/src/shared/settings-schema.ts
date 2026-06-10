@@ -27,6 +27,12 @@ export const settingsSchema = z.object({
   // alive in the tray. Default false so existing launchd setups keep working.
   // Cutover flow: run scripts/disable-launchd.sh, then flip this on.
   schedulerEnabled: z.boolean(),
+
+  // Global hotkeys (Electron accelerator format).
+  // Note: Electron uses 'Alt' rather than 'Option' even on macOS.
+  hotkeys: z.object({
+    jotOverlay: z.string().default('Alt+J'),
+  }).default({ jotOverlay: 'Alt+J' }),
 });
 
 export type SettingsKey = keyof z.infer<typeof settingsSchema>;
