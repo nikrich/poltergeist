@@ -70,6 +70,33 @@ def test_error_turn_with_no_partial_skips_assistant_message(chats, monkeypatch):
     assert len(saved["messages"]) == 1  # just the user message
 
 
+def test_busy_guard_rejects_concurrent_turn_then_releases(chats, monkeypatch):
+    monkeypatch.setattr(repo_chat.agent, "run_chat_turn", happy_turn)
+    conv = chat_store.create()
+
+    # Start a turn and pull ONE event — the generator is now mid-stream and
+    # holds the busy guard for this conversation.
+    first = repo_chat.send_message(conv["id"], "slow question")
+    assert next(first)["type"] == "session"
+
+    # A second turn on the same conversation is rejected outright.
+    events = list(repo_chat.send_message(conv["id"], "again"))
+    assert events == [
+        {
+            "type": "error",
+            "message": "a turn is already in progress for this conversation",
+        }
+    ]
+
+    # Exhaust the first turn — the guard is released on completion.
+    rest = list(first)
+    assert rest[-1]["type"] == "done"
+
+    # A third turn now proceeds normally.
+    third = list(repo_chat.send_message(conv["id"], "third question"))
+    assert [e["type"] for e in third] == ["session", "delta", "tool", "delta", "done"]
+
+
 def test_resume_failure_retries_without_session_with_history(chats, monkeypatch):
     calls = []
 
