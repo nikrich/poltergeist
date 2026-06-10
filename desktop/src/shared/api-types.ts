@@ -87,6 +87,18 @@ export interface ActivityRow {
   path: string | null;
 }
 
+export interface HeatmapDay {
+  date: string; // YYYY-MM-DD
+  count: number;
+  bySource: Record<string, number>;
+}
+
+export interface HeatmapResponse {
+  days: HeatmapDay[];
+  total: number;
+  maxCount: number;
+}
+
 export interface Suggestion {
   id: string;
   icon: string;
