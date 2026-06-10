@@ -240,6 +240,7 @@ def move_jot(
 ) -> dict:
     src = _find_file(jot_id)
     if to_project:
+        _safe_component(to_context)
         _safe_component(to_project)
         dst_dir = _guard_inside_vault(
             _vault() / PROJECT_NOTES_TEMPLATE.format(context=to_context, project=to_project)
