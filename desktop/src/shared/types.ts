@@ -1,3 +1,5 @@
+import type { ChatStreamEvent } from './api-types';
+
 export type Theme = 'dark' | 'light';
 export type Density = 'comfortable' | 'compact';
 export type LlmProvider = 'local' | 'anthropic' | 'openai';
@@ -59,6 +61,13 @@ export interface GbBridge {
   sidecar: {
     retry(): Promise<{ ok: true } | { ok: false; error: string }>;
   };
+  chat: {
+    send(
+      convId: string,
+      text: string,
+    ): Promise<{ ok: true } | { ok: false; error: string }>;
+    stop(convId: string): Promise<{ ok: true } | { ok: false; error: string }>;
+  };
   tray: {
     setFailing(names: string[]): Promise<{ ok: true } | { ok: false; error: string }>;
   };
@@ -69,6 +78,10 @@ export interface GbBridge {
     listener: (info: { reason: string }) => void,
   ): () => void;
   on(channel: 'meetings:openPrep', listener: (eventId: string) => void): () => void;
+  on(
+    channel: 'chat:event',
+    listener: (payload: { convId: string; event: ChatStreamEvent }) => void,
+  ): () => void;
 }
 
 declare global {

@@ -21,6 +21,10 @@ const bridge: GbBridge = {
   sidecar: {
     retry: () => ipcRenderer.invoke('gb:sidecar:retry'),
   },
+  chat: {
+    send: (convId, text) => ipcRenderer.invoke('gb:chat:send', convId, text),
+    stop: (convId) => ipcRenderer.invoke('gb:chat:stop', convId),
+  },
   tray: {
     setFailing: (names: string[]) => ipcRenderer.invoke('gb:tray:setFailing', names),
   },

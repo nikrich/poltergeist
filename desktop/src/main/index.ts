@@ -8,6 +8,7 @@ import { loadInitialState, attachStatePersistence } from './window-state';
 import { buildAppMenu } from './menu';
 import { Sidecar } from './sidecar';
 import { forward } from './api-forwarder';
+import { startChatStream, stopChatStream } from './chat-stream';
 import { installTray, type TrayController } from './tray';
 import {
   installMeetingNotifier,
@@ -238,6 +239,24 @@ ipcMain.handle(
     return forward(sidecar, m, path, body);
   },
 );
+
+ipcMain.handle('gb:chat:send', async (e, convId: unknown, text: unknown) => {
+  if (typeof convId !== 'string' || typeof text !== 'string') {
+    return { ok: false, error: 'Invalid request shape' };
+  }
+  const wc = e.sender;
+  return startChatStream(sidecar, convId, text, (event) => {
+    if (!wc.isDestroyed()) wc.send('gb:chat:event', { convId, event });
+  });
+});
+
+ipcMain.handle('gb:chat:stop', (_e, convId: unknown) => {
+  if (typeof convId !== 'string') {
+    return { ok: false, error: 'Invalid request shape' };
+  }
+  stopChatStream(convId);
+  return { ok: true };
+});
 
 ipcMain.handle('gb:tray:setFailing', (_e, names: unknown) => {
   if (!Array.isArray(names)) {

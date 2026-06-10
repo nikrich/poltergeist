@@ -196,3 +196,42 @@ export interface Prep {
   generatedAt: string;
   error: string | null;
 }
+
+// ── Chat ──────────────────────────────────────────────────────────────────
+
+export interface ChatToolUse {
+  name: string;
+  summary: string;
+}
+
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  text: string;
+  tools?: ChatToolUse[];
+  interrupted?: boolean;
+}
+
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  created_at: number;
+  updated_at: number;
+  message_count: number;
+}
+
+export interface Conversation {
+  id: string;
+  title: string;
+  created_at: number;
+  updated_at: number;
+  claude_session_id: string | null;
+  messages: ChatMessage[];
+}
+
+/** Mirrors the event vocabulary of ghostbrain/llm/agent.py. */
+export type ChatStreamEvent =
+  | { type: 'session'; session_id: string }
+  | { type: 'delta'; text: string }
+  | { type: 'tool'; name: string; summary: string }
+  | { type: 'done'; text: string; session_id?: string }
+  | { type: 'error'; message: string; interrupted?: boolean };
