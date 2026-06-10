@@ -81,3 +81,7 @@ Audit logs at `vault/90-meta/audit/YYYY-MM-DD.jsonl` (one JSON event per line; t
 - Streaks/longest-run statistics, weekly/monthly rollup charts.
 - Backfilling activity for dates before audit logging existed.
 - Importing GitHub-contribution data — the resemblance is visual only.
+
+## Implementation status
+
+- 2026-06-10: E2E pass (live sidecar, real vault) — heatmap returned 31 days / 26,113 events / max 3,909; today's bySource spans calendar/system/claude-code/github/confluence/jira/digest/scheduler; `?date=` day log row count matches the heatmap count exactly; bounds (days=0/731, bad date) all 422. Gates: 57 pytest, 37 vitest, typecheck, production build. In-app visual check pending human hands.
