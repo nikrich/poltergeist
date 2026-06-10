@@ -15,7 +15,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[dev,api]"
       - name: Run tests
         # Deliberately NOT tests/ in full — test_calendar, test_joplin, and
         # test_weekly_digest depend on macOS-native frameworks (EventKit, etc.)
