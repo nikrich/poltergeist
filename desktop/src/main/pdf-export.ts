@@ -1,5 +1,7 @@
 import { BrowserWindow, dialog } from 'electron';
-import { writeFile } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 const PRINT_CSS = `
   body { font: 13px/1.6 -apple-system, 'Helvetica Neue', sans-serif; color: #1a1a1a;
@@ -42,9 +44,15 @@ export async function exportPdf(
   if (picked.canceled || !picked.filePath) return { ok: false, cancelled: true };
 
   const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true } });
+  // Load via a temp file, not a data: URL — Chromium caps URLs at ~2MB and
+  // percent-encoding inflates the HTML ~3x, so long docs would silently fail.
+  let tempDir: string | null = null;
   try {
     const html = wrapPrintableHtml(payload.title, payload.html);
-    await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    tempDir = await mkdtemp(join(tmpdir(), 'gb-pdf-'));
+    const htmlPath = join(tempDir, 'doc.html');
+    await writeFile(htmlPath, html, 'utf-8');
+    await win.loadFile(htmlPath);
     const pdf = await win.webContents.printToPDF({ printBackground: true });
     await writeFile(picked.filePath, pdf);
     return { ok: true, path: picked.filePath };
@@ -52,5 +60,6 @@ export async function exportPdf(
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   } finally {
     win.destroy();
+    if (tempDir) await rm(tempDir, { recursive: true, force: true }).catch(() => {});
   }
 }

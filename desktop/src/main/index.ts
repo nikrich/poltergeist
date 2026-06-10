@@ -332,12 +332,20 @@ ipcMain.handle('gb:docs:assist-stop', (_e, jotId: unknown) => {
   return { ok: true };
 });
 
-ipcMain.handle('gb:docs:export-pdf', (e, payload) =>
-  exportPdf(
+ipcMain.handle('gb:docs:export-pdf', (e, payload: unknown) => {
+  if (
+    typeof payload !== 'object' ||
+    payload === null ||
+    typeof (payload as Record<string, unknown>).title !== 'string' ||
+    typeof (payload as Record<string, unknown>).html !== 'string'
+  ) {
+    return { ok: false as const, error: 'export-pdf: expected { title: string, html: string }' };
+  }
+  return exportPdf(
     BrowserWindow.fromWebContents(e.sender),
     payload as { title: string; html: string },
-  ),
-);
+  );
+});
 
 ipcMain.handle('gb:tray:setFailing', (_e, names: unknown) => {
   if (!Array.isArray(names)) {
