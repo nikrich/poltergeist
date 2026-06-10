@@ -94,6 +94,15 @@ def test_move_jot_project_branch_rejects_traversal_context(vault: Path, tmp_path
     assert (vault / "00-inbox/raw/manual" / f"{jot['id']}.md").exists()
 
 
+def test_set_frontmatter_fields(vault):
+    from ghostbrain.api.repo import notes_manual
+    rec = notes_manual.write_inbox_jot("# Doc\n\nbody")
+    notes_manual.set_frontmatter_fields(rec["id"], {"confluence_page_id": "123"})
+    jot = notes_manual.read_jot(rec["id"])
+    assert jot["frontmatter"]["confluence_page_id"] == "123"
+    assert jot["body"] == "# Doc\n\nbody"  # body untouched
+
+
 def test_route_jot_core_passes_project(vault, monkeypatch):
     import ghostbrain.api.repo.notes_manual as nm
     from ghostbrain.worker.router import RoutingDecision
