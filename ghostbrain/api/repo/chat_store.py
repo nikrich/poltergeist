@@ -29,7 +29,7 @@ def _write(conv: dict) -> None:
     d.mkdir(parents=True, exist_ok=True)
     target = _conv_path(conv["id"])
     tmp = target.with_name(target.name + ".tmp")
-    tmp.write_text(json.dumps(conv, ensure_ascii=False, indent=2))
+    tmp.write_text(json.dumps(conv, ensure_ascii=False, indent=2), encoding="utf-8")
     tmp.replace(target)
 
 
@@ -55,7 +55,7 @@ def create() -> dict:
 def get(conv_id: str) -> dict | None:
     path = _conv_path(conv_id)
     try:
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return None
     except (json.JSONDecodeError, OSError):
@@ -71,7 +71,7 @@ def list_all() -> list[dict]:
     out: list[dict] = []
     for p in d.glob("*.json"):
         try:
-            conv = json.loads(p.read_text())
+            conv = json.loads(p.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             log.warning("skipping unreadable conversation file: %s", p)
             continue
