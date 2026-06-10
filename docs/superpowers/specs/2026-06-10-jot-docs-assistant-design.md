@@ -94,3 +94,7 @@ Payload:
 ## Implementation status
 
 - 2026-06-10: spec approved, implementation starting (worktree).
+- 2026-06-10: implemented on `worktree-docs-assist` (15 commits, subagent-driven with per-unit spec + quality reviews). Tests: 30 new pytest (assist repo/routes, markdown_out, atlassian pages, export repo/routes), 34 new vitest (docs-stream, pdf-export, editor handle, store, panel, dialog, jots gating) — full suites green (652 py / 195 desktop).
+- Deviations from spec (all reviewed): PDF renders from the editor's TipTap HTML via a temp file + hidden window (not main-side markdown render; data-URI hits Chromium's ~2MB URL cap); export route lives at `/v1/docs/export/confluence` (docs router prefix); last export destination remembered in module memory, not persisted settings (v1); parent page is a plain id input, not a tree picker (v1); user-initiated stop returns the assist panel to idle (spec didn't define post-stop state).
+- Known follow-ups: connector-gate predicate (connector `on`) differs from the export 409 predicate (spaces configured in routing.yaml) — a user with the connector on but no spaces sees a 409 toast; source-mode `replaceWith` updates the saved body but not the live CodeMirror view until remount; "no longer exists" error detection is string-coupled to the route's 409 detail.
+- Manual E2E (assist draft/polish against live vault, double export to a sandbox Confluence space, PDF in Preview) pending human hands.
