@@ -38,6 +38,7 @@ class NotesPage(BaseModel):
 class CreateNoteRequest(BaseModel):
     body: str
     capturedAt: str | None = None  # ISO8601; omit to let the server timestamp the jot
+    route: bool = True  # set False to skip routing (stays pending in inbox)
 
 
 class UpdateNoteRequest(BaseModel):

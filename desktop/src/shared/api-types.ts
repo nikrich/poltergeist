@@ -231,10 +231,18 @@ export interface JotsPage {
 export interface CreateJotRequest {
   body: string;
   capturedAt?: string;
+  route?: boolean;  // omit or true = route on create; false = stay pending
 }
 
 export interface CreateJotResponse {
   id: string;
   path: string;
   routingStatus: JotRoutingStatus;
+}
+
+export interface AutoRouteResponse {
+  id: string;
+  path: string;
+  routingStatus: JotRoutingStatus;
+  context?: string | null;
 }

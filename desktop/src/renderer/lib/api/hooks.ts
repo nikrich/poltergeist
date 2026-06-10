@@ -4,6 +4,7 @@ import type {
   ActivityRow,
   AgendaItem,
   AnswerResponse,
+  AutoRouteResponse,
   Capture,
   CapturesPage,
   Connector,
@@ -377,6 +378,18 @@ export function useRouteJot() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: JOTS_KEY });
       // Routing moves the file — the open detail view's path is now stale.
+      qc.invalidateQueries({ queryKey: ['note-by-path'] });
+    },
+  });
+}
+
+export function useAutoRouteJot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      post<AutoRouteResponse>(`/v1/notes/${encodeURIComponent(id)}/route-auto`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: JOTS_KEY });
       qc.invalidateQueries({ queryKey: ['note-by-path'] });
     },
   });
