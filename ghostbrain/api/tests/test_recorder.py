@@ -2,10 +2,19 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
+
+# The recorder is macOS-only (BlackHole + SwitchAudioSource); other platforms
+# get a designed 501 — covered by test_recorder_api_platform_guard.py, which
+# DOES run everywhere. These behavioural tests assume darwin.
+pytestmark = pytest.mark.skipif(
+    sys.platform != "darwin", reason="recorder is macOS-only"
+)
 
 
 def _write_daemon_active(state_dir: Path, *, pid: int) -> None:
