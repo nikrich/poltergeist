@@ -143,6 +143,32 @@ describe('DocsAssistPanel', () => {
     expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
   });
 
+  it('user stop (error event with interrupted flag) returns to idle, not error', async () => {
+    // A user-initiated stop arrives as {type:'error', interrupted:true} — the
+    // panel must treat it as a deliberate action, not render a failure.
+    const { fire } = captureDocsListener();
+    render(<DocsAssistPanel jotId={JOTID} editorHandle={makeHandle()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'polish' }));
+    await waitFor(() => expect(useDocsAssist.getState().phase).toBe('streaming'));
+
+    act(() => {
+      fire({ jotId: JOTID, event: { type: 'delta', text: 'partial output' } });
+      fire({
+        jotId: JOTID,
+        event: { type: 'error', message: 'stopped', interrupted: true },
+      });
+    });
+
+    await waitFor(() => {
+      expect(useDocsAssist.getState().phase).toBe('idle');
+    });
+    expect(useDocsAssist.getState().error).toBeNull();
+    // No error UI rendered for an intentional stop.
+    expect(screen.queryByText('stopped')).toBeNull();
+    expect(screen.queryByRole('button', { name: /retry/i })).toBeNull();
+  });
+
   it('discard from proposal phase resets to idle', async () => {
     const { fire } = captureDocsListener();
     render(<DocsAssistPanel jotId={JOTID} editorHandle={makeHandle()} />);

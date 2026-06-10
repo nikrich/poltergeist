@@ -57,7 +57,14 @@ export function DocsAssistPanel({ jotId, editorHandle }: Props) {
           setToolHint(null);
           break;
         case 'error':
-          fail(event.message);
+          // A user-initiated stop arrives as an error event with the
+          // interrupted flag — intentional, not a failure: return to idle
+          // instead of showing a red retry banner.
+          if (event.interrupted) {
+            reset();
+          } else {
+            fail(event.message);
+          }
           setToolHint(null);
           break;
         case 'tool':
@@ -69,7 +76,7 @@ export function DocsAssistPanel({ jotId, editorHandle }: Props) {
           break;
       }
     });
-  }, [jotId, appendDelta, finish, fail]);
+  }, [jotId, appendDelta, finish, fail, reset]);
 
   // When the jotId changes, reset ANY non-idle state — a surviving proposal
   // (or error) from jot A could otherwise be accepted into jot B's editor,
