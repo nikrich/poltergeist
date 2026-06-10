@@ -6,7 +6,7 @@ __pycache__/
 .ruff_cache/
 
 # Venv
-.venv/
+.venv
 venv/
 
 # Logs
