@@ -148,3 +148,25 @@ def test_jira_scheduled_sync_output_is_pinned(tmp_path) -> None:
     ):
         events = connector.fetch(datetime(2026, 5, 1, tzinfo=timezone.utc))
     assert events == [EXPECTED_ISSUE_EVENT]
+
+
+def test_normalize_page_function_matches_pinned_output() -> None:
+    from ghostbrain.connectors.confluence import normalize_page
+
+    assert normalize_page(
+        PAGE_RAW, host="sft.atlassian.net", space_map={"DIG": "sanlam"}
+    ) == EXPECTED_PAGE_EVENT
+
+
+def test_normalize_page_drops_unmonitored_space() -> None:
+    from ghostbrain.connectors.confluence import normalize_page
+
+    assert normalize_page(
+        PAGE_RAW, host="sft.atlassian.net", space_map={"OTHER": "personal"}
+    ) is None
+
+
+def test_normalize_issue_function_matches_pinned_output() -> None:
+    from ghostbrain.connectors.jira import normalize_issue
+
+    assert normalize_issue(ISSUE_RAW, host="sft.atlassian.net") == EXPECTED_ISSUE_EVENT
