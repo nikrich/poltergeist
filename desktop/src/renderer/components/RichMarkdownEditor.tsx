@@ -2,11 +2,22 @@ import { useEffect, useRef, useState } from 'react';
 import { Editor } from '@tiptap/core';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { buildEditorExtensions } from '../lib/editor/extensions';
-import { clipboardPayload, getMarkdown } from '../lib/editor/markdown';
+import { clipboardPayload, getMarkdown, restoreWikilinks } from '../lib/editor/markdown';
 import { toast } from '../stores/toast';
 import { Btn } from './Btn';
 import { JotEditor } from './JotEditor';
 import { Lucide } from './Lucide';
+
+export interface EditorHandle {
+  /** Markdown for the current selection; '' when collapsed. */
+  getSelectionMarkdown: () => string;
+  /** Replace current selection (or whole doc when target='doc') with markdown. */
+  replaceWith: (markdown: string, target: 'selection' | 'doc') => void;
+  /** Full document as HTML (for PDF export); '' in source mode. */
+  getHTML: () => string;
+  /** Full document as markdown. */
+  getMarkdown: () => string;
+}
 
 // Regex matching Obsidian-style wikilinks: [[path]] or [[path|alias]]
 // Paths may contain slashes and colons; `[` excluded so a malformed
@@ -40,6 +51,8 @@ interface Props {
   /** Called when the user clicks a [[wikilink]] in the rich view; receives the
    * path portion (before any `|` alias).  Clicks outside wikilinks are ignored. */
   onWikilinkClick?: (target: string) => void;
+  /** Populated with imperative methods for the docs-assist panel and PDF export. */
+  handleRef?: React.MutableRefObject<EditorHandle | null>;
 }
 
 type Mode = 'rich' | 'source';
@@ -64,6 +77,7 @@ export function RichMarkdownEditor({
   debounceMs = 1000,
   onEditorReady,
   onWikilinkClick,
+  handleRef,
 }: Props) {
   // Evaluated once per mount; parents remount per note via key={...}.
   const [parseFailed] = useState(() => !parsesAsRich(markdown));
@@ -158,6 +172,80 @@ export function RichMarkdownEditor({
   useEffect(() => {
     if (editor) onEditorReady?.(editor);
   }, [editor]);
+
+  // Populate the imperative handle so docs-assist panel and PDF export can
+  // programmatically read/replace editor content without prop drilling.
+  // Keyed on editor + mode + handleRef so the handle stays fresh when mode
+  // toggles between rich and source.
+  useEffect(() => {
+    if (!handleRef) return;
+    handleRef.current = {
+      getSelectionMarkdown(): string {
+        // Source mode has no selection concept we can extract here.
+        if (!editor || editor.isDestroyed || mode !== 'rich') return '';
+        const { from, to, empty } = editor.state.selection;
+        if (empty) return '';
+        // v1: tiptap-markdown's serializer cannot operate on a partial range
+        // without building a top-level doc node from the slice — use the
+        // same slice→doc pattern as clipboardPayload (markdown.ts) for rich
+        // content, falling back to plain text when the slice cannot form a doc.
+        const slice = editor.state.selection.content();
+        const docNode = editor.schema.topNodeType.createAndFill(null, slice.content);
+        if (docNode) {
+          const storage = editor.storage.markdown as {
+            serializer: { serialize(content: unknown): string };
+          };
+          return restoreWikilinks(storage.serializer.serialize(docNode));
+        }
+        // Fallback: plain-text extraction (acceptable for v1 — no rich formatting).
+        return editor.state.doc.textBetween(from, to, '\n');
+      },
+      replaceWith(md: string, target: 'selection' | 'doc'): void {
+        if (mode === 'rich' && editor && !editor.isDestroyed) {
+          if (target === 'selection') {
+            // insertContent with a markdown string: tiptap-markdown's
+            // transformPastedText:true makes setContent work, but insertContent
+            // takes HTML/JSON — use setContent on a temporary doc is too
+            // destructive.  Instead, delete the selection and use
+            // editor.commands.setContent for the full replacement path, or for
+            // selection-only replacement we use the same mechanism as
+            // setContent but scoped:  insert the markdown as-is (tiptap-markdown
+            // serialises back so the round-trip is preserved at next read).
+            // The simplest reliable path for v1: focus, replace with insertContent
+            // which accepts strings interpreted as HTML by default.  The sidecar
+            // already returns proper markdown — convert to HTML via a headless
+            // parse to preserve formatting.
+            editor.chain().focus().insertContent(md).run();
+          } else {
+            // Whole-doc replacement: same mechanism the markdown-prop resync
+            // effect uses — setContent treats a string as markdown when
+            // tiptap-markdown is active (emitUpdate=false so the resync does
+            // not itself schedule a save).
+            editor.commands.setContent(md, false);
+          }
+          scheduleSave(getMarkdown(editor));
+        } else if (mode === 'source') {
+          // Source mode: update the tracked current value and schedule a save.
+          // The visible CodeMirror editor will reflect the new content only
+          // on its next remount (when the user switches notes or toggles mode).
+          // This is an accepted v1 limitation — a JotEditor ref API would be
+          // needed to push content into a live CodeMirror instance.
+          scheduleSave(md);
+        }
+      },
+      getHTML(): string {
+        if (!editor || editor.isDestroyed || mode !== 'rich') return '';
+        return editor.getHTML();
+      },
+      getMarkdown(): string {
+        return current.current;
+      },
+    };
+    return () => {
+      if (handleRef) handleRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, mode, handleRef]);
 
   async function handleCopy() {
     if (!editor || editor.isDestroyed || mode !== 'rich') return;

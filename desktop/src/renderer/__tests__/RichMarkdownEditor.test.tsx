@@ -3,6 +3,7 @@ import { render, screen, act, fireEvent, waitFor } from '@testing-library/react'
 import type { Editor } from '@tiptap/core';
 import type { EditorView } from '@tiptap/pm/view';
 import { RichMarkdownEditor } from '../components/RichMarkdownEditor';
+import type { EditorHandle } from '../components/RichMarkdownEditor';
 import { useToasts } from '../stores/toast';
 
 vi.useFakeTimers();
@@ -425,5 +426,99 @@ describe('RichMarkdownEditor copy-formatted', () => {
     render(<RichMarkdownEditor markdown="x" onSave={() => {}} />);
     fireEvent.click(screen.getByRole('button', { name: 'src' }));
     expect(screen.queryByRole('button', { name: /copy formatted/ })).toBeNull();
+  });
+});
+
+// ── EditorHandle imperative ref ─────────────────────────────────────────────
+// These tests run under fake timers (inherited from vi.useFakeTimers() at top).
+
+describe('RichMarkdownEditor EditorHandle', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllTimers();
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+  });
+
+  it('populates handleRef on mount and nulls it on unmount', () => {
+    const handleRef = { current: null as EditorHandle | null };
+    const { unmount } = render(
+      <RichMarkdownEditor markdown="hello" onSave={() => {}} handleRef={handleRef} />,
+    );
+    expect(handleRef.current).not.toBeNull();
+    unmount();
+    expect(handleRef.current).toBeNull();
+  });
+
+  it('getMarkdown returns the current document markdown', () => {
+    const handleRef = { current: null as EditorHandle | null };
+    render(
+      <RichMarkdownEditor
+        markdown="# heading\n\nbody text"
+        onSave={() => {}}
+        handleRef={handleRef}
+      />,
+    );
+    // getMarkdown returns current.current (the prop value at mount), which
+    // tiptap-markdown may normalise slightly on round-trip — check key tokens.
+    const md = handleRef.current?.getMarkdown() ?? '';
+    expect(md).toContain('# heading');
+    expect(md).toContain('body text');
+  });
+
+  it('getHTML returns non-empty HTML in rich mode', () => {
+    const handleRef = { current: null as EditorHandle | null };
+    render(
+      <RichMarkdownEditor markdown="# title" onSave={() => {}} handleRef={handleRef} />,
+    );
+    const html = handleRef.current?.getHTML();
+    expect(html).toBeTruthy();
+    expect(html).toContain('<h1>');
+  });
+
+  it('getSelectionMarkdown returns empty string when selection is collapsed', () => {
+    const handleRef = { current: null as EditorHandle | null };
+    let editor: Editor | undefined;
+    render(
+      <RichMarkdownEditor
+        markdown="some content"
+        onSave={() => {}}
+        handleRef={handleRef}
+        onEditorReady={(e) => {
+          editor = e;
+        }}
+      />,
+    );
+    // Collapsed (point) selection — no text selected.
+    act(() => {
+      editor!.commands.setTextSelection(2);
+    });
+    expect(handleRef.current?.getSelectionMarkdown()).toBe('');
+  });
+
+  it('replaceWith(md, doc) triggers onSave with new markdown after debounce', () => {
+    const onSave = vi.fn();
+    const handleRef = { current: null as EditorHandle | null };
+    render(
+      <RichMarkdownEditor
+        markdown="original"
+        onSave={onSave}
+        debounceMs={500}
+        handleRef={handleRef}
+      />,
+    );
+    act(() => {
+      handleRef.current?.replaceWith('# replaced\n\nnew content', 'doc');
+    });
+    // Not yet — debounce has not fired.
+    expect(onSave).not.toHaveBeenCalled();
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    expect(onSave).toHaveBeenCalledTimes(1);
+    // The saved markdown should reflect the new content (not the original).
+    expect(lastMarkdown(onSave)).toContain('replaced');
   });
 });
