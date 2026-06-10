@@ -28,6 +28,10 @@ class AtlassianAuthError(RuntimeError):
     pass
 
 
+class AtlassianNotFound(RuntimeError):
+    pass
+
+
 class AtlassianClient:
     """Thin wrapper around requests.Session for one Atlassian site.
 
@@ -44,10 +48,12 @@ class AtlassianClient:
             "User-Agent": "ghostbrain/0.1 (atlassian-connector)",
         })
 
-    def get(
+    def _request(
         self,
+        method: str,
         path: str,
         params: dict | None = None,
+        json_body: dict | None = None,
         *,
         timeout_s: int = DEFAULT_TIMEOUT_S,
         max_retries: int = 3,
@@ -57,10 +63,14 @@ class AtlassianClient:
         last_text: str = ""
         for attempt in range(max_retries):
             try:
-                response = self._session.get(url, params=params, timeout=timeout_s)
+                response = self._session.request(
+                    method, url, params=params, json=json_body, timeout=timeout_s
+                )
             except requests.RequestException as e:
-                log.warning("atlassian GET %s attempt %d failed: %s",
-                            path, attempt + 1, e)
+                log.warning(
+                    "atlassian %s %s attempt %d failed: %s",
+                    method, path, attempt + 1, e,
+                )
                 if attempt == max_retries - 1:
                     raise
                 time.sleep(2 ** attempt)
@@ -76,8 +86,10 @@ class AtlassianClient:
                 continue
 
             if response.status_code in RETRY_STATUSES:
-                log.warning("atlassian %d on attempt %d, backing off",
-                            response.status_code, attempt + 1)
+                log.warning(
+                    "atlassian %d on attempt %d, backing off",
+                    response.status_code, attempt + 1,
+                )
                 time.sleep(2 ** attempt)
                 continue
 
@@ -87,13 +99,34 @@ class AtlassianClient:
                     "ATLASSIAN_TOKEN_* env var."
                 )
 
+            if response.status_code == 404:
+                raise AtlassianNotFound(
+                    f"404 from {url}."
+                )
+
             response.raise_for_status()
             return response.json()
 
         raise RuntimeError(
-            f"atlassian GET {url} failed after {max_retries} retries "
+            f"atlassian {method} {url} failed after {max_retries} retries "
             f"(last status={last_status}, body={last_text!r})"
         )
+
+    def get(
+        self,
+        path: str,
+        params: dict | None = None,
+        *,
+        timeout_s: int = DEFAULT_TIMEOUT_S,
+        max_retries: int = 3,
+    ) -> dict:
+        return self._request("GET", path, params=params, timeout_s=timeout_s, max_retries=max_retries)
+
+    def post(self, path: str, json_body: dict, *, timeout_s: int = DEFAULT_TIMEOUT_S) -> dict:
+        return self._request("POST", path, json_body=json_body, timeout_s=timeout_s, max_retries=1)
+
+    def put(self, path: str, json_body: dict, *, timeout_s: int = DEFAULT_TIMEOUT_S) -> dict:
+        return self._request("PUT", path, json_body=json_body, timeout_s=timeout_s, max_retries=1)
 
     def _url(self, path: str) -> str:
         if path.startswith("http"):
