@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -207,13 +208,28 @@ def run_chat_turn(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        errors="replace",
         env={**os.environ, "CLAUDE_CODE_NO_TELEMETRY": "1"},
+        # Own process group: claude spawns descendants (ghostbrain-mcp, tool
+        # subprocesses) that inherit the stdout pipe write-end — killing only
+        # the direct child would leave the pipe open and our read loop blocked
+        # until the orphans exit. Group-kill (below) takes them all out.
+        start_new_session=True,
     )
+
+    def _kill_group() -> None:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except ProcessLookupError:
+            pass  # already gone
+        except Exception:  # noqa: BLE001 — never let cleanup raise past us
+            proc.kill()
+
     timed_out = threading.Event()
 
     def _kill() -> None:
         timed_out.set()
-        proc.kill()
+        _kill_group()
 
     # Watchdog instead of readline timeouts: if claude wedges with no output,
     # a blocking readline would hang forever. The timer fires once, kills the
@@ -237,7 +253,7 @@ def run_chat_turn(
         # we don't leak a billing subprocess).
         killer.cancel()
         if proc.poll() is None:
-            proc.kill()
+            _kill_group()
             proc.wait()
 
     if saw_terminal:

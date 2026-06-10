@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import stat
+import time
 from pathlib import Path
 
 import pytest
@@ -70,7 +71,12 @@ EOF
 sleep 30
 """
     binary = fake_claude(tmp_path, body)
+    start = time.monotonic()
     events = list(run_chat_turn("q", binary=binary, mcp_binary=None, timeout_s=1))
+    elapsed = time.monotonic() - start
+    # Group-kill regression guard: if only the direct child were killed, the
+    # sleep-30 orphan would hold the stdout pipe open and this would take 30s.
+    assert elapsed < 5
     assert [e["type"] for e in events[:2]] == ["session", "delta"]
     assert events[-1]["type"] == "error"
     assert events[-1].get("interrupted") is True
