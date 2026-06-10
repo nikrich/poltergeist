@@ -80,17 +80,19 @@ class AtlassianClient:
             last_text = (response.text or "")[:200]
 
             if response.status_code == 429:
-                wait = _retry_after_seconds(response, default=5)
-                log.info("atlassian rate-limited, sleeping %ds", wait)
-                time.sleep(wait)
+                if attempt < max_retries - 1:
+                    wait = _retry_after_seconds(response, default=5)
+                    log.info("atlassian rate-limited, sleeping %ds", wait)
+                    time.sleep(wait)
                 continue
 
             if response.status_code in RETRY_STATUSES:
-                log.warning(
-                    "atlassian %d on attempt %d, backing off",
-                    response.status_code, attempt + 1,
-                )
-                time.sleep(2 ** attempt)
+                if attempt < max_retries - 1:
+                    log.warning(
+                        "atlassian %d on attempt %d, backing off",
+                        response.status_code, attempt + 1,
+                    )
+                    time.sleep(2 ** attempt)
                 continue
 
             if response.status_code == 401:

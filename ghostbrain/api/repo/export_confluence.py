@@ -37,9 +37,9 @@ def _title_for(jot: dict, override: str | None) -> str:
 
 def _client_for_space(space_key: str):
     routing = _load_routing()
-    sites, spaces = _confluence_config(routing)
-    # All monitored spaces live on the configured sites; v1 uses the first
-    # configured site (single-site setups are the norm).
+    sites, _spaces = _confluence_config(routing)
+    # v1 always uses the first configured site (single-site setups are the
+    # norm); space_key only goes into the API payload, never site selection.
     host = sites[0]
     return _client(host, not_configured=CONFLUENCE_NOT_CONFIGURED)
 

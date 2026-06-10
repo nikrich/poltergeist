@@ -1,4 +1,6 @@
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from ghostbrain.connectors.atlassian._base import AtlassianClient
 from ghostbrain.connectors.atlassian.pages import PageGone, create_page, update_page
@@ -44,3 +46,14 @@ def test_update_page_404_raises_page_gone():
         assert False, "expected PageGone"
     except PageGone:
         pass
+
+
+def test_post_429_fails_fast_without_retry():
+    client, req = _client_returning((429, {}))
+    # time.sleep patched defensively: with max_retries=1 no sleep should
+    # happen at all, but a regression must not make this test slow.
+    with patch("ghostbrain.connectors.atlassian._base.time.sleep") as sleep:
+        with pytest.raises(RuntimeError):
+            create_page(client, space_key="K", title="T", storage_html="x")
+    assert req.call_count == 1
+    sleep.assert_not_called()

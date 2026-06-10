@@ -1,6 +1,10 @@
 """Markdown → Confluence storage-format XHTML (the export inverse of the
 connector's markdownify import path). Confluence storage format accepts
-standard XHTML for text/tables/code; we don't emit any <ac:*> macros in v1."""
+standard XHTML for text/tables/code; we don't emit any <ac:*> macros in v1.
+
+v1 limitation: python-markdown passes raw HTML in the source through
+unchanged (no sanitizer), so malformed user HTML can make Confluence
+reject the storage payload."""
 from __future__ import annotations
 
 import re

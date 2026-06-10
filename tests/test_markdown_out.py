@@ -17,6 +17,7 @@ def test_fenced_code():
 
 
 def test_wikilinks_flattened():
-    assert ">target<" not in to_storage_html("see [[20-contexts/x/note]]")
+    html = to_storage_html("see [[20-contexts/x/note]]")
+    assert "note" in html and "[[" not in html
     html = to_storage_html("see [[20-contexts/x/note|the note]]")
     assert "the note" in html and "[[" not in html

@@ -1,6 +1,7 @@
 """Docs assistant: streamed writing turns + Confluence export."""
 import json
 
+import requests
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
@@ -63,3 +64,9 @@ def export_to_confluence(payload: ConfluenceExportRequest) -> dict:
         )
     except AtlassianAuthError as e:
         raise HTTPException(status_code=502, detail=str(e))
+    # TrackedPageGone / AtlassianAuthError / ImportNotConfiguredError are
+    # RuntimeError subclasses — this catch-all must stay LAST so a 429/5xx
+    # exhausting retries (RuntimeError) or a network error surfaces as 502,
+    # not an opaque 500.
+    except (RuntimeError, requests.RequestException) as e:
+        raise HTTPException(status_code=502, detail=f"confluence request failed: {e}")
