@@ -9,8 +9,9 @@ import { JotEditor } from './JotEditor';
 import { Lucide } from './Lucide';
 
 // Regex matching Obsidian-style wikilinks: [[path]] or [[path|alias]]
-// Paths may contain slashes and colons.
-const WIKILINK_RE = /\[\[([^\]|]+?)(?:\|[^\]]+)?\]\]/g;
+// Paths may contain slashes and colons; `[` excluded so a malformed
+// "[[a [[b]]" can never parse as one span with path "a [[b".
+const WIKILINK_RE = /\[\[([^\][|]+?)(?:\|[^\]]+)?\]\]/g;
 
 /** Given the full text of a text node and a character offset within it,
  * return the wikilink target (path portion before `|`) if the offset falls
@@ -131,7 +132,7 @@ export function RichMarkdownEditor({
         for (let i = 0; i < parent.childCount; i++) {
           const child = parent.child(i);
           const childEnd = walked + child.nodeSize;
-          if (child.isText && child.text && offsetInParent >= walked && offsetInParent <= childEnd) {
+          if (child.isText && child.text && offsetInParent >= walked && offsetInParent < childEnd) {
             const charOffset = offsetInParent - walked;
             const target = wikilinkAtOffset(child.text, charOffset);
             if (target) {

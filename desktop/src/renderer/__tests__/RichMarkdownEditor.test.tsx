@@ -230,6 +230,40 @@ describe('RichMarkdownEditor wikilink click-to-navigate', () => {
     expect(onWikilinkClick).toHaveBeenCalledWith('a/b');
   });
 
+  it('clicking the second of two wikilinks yields the second target', () => {
+    const onWikilinkClick = vi.fn();
+    let editor: Editor | undefined;
+    render(
+      <RichMarkdownEditor
+        markdown="See [[first/note]] and [[second/note]] here."
+        onSave={() => {}}
+        onWikilinkClick={onWikilinkClick}
+        onEditorReady={(e) => {
+          editor = e;
+        }}
+      />,
+    );
+    expect(editor).toBeDefined();
+    act(() => {
+      const doc = editor!.state.doc;
+      let wikilinkPos = -1;
+      doc.descendants((node, pos) => {
+        if (node.isText && node.text && node.text.includes('[[second')) {
+          const offset = node.text.indexOf('[[second');
+          wikilinkPos = pos + offset + 5; // inside the second wikilink
+          return false;
+        }
+      });
+      expect(wikilinkPos).toBeGreaterThan(0);
+      const handled = editor!.view.someProp('handleClick', (f: (view: EditorView, pos: number, event: MouseEvent) => boolean | void) =>
+        f(editor!.view, wikilinkPos, new MouseEvent('click')),
+      );
+      expect(handled).toBe(true);
+    });
+    expect(onWikilinkClick).toHaveBeenCalledWith('second/note');
+    expect(onWikilinkClick).not.toHaveBeenCalledWith('first/note');
+  });
+
   it('does NOT fire onWikilinkClick when clicking plain text', () => {
     const onWikilinkClick = vi.fn();
     let editor: Editor | undefined;
