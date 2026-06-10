@@ -6,6 +6,7 @@ import type {
   AutoRouteResponse,
   Capture,
   CapturesPage,
+  ConfluencePagesResponse,
   Connector,
   ConnectorDetail,
   Conversation,
@@ -15,6 +16,12 @@ import type {
   DailyPage,
   HeatmapResponse,
   JotsPage,
+  ImportItem,
+  ImportItemResult,
+  ImportJiraIssue,
+  ImportPage,
+  ImportResponse,
+  ImportSpace,
   MeetingsPage,
   Note,
   Prep,
@@ -472,6 +479,100 @@ export function useUpdateNoteByPath() {
       // and ['note-by-path'] (useJot/jots screen).
       qc.invalidateQueries({ queryKey: ['note'] });
       qc.invalidateQueries({ queryKey: ['note-by-path'] });
+    },
+  });
+}
+
+// ── Atlassian import ──────────────────────────────────────────────────────
+
+export function useImportSpaces() {
+  return useQuery({
+    queryKey: ['import', 'spaces'],
+    queryFn: () => get<ImportSpace[]>('/v1/import/confluence/spaces'),
+    staleTime: 5 * 60_000,
+    // A 409 (connector not configured) must render the call-to-action
+    // immediately — never spin through React Query's default 3 retries.
+    retry: false,
+  });
+}
+
+export function useConfluencePages(
+  site: string | null,
+  space: string | null,
+  parent?: string,
+) {
+  const params = new URLSearchParams();
+  if (site) params.set('site', site);
+  if (space) params.set('space', space);
+  if (parent) params.set('parent', parent);
+  return useQuery({
+    queryKey: ['import', 'pages', site, space, parent ?? null],
+    queryFn: () =>
+      get<ConfluencePagesResponse>(`/v1/import/confluence/pages?${params.toString()}`),
+    enabled: site !== null && space !== null,
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
+export function useConfluenceSearch(q: string) {
+  return useQuery({
+    queryKey: ['import', 'confluence-search', q],
+    queryFn: () =>
+      get<ImportPage[]>(`/v1/import/confluence/search?q=${encodeURIComponent(q)}`),
+    // UI threshold deliberately above the route's min_length=1 — single-char
+    // CQL searches return mostly noise and burn rate limit.
+    enabled: q.trim().length >= 2,
+    staleTime: 30_000,
+    retry: false,
+  });
+}
+
+export function useJiraIssues(q?: string) {
+  const trimmed = (q ?? '').trim();
+  return useQuery({
+    queryKey: ['import', 'jira-issues', trimmed],
+    queryFn: () =>
+      get<ImportJiraIssue[]>(
+        `/v1/import/jira/issues${trimmed ? `?q=${encodeURIComponent(trimmed)}` : ''}`,
+      ),
+    staleTime: 30_000,
+    retry: false,
+  });
+}
+
+export interface ImportRunVars {
+  items: ImportItem[];
+  /** Called before each item is sent — drives the "3/7 — importing …" UI. */
+  onItem?: (done: number, total: number, current: ImportItem) => void;
+}
+
+export function useImportItems() {
+  const qc = useQueryClient();
+  return useMutation({
+    // One POST per item (each a valid 1-item batch for /v1/import): the
+    // sidecar processes synchronously, so this is what gives the UI real
+    // per-item progress. The endpoint itself accepts up to 50 items per
+    // request for non-interactive callers.
+    mutationFn: async ({ items, onItem }: ImportRunVars): Promise<ImportResponse> => {
+      const results: ImportItemResult[] = [];
+      for (let i = 0; i < items.length; i += 1) {
+        const item = items[i]!;
+        onItem?.(i, items.length, item);
+        const res = await post<ImportResponse>('/v1/import', { items: [item] });
+        results.push(...res.results);
+      }
+      return { results };
+    },
+    onSettled: () => {
+      // Imported notes surface as captures, audit/import_completed events
+      // (activity feed + heatmap), and vault stats.
+      qc.invalidateQueries({ queryKey: ['captures'] });
+      qc.invalidateQueries({ queryKey: ['activity'] });
+      qc.invalidateQueries({ queryKey: ['vault'] });
+      // Browse lists (spaces/pages/search/issues) — updatedAt/version data
+      // shown there can change once an item is imported.
+      qc.invalidateQueries({ queryKey: ['import'] });
     },
   });
 }

@@ -1,5 +1,9 @@
 """Jira Cloud connector. Fetches tickets the user is involved in
-(assignee, reporter, watcher) that have been updated recently."""
+(assignee, reporter, watcher) that have been updated recently.
+
+``normalize_issue``, ``_adf_to_text``, ``MY_ISSUES_JQL``, and ``JQL_FIELDS``
+are module-level so the import endpoints (ghostbrain/api/repo/
+import_atlassian.py) reuse the exact scheduled-sync conversion."""
 
 from __future__ import annotations
 
@@ -29,6 +33,12 @@ MAX_RESULTS = 50
 JQL_FIELDS = (
     "summary,status,assignee,reporter,priority,issuetype,labels,project,"
     "created,updated,description,resolution"
+)
+
+# The connector's "my issues" clause; the import browse list reuses it.
+MY_ISSUES_JQL = (
+    "(assignee = currentUser() OR reporter = currentUser() "
+    "OR watcher = currentUser())"
 )
 
 
@@ -99,10 +109,7 @@ class JiraConnector(Connector):
 
         # Atlassian's JQL date format wants "yyyy-MM-dd HH:mm".
         since_str = since.strftime("%Y-%m-%d %H:%M")
-        jql = (
-            f'(assignee = currentUser() OR reporter = currentUser() '
-            f'OR watcher = currentUser()) AND updated >= "{since_str}"'
-        )
+        jql = f'{MY_ISSUES_JQL} AND updated >= "{since_str}"'
 
         # Atlassian recommends /search/jql (token-paginated) but the classic
         # /search still works on Cloud. We use the new endpoint.
@@ -120,45 +127,51 @@ class JiraConnector(Connector):
 
         issues = data.get("issues", []) or []
         for issue in issues:
-            yield self._normalize_issue(issue, host=host)
+            yield normalize_issue(issue, host=host)
 
-    def _normalize_issue(self, raw: dict, *, host: str) -> dict:
-        fields = raw.get("fields") or {}
-        key = raw.get("key", "?")
-        summary = (fields.get("summary") or "").strip()
-        status_obj = fields.get("status") or {}
-        priority_obj = fields.get("priority") or {}
-        assignee_obj = fields.get("assignee") or {}
-        reporter_obj = fields.get("reporter") or {}
-        project = (fields.get("project") or {}).get("key", "")
 
-        site_slug = slug_for_host(host)
+def normalize_issue(raw: dict, *, host: str) -> dict:
+    """Normalize one raw Jira issue into the standard event shape.
 
-        return {
-            "id": f"jira:{site_slug}:{key}",
-            "source": "jira",
-            "type": "ticket",
-            "subtype": (status_obj.get("name") or "").lower() or "open",
-            "timestamp": fields.get("updated") or fields.get("created") or _now_iso(),
-            "actorId": f"jira:{(reporter_obj or {}).get('accountId', '?')}",
-            "title": f"{key} {summary}".strip(),
-            "body": _adf_to_text(fields.get("description")) or "",
-            "url": f"https://{host}/browse/{key}",
-            "rawData": raw,
-            "metadata": {
-                "site": host,
-                "siteSlug": site_slug,
-                "project": project,
-                "key": key,
-                "status": status_obj.get("name"),
-                "statusCategory": (status_obj.get("statusCategory") or {}).get("key"),
-                "priority": priority_obj.get("name"),
-                "assignee": (assignee_obj or {}).get("displayName"),
-                "reporter": (reporter_obj or {}).get("displayName"),
-                "labels": fields.get("labels") or [],
-                "issueType": ((fields.get("issuetype") or {}) or {}).get("name"),
-            },
-        }
+    Module-level (rather than a connector method) so the import endpoints
+    run the exact conversion the scheduled sync runs.
+    """
+    fields = raw.get("fields") or {}
+    key = raw.get("key", "?")
+    summary = (fields.get("summary") or "").strip()
+    status_obj = fields.get("status") or {}
+    priority_obj = fields.get("priority") or {}
+    assignee_obj = fields.get("assignee") or {}
+    reporter_obj = fields.get("reporter") or {}
+    project = (fields.get("project") or {}).get("key", "")
+
+    site_slug = slug_for_host(host)
+
+    return {
+        "id": f"jira:{site_slug}:{key}",
+        "source": "jira",
+        "type": "ticket",
+        "subtype": (status_obj.get("name") or "").lower() or "open",
+        "timestamp": fields.get("updated") or fields.get("created") or _now_iso(),
+        "actorId": f"jira:{(reporter_obj or {}).get('accountId', '?')}",
+        "title": f"{key} {summary}".strip(),
+        "body": _adf_to_text(fields.get("description")) or "",
+        "url": f"https://{host}/browse/{key}",
+        "rawData": raw,
+        "metadata": {
+            "site": host,
+            "siteSlug": site_slug,
+            "project": project,
+            "key": key,
+            "status": status_obj.get("name"),
+            "statusCategory": (status_obj.get("statusCategory") or {}).get("key"),
+            "priority": priority_obj.get("name"),
+            "assignee": (assignee_obj or {}).get("displayName"),
+            "reporter": (reporter_obj or {}).get("displayName"),
+            "labels": fields.get("labels") or [],
+            "issueType": ((fields.get("issuetype") or {}) or {}).get("name"),
+        },
+    }
 
 
 def _adf_to_text(adf: Any) -> str:

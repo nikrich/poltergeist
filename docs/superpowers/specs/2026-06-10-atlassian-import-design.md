@@ -81,3 +81,7 @@ POST /v1/import   { "items": [
 - Paste-a-URL quick import and sync backfill buttons (deferred — flagged as good follow-ups).
 - Importing attachments/images; Confluence page *trees* in one click (import is per-selected-item only).
 - Non-Atlassian import sources.
+
+## Implementation status
+
+- 2026-06-10: Live E2E pass (real sft.atlassian.net, real vault) — browse returned 3 monitored spaces with display names, DIG page tree, real my-issues JQL list; POST /v1/import imported 1 page + 1 issue with connector-identical frontmatter (routingMethod path, confidence 1.0); the issue import returned `updated: true`, live-proving dedup against the previously-synced copy; `import_completed` audit events landed and surfaced in the activity heatmap bySource. Test page cleaned up (context + inbox copies); refreshed issue note retained. Gates: 90 API + 14 connector/golden tests, 52 desktop tests, typecheck, production build. In-app picker visual check pending human hands.
