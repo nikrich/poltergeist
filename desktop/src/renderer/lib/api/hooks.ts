@@ -355,6 +355,8 @@ export function useDeleteConversation() {
   return useMutation({
     mutationFn: (id: string) => del<{ ok: boolean }>(`/v1/chat/${encodeURIComponent(id)}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['chat'] }),
+  });
+}
 
 // ── Jots ──────────────────────────────────────────────────────────────────
 
