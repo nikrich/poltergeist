@@ -74,3 +74,11 @@ def write_last_run(state_dir: Path, key: str, iso_ts: str) -> Path:
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(iso_ts)
     return p
+
+
+@pytest.fixture
+def tmp_chats_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Point GHOSTBRAIN_CHATS_DIR at a clean temp dir."""
+    chats = tmp_path / "chats"
+    monkeypatch.setenv("GHOSTBRAIN_CHATS_DIR", str(chats))
+    return chats
