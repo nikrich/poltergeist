@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { JotsScreen } from '../screens/jots';
-import type { JotsPage, Note, AutoRouteResponse } from '../../shared/api-types';
+import type { JotsPage, Note, AutoRouteResponse, Project } from '../../shared/api-types';
 
 const apiRequest = vi.fn();
 
@@ -309,5 +309,38 @@ describe('JotsScreen', () => {
       );
       expect(routeAutoCall).toBeDefined();
     });
+  });
+});
+
+// ── Re-route picker with projects ─────────────────────────────────────────
+
+const projectsData: Project[] = [
+  {
+    id: 'codeship/poltergeist',
+    context: 'codeship',
+    slug: 'poltergeist',
+    name: 'Poltergeist',
+    description: '',
+    archived: false,
+    created_at: 1,
+  },
+];
+
+describe('JotsScreen re-route picker', () => {
+  it('re-route select offers project destinations', async () => {
+    apiRequest.mockImplementation(async (_m: string, path: string) => {
+      if (path.includes('source=manual')) return { ok: true, status: 200, data: page };
+      if (path === '/v1/projects') return { ok: true, status: 200, data: projectsData };
+      return { ok: true, status: 200, data: detail };
+    });
+
+    render(withQuery(<JotsScreen />));
+    // Wait for the jot to load so footer is visible
+    await waitFor(() => expect(screen.getByText(/full body here/)).toBeInTheDocument());
+
+    const select = screen.getByDisplayValue('re-route…');
+    const options = Array.from(select.querySelectorAll('option')).map((o) => o.getAttribute('value'));
+    expect(options).toContain('codeship');
+    expect(options).toContain('codeship/poltergeist');
   });
 });

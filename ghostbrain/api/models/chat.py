@@ -39,3 +39,12 @@ class ChatMessageRequest(BaseModel):
 
 class RenameRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
+
+
+class ChatExportResponse(BaseModel):
+    jot_id: str
+    path: str
+    routingStatus: str
+    context: str | None = None
+    project: str | None = None
+    title: str

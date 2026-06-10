@@ -1,13 +1,17 @@
 import { useState } from 'react';
 import { TopBar } from '../components/TopBar';
 import { Btn } from '../components/Btn';
+import { Eyebrow } from '../components/Eyebrow';
 import { Lucide } from '../components/Lucide';
 import { Toggle } from '../components/Toggle';
 import { Ghost } from '../components/Ghost';
 import { useSettings } from '../stores/settings';
 import {
+  useCreateProject,
+  useProjects,
   useRecorderSettings,
   useSchedulerDiagnostics,
+  useUpdateProject,
   useUpdateRecorderSettings,
 } from '../lib/api/hooks';
 import { toast } from '../stores/toast';
@@ -20,6 +24,7 @@ import type {
   TranscriptModel,
   Settings,
 } from '../../shared/types';
+import type { Project, UpdateProjectRequest } from '../../shared/api-types';
 
 async function trySet<K extends keyof Settings>(
   setSetting: (k: K, v: Settings[K]) => Promise<{ ok: true } | { ok: false; error: string }>,
@@ -38,7 +43,8 @@ type SectionId =
   | 'background'
   | 'hotkeys'
   | 'account'
-  | 'about';
+  | 'about'
+  | 'projects';
 
 const SECTIONS: Array<{ id: SectionId; label: string; icon: string }> = [
   { id: 'display', label: 'display', icon: 'sun' },
@@ -46,6 +52,7 @@ const SECTIONS: Array<{ id: SectionId; label: string; icon: string }> = [
   { id: 'privacy', label: 'privacy', icon: 'shield' },
   { id: 'meeting', label: 'meetings', icon: 'mic' },
   { id: 'background', label: 'background', icon: 'activity' },
+  { id: 'projects', label: 'projects', icon: 'folder' },
   { id: 'hotkeys', label: 'hotkeys', icon: 'command' },
   { id: 'account', label: 'account', icon: 'user' },
   { id: 'about', label: 'about', icon: 'info' },
@@ -76,6 +83,7 @@ export function SettingsScreen() {
           {section === 'privacy' && <PrivacySettings />}
           {section === 'meeting' && <MeetingSettings />}
           {section === 'background' && <BackgroundSettings />}
+          {section === 'projects' && <ProjectsSettings />}
           {section === 'hotkeys' && <HotkeySettings />}
           {section === 'account' && <AccountSettings />}
           {section === 'about' && <AboutSettings />}
@@ -441,6 +449,140 @@ function AboutSettings() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+const PROJECT_CONTEXTS = ['sanlam', 'codeship', 'reducedrecipes', 'personal'];
+
+export function ProjectsSettings() {
+  const projects = useProjects({ includeArchived: true });
+  const createProject = useCreateProject();
+  const updateProject = useUpdateProject();
+  const [ctx, setCtx] = useState(PROJECT_CONTEXTS[0] ?? 'sanlam');
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+
+  const submit = () => {
+    const trimmed = name.trim();
+    if (!trimmed || createProject.isPending) return;
+    createProject.mutate(
+      { context: ctx, name: trimmed, description: description.trim() },
+      {
+        onSuccess: () => {
+          setName('');
+          setDescription('');
+        },
+        onError: (e) => toast.error(e instanceof Error ? e.message : 'create failed'),
+      },
+    );
+  };
+
+  const byContext = PROJECT_CONTEXTS.map((c) => ({
+    context: c,
+    items: (projects.data ?? []).filter((p) => p.context === c),
+  })).filter((g) => g.items.length > 0);
+
+  return (
+    <div>
+      <SectionHeader
+        title="projects"
+        sub="routing destinations nested under your contexts. jots, notes, and chat exports can route into them."
+      />
+
+      <div className="mb-6 flex flex-col gap-2 rounded-md border border-hairline bg-vellum p-4">
+        <div className="flex gap-2">
+          <select
+            value={ctx}
+            onChange={(e) => setCtx(e.target.value)}
+            className="rounded-sm border border-hairline-2 bg-paper px-2 py-[6px] text-12 text-ink-0"
+          >
+            {PROJECT_CONTEXTS.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="project name…"
+            className="flex-1 rounded-sm border border-hairline-2 bg-paper px-2 py-[6px] text-12 text-ink-0 placeholder:text-ink-3 focus:outline-none"
+          />
+        </div>
+        <input
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="description (helps the router pick it)…"
+          className="rounded-sm border border-hairline-2 bg-paper px-2 py-[6px] text-12 text-ink-0 placeholder:text-ink-3 focus:outline-none"
+        />
+        <div>
+          <Btn
+            variant="primary"
+            size="sm"
+            disabled={!name.trim() || createProject.isPending}
+            onClick={submit}
+          >
+            add project
+          </Btn>
+        </div>
+      </div>
+
+      {projects.isError && (
+        <div className="mb-4 rounded-md border border-oxblood/30 bg-oxblood/10 p-3 text-12 text-oxblood">
+          couldn't read the project registry:{' '}
+          {projects.error instanceof Error ? projects.error.message : 'unknown error'}
+        </div>
+      )}
+
+      {byContext.map((group) => (
+        <div key={group.context} className="mb-5">
+          <Eyebrow className="mb-2">{group.context}</Eyebrow>
+          {group.items.map((p) => (
+            <ProjectRow key={p.id} project={p} onUpdate={updateProject.mutate} />
+          ))}
+        </div>
+      ))}
+      {(projects.data ?? []).length === 0 && !projects.isError && (
+        <div className="text-12 text-ink-3">no projects yet — add one above.</div>
+      )}
+    </div>
+  );
+}
+
+function ProjectRow({
+  project,
+  onUpdate,
+}: {
+  project: Project;
+  onUpdate: (vars: { context: string; slug: string } & UpdateProjectRequest) => void;
+}) {
+  return (
+    <div
+      className={`flex items-center gap-3 rounded-sm px-3 py-2 hover:bg-vellum ${
+        project.archived ? 'opacity-50' : ''
+      }`}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="text-13 text-ink-0">{project.name}</div>
+        {project.description && (
+          <div className="truncate text-11 text-ink-2">{project.description}</div>
+        )}
+      </div>
+      <span className="font-mono text-10 text-ink-3">{project.slug}</span>
+      <button
+        type="button"
+        className="text-11 text-ink-2 hover:text-ink-0"
+        onClick={() =>
+          onUpdate({
+            context: project.context,
+            slug: project.slug,
+            archived: !project.archived,
+          })
+        }
+      >
+        {project.archived ? 'unarchive' : 'archive'}
+      </button>
     </div>
   );
 }

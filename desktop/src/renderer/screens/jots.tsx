@@ -11,6 +11,7 @@ import {
   useDeleteJot,
   useJot,
   useJots,
+  useProjects,
   useRouteJot,
   useUpdateJot,
 } from '../lib/api/hooks';
@@ -59,6 +60,7 @@ export function JotsScreen() {
   const editorBody =
     initialBodyRef.current?.id === selectedId ? initialBodyRef.current.body : undefined;
 
+  const projects = useProjects();
   const createJot = useCreateJot();
   const updateJot = useUpdateJot();
   const routeJot = useRouteJot();
@@ -163,7 +165,7 @@ export function JotsScreen() {
     updateJot.mutate({ id: selectedId, body: next });
   }
 
-  function handleReroute(ctx: string) {
+  function handleReroute(value: string) {
     if (!selectedId) return;
     // After re-routing, the file path changes. The list refetches via
     // useRouteJot's onSuccess invalidation, and selectedItem is resolved from
@@ -171,10 +173,12 @@ export function JotsScreen() {
     // useJot(selectedItem?.path). The initialBodyRef is keyed by selectedId
     // (not path), so it does not go stale on path change. No special handling
     // needed; the editor continues showing the correct content.
+    const [context, project] = value.includes('/') ? value.split('/', 2) : [value, undefined];
+    const dest = project ? `${context} / ${project}` : context;
     routeJot.mutate(
-      { id: selectedId, context: ctx },
+      { id: selectedId, context: context!, project },
       {
-        onSuccess: () => toast.info(`re-routed to ${ctx}`),
+        onSuccess: () => toast.info(`re-routed to ${dest}`),
         onError: (err) => toast.error(`re-route failed: ${err.message}`),
       },
     );
@@ -247,7 +251,12 @@ export function JotsScreen() {
                 />
               </div>
               <footer className="flex items-center gap-2 border-t border-hairline px-4 py-2 text-11 text-ink-2">
-                {selectedItem?.context && <Pill>{selectedItem.context}</Pill>}
+                {selectedItem?.context && (
+                  <Pill>
+                    {selectedItem.context}
+                    {selectedItem.project ? ` / ${selectedItem.project}` : ''}
+                  </Pill>
+                )}
                 {selectedItem?.routingStatus && <Pill>{selectedItem.routingStatus}</Pill>}
                 <div className="ml-auto flex items-center gap-2">
                   {selectedItem?.routingStatus !== 'routed' && (
@@ -287,9 +296,16 @@ export function JotsScreen() {
                       re-route…
                     </option>
                     {KNOWN_CONTEXTS.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
+                      <optgroup key={c} label={c}>
+                        <option value={c}>{c}</option>
+                        {(Array.isArray(projects.data) ? projects.data : [])
+                          .filter((p) => p.context === c)
+                          .map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {c} / {p.name}
+                            </option>
+                          ))}
+                      </optgroup>
                     ))}
                   </select>
                   <Btn variant="ghost" size="sm" onClick={handleDelete}>

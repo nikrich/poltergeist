@@ -67,3 +67,32 @@ describe('JotTree', () => {
     expect(leaf?.className).toContain('bg-neon');
   });
 });
+
+// ── Project grouping ──────────────────────────────────────────────────────
+
+function makeItem(overrides: Partial<JotListItem> & { id: string }): JotListItem {
+  return {
+    id: overrides.id,
+    path: `20-contexts/${overrides.context ?? 'codeship'}/notes/${overrides.id}.md`,
+    title: overrides.title ?? overrides.id,
+    excerpt: overrides.excerpt ?? '',
+    context: overrides.context ?? 'codeship',
+    routingStatus: overrides.routingStatus ?? 'routed',
+    tags: overrides.tags ?? [],
+    created: overrides.created ?? '2026-06-01T00:00:00Z',
+    updated: overrides.updated ?? '2026-06-01T00:00:00Z',
+    project: overrides.project,
+  };
+}
+
+describe('JotTree project grouping', () => {
+  it('groups project jots under context → project', () => {
+    const projectItems = [
+      makeItem({ id: 'a', context: 'codeship', project: 'poltergeist', created: '2026-06-01T00:00:00Z' }),
+      makeItem({ id: 'b', context: 'codeship', project: null, created: '2026-06-02T00:00:00Z' }),
+    ];
+    render(<JotTree items={projectItems} selectedId={null} onSelect={() => {}} />);
+    expect(screen.getByText('poltergeist')).toBeTruthy();   // project node
+    expect(screen.getByText('codeship')).toBeTruthy();      // context node
+  });
+});

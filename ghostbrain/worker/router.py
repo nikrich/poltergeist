@@ -13,6 +13,7 @@ Strategy: path-first (free, instant), LLM fallback (only when no rule matches).
 
 from __future__ import annotations
 
+import copy
 import dataclasses
 import json
 import logging
@@ -21,6 +22,7 @@ from typing import Any
 
 import yaml
 
+from ghostbrain.api.repo import projects as projects_repo
 from ghostbrain.llm import client as llm
 from ghostbrain.paths import vault_path
 from ghostbrain.profile.claude_md import detect_context
@@ -57,6 +59,31 @@ class RoutingDecision:
     reasoning: str
     method: str  # "path" | "llm" | "fallback"
     secondary_contexts: list[str] = dataclasses.field(default_factory=list)
+    project: str | None = None
+
+
+def build_router_schema() -> dict:
+    """ROUTER_JSON_SCHEMA with the context enum replaced by the live
+    destination list (contexts + active 'context/slug' projects)."""
+    schema = copy.deepcopy(ROUTER_JSON_SCHEMA)
+    schema["properties"]["context"]["enum"] = (
+        projects_repo.active_destinations() + ["needs_review"]
+    )
+    return schema
+
+
+def parse_destination(value: str) -> tuple[str, str | None]:
+    """'codeship/poltergeist' → ('codeship', 'poltergeist'); bare context
+    passes through. Unknown/archived project degrades to context-only;
+    unknown context degrades to needs_review."""
+    if "/" not in value:
+        return value, None
+    context, slug = value.split("/", 1)
+    if context not in projects_repo.KNOWN_CONTEXTS:
+        return "needs_review", None
+    if projects_repo.get_project(context, slug, active_only=True) is None:
+        return context, None
+    return context, slug
 
 
 def route_event(
@@ -250,6 +277,17 @@ def _route_via_llm(event: dict, excerpt: str, config: dict) -> RoutingDecision:
     prompt_template = _read_prompt("router.md")
     prompt = prompt_template.replace("{{content}}", excerpt)
 
+    project_lines = projects_repo.project_prompt_lines()
+    if project_lines:
+        # Appended rather than templated so existing router.md files in user
+        # vaults keep working without regeneration.
+        prompt += (
+            "\n\n## Projects\n"
+            "If the content clearly belongs to one of these projects, answer "
+            "with its full 'context/slug' id instead of the bare context:\n- "
+            + "\n- ".join(project_lines)
+        )
+
     thresholds = (config.get("thresholds") or {})
     reject_below = float(thresholds.get("reject_below", 0.5))
 
@@ -257,7 +295,7 @@ def _route_via_llm(event: dict, excerpt: str, config: dict) -> RoutingDecision:
         result = llm.run(
             prompt,
             model=(config.get("llm") or {}).get("router_model", "haiku"),
-            json_schema=ROUTER_JSON_SCHEMA,
+            json_schema=build_router_schema(),
         )
         payload = result.as_json()
     except llm.LLMError as e:
@@ -269,7 +307,8 @@ def _route_via_llm(event: dict, excerpt: str, config: dict) -> RoutingDecision:
             method="fallback",
         )
 
-    ctx = payload.get("context", "needs_review")
+    raw_dest = payload.get("context", "needs_review")
+    ctx, project = parse_destination(str(raw_dest))
     conf = float(payload.get("confidence", 0.0))
     reason = payload.get("reasoning", "")
     secondary = payload.get("secondary_contexts", []) or []
@@ -283,6 +322,7 @@ def _route_via_llm(event: dict, excerpt: str, config: dict) -> RoutingDecision:
         reasoning=reason,
         method="llm",
         secondary_contexts=list(secondary)[:3],
+        project=project,
     )
 
 

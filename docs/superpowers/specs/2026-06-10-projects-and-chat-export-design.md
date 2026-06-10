@@ -150,6 +150,10 @@ Re-exporting the same conversation creates a new jot (no dedup in v1).
 
 ## Out of scope (v1)
 
+- Dedicated project-filter UI in the jots screen — the spec's premise (existing
+  context/tag filters) was inaccurate; the new context → project tree grouping
+  covers v1 navigation, and the `?project=` API filter exists for later UI.
+
 - Deleting projects / renaming slugs (and the folder migrations both imply)
 - Per-project digests or dashboards
 - Moving existing routed notes into projects in bulk

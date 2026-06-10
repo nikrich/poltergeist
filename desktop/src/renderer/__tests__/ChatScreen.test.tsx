@@ -9,6 +9,7 @@ import * as client from '../lib/api/client';
 import type {
   Conversation,
   ConversationSummary,
+  ChatExportResponse,
 } from '../../shared/api-types';
 
 vi.mock('../lib/api/client', () => ({
@@ -186,6 +187,32 @@ describe('ChatScreen', () => {
     // no state updates land after the test body.
     await waitFor(() => {
       expect(useChat.getState().streams.c1).toBeUndefined();
+    });
+  });
+});
+
+// ── Export to jots ─────────────────────────────────────────────────────────
+
+const exportResponse: ChatExportResponse = {
+  jot_id: 'j1',
+  path: '20-contexts/codeship/notes/j1.md',
+  routingStatus: 'routed',
+  context: 'codeship',
+  project: null,
+  title: 'auth thread',
+};
+
+describe('ChatScreen export', () => {
+  it('exports the conversation to a jot', async () => {
+    vi.mocked(client.post).mockResolvedValueOnce(exportResponse as never);
+
+    render(wrap(<ChatScreen />));
+    await screen.findByText('how does auth work?');
+
+    fireEvent.click(screen.getByRole('button', { name: /export to jots/i }));
+
+    await waitFor(() => {
+      expect(vi.mocked(client.post)).toHaveBeenCalledWith('/v1/chat/c1/export-jot');
     });
   });
 });

@@ -15,6 +15,7 @@ import {
   useRenameConversation,
   useDeleteConversation,
 } from '../lib/api/hooks';
+import { exportConversationToJot } from '../lib/chat-export';
 import { useChat } from '../stores/chat';
 import type { StreamState, TurnError } from '../stores/chat';
 import type {
@@ -35,6 +36,7 @@ export function ChatScreen() {
 
   const conversations = useConversations();
   const conversation = useConversation(activeId);
+  const isExporting = useChat((s) => (activeId ? !!s.exporting[activeId] : false));
 
   const stream = activeId ? streams[activeId] : undefined;
   const error = activeId ? errors[activeId] : undefined;
@@ -89,6 +91,26 @@ export function ChatScreen() {
         <TopBar
           title="chat"
           subtitle={conversation.data?.title ?? 'with poltergeist'}
+          right={
+            <div className="flex gap-2">
+              <Btn
+                variant="ghost"
+                size="sm"
+                icon={<Lucide name="file-output" size={13} />}
+                disabled={
+                  activeId === null ||
+                  isExporting ||
+                  (conversation.data?.messages ?? []).every((m) => m.role !== 'assistant')
+                }
+                onClick={() => {
+                  if (!activeId) return;
+                  void exportConversationToJot(activeId);
+                }}
+              >
+                {isExporting ? 'exporting…' : 'export to jots'}
+              </Btn>
+            </div>
+          }
         />
 
         {activeId === null ? (

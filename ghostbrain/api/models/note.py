@@ -28,6 +28,7 @@ class NoteListItem(BaseModel):
     tags: list[str]
     created: str  # ISO8601
     updated: str  # ISO8601
+    project: str | None = None
 
 
 class NotesPage(BaseModel):
@@ -54,3 +55,4 @@ class UpdateNoteBodyRequest(BaseModel):
 
 class RouteNoteRequest(BaseModel):
     context: str
+    project: str | None = None
