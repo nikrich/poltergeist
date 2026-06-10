@@ -9,6 +9,7 @@ from ghostbrain.api.routes import chat as chat_routes
 from ghostbrain.api.routes import captures as captures_routes
 from ghostbrain.api.routes import connectors as connectors_routes
 from ghostbrain.api.routes import daily as daily_routes
+from ghostbrain.api.routes import docs as docs_routes
 from ghostbrain.api.routes import import_atlassian as import_routes
 from ghostbrain.api.routes import notes as notes_routes
 from ghostbrain.api.routes import recorder as recorder_routes
@@ -18,7 +19,6 @@ from ghostbrain.api.routes import settings as settings_routes
 from ghostbrain.api.routes import meetings as meetings_routes
 from ghostbrain.api.routes import projects as projects_routes
 from ghostbrain.api.routes import suggestions as suggestions_routes
-from ghostbrain.api.routes import docs as docs_routes
 from ghostbrain.api.routes import vault as vault_routes
 
 API_VERSION = "1.0.0"
@@ -38,6 +38,7 @@ def create_app(token: str) -> FastAPI:
     app.include_router(meetings_routes.router)
     app.include_router(agenda_routes.router)
     app.include_router(daily_routes.router)
+    app.include_router(docs_routes.router)
     app.include_router(import_routes.router)
     app.include_router(notes_routes.router)
     app.include_router(recorder_routes.router)
@@ -49,5 +50,4 @@ def create_app(token: str) -> FastAPI:
     app.include_router(chat_routes.router)
     app.include_router(suggestions_routes.router)
     app.include_router(projects_routes.router)
-    app.include_router(docs_routes.router)
     return app

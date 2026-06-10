@@ -24,7 +24,7 @@ def test_assist_streams_sse():
         res = _client().post("/v1/docs/assist", json={"jot_id": "j1", "mode": "polish"}, headers=_HEADERS)
     assert res.status_code == 200
     assert res.headers["content-type"].startswith("text/event-stream")
-    payloads = [json.loads(l[6:]) for l in res.text.splitlines() if l.startswith("data: ")]
+    payloads = [json.loads(line[6:]) for line in res.text.splitlines() if line.startswith("data: ")]
     assert [p["type"] for p in payloads] == ["delta", "done"]
 
 

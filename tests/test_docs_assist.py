@@ -1,8 +1,7 @@
 """Docs assistant: agent overrides, prompt building, assist orchestration."""
 from unittest.mock import patch
 
-import pytest
-
+from ghostbrain.api.repo import docs_assist
 from ghostbrain.llm import agent
 
 
@@ -28,10 +27,8 @@ def test_build_chat_command_allowed_tools_override():
 
 
 # ---------------------------------------------------------------------------
-# Task 2: docs_assist repo
+# docs_assist repo
 # ---------------------------------------------------------------------------
-
-from ghostbrain.api.repo import docs_assist
 
 
 def test_build_prompt_polish_selection():
@@ -52,8 +49,7 @@ def test_build_prompt_draft_whole_doc_uses_instruction():
     assert "ONLY the full replacement document" in p
 
 
-def test_run_assist_streams_and_uses_docs_prompt(tmp_path, monkeypatch):
-    monkeypatch.setenv("VAULT_PATH", str(tmp_path))
+def test_run_assist_streams_and_uses_docs_prompt(vault):
     from ghostbrain.api.repo import notes_manual
     rec = notes_manual.write_inbox_jot("# My doc\n\nhello")
     captured = {}
@@ -72,6 +68,9 @@ def test_run_assist_streams_and_uses_docs_prompt(tmp_path, monkeypatch):
     assert "hello" in captured["prompt"]
 
 
-def test_run_assist_unknown_jot_yields_error():
+def test_run_assist_unknown_jot_yields_error(tmp_path, monkeypatch):
+    # Isolate the vault: without this the jot lookup walks the developer's
+    # real vault under ~/ghostbrain/vault.
+    monkeypatch.setenv("VAULT_PATH", str(tmp_path))
     events = list(docs_assist.run_assist("manual-nope", instruction=None, selection=None, mode="polish"))
     assert events == [{"type": "error", "message": "jot not found"}]
