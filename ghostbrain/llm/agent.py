@@ -9,9 +9,14 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
+import subprocess
 import sys
+import threading
 from pathlib import Path
+
+from ghostbrain.llm.client import _find_claude_binary
 
 log = logging.getLogger("ghostbrain.llm.agent")
 
@@ -156,3 +161,98 @@ def build_chat_command(
         cmd += ["--resume", session_id]
     cmd.append(prompt)
     return cmd
+
+
+BINARY_MISSING_MESSAGE = (
+    "`claude` binary not found. Install Claude Code "
+    "(`npm i -g @anthropic-ai/claude-code`), or set `GHOSTBRAIN_CLAUDE_BIN` "
+    "to its absolute path."
+)
+
+
+class ResumeFailed(RuntimeError):
+    """`--resume <id>` was rejected (stale session). Caller retries fresh."""
+
+
+def run_chat_turn(
+    prompt: str,
+    *,
+    session_id: str | None = None,
+    timeout_s: int = CHAT_TIMEOUT_S,
+    binary: str | None = None,
+    mcp_binary: str | None = "auto",
+):
+    """Yield event dicts for one agentic chat turn.
+
+    Contract: yields zero or more session/delta/tool events, then exactly one
+    terminal done/error event — EXCEPT when ``--resume`` fails before claude
+    produced anything, which raises ResumeFailed so the caller can retry the
+    turn without a session (we must not emit a terminal event in that case,
+    the retry will produce its own).
+    """
+    binary = binary or _find_claude_binary()
+    if binary is None:
+        yield {"type": "error", "message": BINARY_MISSING_MESSAGE}
+        return
+    if mcp_binary == "auto":
+        mcp_binary = find_mcp_binary()
+
+    cmd = build_chat_command(
+        binary, prompt, session_id=session_id, mcp_binary=mcp_binary
+    )
+    log.info("chat turn: resume=%s mcp=%s", bool(session_id), bool(mcp_binary))
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env={**os.environ, "CLAUDE_CODE_NO_TELEMETRY": "1"},
+    )
+    timed_out = threading.Event()
+
+    def _kill() -> None:
+        timed_out.set()
+        proc.kill()
+
+    # Watchdog instead of readline timeouts: if claude wedges with no output,
+    # a blocking readline would hang forever. The timer fires once, kills the
+    # process, and the read loop unblocks on EOF.
+    killer = threading.Timer(timeout_s, _kill)
+    killer.start()
+    saw_any = False
+    saw_terminal = False
+    try:
+        assert proc.stdout is not None
+        for raw in proc.stdout:
+            for event in parse_stream_line(raw):
+                saw_any = True
+                if event["type"] in ("done", "error"):
+                    saw_terminal = True
+                yield event
+        proc.wait()
+    finally:
+        # Covers normal exit, timeout, and client-disconnect (GeneratorExit
+        # propagates here when the SSE consumer goes away — kill claude so
+        # we don't leak a billing subprocess).
+        killer.cancel()
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+
+    if saw_terminal:
+        return
+    stderr = (proc.stderr.read() if proc.stderr else "")[:500].strip()
+    if timed_out.is_set():
+        yield {
+            "type": "error",
+            "message": f"poltergeist took longer than {timeout_s}s and was stopped.",
+            "interrupted": True,
+        }
+        return
+    if session_id and not saw_any and proc.returncode != 0:
+        raise ResumeFailed(stderr or "resume failed")
+    yield {
+        "type": "error",
+        "message": stderr or f"claude exited with code {proc.returncode}",
+    }
