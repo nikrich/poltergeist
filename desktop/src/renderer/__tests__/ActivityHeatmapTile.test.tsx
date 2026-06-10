@@ -43,7 +43,7 @@ describe('ActivityHeatmapTile', () => {
   it('requests 84 days (12 weeks) of heatmap data', async () => {
     render(wrap(<ActivityHeatmapTile />));
     await screen.findByRole('button', { name: `${D} — 23 events` });
-    expect(apiRequest).toHaveBeenCalledWith('GET', '/v1/activity/heatmap?days=84');
+    expect(apiRequest).toHaveBeenCalledWith('GET', '/v1/activity/heatmap?days=182');
   });
 
   it('cell click preselects the day and navigates to the activity screen', async () => {

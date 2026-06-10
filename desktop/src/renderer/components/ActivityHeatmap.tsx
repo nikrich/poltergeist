@@ -81,10 +81,13 @@ export function ActivityHeatmap({
   compact = false,
   endDate,
 }: ActivityHeatmapProps) {
-  // Fluid grid: columns stretch to the container width; cells stay square
-  // via aspect-ratio. Only the gap and the weekday gutter are fixed.
+  // Fluid grid: columns stretch to the container width and cells stay square
+  // via aspect-ratio — but capped at MAX_CELL so few-column grids on wide
+  // windows don't blow up into giant tiles. The capped grid centres itself.
+  const MAX_CELL = 18;
   const gap = compact ? 2 : 3;
   const gutter = compact ? 0 : 26;
+  const capWidth = gutter + weeks * MAX_CELL + (weeks - 1) * gap;
   const end = endDate ? parseIso(endDate) : new Date();
   const firstMonday = addDays(mondayOf(end), -7 * (weeks - 1));
 
@@ -98,7 +101,11 @@ export function ActivityHeatmap({
   });
 
   return (
-    <div className="flex flex-col gap-1" data-testid="activity-heatmap">
+    <div
+      className="mx-auto flex w-full flex-col gap-1"
+      style={{ maxWidth: capWidth }}
+      data-testid="activity-heatmap"
+    >
       {/* month labels */}
       <div
         className="grid font-mono text-9 text-ink-3"

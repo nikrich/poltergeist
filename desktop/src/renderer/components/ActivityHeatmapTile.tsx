@@ -9,8 +9,8 @@ import { useActivityHeatmap } from '../lib/api/hooks';
 import { useNavigation } from '../stores/navigation';
 import { useSelectedDay } from '../stores/selected-day';
 
-const TILE_WEEKS = 12;
-const TILE_DAYS = TILE_WEEKS * 7; // 84
+const TILE_WEEKS = 26;
+const TILE_DAYS = TILE_WEEKS * 7; // 182
 
 export function ActivityHeatmapTile() {
   const heatmap = useActivityHeatmap(TILE_DAYS);
@@ -24,7 +24,7 @@ export function ActivityHeatmapTile() {
   return (
     <Panel
       title="ghost activity"
-      subtitle="last 12 weeks"
+      subtitle="last 26 weeks"
       action={
         <Btn
           variant="ghost"
