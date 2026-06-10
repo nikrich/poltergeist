@@ -51,7 +51,26 @@ export async function startChatStream(
       },
     );
     if (!res.ok || !res.body) {
-      return { ok: false, error: `HTTP ${res.status}` };
+      // Mirror api-forwarder.ts: FastAPI errors come back as
+      // ``{"detail": "..."}`` — surface that instead of a bare status code.
+      let message = `HTTP ${res.status}`;
+      try {
+        const text = await res.text();
+        if (text) {
+          message = text.slice(0, 500);
+          try {
+            const parsed = JSON.parse(text);
+            if (parsed && typeof parsed.detail === 'string') {
+              message = parsed.detail;
+            }
+          } catch {
+            // Non-JSON body — fall through with the trimmed text.
+          }
+        }
+      } catch {
+        // Body unreadable — keep the bare status.
+      }
+      return { ok: false, error: message };
     }
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -69,7 +88,9 @@ export async function startChatStream(
     }
     return { ok: true };
   } catch (err) {
-    if (ac.signal.aborted) return { ok: true }; // user pressed stop
+    // Deliberate abort: user pressed stop, or a re-send for this conversation
+    // aborted us (the OLD invoke lands here and resolves {ok:true} harmlessly).
+    if (ac.signal.aborted) return { ok: true };
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   } finally {
     if (active.get(convId) === ac) active.delete(convId);

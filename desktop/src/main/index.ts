@@ -245,9 +245,15 @@ ipcMain.handle('gb:chat:send', async (e, convId: unknown, text: unknown) => {
     return { ok: false, error: 'Invalid request shape' };
   }
   const wc = e.sender;
-  return startChatStream(sidecar, convId, text, (event) => {
-    if (!wc.isDestroyed()) wc.send('gb:chat:event', { convId, event });
-  });
+  const onDestroyed = () => stopChatStream(convId);
+  wc.once('destroyed', onDestroyed);
+  try {
+    return await startChatStream(sidecar, convId, text, (event) => {
+      if (!wc.isDestroyed()) wc.send('gb:chat:event', { convId, event });
+    });
+  } finally {
+    wc.removeListener('destroyed', onDestroyed);
+  }
 });
 
 ipcMain.handle('gb:chat:stop', (_e, convId: unknown) => {
