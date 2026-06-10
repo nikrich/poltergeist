@@ -160,7 +160,9 @@ def build_chat_command(
         ]
     if session_id:
         cmd += ["--resume", session_id]
-    cmd.append(prompt)
+    # `--` terminates option parsing — without it a variadic flag like
+    # --allowedTools swallows the positional prompt (verified live).
+    cmd += ["--", prompt]
     return cmd
 
 

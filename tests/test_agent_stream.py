@@ -127,6 +127,8 @@ def test_build_chat_command_first_turn_with_mcp():
     )
     assert cmd[0] == "/bin/claude"
     assert cmd[-1] == "hello"
+    # `--` must precede the prompt: variadic --allowedTools eats it otherwise
+    assert cmd[-2] == "--"
     assert "--print" in cmd
     assert "--include-partial-messages" in cmd
     assert "--verbose" in cmd
