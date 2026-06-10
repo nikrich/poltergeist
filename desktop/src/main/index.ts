@@ -240,12 +240,20 @@ ipcMain.handle(
   },
 );
 
+const stopTurn = (convId: string) => {
+  stopChatStream(convId);
+  // Aborting the fetch alone leaves the sidecar generator blocked on claude
+  // output with the per-conversation busy guard held — tell the sidecar to
+  // kill the turn as well.
+  void forward(sidecar, 'POST', `/v1/chat/${encodeURIComponent(convId)}/stop`);
+};
+
 ipcMain.handle('gb:chat:send', async (e, convId: unknown, text: unknown) => {
   if (typeof convId !== 'string' || typeof text !== 'string') {
     return { ok: false, error: 'Invalid request shape' };
   }
   const wc = e.sender;
-  const onDestroyed = () => stopChatStream(convId);
+  const onDestroyed = () => stopTurn(convId);
   wc.once('destroyed', onDestroyed);
   try {
     return await startChatStream(sidecar, convId, text, (event) => {
@@ -260,7 +268,7 @@ ipcMain.handle('gb:chat:stop', (_e, convId: unknown) => {
   if (typeof convId !== 'string') {
     return { ok: false, error: 'Invalid request shape' };
   }
-  stopChatStream(convId);
+  stopTurn(convId);
   return { ok: true };
 });
 
