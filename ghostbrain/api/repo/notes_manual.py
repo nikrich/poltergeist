@@ -333,6 +333,109 @@ def _mark_review_safe(jot_id: str, reasoning: str) -> None:
         log.exception("mark_manual_review failed id=%s", jot_id)
 
 
+def _route_jot_core(jot_id: str, body: str, *, path_hint: str) -> dict:
+    """Shared routing logic for an already-written jot.
+
+    Runs route_event on ``body``, moves the file on success, or marks
+    manual_review on low confidence / exception.  ``path_hint`` is used in
+    the response when the file hasn't moved (inbox path at creation time or
+    read time).
+
+    Does NOT emit create-specific audit events — callers are responsible for
+    any additional auditing (create vs. route-auto have the same decision
+    semantics but different error event names are intentionally separate so
+    existing auditors / tests keep working).
+    """
+    try:
+        decision = route_event({"source": "manual", "id": jot_id, "body": body})
+    except Exception as exc:
+        log.exception("jot routing failed id=%s", jot_id)
+        _mark_review_safe(jot_id, reasoning=f"router error: {exc}")
+        return {"exc": exc}  # sentinel — callers inspect this key
+
+    if decision.context == "needs_review" or decision.confidence < REJECT_BELOW:
+        _mark_review_safe(jot_id, reasoning=decision.reasoning)
+        _audit_safe(
+            "manual_jot_routed",
+            event_id=jot_id,
+            status="manual_review",
+            confidence=decision.confidence,
+            reasoning=decision.reasoning,
+        )
+        return {
+            "id": jot_id,
+            "path": path_hint,
+            "routingStatus": "manual_review",
+        }
+
+    try:
+        moved = move_jot(
+            jot_id,
+            to_context=decision.context,
+            confidence=decision.confidence,
+            method=decision.method,
+            reasoning=decision.reasoning,
+        )
+    except Exception as exc:
+        log.exception("move_jot failed context=%r id=%s", decision.context, jot_id)
+        _mark_review_safe(jot_id, reasoning=f"move failed: {exc}")
+        return {"move_exc": exc, "context": decision.context}  # sentinel
+
+    _audit_safe(
+        "manual_jot_routed",
+        event_id=jot_id,
+        status="routed",
+        context=decision.context,
+        confidence=decision.confidence,
+        reasoning=decision.reasoning,
+    )
+    return {
+        "id": jot_id,
+        "path": moved["path"],
+        "routingStatus": "routed",
+        "context": decision.context,
+    }
+
+
+def route_existing_jot(jot_id: str) -> dict:
+    """Re-route an existing jot by reading its CURRENT body from disk.
+
+    Semantics identical to the routing half of create_and_route_jot:
+    - confident decision → moves to context folder, returns {id, path, routingStatus:"routed", context}
+    - low confidence / needs_review → marks manual_review, returns {id, path, routingStatus:"manual_review"}
+    - router / move exception → marks manual_review (never raises to caller)
+
+    Raises JotNotFound for unknown ids (route layer maps this to 404).
+    """
+    data = read_jot(jot_id)  # raises JotNotFound for unknown ids
+    body = data["body"]
+    path_hint = data["path"]
+
+    result = _route_jot_core(jot_id, body, path_hint=path_hint)
+
+    if "exc" in result:
+        exc = result["exc"]
+        _audit_safe("manual_jot_route_failed", event_id=jot_id, error=str(exc))
+        return {
+            "id": jot_id,
+            "path": path_hint,
+            "routingStatus": "manual_review",
+        }
+    if "move_exc" in result:
+        exc = result["move_exc"]
+        _audit_safe(
+            "manual_jot_route_failed",
+            event_id=jot_id,
+            error=f"move failed: {exc}",
+        )
+        return {
+            "id": jot_id,
+            "path": path_hint,
+            "routingStatus": "manual_review",
+        }
+    return result
+
+
 def create_and_route_jot(
     body: str, *, captured_at: "datetime | None" = None
 ) -> dict:
@@ -346,47 +449,18 @@ def create_and_route_jot(
     record = write_inbox_jot(body, captured_at=captured_at)
     jot_id = record["id"]
 
-    try:
-        decision = route_event({"source": "manual", "id": jot_id, "body": body})
-    except Exception as exc:
-        log.exception("manual jot routing failed id=%s", jot_id)
-        _mark_review_safe(jot_id, reasoning=f"router error: {exc}")
+    result = _route_jot_core(jot_id, body, path_hint=record["path"])
+
+    if "exc" in result:
+        exc = result["exc"]
         _audit_safe("manual_jot_route_failed", event_id=jot_id, error=str(exc))
         return {
             "id": jot_id,
             "path": record["path"],
             "routingStatus": "manual_review",
         }
-
-    if decision.context == "needs_review" or decision.confidence < REJECT_BELOW:
-        _mark_review_safe(jot_id, reasoning=decision.reasoning)
-        _audit_safe(
-            "manual_jot_routed",
-            event_id=jot_id,
-            status="manual_review",
-            confidence=decision.confidence,
-            reasoning=decision.reasoning,
-        )
-        return {
-            "id": jot_id,
-            "path": record["path"],
-            "routingStatus": "manual_review",
-        }
-
-    try:
-        moved = move_jot(
-            jot_id,
-            to_context=decision.context,
-            confidence=decision.confidence,
-            method=decision.method,
-            reasoning=decision.reasoning,
-        )
-    except Exception as exc:
-        # Covers unsafe context names (ValueError), the file vanishing under a
-        # watched/synced vault (JotNotFound), and disk/permission failures
-        # (OSError) — all fall back to manual_review rather than 500ing.
-        log.exception("move_jot failed context=%r id=%s", decision.context, jot_id)
-        _mark_review_safe(jot_id, reasoning=f"move failed: {exc}")
+    if "move_exc" in result:
+        exc = result["move_exc"]
         _audit_safe(
             "manual_jot_route_failed",
             event_id=jot_id,
@@ -397,16 +471,12 @@ def create_and_route_jot(
             "path": record["path"],
             "routingStatus": "manual_review",
         }
-
-    _audit_safe(
-        "manual_jot_routed",
-        event_id=jot_id,
-        status="routed",
-        context=decision.context,
-        confidence=decision.confidence,
-        reasoning=decision.reasoning,
-    )
-    return {"id": jot_id, "path": moved["path"], "routingStatus": "routed"}
+    # Strip internal "context" key from create response to match original contract
+    return {
+        "id": result["id"],
+        "path": result["path"],
+        "routingStatus": result["routingStatus"],
+    }
 
 
 def _iter_manual_files() -> Iterable[Path]:

@@ -24,6 +24,10 @@ const bridge: GbBridge = {
   tray: {
     setFailing: (names: string[]) => ipcRenderer.invoke('gb:tray:setFailing', names),
   },
+  clipboard: {
+    writeRich: (payload: { html: string; text: string }) =>
+      ipcRenderer.invoke('gb:clipboard:write-rich', payload),
+  },
   jot: {
     save: (body: string) => ipcRenderer.invoke('gb:jot:save', body),
     cancel: () => ipcRenderer.invoke('gb:jot:cancel'),
