@@ -5,13 +5,16 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from ghostbrain.api.models.chat import (
+    ChatExportResponse,
     ChatMessageRequest,
     Conversation,
     ConversationSummary,
     RenameRequest,
 )
 from ghostbrain.api.repo import chat as repo_chat
+from ghostbrain.api.repo import chat_export as repo_chat_export
 from ghostbrain.api.repo import chat_store
+from ghostbrain.llm.client import LLMError
 
 router = APIRouter(prefix="/v1/chat", tags=["chat"])
 
@@ -52,6 +55,18 @@ def delete_conversation(conv_id: str) -> dict:
 @router.post("/{conv_id}/stop")
 def stop_turn(conv_id: str) -> dict:
     return {"stopped": repo_chat.cancel(conv_id)}
+
+
+@router.post("/{conv_id}/export-jot", response_model=ChatExportResponse)
+def export_jot(conv_id: str) -> dict:
+    try:
+        return repo_chat_export.export_conversation(conv_id)
+    except repo_chat_export.ConversationNotFound:
+        raise HTTPException(status_code=404, detail="conversation not found")
+    except repo_chat_export.NothingToExport:
+        raise HTTPException(status_code=400, detail="conversation has no answers to summarize")
+    except LLMError as e:
+        raise HTTPException(status_code=502, detail=f"summary failed: {e}")
 
 
 @router.post("/{conv_id}/messages")

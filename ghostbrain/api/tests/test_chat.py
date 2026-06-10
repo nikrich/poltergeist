@@ -102,3 +102,21 @@ def test_stop_turn_active_returns_true(client, tmp_chats_dir, auth_headers, monk
     resp = client.post(f"/v1/chat/{conv['id']}/stop", headers=auth_headers)
     assert resp.status_code == 200
     assert resp.json() == {"stopped": True}
+
+
+def test_export_route(client, tmp_chats_dir, auth_headers, monkeypatch):
+    conv = client.post("/v1/chat", headers=auth_headers).json()
+    monkeypatch.setattr(
+        "ghostbrain.api.routes.chat.repo_chat_export.export_conversation",
+        lambda conv_id: {"jot_id": "j1", "path": "p", "routingStatus": "routed",
+                         "context": "codeship", "project": None, "title": "t"},
+    )
+    r = client.post(f"/v1/chat/{conv['id']}/export-jot", headers=auth_headers)
+    assert r.status_code == 200
+    assert r.json()["jot_id"] == "j1"
+
+
+def test_export_route_maps_errors(client, tmp_chats_dir, auth_headers):
+    assert (
+        client.post("/v1/chat/nope/export-jot", headers=auth_headers).status_code == 404
+    )
