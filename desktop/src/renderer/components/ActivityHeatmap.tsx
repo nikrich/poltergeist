@@ -81,7 +81,8 @@ export function ActivityHeatmap({
   compact = false,
   endDate,
 }: ActivityHeatmapProps) {
-  const cell = compact ? 9 : 12;
+  // Fluid grid: columns stretch to the container width; cells stay square
+  // via aspect-ratio. Only the gap and the weekday gutter are fixed.
   const gap = compact ? 2 : 3;
   const gutter = compact ? 0 : 26;
   const end = endDate ? parseIso(endDate) : new Date();
@@ -102,7 +103,7 @@ export function ActivityHeatmap({
       <div
         className="grid font-mono text-9 text-ink-3"
         style={{
-          gridTemplateColumns: `repeat(${weeks}, ${cell}px)`,
+          gridTemplateColumns: `repeat(${weeks}, minmax(0, 1fr))`,
           gap: `${gap}px`,
           marginLeft: gutter,
         }}
@@ -114,29 +115,30 @@ export function ActivityHeatmap({
         ))}
       </div>
       <div className="flex" style={{ gap: `${gap}px` }}>
-        {/* weekday gutter (non-compact only) */}
+        {/* weekday gutter (non-compact only) — a 7-row grid that stretches to
+            the same height as the cell grid, so hints track fluid cell sizes */}
         {!compact && (
           <div
-            className="relative flex-shrink-0 font-mono text-9 text-ink-3"
-            style={{ width: gutter - gap, height: 7 * cell + 6 * gap }}
+            className="grid flex-shrink-0 font-mono text-9 text-ink-3"
+            style={{
+              width: gutter - gap,
+              gridTemplateRows: 'repeat(7, 1fr)',
+              rowGap: gap,
+            }}
           >
-            {WEEKDAY_HINTS.map(([row, label]) => (
-              <span
-                key={label}
-                className="absolute left-0"
-                style={{ top: row * (cell + gap) }}
-              >
-                {label}
+            {Array.from({ length: 7 }, (_, row) => (
+              <span key={row} className="flex items-center">
+                {WEEKDAY_HINTS.find(([r]) => r === row)?.[1] ?? ''}
               </span>
             ))}
           </div>
         )}
         {/* cells — column flow so each week-column reads top (mon) to bottom (sun) */}
         <div
-          className="grid"
+          className="grid min-w-0 flex-1"
           style={{
-            gridTemplateColumns: `repeat(${weeks}, ${cell}px)`,
-            gridTemplateRows: `repeat(7, ${cell}px)`,
+            gridTemplateColumns: `repeat(${weeks}, minmax(0, 1fr))`,
+            gridTemplateRows: 'repeat(7, auto)',
             gridAutoFlow: 'column',
             gap: `${gap}px`,
           }}
@@ -151,7 +153,7 @@ export function ActivityHeatmap({
                   <span
                     key={`pad-${iso}`}
                     aria-hidden
-                    style={{ width: cell, height: cell }}
+                    style={{ width: '100%', aspectRatio: '1 / 1' }}
                   />
                 );
               }
@@ -168,8 +170,8 @@ export function ActivityHeatmap({
                   onClick={onSelectDay ? () => onSelectDay(iso) : undefined}
                   className={`border-0 p-0 ${onSelectDay ? 'cursor-pointer' : 'cursor-default'}`}
                   style={{
-                    width: cell,
-                    height: cell,
+                    width: '100%',
+                    aspectRatio: '1 / 1',
                     borderRadius: 2,
                     background: LEVEL_BG[level],
                     outline: selected ? '1px solid var(--neon)' : 'none',
