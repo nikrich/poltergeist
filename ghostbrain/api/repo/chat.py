@@ -26,14 +26,20 @@ _active: set[str] = set()
 
 
 def send_message(conv_id: str, text: str) -> Iterator[dict]:
+    # Don't yield under the lock: a generator suspends at yield without
+    # exiting the with-block, so a consumer that receives the busy error and
+    # never resumes/closes the generator would keep the GLOBAL lock held,
+    # blocking send_message for every conversation.
     with _active_lock:
-        if conv_id in _active:
-            yield {
-                "type": "error",
-                "message": "a turn is already in progress for this conversation",
-            }
-            return
-        _active.add(conv_id)
+        busy = conv_id in _active
+        if not busy:
+            _active.add(conv_id)
+    if busy:
+        yield {
+            "type": "error",
+            "message": "a turn is already in progress for this conversation",
+        }
+        return
     try:
         conv = chat_store.get(conv_id)
         if conv is None:

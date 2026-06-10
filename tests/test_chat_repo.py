@@ -97,6 +97,45 @@ def test_busy_guard_rejects_concurrent_turn_then_releases(chats, monkeypatch):
     assert [e["type"] for e in third] == ["session", "delta", "tool", "delta", "done"]
 
 
+def test_suspended_busy_generator_does_not_block_other_conversations(
+    chats, monkeypatch
+):
+    """Regression: the busy-path yield must not happen under the global lock.
+
+    A generator suspends at yield without exiting a with-block, so a consumer
+    that pulls the busy error and never resumes/closes the generator would
+    otherwise keep the lock held — deadlocking every other conversation.
+    """
+    import threading
+
+    monkeypatch.setattr(repo_chat.agent, "run_chat_turn", happy_turn)
+    conv_a = chat_store.create()
+    conv_b = chat_store.create()
+
+    # Hold the busy guard for conv_a mid-stream.
+    first = repo_chat.send_message(conv_a["id"], "slow question")
+    assert next(first)["type"] == "session"
+
+    # Second turn on conv_a: pull ONLY the busy error, do NOT close/exhaust.
+    busy_gen = repo_chat.send_message(conv_a["id"], "again")
+    assert next(busy_gen)["type"] == "error"
+
+    # A DIFFERENT conversation must still stream normally. Run it in a worker
+    # thread with a timeout so a regression deadlocks the thread, not pytest.
+    result: list[dict] = []
+    t = threading.Thread(
+        target=lambda: result.extend(repo_chat.send_message(conv_b["id"], "hi"))
+    )
+    t.start()
+    t.join(timeout=2)
+    assert not t.is_alive(), "send_message on another conversation deadlocked"
+    assert [e["type"] for e in result] == ["session", "delta", "tool", "delta", "done"]
+
+    # Cleanup: finish/close the outstanding generators.
+    list(first)
+    busy_gen.close()
+
+
 def test_resume_failure_retries_without_session_with_history(chats, monkeypatch):
     calls = []
 
