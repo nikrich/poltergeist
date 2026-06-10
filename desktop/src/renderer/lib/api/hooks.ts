@@ -6,6 +6,7 @@ import type {
   AutoRouteResponse,
   Capture,
   CapturesPage,
+  ChatExportResponse,
   ConfluencePagesResponse,
   Connector,
   ConnectorDetail,
@@ -13,6 +14,7 @@ import type {
   ConversationSummary,
   CreateJotRequest,
   CreateJotResponse,
+  CreateProjectRequest,
   DailyPage,
   HeatmapResponse,
   JotsPage,
@@ -25,6 +27,7 @@ import type {
   MeetingsPage,
   Note,
   Prep,
+  Project,
   RecorderSettings,
   RecorderStatus,
   SearchResponse,
@@ -32,6 +35,7 @@ import type {
   Suggestion,
   UpdateNoteBodyRequest,
   UpdateNoteBodyResponse,
+  UpdateProjectRequest,
   UpdateRecorderSettings,
   VaultStats,
 } from '../../../shared/api-types';
@@ -387,7 +391,7 @@ export function useDeleteConversation() {
 
 const JOTS_KEY = ['jots'] as const;
 
-export function useJots(params: { q?: string; context?: string; tag?: string } = {}) {
+export function useJots(params: { q?: string; context?: string; tag?: string; project?: string } = {}) {
   return useQuery({
     queryKey: [...JOTS_KEY, params],
     queryFn: async () => {
@@ -395,6 +399,7 @@ export function useJots(params: { q?: string; context?: string; tag?: string } =
       if (params.q) search.set('q', params.q);
       if (params.context) search.set('context', params.context);
       if (params.tag) search.set('tag', params.tag);
+      if (params.project) search.set('project', params.project);
       return get<JotsPage>(`/v1/notes?${search.toString()}`);
     },
     refetchInterval: 5000,  // pick up overlay-captured jots
@@ -436,10 +441,10 @@ export function useUpdateJot() {
 export function useRouteJot() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { id: string; context: string }) =>
+    mutationFn: (vars: { id: string; context: string; project?: string | null }) =>
       post<{ id: string; path: string; context: string }>(
         `/v1/notes/${encodeURIComponent(vars.id)}/route`,
-        { context: vars.context },
+        { context: vars.context, project: vars.project ?? undefined },
       ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: JOTS_KEY });
@@ -574,5 +579,46 @@ export function useImportItems() {
       // shown there can change once an item is imported.
       qc.invalidateQueries({ queryKey: ['import'] });
     },
+  });
+}
+
+// ── Projects ──────────────────────────────────────────────────────────────
+
+export function useProjects(opts?: { includeArchived?: boolean }) {
+  return useQuery({
+    queryKey: ['projects', opts ?? {}],
+    queryFn: () =>
+      get<Project[]>(`/v1/projects${opts?.includeArchived ? '?includeArchived=true' : ''}`),
+    staleTime: 30_000,
+  });
+}
+
+export function useCreateProject() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: CreateProjectRequest) => post<Project>('/v1/projects', req),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['projects'] }),
+  });
+}
+
+export function useUpdateProject() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { context: string; slug: string } & UpdateProjectRequest) =>
+      patch<Project>(`/v1/projects/${vars.context}/${vars.slug}`, {
+        name: vars.name,
+        description: vars.description,
+        archived: vars.archived,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['projects'] }),
+  });
+}
+
+export function useExportChatToJot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (convId: string) =>
+      post<ChatExportResponse>(`/v1/chat/${encodeURIComponent(convId)}/export-jot`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: JOTS_KEY }),
   });
 }

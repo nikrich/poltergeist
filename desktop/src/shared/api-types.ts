@@ -271,6 +271,7 @@ export interface JotListItem {
   tags: string[];
   created: string;
   updated: string;
+  project?: string | null;
 }
 
 export interface JotsPage {
@@ -354,4 +355,37 @@ export interface ImportItemResult {
 
 export interface ImportResponse {
   results: ImportItemResult[];
+}
+
+// ── Projects ──────────────────────────────────────────────────────────────
+
+export interface Project {
+  id: string;
+  context: string;
+  slug: string;
+  name: string;
+  description: string;
+  archived: boolean;
+  created_at: number;
+}
+
+export interface CreateProjectRequest {
+  context: string;
+  name: string;
+  description?: string;
+}
+
+export interface UpdateProjectRequest {
+  name?: string;
+  description?: string;
+  archived?: boolean;
+}
+
+export interface ChatExportResponse {
+  jot_id: string;
+  path: string;
+  routingStatus: string;
+  context: string | null;
+  project: string | null;
+  title: string;
 }
