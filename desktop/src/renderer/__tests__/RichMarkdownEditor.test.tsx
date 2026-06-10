@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, act, fireEvent, waitFor } from '@testing-library/react';
 import type { Editor } from '@tiptap/core';
+import type { EditorView } from '@tiptap/pm/view';
 import { RichMarkdownEditor } from '../components/RichMarkdownEditor';
 import { useToasts } from '../stores/toast';
 
@@ -157,6 +158,131 @@ describe('RichMarkdownEditor', () => {
     fireEvent.click(screen.getByRole('button', { name: 'rich' }));
     expect(container.querySelector('.cm-editor')).toBeNull();
     expect(container.querySelector('h1')).not.toBeNull();
+  });
+});
+
+describe('RichMarkdownEditor wikilink click-to-navigate', () => {
+  // These tests run under fake timers (inherited from the outer vi.useFakeTimers()).
+
+  it('fires onWikilinkClick with the target path when clicking inside [[path]]', () => {
+    const onWikilinkClick = vi.fn();
+    let editor: Editor | undefined;
+    render(
+      <RichMarkdownEditor
+        markdown="See [[20-contexts/personal/_profile]] for details."
+        onSave={() => {}}
+        onWikilinkClick={onWikilinkClick}
+        onEditorReady={(e) => {
+          editor = e;
+        }}
+      />,
+    );
+    expect(editor).toBeDefined();
+    act(() => {
+      // Find a position inside the wikilink text "[[20-contexts/personal/_profile]]"
+      // The doc has one paragraph; scan text to find the offset of "[["
+      const doc = editor!.state.doc;
+      let wikilinkPos = -1;
+      doc.descendants((node, pos) => {
+        if (node.isText && node.text && node.text.includes('[[')) {
+          const offset = node.text.indexOf('[[');
+          wikilinkPos = pos + offset + 5; // click well inside the brackets
+          return false;
+        }
+      });
+      expect(wikilinkPos).toBeGreaterThan(0);
+      const handled = editor!.view.someProp('handleClick', (f: (view: EditorView, pos: number, event: MouseEvent) => boolean | void) =>
+        f(editor!.view, wikilinkPos, new MouseEvent('click')),
+      );
+      expect(handled).toBe(true);
+    });
+    expect(onWikilinkClick).toHaveBeenCalledWith('20-contexts/personal/_profile');
+  });
+
+  it('extracts path before "|" for piped wikilinks [[a/b|Title]]', () => {
+    const onWikilinkClick = vi.fn();
+    let editor: Editor | undefined;
+    render(
+      <RichMarkdownEditor
+        markdown="Link: [[a/b|Title Here]] end."
+        onSave={() => {}}
+        onWikilinkClick={onWikilinkClick}
+        onEditorReady={(e) => {
+          editor = e;
+        }}
+      />,
+    );
+    act(() => {
+      const doc = editor!.state.doc;
+      let wikilinkPos = -1;
+      doc.descendants((node, pos) => {
+        if (node.isText && node.text && node.text.includes('[[')) {
+          const offset = node.text.indexOf('[[');
+          wikilinkPos = pos + offset + 5;
+          return false;
+        }
+      });
+      expect(wikilinkPos).toBeGreaterThan(0);
+      editor!.view.someProp('handleClick', (f: (view: EditorView, pos: number, event: MouseEvent) => boolean | void) =>
+        f(editor!.view, wikilinkPos, new MouseEvent('click')),
+      );
+    });
+    expect(onWikilinkClick).toHaveBeenCalledWith('a/b');
+  });
+
+  it('does NOT fire onWikilinkClick when clicking plain text', () => {
+    const onWikilinkClick = vi.fn();
+    let editor: Editor | undefined;
+    render(
+      <RichMarkdownEditor
+        markdown="Just plain text here."
+        onSave={() => {}}
+        onWikilinkClick={onWikilinkClick}
+        onEditorReady={(e) => {
+          editor = e;
+        }}
+      />,
+    );
+    act(() => {
+      // Click at position 2 (inside "Just")
+      // ProseMirror's someProp returns undefined when no handler returns truthy —
+      // returning false from handleClick means "not consumed", someProp returns undefined.
+      const handled = editor!.view.someProp('handleClick', (f: (view: EditorView, pos: number, event: MouseEvent) => boolean | void) =>
+        f(editor!.view, 2, new MouseEvent('click')),
+      );
+      expect(handled).toBeFalsy();
+    });
+    expect(onWikilinkClick).not.toHaveBeenCalled();
+  });
+
+  it('does NOT fire onWikilinkClick when no callback is provided', () => {
+    let editor: Editor | undefined;
+    render(
+      <RichMarkdownEditor
+        markdown="See [[some/note]] done."
+        onSave={() => {}}
+        onEditorReady={(e) => {
+          editor = e;
+        }}
+      />,
+    );
+    act(() => {
+      const doc = editor!.state.doc;
+      let wikilinkPos = -1;
+      doc.descendants((node, pos) => {
+        if (node.isText && node.text && node.text.includes('[[')) {
+          const offset = node.text.indexOf('[[');
+          wikilinkPos = pos + offset + 5;
+          return false;
+        }
+      });
+      // Should not throw even without callback
+      const handled = editor!.view.someProp('handleClick', (f: (view: EditorView, pos: number, event: MouseEvent) => boolean | void) =>
+        f(editor!.view, wikilinkPos, new MouseEvent('click')),
+      );
+      // Without callback, click must not be consumed (someProp returns undefined/falsy)
+      expect(handled).toBeFalsy();
+    });
   });
 });
 

@@ -15,11 +15,13 @@ import {
   useUpdateJot,
 } from '../lib/api/hooks';
 import { toast } from '../stores/toast';
+import { useNoteView } from '../stores/note-view';
 
 const KNOWN_CONTEXTS = ['sanlam', 'codeship', 'reducedrecipes', 'personal'];
 
 export function JotsScreen() {
   const [q, setQ] = useState('');
+  const openNote = useNoteView((s) => s.open);
   const list = useJots({ q: q || undefined });
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -241,6 +243,7 @@ export function JotsScreen() {
                   key={selectedId!}
                   markdown={editorBody}
                   onSave={handleSaveBody}
+                  onWikilinkClick={openNote}
                 />
               </div>
               <footer className="flex items-center gap-2 border-t border-hairline px-4 py-2 text-11 text-ink-2">
