@@ -9,6 +9,8 @@ import { buildAppMenu } from './menu';
 import { Sidecar } from './sidecar';
 import { forward, isAllowedMethod } from './api-forwarder';
 import { startChatStream, stopChatStream } from './chat-stream';
+import { startDocsStream, stopDocsStream } from './docs-stream';
+import { exportPdf } from './pdf-export';
 import { installTray, type TrayController } from './tray';
 import {
   installMeetingNotifier,
@@ -291,6 +293,58 @@ ipcMain.handle('gb:chat:stop', (_e, convId: unknown) => {
   }
   stopTurn(convId);
   return { ok: true };
+});
+
+const stopDocsTurn = (jotId: string) => {
+  stopDocsStream(jotId);
+  // Aborting the fetch alone leaves the sidecar generator blocked — tell the
+  // sidecar to kill the turn as well.
+  void forward(sidecar, 'POST', '/v1/docs/assist/stop', { jot_id: jotId });
+};
+
+ipcMain.handle('gb:docs:assist', async (e, req: unknown) => {
+  if (
+    typeof req !== 'object' ||
+    req === null ||
+    typeof (req as Record<string, unknown>).jot_id !== 'string' ||
+    typeof (req as Record<string, unknown>).mode !== 'string'
+  ) {
+    return { ok: false, error: 'Invalid request shape' };
+  }
+  const docsReq = req as import('../shared/api-types').DocsAssistRequest;
+  const wc = e.sender;
+  const onDestroyed = () => stopDocsTurn(docsReq.jot_id);
+  wc.once('destroyed', onDestroyed);
+  try {
+    return await startDocsStream(sidecar, docsReq, (event) => {
+      if (!wc.isDestroyed()) wc.send('gb:docs:event', { jotId: docsReq.jot_id, event });
+    });
+  } finally {
+    wc.removeListener('destroyed', onDestroyed);
+  }
+});
+
+ipcMain.handle('gb:docs:assist-stop', (_e, jotId: unknown) => {
+  if (typeof jotId !== 'string') {
+    return { ok: false, error: 'Invalid request shape' };
+  }
+  stopDocsTurn(jotId);
+  return { ok: true };
+});
+
+ipcMain.handle('gb:docs:export-pdf', (e, payload: unknown) => {
+  if (
+    typeof payload !== 'object' ||
+    payload === null ||
+    typeof (payload as Record<string, unknown>).title !== 'string' ||
+    typeof (payload as Record<string, unknown>).html !== 'string'
+  ) {
+    return { ok: false as const, error: 'export-pdf: expected { title: string, html: string }' };
+  }
+  return exportPdf(
+    BrowserWindow.fromWebContents(e.sender),
+    payload as { title: string; html: string },
+  );
 });
 
 ipcMain.handle('gb:tray:setFailing', (_e, names: unknown) => {

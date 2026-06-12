@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { TopBar } from '../components/TopBar';
 import { Btn } from '../components/Btn';
+import { ConfluenceExportDialog } from '../components/ConfluenceExportDialog';
 import { Lucide } from '../components/Lucide';
 import { Pill } from '../components/Pill';
 import { JotTree } from '../components/JotTree';
 import { RichMarkdownEditor } from '../components/RichMarkdownEditor';
+import type { EditorHandle } from '../components/RichMarkdownEditor';
+import { DocsAssistPanel } from '../components/DocsAssistPanel';
 import {
   useAutoRouteJot,
+  useConnectors,
   useCreateJot,
   useDeleteJot,
   useJot,
@@ -17,6 +21,7 @@ import {
 } from '../lib/api/hooks';
 import { toast } from '../stores/toast';
 import { useNoteView } from '../stores/note-view';
+import { useDocsAssist } from '../stores/docs-assist';
 
 const KNOWN_CONTEXTS = ['sanlam', 'codeship', 'reducedrecipes', 'personal'];
 
@@ -25,6 +30,10 @@ export function JotsScreen() {
   const openNote = useNoteView((s) => s.open);
   const list = useJots({ q: q || undefined });
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [showConfluenceDialog, setShowConfluenceDialog] = useState(false);
+
+  const assistOpen = useDocsAssist((s) => s.open);
+  const toggleAssist = useDocsAssist((s) => s.toggleOpen);
 
   const selectedItem = useMemo(
     () => list.data?.items.find((i) => i.id === selectedId) ?? null,
@@ -59,6 +68,13 @@ export function JotsScreen() {
   }
   const editorBody =
     initialBodyRef.current?.id === selectedId ? initialBodyRef.current.body : undefined;
+
+  // Imperative handle wired to the editor for docs-assist and PDF export.
+  const editorHandle = useRef<EditorHandle | null>(null);
+
+  const connectors = useConnectors();
+  const confluenceConnector = connectors.data?.find((c) => c.id === 'confluence');
+  const confluenceEnabled = confluenceConnector?.state === 'on';
 
   const projects = useProjects();
   const createJot = useCreateJot();
@@ -195,6 +211,30 @@ export function JotsScreen() {
     });
   }
 
+  function handleExportSelect(value: string) {
+    if (!value) return;
+    if (value === 'confluence') {
+      setShowConfluenceDialog(true);
+    } else if (value === 'pdf') {
+      const html = editorHandle.current?.getHTML() ?? '';
+      if (!html) {
+        toast.info('switch to rich mode to export pdf');
+        return;
+      }
+      void window.gb.docs
+        .exportPdf({ title: selectedItem?.title ?? 'document', html })
+        .then((res) => {
+          if ('cancelled' in res) {
+            // user dismissed the save dialog — silent
+          } else if (res.ok) {
+            toast.success(`pdf saved — ${res.path}`);
+          } else {
+            toast.error(`pdf export failed: ${res.error}`);
+          }
+        });
+    }
+  }
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden bg-paper">
       <TopBar
@@ -202,6 +242,14 @@ export function JotsScreen() {
         subtitle={list.data ? `${list.data.total} total` : '…'}
         right={
           <div className="flex gap-2">
+            <Btn
+              variant="ghost"
+              size="sm"
+              icon={<Lucide name="sparkles" size={13} />}
+              onClick={toggleAssist}
+            >
+              assist
+            </Btn>
             <Btn
               variant="primary"
               size="sm"
@@ -248,6 +296,7 @@ export function JotsScreen() {
                   markdown={editorBody}
                   onSave={handleSaveBody}
                   onWikilinkClick={openNote}
+                  handleRef={editorHandle}
                 />
               </div>
               <footer className="flex items-center gap-2 border-t border-hairline px-4 py-2 text-11 text-ink-2">
@@ -308,6 +357,24 @@ export function JotsScreen() {
                       </optgroup>
                     ))}
                   </select>
+                  <select
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      e.target.value = '';
+                      handleExportSelect(v);
+                    }}
+                    defaultValue=""
+                    className="bg-transparent text-11 text-ink-1"
+                    aria-label="export…"
+                  >
+                    <option value="" disabled>
+                      export…
+                    </option>
+                    <option value="confluence" disabled={!confluenceEnabled}>
+                      confluence{!confluenceEnabled ? ' (not connected)' : ''}
+                    </option>
+                    <option value="pdf">pdf</option>
+                  </select>
                   <Btn variant="ghost" size="sm" onClick={handleDelete}>
                     delete
                   </Btn>
@@ -322,7 +389,21 @@ export function JotsScreen() {
             </div>
           )}
         </main>
+        {/* Docs assist panel — right aside, only when open and a jot is selected */}
+        {assistOpen && selectedId && (
+          <aside className="w-[320px] flex-shrink-0 overflow-y-auto border-l border-hairline">
+            <DocsAssistPanel jotId={selectedId} editorHandle={editorHandle} />
+          </aside>
+        )}
       </div>
+      {/* Confluence export dialog */}
+      {showConfluenceDialog && selectedId && (
+        <ConfluenceExportDialog
+          jotId={selectedId}
+          defaultTitle={selectedItem?.title ?? 'document'}
+          onClose={() => setShowConfluenceDialog(false)}
+        />
+      )}
     </div>
   );
 }

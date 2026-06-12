@@ -257,6 +257,35 @@ export type ChatStreamEvent =
   | { type: 'tool'; name: string; summary: string }
   | { type: 'done'; text: string; session_id?: string }
   | { type: 'error'; message: string; interrupted?: boolean };
+// ── Docs assist ───────────────────────────────────────────────────────────
+
+/** Mirrors the event vocabulary of the /v1/docs/assist SSE endpoint —
+ *  same shape as chat events so the same renderer logic handles both. */
+export type DocsAssistEvent = ChatStreamEvent;
+
+export type DocsAssistMode = 'draft' | 'polish' | 'expand' | 'summarize';
+
+export interface DocsAssistRequest {
+  jot_id: string;
+  mode: DocsAssistMode;
+  instruction?: string;
+  selection?: string;
+}
+
+export interface ConfluenceExportRequest {
+  jot_id: string;
+  space_key: string;
+  parent_id?: string;
+  title?: string;
+  force_new?: boolean;
+}
+
+export interface ConfluenceExportResponse {
+  action: 'created' | 'updated';
+  page_id: string;
+  url: string;
+}
+
 // ── Jots ──────────────────────────────────────────────────────────────────
 
 export type JotRoutingStatus = 'pending' | 'routed' | 'manual_review';

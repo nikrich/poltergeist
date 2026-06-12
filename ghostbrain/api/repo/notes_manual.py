@@ -282,6 +282,17 @@ def mark_manual_review(jot_id: str, reasoning: str) -> dict:
     return {"id": jot_id, "path": _vault_rel(path), "routingStatus": "manual_review"}
 
 
+def set_frontmatter_fields(jot_id: str, fields: dict[str, Any]) -> dict:
+    """Stamp arbitrary frontmatter fields without touching the body."""
+    path = _find_file(jot_id)
+    post = frontmatter.load(path)
+    for key, value in fields.items():
+        post[key] = value
+    post["updated"] = _now_iso()
+    path.write_text(frontmatter.dumps(post) + "\n", encoding="utf-8")
+    return {"id": jot_id, "path": _vault_rel(path)}
+
+
 def delete_jot(jot_id: str) -> None:
     path = _find_file(jot_id)
     path.unlink()

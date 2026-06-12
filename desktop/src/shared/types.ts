@@ -1,4 +1,4 @@
-import type { ChatStreamEvent } from './api-types';
+import type { ChatStreamEvent, DocsAssistEvent, DocsAssistRequest } from './api-types';
 
 export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 
@@ -74,6 +74,14 @@ export interface GbBridge {
     ): Promise<{ ok: true } | { ok: false; error: string }>;
     stop(convId: string): Promise<{ ok: true } | { ok: false; error: string }>;
   };
+  docs: {
+    assist(req: DocsAssistRequest): Promise<{ ok: true } | { ok: false; error: string }>;
+    assistStop(jotId: string): Promise<{ ok: true } | { ok: false; error: string }>;
+    exportPdf(payload: {
+      title: string;
+      html: string;
+    }): Promise<{ ok: true; path: string } | { ok: false; error: string } | { ok: false; cancelled: true }>;
+  };
   tray: {
     setFailing(names: string[]): Promise<{ ok: true } | { ok: false; error: string }>;
   };
@@ -99,6 +107,10 @@ export interface GbBridge {
   on(
     channel: 'chat:event',
     listener: (payload: { convId: string; event: ChatStreamEvent }) => void,
+  ): () => void;
+  on(
+    channel: 'docs:event',
+    listener: (payload: { jotId: string; event: DocsAssistEvent }) => void,
   ): () => void;
 }
 

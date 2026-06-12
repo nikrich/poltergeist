@@ -25,6 +25,11 @@ const bridge: GbBridge = {
     send: (convId, text) => ipcRenderer.invoke('gb:chat:send', convId, text),
     stop: (convId) => ipcRenderer.invoke('gb:chat:stop', convId),
   },
+  docs: {
+    assist: (req) => ipcRenderer.invoke('gb:docs:assist', req),
+    assistStop: (jotId) => ipcRenderer.invoke('gb:docs:assist-stop', jotId),
+    exportPdf: (payload) => ipcRenderer.invoke('gb:docs:export-pdf', payload),
+  },
   tray: {
     setFailing: (names: string[]) => ipcRenderer.invoke('gb:tray:setFailing', names),
   },

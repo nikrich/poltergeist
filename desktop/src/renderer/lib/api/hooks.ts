@@ -6,6 +6,8 @@ import type {
   AutoRouteResponse,
   Capture,
   CapturesPage,
+  ConfluenceExportRequest,
+  ConfluenceExportResponse,
   ConfluencePagesResponse,
   Connector,
   ConnectorDetail,
@@ -482,6 +484,19 @@ export function useUpdateNoteByPath() {
       // Both caches read GET /v1/notes?path= — ['note'] (useNote/NoteView)
       // and ['note-by-path'] (useJot/jots screen).
       qc.invalidateQueries({ queryKey: ['note'] });
+      qc.invalidateQueries({ queryKey: ['note-by-path'] });
+    },
+  });
+}
+
+export function useExportConfluence() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: ConfluenceExportRequest) =>
+      post<ConfluenceExportResponse>('/v1/docs/export/confluence', req),
+    onSuccess: () => {
+      // Export writes frontmatter back to the jot file — invalidate both caches.
+      qc.invalidateQueries({ queryKey: JOTS_KEY });
       qc.invalidateQueries({ queryKey: ['note-by-path'] });
     },
   });
