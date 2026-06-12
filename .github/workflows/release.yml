@@ -165,6 +165,12 @@ jobs:
       - name: Install Python deps + PyInstaller
         run: |
           python -m pip install --upgrade pip
+          # On linux, pip resolves torch (via sentence-transformers) to CUDA
+          # wheels — multi-GB of nvidia libs that get baked into the sidecar
+          # and push the AppImage past GitHub's 2 GiB asset limit. The sidecar
+          # only does CPU inference; install the CPU wheel first so the
+          # semantic extra's resolver keeps it.
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -e ".[api,semantic]"
           pip install pyinstaller==6.11.1
 
