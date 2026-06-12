@@ -530,7 +530,7 @@ export function ProjectsSettings() {
 
       {projects.isError && (
         <div className="mb-4 rounded-md border border-oxblood/30 bg-oxblood/10 p-3 text-12 text-oxblood">
-          couldn't read the project registry:{' '}
+          couldn&apos;t read the project registry:{' '}
           {projects.error instanceof Error ? projects.error.message : 'unknown error'}
         </div>
       )}
