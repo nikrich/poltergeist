@@ -13,6 +13,57 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from typing import IO
+
+
+def acquire_singleton_lock(name: str) -> IO | None:
+    """Best-effort single-instance guard via flock.
+
+    Two ``ghostbrain.api`` instances (the bundled app sidecar + a stray
+    ``python -m ghostbrain.api``) both booting the scheduler/recorder race on
+    the shared state file and double-record meetings — the desktop then can't
+    stop a recording it doesn't own. Callers acquire this before starting the
+    scheduler and skip it if the lock is already held.
+
+    Returns the open, locked file object (keep a reference for the process
+    lifetime — the OS releases the lock when it closes or the process dies) or
+    ``None`` if another live process already holds it.
+    """
+    import fcntl
+
+    from ghostbrain.recorder.state import state_dir
+
+    lock_path = state_dir() / f"{name}.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fh = open(lock_path, "w")
+    try:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        fh.close()
+        return None
+    try:
+        fh.truncate(0)
+        fh.write(str(os.getpid()))
+        fh.flush()
+    except OSError:
+        pass
+    return fh
+
+
+def release_singleton_lock(fh: IO | None) -> None:
+    """Release a lock from acquire_singleton_lock(). Never raises."""
+    if fh is None:
+        return
+    try:
+        import fcntl
+
+        fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+    except (OSError, ValueError):
+        pass
+    try:
+        fh.close()
+    except OSError:
+        pass
 
 
 def run_dir() -> Path:

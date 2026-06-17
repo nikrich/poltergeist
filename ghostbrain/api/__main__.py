@@ -111,8 +111,27 @@ def main() -> int:
     # query /v1/scheduler/status immediately and get a real answer.
     scheduler_enabled = _scheduler_enabled()
     if scheduler_enabled:
+        # Single-instance guard: if another ghostbrain.api is already running
+        # the scheduler/recorder, do NOT boot a second one. Two schedulers race
+        # on the shared recorder state file and double-record meetings — the
+        # desktop then can't stop a recording it doesn't own. Hold the lock for
+        # the process lifetime (stash on app.state); the OS frees it on
+        # exit/crash.
+        from ghostbrain.api import runtime
+
+        scheduler_lock = runtime.acquire_singleton_lock("scheduler")
+        if scheduler_lock is None:
+            log.warning(
+                "another ghostbrain.api scheduler is already running; starting "
+                "this instance read-only (no scheduler/recorder) to avoid "
+                "double-recording meetings"
+            )
+            scheduler_enabled = False
+
+    if scheduler_enabled:
         from ghostbrain.scheduler_jobs import build as build_scheduler
 
+        app.state.scheduler_lock = scheduler_lock
         scheduler = build_scheduler(include_recorder=_include_recorder())
         app.state.scheduler = scheduler
 
