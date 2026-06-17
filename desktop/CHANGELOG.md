@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.2](https://github.com/nikrich/poltergeist/compare/v0.3.1...v0.3.2) (2026-06-17)
+
+
+### Bug Fixes
+
+* Recorder: desktop Stop button now works — is_running() treats zombie PIDs as dead, and a single-instance lock stops a second sidecar double-recording meetings ([dcfb3d8](https://github.com/nikrich/poltergeist/commit/dcfb3d8877fe7e86f2433ae8fb03978fc2f40b0e))
+* Deb packaging metadata — author, homepage, description ([f8865fb](https://github.com/nikrich/poltergeist/commit/f8865fb52d4b3fa86c9a29795be4ed9e30d49168))
+* Deb packaging metadata for linux release builds ([1b03f40](https://github.com/nikrich/poltergeist/commit/1b03f40512b5c305ae972e877e9ce64bae774aff))
+* Lint errors blocking mac/linux release builds ([d8d2d69](https://github.com/nikrich/poltergeist/commit/d8d2d69d5627f796d0b34dc49d7b68c1e179b7d6))
+* Lint errors blocking mac/linux release builds ([e03d6e3](https://github.com/nikrich/poltergeist/commit/e03d6e391fc2473c8ee545c7a093bb459b7dede6))
+
 ## [0.3.1](https://github.com/nikrich/poltergeist/compare/v0.3.0...v0.3.1) (2026-06-10)
 
 
