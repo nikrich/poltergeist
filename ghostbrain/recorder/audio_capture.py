@@ -250,6 +250,24 @@ def stop_capture(pid: int, *, grace_s: float = 5.0) -> bool:
     return not is_running(pid)
 
 
+def _is_zombie(pid: int) -> bool:
+    """True if `pid` is a terminated-but-unreaped process (state 'Z').
+
+    A zombie still occupies a PID slot, so kill(pid, 0) succeeds and signals
+    sent to it are no-ops. We can't use os.waitpid() because the PID is often
+    a child of a *different* process (the recorder ffmpeg outlives the
+    instance that spawned it), so shell out to `ps` for the state column.
+    """
+    try:
+        out = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "state="],
+            capture_output=True, text=True, timeout=2,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return False  # can't tell — fall open, treat as not-a-zombie
+    return out.startswith("Z")
+
+
 def is_running(pid: int) -> bool:
     if pid <= 0:
         return False
@@ -259,4 +277,7 @@ def is_running(pid: int) -> bool:
         return False
     except PermissionError:
         return True
-    return True
+    # The PID exists, but a zombie (exited, not yet reaped) also answers
+    # kill(pid, 0). Treat zombies as not running so a dead ffmpeg whose parent
+    # never wait()ed it can't wedge stop()/status() on a corpse forever.
+    return not _is_zombie(pid)
