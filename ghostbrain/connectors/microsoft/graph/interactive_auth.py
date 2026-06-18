@@ -56,7 +56,7 @@ class InteractiveAuth:
         try:
             app = self._app_factory(config)
             result = app.acquire_token_interactive(
-                resolve_scopes(config), prompt="select_account"
+                resolve_scopes(config), prompt="select_account", timeout=180
             )
             if "access_token" not in result:
                 self._set(AuthState(state="error", error=_result_error(result)))

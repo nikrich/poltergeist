@@ -74,6 +74,31 @@ def test_status_idle_when_no_flow_and_no_token(monkeypatch):
     assert auth.status(CFG) == AuthState(state="idle")
 
 
+def test_acquire_called_with_timeout_180():
+    app = _fake_app()
+    auth = InteractiveAuth(app_factory=lambda cfg: app)
+    auth.start(CFG)
+    auth.wait()
+    app.acquire_token_interactive.assert_called_once()
+    assert app.acquire_token_interactive.call_args.kwargs["timeout"] == 180
+
+
+def test_retry_allowed_after_timeout_error(monkeypatch):
+    timeout_result = {"error": "loopback_timeout", "error_description": "timed out"}
+    app = MagicMock()
+    app.acquire_token_interactive.return_value = timeout_result
+    auth = InteractiveAuth(app_factory=lambda cfg: app)
+    auth.start(CFG)
+    auth.wait()
+    st = auth.status(CFG)
+    assert st.state == "error"
+    # Thread has ended — a second start() must not raise AlreadyRunning
+    app2 = _fake_app()
+    auth._app_factory = lambda cfg: app2
+    auth.start(CFG)  # should not raise
+    auth.wait()
+
+
 def test_disconnect_removes_accounts_and_clears_cache(tmp_path, monkeypatch):
     app = _fake_app()
     cache = tmp_path / "token_cache.bin"
