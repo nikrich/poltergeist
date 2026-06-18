@@ -418,3 +418,11 @@ export interface ChatExportResponse {
   project: string | null;
   title: string;
 }
+
+export type MicrosoftAuthPhase = 'idle' | 'pending' | 'connected' | 'error';
+
+export interface MicrosoftAuthStatus {
+  state: MicrosoftAuthPhase;
+  account: string | null;
+  error: string | null;
+}
