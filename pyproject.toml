@@ -49,6 +49,12 @@ api = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
     "httpx>=0.27.0",
+    # The bundled `ghostbrain-api` serves the Poltergeist MCP stdio server via
+    # its `mcp` subcommand (see ghostbrain.api.__main__). The PyInstaller build
+    # installs the [api] extra, so `mcp` must live here — without it the frozen
+    # `ghostbrain-api mcp` dies with `ModuleNotFoundError: No module named 'mcp'`
+    # and vault chat never connects.
+    "mcp>=1.2.0",
     # Required by jaraco.context at pkg_resources runtime hook time when the
     # API is bundled by PyInstaller. Without it the packaged sidecar crashes
     # on first import.
