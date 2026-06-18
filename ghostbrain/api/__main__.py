@@ -55,10 +55,6 @@ import socket
 import sys
 from datetime import datetime  # noqa: E402
 
-import uvicorn
-
-from ghostbrain.api.main import create_app
-
 log = logging.getLogger("ghostbrain.api.main")
 
 
@@ -112,6 +108,18 @@ def main(argv: list[str] | None = None) -> int:
 
         mcp_main()
         return 0
+
+    return _run_api_server()
+
+
+def _run_api_server() -> int:
+    # Import the app stack lazily, AFTER the `mcp` dispatch above. The frozen
+    # `ghostbrain-api mcp` subprocess must not pay for — or crash/stall on — the
+    # full route tree (uvicorn + every route + their transitive deps) before its
+    # MCP handshake; that coupling surfaced as "vault server still connecting".
+    import uvicorn
+
+    from ghostbrain.api.main import create_app
 
     token = secrets.token_hex(32)
     port = _pick_port()
