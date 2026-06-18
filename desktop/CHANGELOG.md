@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.4](https://github.com/nikrich/poltergeist/compare/v0.3.3...v0.3.4) (2026-06-18)
+
+
+### Bug Fixes
+
+* **chat:** Start the MCP server before importing the api app so packaged vault chat connects — the bundled `ghostbrain-api mcp` no longer eagerly imports the full route tree before its MCP handshake ([fff11e8](https://github.com/nikrich/poltergeist/commit/fff11e8b7aa506f01858a5bc75e248230f338f3c))
+
 ## [0.3.3](https://github.com/nikrich/poltergeist/compare/v0.3.2...v0.3.3) (2026-06-18)
 
 
