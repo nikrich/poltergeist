@@ -68,6 +68,13 @@ hiddenimports += collect_submodules('ghostbrain.connectors')
 hiddenimports += collect_submodules('ghostbrain.worker')
 hiddenimports += collect_submodules('ghostbrain.recorder')
 hiddenimports += collect_submodules('ghostbrain.profile')
+
+# The `ghostbrain-api mcp` subcommand serves the Poltergeist MCP stdio server in
+# packaged builds (see ghostbrain.api.__main__ / ghostbrain.llm.agent). Its tree
+# and the FastMCP library are only reached through that runtime branch, so pull
+# them in explicitly — otherwise frozen chat has no vault tools.
+hiddenimports += collect_submodules('ghostbrain.mcp')
+hiddenimports += collect_submodules('mcp')
 hiddenimports += [
     'ghostbrain.scheduler',
     'ghostbrain.scheduler_jobs',

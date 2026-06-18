@@ -149,13 +149,24 @@ using the user's own terminology.
 re-fetching notes you already read."""
 
 
-def find_mcp_binary() -> str | None:
-    """Locate ``ghostbrain-mcp``: it lives next to the python running the
-    sidecar (same venv / PyInstaller dist), falling back to PATH."""
+def find_mcp_binary() -> list[str] | None:
+    """Return the argv that launches the Poltergeist MCP stdio server, or None.
+
+    Frozen (PyInstaller) builds re-use the bundled ``ghostbrain-api`` executable
+    via its ``mcp`` subcommand — shipping a second PyInstaller exe would duplicate
+    the whole (torch/transformers) ML bundle. ``sys.executable`` is that bundle
+    exe when frozen.
+
+    Dev builds use the ``ghostbrain-mcp`` console script next to the python
+    running the sidecar (same venv), falling back to PATH.
+    """
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "mcp"]
     candidate = Path(sys.executable).parent / "ghostbrain-mcp"
     if candidate.is_file():
-        return str(candidate)
-    return shutil.which("ghostbrain-mcp")
+        return [str(candidate)]
+    found = shutil.which("ghostbrain-mcp")
+    return [found] if found else None
 
 
 def build_chat_command(
@@ -164,9 +175,7 @@ def build_chat_command(
     *,
     model: str = DEFAULT_CHAT_MODEL,
     session_id: str | None = None,
-    mcp_binary: str | None = None,
-    system_prompt: str | None = None,
-    allowed_tools: str | None = None,
+    mcp_binary: str | list[str] | None = None,
 ) -> list[str]:
     cmd = [
         binary,
@@ -175,17 +184,31 @@ def build_chat_command(
         "--include-partial-messages",
         "--verbose",  # required by claude for stream-json with --print
         "--model", model,
-        "--system-prompt", system_prompt or CHAT_SYSTEM_PROMPT,
+        "--system-prompt", CHAT_SYSTEM_PROMPT,
         "--exclude-dynamic-system-prompt-sections",
         "--max-budget-usd", f"{CHAT_BUDGET_USD:.4f}",
     ]
+    # --strict-mcp-config + an explicit --mcp-config are UNCONDITIONAL: without
+    # them claude inherits the user's global ~/.claude.json MCP servers (e.g.
+    # mempalace) and runs them in --print mode with no allowlist, where every
+    # tool call hits a permission wall that has no interactive dialog to clear.
+    # We attach the poltergeist server only when its binary is present, but we
+    # always pin the server set so nothing else can leak in.
+    servers: dict[str, dict] = {}
     if mcp_binary:
-        cmd += [
-            "--mcp-config",
-            json.dumps({"mcpServers": {"poltergeist": {"command": mcp_binary}}}),
-            "--strict-mcp-config",  # don't drag in the user's other MCP servers
-            "--allowedTools", allowed_tools or ALLOWED_TOOLS,
-        ]
+        # Accept either a bare path (dev console script) or a full argv list
+        # (frozen build: the api exe + its `mcp` subcommand).
+        argv = [mcp_binary] if isinstance(mcp_binary, str) else list(mcp_binary)
+        server: dict = {"command": argv[0]}
+        if len(argv) > 1:
+            server["args"] = argv[1:]
+        servers["poltergeist"] = server
+    cmd += [
+        "--mcp-config", json.dumps({"mcpServers": servers}),
+        "--strict-mcp-config",
+    ]
+    if mcp_binary:
+        cmd += ["--allowedTools", ALLOWED_TOOLS]
     if session_id:
         cmd += ["--resume", session_id]
     # `--` terminates option parsing — without it a variadic flag like
@@ -198,6 +221,12 @@ BINARY_MISSING_MESSAGE = (
     "`claude` binary not found. Install Claude Code "
     "(`npm i -g @anthropic-ai/claude-code`), or set `GHOSTBRAIN_CLAUDE_BIN` "
     "to its absolute path."
+)
+
+MCP_BINARY_MISSING_MESSAGE = (
+    "Vault tools are unavailable: the `ghostbrain-mcp` helper couldn't be found, "
+    "so Poltergeist can't search or read your notes. This usually means the app "
+    "bundle is incomplete — try reinstalling, or check the sidecar logs."
 )
 
 
@@ -213,8 +242,6 @@ def run_chat_turn(
     binary: str | None = None,
     mcp_binary: str | None = "auto",
     turn_key: str | None = None,
-    system_prompt: str | None = None,
-    allowed_tools: str | None = None,
 ):
     """Yield event dicts for one agentic chat turn.
 
@@ -230,13 +257,18 @@ def run_chat_turn(
         return
     if mcp_binary == "auto":
         mcp_binary = find_mcp_binary()
+        # Auto-detection failed: no vault tools means no useful turn — every
+        # answer would be ungrounded. Surface a real error instead of running a
+        # toolless turn that lets the model improvise (and, worse, hallucinate a
+        # permission prompt for whatever global MCP server it stumbles onto).
+        # An explicit mcp_binary=None is a deliberate opt-out (lifecycle tests),
+        # so we only guard the auto path.
+        if mcp_binary is None:
+            yield {"type": "error", "message": MCP_BINARY_MISSING_MESSAGE}
+            return
 
     cmd = build_chat_command(
-        binary, prompt,
-        session_id=session_id,
-        mcp_binary=mcp_binary,
-        system_prompt=system_prompt,
-        allowed_tools=allowed_tools,
+        binary, prompt, session_id=session_id, mcp_binary=mcp_binary
     )
     log.info("chat turn: resume=%s mcp=%s", bool(session_id), bool(mcp_binary))
     proc = subprocess.Popen(
