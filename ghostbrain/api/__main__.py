@@ -101,7 +101,18 @@ def _publish_descriptor(port: int, token: str) -> None:
     atexit.register(runtime.remove_descriptor)
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    # The packaged build ships one executable. When invoked as `ghostbrain-api
+    # mcp` it serves the Poltergeist MCP stdio server instead of the HTTP sidecar
+    # — this is how chat gets vault tools without a second, ML-heavy PyInstaller
+    # bundle (see ghostbrain.llm.agent.find_mcp_binary).
+    if argv and argv[0] == "mcp":
+        from ghostbrain.mcp.__main__ import main as mcp_main
+
+        mcp_main()
+        return 0
+
     token = secrets.token_hex(32)
     port = _pick_port()
     app = create_app(token=token)
