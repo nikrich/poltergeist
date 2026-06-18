@@ -29,6 +29,7 @@ export default function MicrosoftConnectCard() {
         </div>
         {state === 'connected' ? (
           <button
+            type="button"
             className="text-11 text-ink-2 underline"
             onClick={() => void disconnect.mutateAsync()}
           >
@@ -36,6 +37,7 @@ export default function MicrosoftConnectCard() {
           </button>
         ) : (
           <button
+            type="button"
             className="rounded-r6 bg-ink-1 px-3 py-1 text-11 text-paper disabled:opacity-50"
             disabled={pending}
             onClick={() => void start.mutateAsync()}

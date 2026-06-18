@@ -13,6 +13,8 @@ describe('MicrosoftConnectCard', () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    start.mockClear();
+    disconnect.mockClear();
     vi.spyOn(hooks, 'useStartMicrosoftAuth').mockReturnValue({ mutateAsync: start } as never);
     vi.spyOn(hooks, 'useDisconnectMicrosoft').mockReturnValue({ mutateAsync: disconnect } as never);
   });
@@ -34,5 +36,12 @@ describe('MicrosoftConnectCard', () => {
     stubStatus({ state: 'error', account: null, error: 'consent denied' });
     render(<MicrosoftConnectCard />);
     expect(screen.getByText(/consent denied/)).toBeInTheDocument();
+  });
+
+  it('disables the button and shows signing-in label when pending', () => {
+    stubStatus({ state: 'pending', account: null, error: null });
+    render(<MicrosoftConnectCard />);
+    expect(screen.getByRole('button')).toBeDisabled();
+    expect(screen.getByText('Signing in…')).toBeInTheDocument();
   });
 });
