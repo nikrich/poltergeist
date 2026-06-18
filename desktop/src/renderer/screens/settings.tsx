@@ -5,6 +5,7 @@ import { Eyebrow } from '../components/Eyebrow';
 import { Lucide } from '../components/Lucide';
 import { Toggle } from '../components/Toggle';
 import { Ghost } from '../components/Ghost';
+import MicrosoftConnectCard from '../components/MicrosoftConnectCard';
 import { useSettings } from '../stores/settings';
 import {
   useCreateProject,
@@ -345,6 +346,7 @@ function BackgroundSettings() {
         title="background"
         sub="when on, poltergeist stays running in the menu bar and fetches connectors on a schedule from inside the app."
       />
+      <MicrosoftConnectCard />
       {conflicts ? (
         <div className="mb-4 flex gap-3 rounded-r6 border border-oxblood/30 bg-oxblood/10 p-3">
           <Lucide name="alert-triangle" size={14} color="var(--oxblood)" />
