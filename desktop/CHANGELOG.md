@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.5](https://github.com/nikrich/poltergeist/compare/v0.3.4...v0.3.5) (2026-06-18)
+
+
+### Bug Fixes
+
+* **chat:** Bundle the `mcp` library so the packaged `ghostbrain-api mcp` server starts — it was crashing with `ModuleNotFoundError: No module named 'mcp'`, so vault chat could never connect. `mcp` moved into the `[api]` extra the build installs, and its package metadata is now shipped (FastMCP reads `version("mcp")` at import) ([94cc3e3](https://github.com/nikrich/poltergeist/commit/94cc3e3))
+
 ## [0.3.4](https://github.com/nikrich/poltergeist/compare/v0.3.3...v0.3.4) (2026-06-18)
 
 
