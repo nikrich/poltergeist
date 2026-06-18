@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.3](https://github.com/nikrich/poltergeist/compare/v0.3.2...v0.3.3) (2026-06-18)
+
+
+### Bug Fixes
+
+* **chat:** Pin MCP config so vault chat can't leak the user's global MCP servers or wedge on an unclearable permission prompt; bundled `ghostbrain-api` now serves the MCP tools via an `mcp` subcommand so packaged chat has vault tools ([5b833e2](https://github.com/nikrich/poltergeist/commit/5b833e2eabbbbbbbb382fa030f3d0f8be844f4d8))
+
 ## [0.3.2](https://github.com/nikrich/poltergeist/compare/v0.3.1...v0.3.2) (2026-06-17)
 
 
