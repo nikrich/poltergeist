@@ -2,10 +2,16 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import * as client from '../lib/api/client';
-import { useMicrosoftAuthStatus, useStartMicrosoftAuth } from '../lib/api/hooks';
+import { useMicrosoftAuthStatus, useStartMicrosoftAuth, useDisconnectMicrosoft } from '../lib/api/hooks';
 
 function wrapper() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return ({ children }: { children: React.ReactNode }) => (
+    <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+  );
+}
+
+function wrapperWithClient(qc: QueryClient) {
   return ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={qc}>{children}</QueryClientProvider>
   );
@@ -28,5 +34,16 @@ describe('microsoft auth hooks', () => {
     const { result } = renderHook(() => useStartMicrosoftAuth(), { wrapper: wrapper() });
     await result.current.mutateAsync();
     expect(post).toHaveBeenCalledWith('/v1/connectors/microsoft/auth/start');
+  });
+
+  it('disconnect posts to the disconnect endpoint and invalidates both query keys', async () => {
+    const post = vi.spyOn(client, 'post').mockResolvedValue({ state: 'idle' });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateQueries = vi.spyOn(qc, 'invalidateQueries');
+    const { result } = renderHook(() => useDisconnectMicrosoft(), { wrapper: wrapperWithClient(qc) });
+    await result.current.mutateAsync();
+    expect(post).toHaveBeenCalledWith('/v1/connectors/microsoft/auth/disconnect');
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['microsoft', 'auth', 'status'] });
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['connectors'] });
   });
 });
