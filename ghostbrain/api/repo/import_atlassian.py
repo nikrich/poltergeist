@@ -118,6 +118,12 @@ def _space_names(client: AtlassianClient, keys: list[str]) -> dict[str, str]:
     }
 
 
+# Pages live inside Confluence "folders" (a separate content type), so the
+# tree must enumerate both. children.folder is expanded too, otherwise a node
+# whose only children are folders looks like a leaf and hides everything below.
+CHILD_EXPAND = "version,children.page,children.folder"
+
+
 def list_confluence_pages(
     site: str,
     space: str,
@@ -125,9 +131,15 @@ def list_confluence_pages(
     limit: int = DEFAULT_LIMIT,
     cursor: str | None = None,
 ) -> dict:
-    """Top-level pages of a monitored space, or children of ``parent``."""
+    """Top-level content of a monitored space, or children of ``parent``.
+
+    Each level returns the parent's child *folders* (expand-only, not
+    importable) followed by its child *pages*, mirroring how Confluence groups
+    a space's content tree. ``parent`` may be either a page id or a folder id —
+    the v1 ``child/{type}`` endpoints accept both.
+    """
     if parent is not None and not parent.isdigit():
-        # parent is interpolated into the API URL path — numeric page ids only.
+        # parent is interpolated into the API URL path — numeric ids only.
         raise ValueError(f"invalid parent page id: {parent!r}")
     routing = _load_routing()
     sites, spaces = _confluence_config(routing)
@@ -137,24 +149,31 @@ def list_confluence_pages(
         raise ValueError(f"space not monitored: {space}")
     start = int(cursor) if cursor and cursor.isdigit() else 0
     client = _client(site, not_configured=CONFLUENCE_NOT_CONFIGURED)
-    params: dict = {
-        "expand": "version,children.page",
-        "limit": limit,
-        "start": start,
-    }
+    base = {"expand": CHILD_EXPAND, "limit": limit, "start": start}
+
     if parent:
-        data = client.get(f"/wiki/rest/api/content/{parent}/child/page", params=params)
+        folders = (client.get(
+            f"/wiki/rest/api/content/{parent}/child/folder", params=base
+        ).get("results") or [])
+        pages = (client.get(
+            f"/wiki/rest/api/content/{parent}/child/page", params=base
+        ).get("results") or [])
     else:
-        data = client.get(
+        # The space root has a single homepage; its folders surface on expand.
+        # A space-level folder listing isn't supported by the v1 API (500s).
+        folders = []
+        pages = (client.get(
             f"/wiki/rest/api/space/{space}/content/page",
-            params={**params, "depth": "root"},
-        )
-    results = data.get("results") or []
+            params={**base, "depth": "root"},
+        ).get("results") or [])
+
     items = [
         _page_row(raw, site=site, space=space, parent_id=parent)
-        for raw in results
+        for raw in (*folders, *pages)
     ]
-    next_cursor = str(start + limit) if len(results) >= limit else None
+    # Either list hitting the limit means there may be more at this level.
+    more = len(folders) >= limit or len(pages) >= limit
+    next_cursor = str(start + limit) if more else None
     return {"items": items, "nextCursor": next_cursor}
 
 
@@ -182,13 +201,17 @@ def _page_row(
     raw: dict, *, site: str, space: str | None, parent_id: str | None
 ) -> dict:
     version = raw.get("version") or {}
-    children = (raw.get("children") or {}).get("page") or {}
+    children = raw.get("children") or {}
+    child_pages = int((children.get("page") or {}).get("size") or 0)
+    child_folders = int((children.get("folder") or {}).get("size") or 0)
     return {
         "site": site,
         "id": str(raw.get("id") or ""),
         "title": raw.get("title") or "",
+        # "page" (importable, selectable) or "folder" (navigation only).
+        "type": raw.get("type") or "page",
         "parentId": parent_id,
-        "hasChildren": int(children.get("size") or 0) > 0,
+        "hasChildren": (child_pages + child_folders) > 0,
         "updatedAt": version.get("when"),
         "version": version.get("number"),
         "space": space or ((raw.get("space") or {}).get("key") or None),

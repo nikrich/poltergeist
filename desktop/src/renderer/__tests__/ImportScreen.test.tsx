@@ -87,6 +87,46 @@ describe('ImportScreen', () => {
     expect(screen.getByRole('button', { name: 'import 1 selected' })).toBeInTheDocument();
   });
 
+  it('shows folders as expand-only nodes (no import checkbox) and drills into them', async () => {
+    const digWithFolder: ConfluencePagesResponse = {
+      items: [
+        { site: 'sft.atlassian.net', id: '900', title: 'Onboarding', type: 'folder',
+          parentId: null, hasChildren: true, updatedAt: null, version: null, space: 'DIG' },
+        { site: 'sft.atlassian.net', id: '200', title: 'Runbooks', type: 'page',
+          parentId: null, hasChildren: false, updatedAt: null, version: 1, space: 'DIG' },
+      ],
+      nextCursor: null,
+    };
+    const folderChildren: ConfluencePagesResponse = {
+      items: [
+        { site: 'sft.atlassian.net', id: '950', title: 'Setup Guide', type: 'page',
+          parentId: '900', hasChildren: false, updatedAt: null, version: 1, space: 'DIG' },
+      ],
+      nextCursor: null,
+    };
+    apiRequest.mockImplementation(async (_m: string, path: string) => {
+      if (path === '/v1/import/confluence/spaces') return { ok: true, data: spaces };
+      if (path.includes('parent=900')) return { ok: true, data: folderChildren };
+      if (path.startsWith('/v1/import/confluence/pages')) return { ok: true, data: digWithFolder };
+      return { ok: true, data: null };
+    });
+
+    render(wrap(<ImportScreen />));
+    fireEvent.click(await screen.findByRole('button', { name: 'toggle space DIG' }));
+    expect(await screen.findByText('Onboarding')).toBeInTheDocument();
+
+    // a folder is navigation-only: expandable, but never importable
+    expect(screen.getByRole('button', { name: 'expand Onboarding' })).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: 'select Onboarding' })).not.toBeInTheDocument();
+    // a real page in the same level keeps its checkbox
+    expect(screen.getByRole('checkbox', { name: 'select Runbooks' })).toBeInTheDocument();
+
+    // drilling into the folder reveals the pages nested under it
+    fireEvent.click(screen.getByRole('button', { name: 'expand Onboarding' }));
+    expect(await screen.findByText('Setup Guide')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'select Setup Guide' })).toBeInTheDocument();
+  });
+
   it('a confluence search replaces the space list with results', async () => {
     render(wrap(<ImportScreen />));
     await screen.findByText('Digisure');

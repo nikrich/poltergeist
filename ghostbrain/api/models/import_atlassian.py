@@ -16,6 +16,8 @@ class ImportPage(BaseModel):
     site: str
     id: str
     title: str
+    # "page" = importable + selectable; "folder" = navigation node only.
+    type: Literal["page", "folder"] = "page"
     parentId: str | None = None
     hasChildren: bool
     updatedAt: str | None = None

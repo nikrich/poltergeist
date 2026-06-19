@@ -341,6 +341,8 @@ export interface ImportPage {
   site: string;
   id: string;
   title: string;
+  // 'page' = importable + selectable; 'folder' = navigation node only.
+  type: 'page' | 'folder';
   parentId: string | null;
   hasChildren: boolean;
   updatedAt: string | null;

@@ -44,6 +44,9 @@ def test_pages_ok_passes_params(
     fake_atlassian.routes["/wiki/rest/api/content/100/child/page"] = {
         "results": [PAGE_LIST_ITEM]
     }
+    fake_atlassian.routes["/wiki/rest/api/content/100/child/folder"] = {
+        "results": []
+    }
     res = client.get(
         "/v1/import/confluence/pages"
         "?site=sft.atlassian.net&space=DIG&parent=100&limit=1&cursor=3",
@@ -53,8 +56,10 @@ def test_pages_ok_passes_params(
     data = res.json()
     assert data["items"][0]["id"] == "100"
     assert data["items"][0]["parentId"] == "100"
+    assert data["items"][0]["type"] == "page"
     assert data["nextCursor"] == "4"  # full page (1 of limit 1) → start+limit
-    host, path, params = fake_atlassian.calls[-1]
+    page_calls = [c for c in fake_atlassian.calls if c[1].endswith("/child/page")]
+    host, path, params = page_calls[-1]
     assert params["start"] == 3
     assert params["limit"] == 1
 
