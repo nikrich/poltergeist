@@ -329,6 +329,7 @@ function PageRow({
   const [expanded, setExpanded] = useState(false);
   const item: ImportItem = { kind: 'confluence_page', site: page.site, id: page.id };
   const key = selectionKey(item);
+  const isFolder = page.type === 'folder';
   const canExpand = expandable && page.hasChildren;
   return (
     <div>
@@ -348,13 +349,18 @@ function PageRow({
         ) : (
           <span className="inline-block w-3 flex-shrink-0" />
         )}
-        <input
-          type="checkbox"
-          aria-label={`select ${page.title}`}
-          checked={selection.has(key)}
-          onChange={() => onToggle(item)}
-          className="h-[13px] w-[13px] cursor-pointer accent-[var(--neon)]"
-        />
+        {isFolder ? (
+          // Folders aren't importable as pages — navigation only.
+          <Lucide name="folder" size={13} color="var(--ink-2)" />
+        ) : (
+          <input
+            type="checkbox"
+            aria-label={`select ${page.title}`}
+            checked={selection.has(key)}
+            onChange={() => onToggle(item)}
+            className="h-[13px] w-[13px] cursor-pointer accent-[var(--neon)]"
+          />
+        )}
         <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-12 text-ink-0">
           {page.title}
         </span>
