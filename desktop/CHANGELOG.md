@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.6](https://github.com/nikrich/poltergeist/compare/v0.3.5...v0.3.6) (2026-06-19)
+
+
+### Bug Fixes
+
+* **import:** Surface Confluence folders so folder-nested pages are importable ([#42](https://github.com/nikrich/poltergeist/issues/42)) ([b91d698](https://github.com/nikrich/poltergeist/commit/b91d6985d944b44b259a46c3ad8d1094bb2d02ad))
+
 ## [0.3.5](https://github.com/nikrich/poltergeist/compare/v0.3.4...v0.3.5) (2026-06-18)
 
 
