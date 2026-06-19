@@ -19,16 +19,16 @@ const spaces: ImportSpace[] = [
 
 const digPages: ConfluencePagesResponse = {
   items: [
-    { site: 'sft.atlassian.net', id: '100', title: 'ASCP architecture', parentId: null,
+    { site: 'sft.atlassian.net', id: '100', title: 'ASCP architecture', type: 'page', parentId: null,
       hasChildren: true, updatedAt: '2026-06-01T10:00:00.000Z', version: 4, space: 'DIG' },
-    { site: 'sft.atlassian.net', id: '200', title: 'Runbooks', parentId: null,
+    { site: 'sft.atlassian.net', id: '200', title: 'Runbooks', type: 'page', parentId: null,
       hasChildren: false, updatedAt: null, version: 1, space: 'DIG' },
   ],
   nextCursor: null,
 };
 
 const searchHits: ImportPage[] = [
-  { site: 'sft.atlassian.net', id: '300', title: 'Quote domain design', parentId: null,
+  { site: 'sft.atlassian.net', id: '300', title: 'Quote domain design', type: 'page', parentId: null,
     hasChildren: false, updatedAt: '2026-04-01T09:00:00.000Z', version: 7, space: 'SPE' },
 ];
 
