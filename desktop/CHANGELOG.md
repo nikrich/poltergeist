@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.7](https://github.com/nikrich/poltergeist/compare/v0.3.6...v0.3.7) (2026-06-22)
+
+
+### Bug Fixes
+
+* **sidecar:** Gate runtime descriptor on a singleton lock so a second instance can't orphan it ([#44](https://github.com/nikrich/poltergeist/pull/44)) ([bc8d7dc](https://github.com/nikrich/poltergeist/commit/bc8d7dc))
+
 ## [0.3.6](https://github.com/nikrich/poltergeist/compare/v0.3.5...v0.3.6) (2026-06-19)
 
 
