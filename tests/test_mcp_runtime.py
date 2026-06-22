@@ -10,6 +10,9 @@ from ghostbrain.api import runtime
 @pytest.fixture(autouse=True)
 def _run_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("GHOSTBRAIN_RUN_DIR", str(tmp_path / "run"))
+    # Isolate the singleton lock too — _publish_descriptor now acquires a
+    # "sidecar" flock under the state dir.
+    monkeypatch.setenv("GHOSTBRAIN_STATE_DIR", str(tmp_path / "state"))
     yield
 
 
@@ -64,13 +67,54 @@ def test_remove_is_idempotent():
     assert runtime.load_descriptor() is None
 
 
-def test_publish_descriptor_writes_current_process(monkeypatch, tmp_path):
-    monkeypatch.setenv("GHOSTBRAIN_RUN_DIR", str(tmp_path / "run2"))
+def test_publish_descriptor_writes_and_returns_lock_when_primary():
+    """The primary sidecar wins the lock, publishes its descriptor, and
+    returns the held lock for the caller to keep alive."""
     from ghostbrain.api.__main__ import _publish_descriptor
 
-    _publish_descriptor(port=40404, token="abc123")
-    d = runtime.load_descriptor()
-    assert d is not None
-    assert d["port"] == 40404
-    assert d["token"] == "abc123"
-    assert d["pid"] == os.getpid()
+    lock = _publish_descriptor(port=40404, token="abc123")
+    assert lock is not None, "primary must hold the sidecar lock"
+    try:
+        d = runtime.load_descriptor()
+        assert d is not None
+        assert d["port"] == 40404
+        assert d["token"] == "abc123"
+        assert d["pid"] == os.getpid()
+    finally:
+        runtime.release_singleton_lock(lock)
+
+
+def test_publish_descriptor_skips_when_another_instance_holds_lock():
+    """A second sidecar that can't win the lock must NOT publish — otherwise
+    it clobbers the primary's descriptor (the 'not running' bug)."""
+    from ghostbrain.api.__main__ import _publish_descriptor
+
+    held = runtime.acquire_singleton_lock("sidecar")
+    assert held is not None
+    try:
+        lock = _publish_descriptor(port=50505, token="secondary")
+        assert lock is None, "second instance must not acquire the lock"
+        assert runtime.load_descriptor() is None, "second instance must not publish"
+    finally:
+        runtime.release_singleton_lock(held)
+
+
+def test_publish_descriptor_does_not_clobber_primary_descriptor():
+    """With the primary holding the lock AND owning the descriptor, a second
+    instance's publish attempt leaves the primary's descriptor untouched."""
+    from ghostbrain.api.__main__ import _publish_descriptor
+
+    held = runtime.acquire_singleton_lock("sidecar")
+    assert held is not None
+    runtime.write_descriptor(
+        port=40404, token="primary", pid=os.getpid(),
+        version="1.0.0", started_at="x",
+    )
+    try:
+        lock = _publish_descriptor(port=50505, token="secondary")
+        assert lock is None
+        d = runtime.load_descriptor()
+        assert d is not None
+        assert d["port"] == 40404 and d["token"] == "primary"
+    finally:
+        runtime.release_singleton_lock(held)
