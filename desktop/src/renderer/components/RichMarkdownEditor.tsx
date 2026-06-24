@@ -9,6 +9,7 @@ import { Btn } from './Btn';
 import { EditorToolbar } from './EditorToolbar';
 import { JotEditor } from './JotEditor';
 import { Lucide } from './Lucide';
+import { WebcamCaptureModal } from './WebcamCaptureModal';
 
 export interface EditorHandle {
   /** Markdown for the current selection; '' when collapsed. */
@@ -57,8 +58,10 @@ interface Props {
   handleRef?: React.MutableRefObject<EditorHandle | null>;
   /** The jotId of the currently open note; used for asset writes on paste/drop. */
   jotId: string;
-  /** Called when the user taps the photo button in the toolbar; real handler wired in Slice 4. */
-  onPhoto?: () => void;
+  /** Called after a photo is successfully inserted; receives the jotId. */
+  onPhotoInserted?: (jotId: string) => void;
+  /** Increment this number to programmatically open the webcam modal. */
+  openCameraSignal?: number;
 }
 
 type Mode = 'rich' | 'source';
@@ -85,11 +88,15 @@ export function RichMarkdownEditor({
   onWikilinkClick,
   handleRef,
   jotId,
-  onPhoto = () => {},
+  onPhotoInserted,
+  openCameraSignal,
 }: Props) {
   // Evaluated once per mount; parents remount per note via key={...}.
   const [parseFailed] = useState(() => !parsesAsRich(markdown));
   const [mode, setMode] = useState<Mode>(parseFailed ? 'source' : 'rich');
+  const [camOpen, setCamOpen] = useState(false);
+  // Track previous openCameraSignal to skip the initial mount value.
+  const prevCameraSignalRef = useRef(openCameraSignal);
 
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSaved = useRef(markdown);
@@ -217,6 +224,23 @@ export function RichMarkdownEditor({
     }
   }, [editor]);
   /* eslint-enable react-hooks/exhaustive-deps */
+
+  // Subscribe to slash-command photo event emitted by the editor extensions.
+  useEffect(() => {
+    if (!editor) return;
+    const handler = () => setCamOpen(true);
+    editor.on('gb:slash:photo' as Parameters<typeof editor.on>[0], handler);
+    return () => {
+      editor.off('gb:slash:photo' as Parameters<typeof editor.off>[0], handler);
+    };
+  }, [editor]);
+
+  // Open the camera whenever openCameraSignal is incremented (skip initial mount).
+  useEffect(() => {
+    if (openCameraSignal === prevCameraSignalRef.current) return;
+    prevCameraSignalRef.current = openCameraSignal;
+    setCamOpen(true);
+  }, [openCameraSignal]);
 
   // Populate the imperative handle so docs-assist panel and PDF export can
   // programmatically read/replace editor content without prop drilling.
@@ -355,7 +379,7 @@ export function RichMarkdownEditor({
 
   return (
     <div className="flex h-full flex-col" data-testid="rich-markdown-editor">
-      {mode === 'rich' && editor && <EditorToolbar editor={editor} onPhoto={onPhoto} />}
+      {mode === 'rich' && editor && <EditorToolbar editor={editor} onPhoto={() => setCamOpen(true)} />}
       <div className="flex-1 overflow-auto">
         {mode === 'rich' ? (
           <EditorContent
@@ -411,6 +435,16 @@ export function RichMarkdownEditor({
           </button>
         </div>
       </div>
+      <WebcamCaptureModal
+        open={camOpen}
+        onClose={() => setCamOpen(false)}
+        onCapture={(file) => {
+          if (!editorRef.current) return;
+          void insertImageFile(editorRef.current, jotIdRef.current, file)
+            .then(() => onPhotoInserted?.(jotIdRef.current))
+            .catch((e: Error) => toast.error(`photo insert failed: ${e.message}`));
+        }}
+      />
     </div>
   );
 }

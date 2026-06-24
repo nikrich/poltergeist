@@ -31,6 +31,7 @@ export function JotsScreen() {
   const list = useJots({ q: q || undefined });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showConfluenceDialog, setShowConfluenceDialog] = useState(false);
+  const [cameraSignal, setCameraSignal] = useState(0);
 
   const assistOpen = useDocsAssist((s) => s.open);
   const toggleAssist = useDocsAssist((s) => s.toggleOpen);
@@ -251,6 +252,19 @@ export function JotsScreen() {
               assist
             </Btn>
             <Btn
+              icon={<Lucide name="camera" size={13} />}
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                if (selectedId) {
+                  setCameraSignal((n) => n + 1);
+                } else {
+                  handleNew();
+                  toast.info('jot created — tap capture to add a photo');
+                }
+              }}
+            />
+            <Btn
               variant="primary"
               size="sm"
               icon={<Lucide name="plus" size={13} />}
@@ -298,6 +312,7 @@ export function JotsScreen() {
                   onWikilinkClick={openNote}
                   handleRef={editorHandle}
                   jotId={selectedId!}
+                  openCameraSignal={cameraSignal}
                 />
               </div>
               <footer className="flex items-center gap-2 border-t border-hairline px-4 py-2 text-11 text-ink-2">
