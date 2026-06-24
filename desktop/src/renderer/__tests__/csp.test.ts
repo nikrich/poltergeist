@@ -13,8 +13,9 @@ import { describe, it, expect } from 'vitest';
 function imgSrc(htmlPath: string): string {
   const html = readFileSync(htmlPath, 'utf8');
   const m = html.match(/img-src ([^;]+);/);
-  if (!m) throw new Error(`no img-src directive found in ${htmlPath}`);
-  return m[1];
+  const directive = m?.[1];
+  if (directive === undefined) throw new Error(`no img-src directive found in ${htmlPath}`);
+  return directive;
 }
 
 describe('renderer CSP allows gbasset: images', () => {
