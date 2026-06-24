@@ -44,6 +44,9 @@ const FIXTURES: Record<string, string> = {
   link: 'see [the docs](https://example.com/docs) for more',
   blockquote: '> quoted line one\n>\n> quoted line two',
   'obsidian wikilinks': 'see [[20-contexts/sanlam/_profile]] and [[a/b|Title]]',
+  'inline image': '![whiteboard](90-meta/assets/jots/2026/06/abc-1.jpg)',
+  'image among paragraphs':
+    'before the shot\n\n![photo](90-meta/assets/jots/2026/06/x-2.jpg)\n\nafter the shot',
   'mixed document':
     '# meeting notes\n\n' +
     'context for **the ascp wizard** and `route_event`:\n\n' +

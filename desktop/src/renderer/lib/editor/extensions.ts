@@ -9,6 +9,7 @@ import TableHeader from '@tiptap/extension-table-header';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import { Markdown } from 'tiptap-markdown';
+import { JotImage } from './image';
 
 /**
  * tiptap-markdown's internal MarkdownTightLists extension only registers the
@@ -48,6 +49,7 @@ export function buildEditorExtensions(): Extensions {
   return [
     StarterKit,
     Link.configure({ openOnClick: false }),
+    JotImage.configure({ inline: false, allowBase64: false }),
     Table.configure({ resizable: false }),
     TableRow,
     TableHeader,
