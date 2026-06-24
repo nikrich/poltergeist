@@ -1,6 +1,6 @@
 import { protocol, net, ipcMain } from 'electron';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname, join, resolve, sep } from 'node:path';
+import { dirname, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const ASSET_ROOT_REL = '90-meta/assets/jots';
