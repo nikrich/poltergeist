@@ -327,6 +327,14 @@ export interface AutoRouteResponse {
   context?: string | null;
 }
 
+export interface ExtractPhotoResponse {
+  id: string;
+  path: string;
+  body: string;
+  extracted: boolean;
+  reason?: string;
+}
+
 // ── Atlassian import (mirrors ghostbrain/api/models/import_atlassian.py) ──
 
 export interface ImportSpace {

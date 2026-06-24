@@ -58,8 +58,8 @@ interface Props {
   handleRef?: React.MutableRefObject<EditorHandle | null>;
   /** The jotId of the currently open note; used for asset writes on paste/drop. */
   jotId: string;
-  /** Called after a photo is successfully inserted; receives the jotId. */
-  onPhotoInserted?: (jotId: string) => void;
+  /** Called after a photo is successfully inserted; receives the jotId and asset path. */
+  onPhotoInserted?: (jotId: string, assetPath: string) => void;
   /** Increment this number to programmatically open the webcam modal. */
   openCameraSignal?: number;
 }
@@ -441,7 +441,7 @@ export function RichMarkdownEditor({
         onCapture={(file) => {
           if (!editorRef.current) return;
           void insertImageFile(editorRef.current, jotIdRef.current, file)
-            .then(() => onPhotoInserted?.(jotIdRef.current))
+            .then((path) => onPhotoInserted?.(jotIdRef.current, path))
             .catch((e: Error) => toast.error(`photo insert failed: ${e.message}`));
         }}
       />

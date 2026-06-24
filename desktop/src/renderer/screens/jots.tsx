@@ -13,6 +13,7 @@ import {
   useConnectors,
   useCreateJot,
   useDeleteJot,
+  useExtractPhoto,
   useJot,
   useJots,
   useProjects,
@@ -82,6 +83,7 @@ export function JotsScreen() {
   const updateJot = useUpdateJot();
   const routeJot = useRouteJot();
   const autoRoute = useAutoRouteJot();
+  const extractPhoto = useExtractPhoto();
   const deleteJot = useDeleteJot();
 
   // Auto-select the newest jot when the list first loads.
@@ -313,6 +315,14 @@ export function JotsScreen() {
                   handleRef={editorHandle}
                   jotId={selectedId!}
                   openCameraSignal={cameraSignal}
+                  onPhotoInserted={(jotId, assetPath) => {
+                    toast.info('reading photo…');
+                    extractPhoto.mutate({ jotId, assetPath }, {
+                      onSuccess: (res) =>
+                        res.extracted ? toast.success('photo text extracted') : toast.info(`couldn't read photo: ${res.reason ?? ''}`),
+                      onError: (err) => toast.error(`extract failed: ${err.message}`),
+                    });
+                  }}
                 />
               </div>
               <footer className="flex items-center gap-2 border-t border-hairline px-4 py-2 text-11 text-ink-2">

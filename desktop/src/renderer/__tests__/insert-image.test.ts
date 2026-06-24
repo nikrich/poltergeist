@@ -18,7 +18,8 @@ describe('insertImageFile', () => {
   it('writes the asset and inserts a markdown image at the cursor', async () => {
     const editor = new Editor({ extensions: buildEditorExtensions(), content: 'hello' });
     const file = new File([new Uint8Array([1, 2, 3])], 'shot.png', { type: 'image/png' });
-    await insertImageFile(editor, 'jotid123', file);
+    const p = await insertImageFile(editor, 'jotid123', file);
+    expect(p).toBe('90-meta/assets/jots/2026/06/j-9.png');
     expect(window.gb.assets.write).toHaveBeenCalledWith(
       expect.objectContaining({ jotId: 'jotid123', ext: 'png' }),
     );
