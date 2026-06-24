@@ -118,6 +118,7 @@ def run(
     system_prompt: str | None = None,
     budget_usd: float | None = None,
     timeout_s: int = DEFAULT_TIMEOUT_S,
+    image_paths: list[str] | None = None,
 ) -> LLMResult:
     """Run a single Claude prompt and return the result.
 
@@ -155,7 +156,13 @@ def run(
     if json_schema is not None:
         cmd.extend(["--json-schema", json.dumps(json_schema)])
 
-    cmd.append(prompt)
+    effective_prompt = prompt
+    if image_paths:
+        refs = "\n".join(f"- {p}" for p in image_paths)
+        effective_prompt = (
+            f"{prompt}\n\nRead the following image file(s) and use their contents:\n{refs}"
+        )
+    cmd.append(effective_prompt)
 
     last_err: Exception | None = None
     for attempt, delay in enumerate((0,) + RETRY_DELAYS_S):
