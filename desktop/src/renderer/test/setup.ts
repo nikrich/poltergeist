@@ -54,6 +54,10 @@ const stubBridge: GbBridge = {
   },
   tray: { setFailing: async () => ({ ok: true }) },
   clipboard: { writeRich: async () => ({ ok: true }) },
+  assets: {
+    write: async () => ({ ok: true as const, path: '90-meta/assets/jots/2026/06/stub-x.jpg' }),
+    toUrl: (p: string) => 'gbasset://asset/' + p,
+  },
   jot: {
     save: async () => ({ ok: true as const }),
     cancel: async () => ({ ok: true as const }),
