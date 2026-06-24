@@ -10,11 +10,15 @@ import {
   useCreateProject,
   useProjects,
   useRecorderSettings,
+  useReindex,
   useSchedulerDiagnostics,
+  useSearchIndexStatus,
   useUpdateProject,
   useUpdateRecorderSettings,
 } from '../lib/api/hooks';
 import { toast } from '../stores/toast';
+import { ApiError } from '../lib/api/client';
+import { formatRelativeTime } from '../lib/format';
 import { HOTKEYS, format as formatShortcut } from '../lib/shortcuts';
 import { APP_VERSION } from '../lib/version';
 import type {
@@ -38,6 +42,7 @@ async function trySet<K extends keyof Settings>(
 type SectionId =
   | 'display'
   | 'vault'
+  | 'search'
   | 'privacy'
   | 'meeting'
   | 'background'
@@ -49,6 +54,7 @@ type SectionId =
 const SECTIONS: Array<{ id: SectionId; label: string; icon: string }> = [
   { id: 'display', label: 'display', icon: 'sun' },
   { id: 'vault', label: 'vault', icon: 'hard-drive' },
+  { id: 'search', label: 'search index', icon: 'search' },
   { id: 'privacy', label: 'privacy', icon: 'shield' },
   { id: 'meeting', label: 'meetings', icon: 'mic' },
   { id: 'background', label: 'background', icon: 'activity' },
@@ -80,6 +86,7 @@ export function SettingsScreen() {
         <div className="mx-auto max-w-[720px] overflow-y-auto px-8 py-6">
           {section === 'display' && <DisplaySettings />}
           {section === 'vault' && <VaultSettings />}
+          {section === 'search' && <SearchIndexSettings />}
           {section === 'privacy' && <PrivacySettings />}
           {section === 'meeting' && <MeetingSettings />}
           {section === 'background' && <BackgroundSettings />}
@@ -583,6 +590,75 @@ function ProjectRow({
       >
         {project.archived ? 'unarchive' : 'archive'}
       </button>
+    </div>
+  );
+}
+
+export function SearchIndexSettings() {
+  const status = useSearchIndexStatus();
+  const reindex = useReindex();
+  const running = status.data?.running || reindex.isPending;
+
+  function handleReindex() {
+    reindex.mutate(undefined, {
+      onSuccess: () => toast.info('reindexing — new notes will be searchable shortly'),
+      onError: (err) => {
+        // 409 = a reindex is already running; anything else is a real failure.
+        const already = err instanceof ApiError && err.status === 409;
+        if (already) toast.info('a reindex is already running');
+        else toast.error(`reindex failed: ${err.message}`);
+      },
+    });
+  }
+
+  const lastIndexed = status.data?.lastIndexedAt;
+  return (
+    <div>
+      <SectionHeader
+        title="search index"
+        sub="vault search is powered by a semantic index that rebuilds every 15 min while the app runs. freshly imported or routed notes only become searchable after the next rebuild."
+      />
+      <SettingRow
+        label="last indexed"
+        sub={
+          status.isLoading
+            ? 'checking…'
+            : lastIndexed
+              ? `${formatRelativeTime(lastIndexed)} · ${status.data?.noteCount ?? 0} notes indexed`
+              : 'never indexed yet'
+        }
+        control={
+          running ? (
+            <span className="flex items-center gap-2 text-11 text-ink-2">
+              <Lucide
+                name="loader"
+                size={13}
+                style={{ animation: 'gb-spin 0.9s linear infinite' }}
+              />
+              indexing…
+            </span>
+          ) : (
+            <span className="font-mono text-11 text-ink-2">
+              {status.data?.model?.split('/').pop() ?? '—'}
+            </span>
+          )
+        }
+      />
+      <SettingRow
+        label="reindex now"
+        sub="rebuild the index immediately so just-imported notes are searchable without waiting for the next scheduled rebuild."
+        control={
+          <Btn
+            variant="ghost"
+            size="sm"
+            icon={<Lucide name="refresh-cw" size={13} />}
+            onClick={handleReindex}
+            disabled={running}
+          >
+            {running ? 'indexing…' : 'reindex'}
+          </Btn>
+        }
+      />
     </div>
   );
 }
