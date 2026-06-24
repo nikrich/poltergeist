@@ -11,7 +11,7 @@ export const ExtractCallout = Blockquote.extend({
   renderHTML({ HTMLAttributes, node }) {
     const text = node.firstChild?.textContent ?? '';
     const isCallout = text.startsWith(MARKER);
-    const cls = isCallout ? 'gb-extract-callout' : '';
+    const cls = isCallout ? 'gb-extract-callout' : undefined;
     return ['blockquote', { ...HTMLAttributes, class: cls }, 0];
   },
 });
