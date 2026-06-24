@@ -292,6 +292,36 @@ export function useSchedulerDiagnostics() {
   });
 }
 
+// ── Semantic search index ───────────────────────────────────────────────────
+
+export interface SearchIndexStatus {
+  /** ISO8601 of the last index rebuild, or null if never indexed. */
+  lastIndexedAt: string | null;
+  noteCount: number;
+  model: string | null;
+  /** A reindex is in flight. */
+  running: boolean;
+}
+
+export function useSearchIndexStatus() {
+  return useQuery({
+    queryKey: ['search-index', 'status'],
+    queryFn: () => get<SearchIndexStatus>('/v1/search/status'),
+    // Poll quickly while a reindex runs so the UI tracks completion; otherwise
+    // refresh lazily.
+    refetchInterval: (query) => (query.state.data?.running ? 2_000 : 30_000),
+    staleTime: 5_000,
+  });
+}
+
+export function useReindex() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => post<{ started: boolean }>('/v1/search/reindex'),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['search-index', 'status'] }),
+  });
+}
+
 export interface ConnectorSyncResult {
   connector: string;
   ok: boolean;
