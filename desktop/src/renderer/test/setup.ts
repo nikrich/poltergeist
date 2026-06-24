@@ -1,6 +1,19 @@
 import '@testing-library/jest-dom/vitest';
 import type { GbBridge, Settings } from '../../shared/types';
 
+// jsdom does not implement Blob.prototype.arrayBuffer — polyfill it so tests
+// that call file.arrayBuffer() work without a real browser environment.
+if (!Blob.prototype.arrayBuffer) {
+  Blob.prototype.arrayBuffer = function (): Promise<ArrayBuffer> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as ArrayBuffer);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsArrayBuffer(this);
+    });
+  };
+}
+
 const defaultSettings: Settings = {
   theme: 'dark',
   density: 'comfortable',

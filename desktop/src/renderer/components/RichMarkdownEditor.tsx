@@ -3,6 +3,7 @@ import { Editor } from '@tiptap/core';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { buildEditorExtensions } from '../lib/editor/extensions';
 import { clipboardPayload, getMarkdown, restoreWikilinks } from '../lib/editor/markdown';
+import { insertImageFile } from '../lib/editor/insert-image';
 import { toast } from '../stores/toast';
 import { Btn } from './Btn';
 import { JotEditor } from './JotEditor';
@@ -53,6 +54,8 @@ interface Props {
   onWikilinkClick?: (target: string) => void;
   /** Populated with imperative methods for the docs-assist panel and PDF export. */
   handleRef?: React.MutableRefObject<EditorHandle | null>;
+  /** The jotId of the currently open note; used for asset writes on paste/drop. */
+  jotId?: string;
 }
 
 type Mode = 'rich' | 'source';
@@ -78,6 +81,7 @@ export function RichMarkdownEditor({
   onEditorReady,
   onWikilinkClick,
   handleRef,
+  jotId = '',
 }: Props) {
   // Evaluated once per mount; parents remount per note via key={...}.
   const [parseFailed] = useState(() => !parsesAsRich(markdown));
@@ -93,6 +97,11 @@ export function RichMarkdownEditor({
   const handleCopyRef = useRef<() => void>(() => {});
   // Same pattern for wikilink click — ref keeps the callback fresh.
   const onWikilinkClickRef = useRef<((target: string) => void) | undefined>(undefined);
+  // editorProps callbacks are captured once — route editor instance and jotId
+  // through refs so handlePaste/handleDrop always see fresh values.
+  const editorRef = useRef<Editor | null>(null);
+  const jotIdRef = useRef(jotId);
+  jotIdRef.current = jotId;
 
   useEffect(() => {
     if (parseFailed) {
@@ -159,6 +168,32 @@ export function RichMarkdownEditor({
         }
         return false;
       },
+      handlePaste: (_view, event) => {
+        const files = Array.from(event.clipboardData?.files ?? []).filter((f) =>
+          f.type.startsWith('image/'),
+        );
+        if (files.length === 0 || !editorRef.current) return false;
+        event.preventDefault();
+        files.forEach((f) =>
+          void insertImageFile(editorRef.current!, jotIdRef.current, f).catch((e: Error) =>
+            toast.error(`image insert failed: ${e.message}`),
+          ),
+        );
+        return true;
+      },
+      handleDrop: (_view, event) => {
+        const files = Array.from((event as DragEvent).dataTransfer?.files ?? []).filter((f) =>
+          f.type.startsWith('image/'),
+        );
+        if (files.length === 0 || !editorRef.current) return false;
+        event.preventDefault();
+        files.forEach((f) =>
+          void insertImageFile(editorRef.current!, jotIdRef.current, f).catch((e: Error) =>
+            toast.error(`image insert failed: ${e.message}`),
+          ),
+        );
+        return true;
+      },
     },
     onUpdate: ({ editor: updated }) => {
       scheduleSave(getMarkdown(updated));
@@ -172,7 +207,10 @@ export function RichMarkdownEditor({
   // render but must only fire once per editor instance.
   /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
-    if (editor) onEditorReady?.(editor);
+    if (editor) {
+      editorRef.current = editor;
+      onEditorReady?.(editor);
+    }
   }, [editor]);
   /* eslint-enable react-hooks/exhaustive-deps */
 

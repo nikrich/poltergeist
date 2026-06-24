@@ -297,6 +297,7 @@ export function JotsScreen() {
                   onSave={handleSaveBody}
                   onWikilinkClick={openNote}
                   handleRef={editorHandle}
+                  jotId={selectedId!}
                 />
               </div>
               <footer className="flex items-center gap-2 border-t border-hairline px-4 py-2 text-11 text-ink-2">
