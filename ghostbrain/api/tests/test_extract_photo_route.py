@@ -5,14 +5,22 @@ Uses the shared `client` / `auth_headers` fixtures from conftest.
 from unittest.mock import patch
 
 from ghostbrain.api.repo import notes_manual
+from ghostbrain.api.routes import notes as notes_routes
 
 
 def test_extract_route_appends(client, auth_headers, tmp_vault):
-    """Happy path: patched helper returns extracted=True → 200 + extracted."""
+    """Happy path: patched helper returns extracted=True → 200 + extracted.
+
+    The route binds the helper via ``from ...notes_manual import
+    extract_photo_into_jot``, so the patch MUST target the name in the route
+    module (``notes_routes``), not the origin module — otherwise the real
+    helper runs and the result depends on whether a ``claude`` binary is
+    present (it isn't in CI), making the test environment-dependent.
+    """
     rec = notes_manual.write_inbox_jot("shot\n\n")
 
     with patch.object(
-        notes_manual,
+        notes_routes,
         "extract_photo_into_jot",
         return_value={
             "id": rec["id"],
@@ -28,7 +36,12 @@ def test_extract_route_appends(client, auth_headers, tmp_vault):
         )
 
     assert r.status_code == 200
-    assert r.json()["extracted"] is True
+    body = r.json()
+    assert body["extracted"] is True
+    # Assert on the patched sentinel body too: proves the patch intercepted the
+    # route's call (the real helper could never produce exactly this), so the
+    # test can't false-pass on environments where a real `claude` binary exists.
+    assert body["body"] == "shot\n\n> **Extracted from photo**\n> hi\n"
 
 
 def test_extract_route_404(client, auth_headers, tmp_vault):
