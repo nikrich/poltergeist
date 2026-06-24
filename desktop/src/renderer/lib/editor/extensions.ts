@@ -11,6 +11,7 @@ import TaskItem from '@tiptap/extension-task-item';
 import { Markdown } from 'tiptap-markdown';
 import { JotImage } from './image';
 import { SlashExtension } from './slash';
+import { ExtractCallout } from './extract-callout';
 
 /**
  * tiptap-markdown's internal MarkdownTightLists extension only registers the
@@ -48,7 +49,8 @@ const TaskListTight = Extension.create({
  */
 export function buildEditorExtensions(): Extensions {
   return [
-    StarterKit,
+    StarterKit.configure({ blockquote: false }),
+    ExtractCallout,
     Link.configure({ openOnClick: false }),
     JotImage.configure({ inline: false, allowBase64: false }),
     Table.configure({ resizable: false }),
