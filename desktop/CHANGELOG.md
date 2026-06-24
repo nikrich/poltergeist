@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.3.8](https://github.com/nikrich/poltergeist/compare/v0.3.7...v0.3.8) (2026-06-24)
+
+
+### Features
+
+* **jots:** Expose gb.assets bridge (write + toUrl) ([a308ea2](https://github.com/nikrich/poltergeist/commit/a308ea2154dce8975bbf6dd5b84a9f6f1707fe0a))
+* **jots:** Final visual polish + inline image CSS ([ee9202b](https://github.com/nikrich/poltergeist/commit/ee9202b8c8a271c394fcc64496c4c7c0c172853c))
+* **jots:** Formatting toolbar ([869ca25](https://github.com/nikrich/poltergeist/commit/869ca2515256b4a3b246cc29d5fff7aacb3d5de1))
+* **jots:** Gbasset:// protocol + asset write IPC ([ea3c044](https://github.com/nikrich/poltergeist/commit/ea3c0446d3e236c936a2ebbc023eb4cab27f6aaf))
+* **jots:** Grant camera permission + NSCameraUsageDescription + entitlement ([a1af494](https://github.com/nikrich/poltergeist/commit/a1af494a0203f424c88f243af320d21dbd1c56d4))
+* **jots:** Inline image node with gbasset rendering + md round-trip ([d152886](https://github.com/nikrich/poltergeist/commit/d1528861d514198868afeef639778fb51a6abd73))
+* **jots:** Neon extract-callout rendering (md-portable) ([387a552](https://github.com/nikrich/poltergeist/commit/387a55265f741c05735962c462c54dc8dca4cae0))
+* **jots:** Open webcam from toolbar, slash, and top bar ([df2346d](https://github.com/nikrich/poltergeist/commit/df2346df385a64732d73372dddae213ae2cd8896))
+* **jots:** Paste/drop image insertion ([08fcbd5](https://github.com/nikrich/poltergeist/commit/08fcbd5962c41640d96431cf057cffcc758411f3))
+* **jots:** Slash command menu ([7c1c299](https://github.com/nikrich/poltergeist/commit/7c1c299bb52d1619787bb22283ab3747007bfd35))
+* **jots:** Thumbnails in the jot tree ([c7cd7e4](https://github.com/nikrich/poltergeist/commit/c7cd7e4fa0a869ea9c31dc52b1ee8de1f85692b7))
+* **jots:** Trigger vision extraction after photo insert ([3aa568d](https://github.com/nikrich/poltergeist/commit/3aa568d360228d3bad52d18d55cef04699296e7e))
+* **jots:** Webcam capture modal ([db2d1bf](https://github.com/nikrich/poltergeist/commit/db2d1bfbcbac3152d4bcc78b3928e5e81106f76b))
+* **jots:** WYSIWYG editor, webcam capture, vision extraction ([f6ddc43](https://github.com/nikrich/poltergeist/commit/f6ddc43dbf9f1a9b90e4f0e5259889490766ea48))
+
+
+### Bug Fixes
+
+* **jots:** Allow gbasset: scheme in renderer CSP so vault images load ([0953f00](https://github.com/nikrich/poltergeist/commit/0953f00254069788c2fed42a3f70b1a9652f388a))
+* **jots:** Drop unused join import in assets.ts ([31f919f](https://github.com/nikrich/poltergeist/commit/31f919f49bf0cdd780299563761811a469ae380a))
+* **jots:** Guard webcam getUserMedia race + restore test prototype stubs ([2275ded](https://github.com/nikrich/poltergeist/commit/2275ded69e601707095929bb16dc3b041980d95f))
+* **jots:** Reconcile editor after extraction (prevent callout overwrite); empty vision result -&gt; extracted=false ([d1429e5](https://github.com/nikrich/poltergeist/commit/d1429e56cb7cdef39659c4aa9c593cc16e43c309))
+* **jots:** Require jotId prop + cover image-insert failure path ([bdb613f](https://github.com/nikrich/poltergeist/commit/bdb613f718f3756dd210654520292148aaf225e1))
+* **jots:** Satisfy noUncheckedIndexedAccess in CSP test ([d67400a](https://github.com/nikrich/poltergeist/commit/d67400a626264dc60bd4797868f101b237da4a90))
+
 ## [0.3.7](https://github.com/nikrich/poltergeist/compare/v0.3.6...v0.3.7) (2026-06-22)
 
 
