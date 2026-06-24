@@ -25,4 +25,23 @@ describe('insertImageFile', () => {
     expect(getMarkdown(editor)).toContain('![](90-meta/assets/jots/2026/06/j-9.png)');
     editor.destroy();
   });
+
+  it('throws and inserts no image node when the asset write fails', async () => {
+    window.gb = {
+      ...window.gb,
+      assets: {
+        write: vi.fn(async (): Promise<{ ok: false; error: string }> => ({
+          ok: false,
+          error: 'disk full',
+        })),
+        toUrl: (p: string) => 'gbasset://asset/' + p,
+      },
+    };
+    const editor = new Editor({ extensions: buildEditorExtensions(), content: 'hello' });
+    const file = new File([new Uint8Array([1, 2, 3])], 'photo.jpg', { type: 'image/jpeg' });
+    await expect(insertImageFile(editor, 'jotid456', file)).rejects.toThrow('disk full');
+    expect(getMarkdown(editor)).not.toContain('![');
+    expect(getMarkdown(editor)).not.toContain('90-meta/assets');
+    editor.destroy();
+  });
 });

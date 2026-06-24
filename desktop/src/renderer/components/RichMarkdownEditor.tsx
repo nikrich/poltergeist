@@ -55,7 +55,7 @@ interface Props {
   /** Populated with imperative methods for the docs-assist panel and PDF export. */
   handleRef?: React.MutableRefObject<EditorHandle | null>;
   /** The jotId of the currently open note; used for asset writes on paste/drop. */
-  jotId?: string;
+  jotId: string;
 }
 
 type Mode = 'rich' | 'source';
@@ -81,7 +81,7 @@ export function RichMarkdownEditor({
   onEditorReady,
   onWikilinkClick,
   handleRef,
-  jotId = '',
+  jotId,
 }: Props) {
   // Evaluated once per mount; parents remount per note via key={...}.
   const [parseFailed] = useState(() => !parsesAsRich(markdown));

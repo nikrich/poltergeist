@@ -23,7 +23,7 @@ describe('RichMarkdownEditor', () => {
 
   it('renders markdown as rich nodes', () => {
     const { container } = render(
-      <RichMarkdownEditor markdown={'# title\n\nbody text'} onSave={() => {}} />,
+      <RichMarkdownEditor markdown={'# title\n\nbody text'} onSave={() => {}} jotId="test" />,
     );
     const h1 = container.querySelector('h1');
     expect(h1).not.toBeNull();
@@ -37,6 +37,7 @@ describe('RichMarkdownEditor', () => {
       <RichMarkdownEditor
         markdown=""
         onSave={() => {}}
+        jotId="test"
         onEditorReady={(e) => {
           editor = e;
         }}
@@ -66,6 +67,7 @@ describe('RichMarkdownEditor', () => {
       <RichMarkdownEditor
         markdown="initial"
         onSave={onSave}
+        jotId="test"
         onEditorReady={(e) => {
           editor = e;
         }}
@@ -88,7 +90,7 @@ describe('RichMarkdownEditor', () => {
 
   it('does not save when content is unchanged', () => {
     const onSave = vi.fn();
-    render(<RichMarkdownEditor markdown="same" onSave={onSave} debounceMs={100} />);
+    render(<RichMarkdownEditor markdown="same" onSave={onSave} debounceMs={100} jotId="test" />);
     act(() => {
       vi.advanceTimersByTime(500);
     });
@@ -102,6 +104,7 @@ describe('RichMarkdownEditor', () => {
       <RichMarkdownEditor
         markdown="A"
         onSave={onSave}
+        jotId="test"
         onEditorReady={(e) => {
           editor = e;
         }}
@@ -113,7 +116,7 @@ describe('RichMarkdownEditor', () => {
     });
     // Switch to note B before the debounce fires (component stays mounted).
     rerender(
-      <RichMarkdownEditor markdown="B" onSave={onSave} onEditorReady={() => {}} />,
+      <RichMarkdownEditor markdown="B" onSave={onSave} jotId="test" onEditorReady={() => {}} />,
     );
     act(() => {
       vi.advanceTimersByTime(2000);
@@ -128,6 +131,7 @@ describe('RichMarkdownEditor', () => {
       <RichMarkdownEditor
         markdown="A"
         onSave={onSave}
+        jotId="test"
         onEditorReady={(e) => {
           editor = e;
         }}
@@ -145,7 +149,7 @@ describe('RichMarkdownEditor', () => {
 
   it('swaps to the CodeMirror source editor via the footer toggle', () => {
     const { container } = render(
-      <RichMarkdownEditor markdown={'# title'} onSave={() => {}} />,
+      <RichMarkdownEditor markdown={'# title'} onSave={() => {}} jotId="test" />,
     );
     expect(container.querySelector('.cm-editor')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'src' }));
@@ -172,6 +176,7 @@ describe('RichMarkdownEditor wikilink click-to-navigate', () => {
       <RichMarkdownEditor
         markdown="See [[20-contexts/personal/_profile]] for details."
         onSave={() => {}}
+        jotId="test"
         onWikilinkClick={onWikilinkClick}
         onEditorReady={(e) => {
           editor = e;
@@ -207,6 +212,7 @@ describe('RichMarkdownEditor wikilink click-to-navigate', () => {
       <RichMarkdownEditor
         markdown="Link: [[a/b|Title Here]] end."
         onSave={() => {}}
+        jotId="test"
         onWikilinkClick={onWikilinkClick}
         onEditorReady={(e) => {
           editor = e;
@@ -238,6 +244,7 @@ describe('RichMarkdownEditor wikilink click-to-navigate', () => {
       <RichMarkdownEditor
         markdown="See [[first/note]] and [[second/note]] here."
         onSave={() => {}}
+        jotId="test"
         onWikilinkClick={onWikilinkClick}
         onEditorReady={(e) => {
           editor = e;
@@ -272,6 +279,7 @@ describe('RichMarkdownEditor wikilink click-to-navigate', () => {
       <RichMarkdownEditor
         markdown="Just plain text here."
         onSave={() => {}}
+        jotId="test"
         onWikilinkClick={onWikilinkClick}
         onEditorReady={(e) => {
           editor = e;
@@ -296,6 +304,7 @@ describe('RichMarkdownEditor wikilink click-to-navigate', () => {
       <RichMarkdownEditor
         markdown="See [[some/note]] done."
         onSave={() => {}}
+        jotId="test"
         onEditorReady={(e) => {
           editor = e;
         }}
@@ -338,7 +347,7 @@ describe('RichMarkdownEditor copy-formatted', () => {
     const writeRich = vi.fn().mockResolvedValue({ ok: true });
     window.gb = { ...window.gb, clipboard: { writeRich } };
     render(
-      <RichMarkdownEditor markdown={'# title\n\nsome **bold** text'} onSave={() => {}} />,
+      <RichMarkdownEditor markdown={'# title\n\nsome **bold** text'} onSave={() => {}} jotId="test" />,
     );
     fireEvent.click(screen.getByRole('button', { name: /copy formatted/ }));
     await waitFor(() => expect(writeRich).toHaveBeenCalledTimes(1));
@@ -356,6 +365,7 @@ describe('RichMarkdownEditor copy-formatted', () => {
       <RichMarkdownEditor
         markdown={'# title\n\nsecond paragraph'}
         onSave={() => {}}
+        jotId="test"
         onEditorReady={(e) => {
           editor = e;
         }}
@@ -386,6 +396,7 @@ describe('RichMarkdownEditor copy-formatted', () => {
       <RichMarkdownEditor
         markdown="shortcut me"
         onSave={() => {}}
+        jotId="test"
         onEditorReady={(e) => {
           editor = e;
         }}
@@ -399,7 +410,7 @@ describe('RichMarkdownEditor copy-formatted', () => {
   it('shows a success toast after copying', async () => {
     const writeRich = vi.fn().mockResolvedValue({ ok: true });
     window.gb = { ...window.gb, clipboard: { writeRich } };
-    render(<RichMarkdownEditor markdown="x" onSave={() => {}} />);
+    render(<RichMarkdownEditor markdown="x" onSave={() => {}} jotId="test" />);
     fireEvent.click(screen.getByRole('button', { name: /copy formatted/ }));
     await waitFor(() =>
       expect(
@@ -411,7 +422,7 @@ describe('RichMarkdownEditor copy-formatted', () => {
   it('shows an error toast when the clipboard write fails', async () => {
     const writeRich = vi.fn().mockResolvedValue({ ok: false, error: 'nope' });
     window.gb = { ...window.gb, clipboard: { writeRich } };
-    render(<RichMarkdownEditor markdown="x" onSave={() => {}} />);
+    render(<RichMarkdownEditor markdown="x" onSave={() => {}} jotId="test" />);
     fireEvent.click(screen.getByRole('button', { name: /copy formatted/ }));
     await waitFor(() =>
       expect(
@@ -423,7 +434,7 @@ describe('RichMarkdownEditor copy-formatted', () => {
   });
 
   it('hides the copy button in source mode', () => {
-    render(<RichMarkdownEditor markdown="x" onSave={() => {}} />);
+    render(<RichMarkdownEditor markdown="x" onSave={() => {}} jotId="test" />);
     fireEvent.click(screen.getByRole('button', { name: 'src' }));
     expect(screen.queryByRole('button', { name: /copy formatted/ })).toBeNull();
   });
@@ -445,7 +456,7 @@ describe('RichMarkdownEditor EditorHandle', () => {
   it('populates handleRef on mount and nulls it on unmount', () => {
     const handleRef = { current: null as EditorHandle | null };
     const { unmount } = render(
-      <RichMarkdownEditor markdown="hello" onSave={() => {}} handleRef={handleRef} />,
+      <RichMarkdownEditor markdown="hello" onSave={() => {}} jotId="test" handleRef={handleRef} />,
     );
     expect(handleRef.current).not.toBeNull();
     unmount();
@@ -458,6 +469,7 @@ describe('RichMarkdownEditor EditorHandle', () => {
       <RichMarkdownEditor
         markdown="# heading\n\nbody text"
         onSave={() => {}}
+        jotId="test"
         handleRef={handleRef}
       />,
     );
@@ -471,7 +483,7 @@ describe('RichMarkdownEditor EditorHandle', () => {
   it('getHTML returns non-empty HTML in rich mode', () => {
     const handleRef = { current: null as EditorHandle | null };
     render(
-      <RichMarkdownEditor markdown="# title" onSave={() => {}} handleRef={handleRef} />,
+      <RichMarkdownEditor markdown="# title" onSave={() => {}} jotId="test" handleRef={handleRef} />,
     );
     const html = handleRef.current?.getHTML();
     expect(html).toBeTruthy();
@@ -485,6 +497,7 @@ describe('RichMarkdownEditor EditorHandle', () => {
       <RichMarkdownEditor
         markdown="some content"
         onSave={() => {}}
+        jotId="test"
         handleRef={handleRef}
         onEditorReady={(e) => {
           editor = e;
@@ -506,6 +519,7 @@ describe('RichMarkdownEditor EditorHandle', () => {
         markdown="original"
         onSave={onSave}
         debounceMs={500}
+        jotId="test"
         handleRef={handleRef}
       />,
     );
@@ -535,6 +549,7 @@ describe('RichMarkdownEditor EditorHandle', () => {
         markdown={'# keep\n\nreplace me'}
         onSave={onSave}
         debounceMs={500}
+        jotId="test"
         handleRef={handleRef}
         onEditorReady={(e) => {
           editor = e;
