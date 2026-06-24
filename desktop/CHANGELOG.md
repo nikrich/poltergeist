@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.9](https://github.com/nikrich/poltergeist/compare/v0.3.8...v0.3.9) (2026-06-24)
+
+
+### Features
+
+* **search:** Show last-indexed time + manual reindex in Settings ([#48](https://github.com/nikrich/poltergeist/issues/48)) ([8b8733d](https://github.com/nikrich/poltergeist/commit/8b8733d079951fdca12dc07e669e0d2ebaa7cafc))
+
 ## [0.3.8](https://github.com/nikrich/poltergeist/compare/v0.3.7...v0.3.8) (2026-06-24)
 
 
