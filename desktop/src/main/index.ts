@@ -18,12 +18,21 @@ import {
 } from './meeting-notifier';
 import { installJotOverlay } from './jot-overlay';
 import { installClipboardBridge } from './clipboard';
+import {
+  registerGbAssetScheme,
+  registerAssetProtocol,
+  installAssetBridge,
+} from './assets';
 
 // Repo root: in dev, that's one level up from the desktop/ project dir
 // (app.getAppPath() resolves to the desktop/ folder). In prod (Phase 2 bundles
 // the sidecar as a binary), this changes.
 function repoRoot(): string {
   return join(app.getAppPath(), '..');
+}
+
+function vaultRoot(): string {
+  return settings.getAll().vaultPath ?? '';
 }
 
 const sidecar = new Sidecar(repoRoot(), {
@@ -129,6 +138,9 @@ ipcMain.handle('gb:dialogs:pickVaultFolder', () => pickVaultFolder());
 
 installClipboardBridge();
 
+// Privileged scheme must be registered before the app is ready.
+registerGbAssetScheme();
+
 ipcMain.handle('gb:shell:openPath', async (_e, p: unknown) => {
   if (typeof p !== 'string' || p === '') {
     return { ok: false, error: 'openPath: path must be a non-empty string' };
@@ -171,6 +183,8 @@ ipcMain.handle('gb:shell:openExternal', async (_e, url: unknown) => {
 });
 
 app.whenReady().then(async () => {
+  registerAssetProtocol(vaultRoot);
+  installAssetBridge(vaultRoot);
   buildAppMenu();
   createWindow();
   trayController = installTray({
