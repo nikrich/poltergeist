@@ -10,6 +10,7 @@ import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import { Markdown } from 'tiptap-markdown';
 import { JotImage } from './image';
+import { SlashExtension } from './slash';
 
 /**
  * tiptap-markdown's internal MarkdownTightLists extension only registers the
@@ -57,6 +58,7 @@ export function buildEditorExtensions(): Extensions {
     TaskList,
     TaskItem.configure({ nested: true }),
     TaskListTight,
+    SlashExtension,
     Markdown.configure({
       html: false, // vault files are plain markdown; raw HTML is dropped
       tightLists: true,
