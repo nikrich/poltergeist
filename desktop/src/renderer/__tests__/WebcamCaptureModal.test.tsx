@@ -1,9 +1,13 @@
 // desktop/src/renderer/__tests__/WebcamCaptureModal.test.tsx
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { WebcamCaptureModal } from '../components/WebcamCaptureModal';
 
 const stop = vi.fn();
+const originalPlay = HTMLMediaElement.prototype.play;
+const originalGetContext = HTMLCanvasElement.prototype.getContext;
+const originalToBlob = HTMLCanvasElement.prototype.toBlob;
+
 beforeEach(() => {
   stop.mockClear();
   const track = { stop, kind: 'video' };
@@ -23,6 +27,12 @@ beforeEach(() => {
   HTMLCanvasElement.prototype.toBlob = function (cb: BlobCallback) {
     cb(new Blob([new Uint8Array([1])], { type: 'image/jpeg' }));
   };
+});
+
+afterEach(() => {
+  HTMLMediaElement.prototype.play = originalPlay;
+  HTMLCanvasElement.prototype.getContext = originalGetContext;
+  HTMLCanvasElement.prototype.toBlob = originalToBlob;
 });
 
 describe('WebcamCaptureModal', () => {

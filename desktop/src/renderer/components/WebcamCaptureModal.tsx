@@ -23,9 +23,14 @@ export function WebcamCaptureModal({ open, onClose, onCapture }: Props) {
     streamRef.current = null;
   }
 
-  async function startStream() {
+  async function startStream(active: boolean) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      if (!active) {
+        // Modal was closed or unmounted before getUserMedia resolved; clean up immediately.
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -39,9 +44,13 @@ export function WebcamCaptureModal({ open, onClose, onCapture }: Props) {
 
   useEffect(() => {
     if (!open) return;
+    let active = true;
     setPhase('live');
-    void startStream();
-    return () => stopStream();
+    void startStream(active);
+    return () => {
+      active = false;
+      stopStream();
+    };
   }, [open]); // startStream/stopStream are stable inner functions; open is the only reactive dep
 
   function handleClose() {
@@ -105,7 +114,7 @@ export function WebcamCaptureModal({ open, onClose, onCapture }: Props) {
             </button>
           ) : (
             <>
-              <Btn variant="ghost" size="sm" onClick={() => { setPhase('live'); void startStream(); }}>↺ retake</Btn>
+              <Btn variant="ghost" size="sm" onClick={() => { setPhase('live'); void startStream(true); }}>↺ retake</Btn>
               <Btn variant="primary" size="sm" className="ml-auto" onClick={usePhoto}>use photo →</Btn>
             </>
           )}
