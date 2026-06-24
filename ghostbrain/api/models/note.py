@@ -1,7 +1,7 @@
 """Note-viewer schemas + jot list/detail schemas."""
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Note(BaseModel):
@@ -56,3 +56,7 @@ class UpdateNoteBodyRequest(BaseModel):
 class RouteNoteRequest(BaseModel):
     context: str
     project: str | None = None
+
+
+class ExtractPhotoRequest(BaseModel):
+    assetPath: str = Field(min_length=1, max_length=500)

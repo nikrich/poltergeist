@@ -301,6 +301,7 @@ export interface JotListItem {
   created: string;
   updated: string;
   project?: string | null;
+  thumbnail?: string | null;
 }
 
 export interface JotsPage {
@@ -325,6 +326,14 @@ export interface AutoRouteResponse {
   path: string;
   routingStatus: JotRoutingStatus;
   context?: string | null;
+}
+
+export interface ExtractPhotoResponse {
+  id: string;
+  path: string;
+  body: string;
+  extracted: boolean;
+  reason?: string;
 }
 
 // ── Atlassian import (mirrors ghostbrain/api/models/import_atlassian.py) ──

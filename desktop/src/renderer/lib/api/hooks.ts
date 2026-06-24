@@ -4,6 +4,7 @@ import type {
   ActivityRow,
   AgendaItem,
   AutoRouteResponse,
+  ExtractPhotoResponse,
   Capture,
   CapturesPage,
   ConfluenceExportRequest,
@@ -460,6 +461,18 @@ export function useAutoRouteJot() {
   return useMutation({
     mutationFn: (id: string) =>
       post<AutoRouteResponse>(`/v1/notes/${encodeURIComponent(id)}/route-auto`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: JOTS_KEY });
+      qc.invalidateQueries({ queryKey: ['note-by-path'] });
+    },
+  });
+}
+
+export function useExtractPhoto() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ jotId, assetPath }: { jotId: string; assetPath: string }) =>
+      post<ExtractPhotoResponse>(`/v1/notes/${encodeURIComponent(jotId)}/extract-photo`, { assetPath }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: JOTS_KEY });
       qc.invalidateQueries({ queryKey: ['note-by-path'] });

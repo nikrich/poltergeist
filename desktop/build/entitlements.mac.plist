@@ -31,5 +31,11 @@
          in Info.plist supplies the user-facing prompt text. -->
     <key>com.apple.security.device.audio-input</key>
     <true/>
+
+    <!-- Camera access for webcam photo capture in jots. Without this
+         entitlement, hardened-runtime binaries are silently denied camera
+         input. NSCameraUsageDescription in Info.plist supplies the prompt. -->
+    <key>com.apple.security.device.camera</key>
+    <true/>
 </dict>
 </plist>

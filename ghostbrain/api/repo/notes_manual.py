@@ -16,6 +16,13 @@ from typing import Any, Iterable
 _SLUG_MAX = 32
 _TITLE_MAX = 80
 _TAG_RE = re.compile(r"(?:^|\s)#([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)", re.IGNORECASE)
+_IMG_RE = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
+
+
+def first_image_path(body: str) -> str | None:
+    """Return the vault-relative path of the first embedded image, or None."""
+    m = _IMG_RE.search(body)
+    return m.group(1) if m else None
 
 
 def make_slug(text: str) -> str:
@@ -64,6 +71,8 @@ def title_from_body(body: str) -> str:
 import frontmatter  # noqa: E402 — placed after pure helpers deliberately
 
 from ghostbrain.paths import vault_path  # noqa: E402
+from ghostbrain.llm.client import run as llm_run  # noqa: E402
+from ghostbrain.llm.client import LLMError  # noqa: E402
 
 log = logging.getLogger("ghostbrain.api.repo.notes_manual")
 
@@ -298,6 +307,69 @@ def delete_jot(jot_id: str) -> None:
     path.unlink()
 
 
+# ---------------------------------------------------------------------------
+# Vision extraction: photo → callout
+# ---------------------------------------------------------------------------
+
+_EXTRACT_PROMPT = (
+    "Transcribe and concisely summarize the readable content of this image as "
+    "plain markdown. No preamble, no surrounding commentary — just the content."
+)
+
+
+def _callout(text: str) -> str:
+    body = text.strip() or "(no readable content)"
+    quoted = "\n".join(f"> {line}" if line else ">" for line in body.split("\n"))
+    return f"> **Extracted from photo**\n{quoted}"
+
+
+def extract_photo_into_jot(jot_id: str, asset_rel_path: str) -> dict:
+    """Run the vision model on an embedded asset and append the result as a
+    callout to the jot body. Never raises on LLM failure."""
+    try:
+        abs_asset = _guard_inside_vault(_vault() / asset_rel_path)
+        asset_root = (_vault() / "90-meta" / "assets").resolve()
+        if asset_root not in abs_asset.parents:
+            return {
+                "id": jot_id,
+                "path": "",
+                "body": "",
+                "extracted": False,
+                "reason": "asset path outside the asset dir",
+            }
+    except ValueError:
+        return {
+            "id": jot_id,
+            "path": "",
+            "body": "",
+            "extracted": False,
+            "reason": "asset path outside the asset dir",
+        }
+    record = read_jot(jot_id)  # raises JotNotFound if missing
+    try:
+        result = llm_run(_EXTRACT_PROMPT, image_paths=[str(abs_asset)], model="sonnet")
+        text = getattr(result, "text", "") or ""
+    except LLMError as e:
+        return {
+            "id": jot_id,
+            "path": record["path"],
+            "body": record["body"],
+            "extracted": False,
+            "reason": f"vision failed: {e}",
+        }
+    if not text.strip():
+        return {
+            "id": jot_id,
+            "path": record["path"],
+            "body": record["body"],
+            "extracted": False,
+            "reason": "no readable content in photo",
+        }
+    new_body = record["body"].rstrip() + "\n\n" + _callout(text) + "\n"
+    saved = update_jot_body(jot_id, new_body)
+    return {"id": jot_id, "path": saved["path"], "body": new_body, "extracted": True}
+
+
 def list_jots(
     *,
     limit: int = 100,
@@ -329,6 +401,7 @@ def list_jots(
             "created": post.get("created") or "",
             "updated": post.get("updated") or "",
             "project": post.get("project"),
+            "thumbnail": first_image_path(body),
         }
         if context is not None and item["context"] != context:
             continue

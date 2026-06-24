@@ -28,3 +28,4 @@ desktop/resources/sidecar/
 
 # Claude Code linked worktrees (skills under .claude/skills/ ARE tracked)
 .claude/worktrees/
+.superpowers/

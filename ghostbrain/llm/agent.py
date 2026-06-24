@@ -176,6 +176,8 @@ def build_chat_command(
     model: str = DEFAULT_CHAT_MODEL,
     session_id: str | None = None,
     mcp_binary: str | list[str] | None = None,
+    system_prompt: str | None = None,
+    allowed_tools: str | None = None,
 ) -> list[str]:
     cmd = [
         binary,
@@ -184,7 +186,7 @@ def build_chat_command(
         "--include-partial-messages",
         "--verbose",  # required by claude for stream-json with --print
         "--model", model,
-        "--system-prompt", CHAT_SYSTEM_PROMPT,
+        "--system-prompt", system_prompt or CHAT_SYSTEM_PROMPT,
         "--exclude-dynamic-system-prompt-sections",
         "--max-budget-usd", f"{CHAT_BUDGET_USD:.4f}",
     ]
@@ -208,7 +210,7 @@ def build_chat_command(
         "--strict-mcp-config",
     ]
     if mcp_binary:
-        cmd += ["--allowedTools", ALLOWED_TOOLS]
+        cmd += ["--allowedTools", allowed_tools or ALLOWED_TOOLS]
     if session_id:
         cmd += ["--resume", session_id]
     # `--` terminates option parsing — without it a variadic flag like
@@ -242,6 +244,8 @@ def run_chat_turn(
     binary: str | None = None,
     mcp_binary: str | None = "auto",
     turn_key: str | None = None,
+    system_prompt: str | None = None,
+    allowed_tools: str | None = None,
 ):
     """Yield event dicts for one agentic chat turn.
 
@@ -268,7 +272,11 @@ def run_chat_turn(
             return
 
     cmd = build_chat_command(
-        binary, prompt, session_id=session_id, mcp_binary=mcp_binary
+        binary, prompt,
+        session_id=session_id,
+        mcp_binary=mcp_binary,
+        system_prompt=system_prompt,
+        allowed_tools=allowed_tools,
     )
     log.info("chat turn: resume=%s mcp=%s", bool(session_id), bool(mcp_binary))
     proc = subprocess.Popen(
