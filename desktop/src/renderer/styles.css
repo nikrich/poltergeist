@@ -287,3 +287,4 @@ body[data-theme='light'] {
 .gb-prose th { background: var(--vellum); font-weight: 600; color: var(--ink-0); }
 .gb-prose em { color: var(--ink-1); }
 .gb-prose strong { color: var(--ink-0); }
+.gb-jot-img { max-width: 100%; border-radius: 8px; border: 1px solid var(--hairline-2); margin: 6px 0; }

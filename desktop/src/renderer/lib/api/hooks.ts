@@ -472,7 +472,7 @@ export function useExtractPhoto() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ jotId, assetPath }: { jotId: string; assetPath: string }) =>
-      post<ExtractPhotoResponse>(`/v1/notes/${jotId}/extract-photo`, { assetPath }),
+      post<ExtractPhotoResponse>(`/v1/notes/${encodeURIComponent(jotId)}/extract-photo`, { assetPath }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: JOTS_KEY });
       qc.invalidateQueries({ queryKey: ['note-by-path'] });
