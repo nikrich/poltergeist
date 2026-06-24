@@ -6,6 +6,7 @@ import { clipboardPayload, getMarkdown, restoreWikilinks } from '../lib/editor/m
 import { insertImageFile } from '../lib/editor/insert-image';
 import { toast } from '../stores/toast';
 import { Btn } from './Btn';
+import { EditorToolbar } from './EditorToolbar';
 import { JotEditor } from './JotEditor';
 import { Lucide } from './Lucide';
 
@@ -56,6 +57,8 @@ interface Props {
   handleRef?: React.MutableRefObject<EditorHandle | null>;
   /** The jotId of the currently open note; used for asset writes on paste/drop. */
   jotId: string;
+  /** Called when the user taps the photo button in the toolbar; real handler wired in Slice 4. */
+  onPhoto?: () => void;
 }
 
 type Mode = 'rich' | 'source';
@@ -82,6 +85,7 @@ export function RichMarkdownEditor({
   onWikilinkClick,
   handleRef,
   jotId,
+  onPhoto = () => {},
 }: Props) {
   // Evaluated once per mount; parents remount per note via key={...}.
   const [parseFailed] = useState(() => !parsesAsRich(markdown));
@@ -351,6 +355,7 @@ export function RichMarkdownEditor({
 
   return (
     <div className="flex h-full flex-col" data-testid="rich-markdown-editor">
+      {mode === 'rich' && editor && <EditorToolbar editor={editor} onPhoto={onPhoto} />}
       <div className="flex-1 overflow-auto">
         {mode === 'rich' ? (
           <EditorContent
