@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain, session, shell } from 'electron';
 import { join } from 'node:path';
 import * as settings from './settings';
 import { pickVaultFolder } from './dialogs';
@@ -187,6 +187,11 @@ app.whenReady().then(async () => {
   installAssetBridge(vaultRoot);
   buildAppMenu();
   createWindow();
+  // First-party renderer (loaded from our own bundle / dev server). Grant
+  // camera/mic for webcam capture; deny everything else.
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+    callback(permission === 'media');
+  });
   trayController = installTray({
     onShow: showWindow,
     onSyncNow: async () => {

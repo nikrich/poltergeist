@@ -25,6 +25,8 @@ extraResources:
 
 mac:
   category: public.app-category.productivity
+  extendInfo:
+    NSCameraUsageDescription: Poltergeist uses your camera to capture photos directly into jots.
   icon: build/icon.icns
   hardenedRuntime: true
   gatekeeperAssess: false
