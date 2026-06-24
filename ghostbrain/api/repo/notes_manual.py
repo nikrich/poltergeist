@@ -357,6 +357,14 @@ def extract_photo_into_jot(jot_id: str, asset_rel_path: str) -> dict:
             "extracted": False,
             "reason": f"vision failed: {e}",
         }
+    if not text.strip():
+        return {
+            "id": jot_id,
+            "path": record["path"],
+            "body": record["body"],
+            "extracted": False,
+            "reason": "no readable content in photo",
+        }
     new_body = record["body"].rstrip() + "\n\n" + _callout(text) + "\n"
     saved = update_jot_body(jot_id, new_body)
     return {"id": jot_id, "path": saved["path"], "body": new_body, "extracted": True}

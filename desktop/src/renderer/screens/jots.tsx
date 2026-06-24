@@ -318,8 +318,14 @@ export function JotsScreen() {
                   onPhotoInserted={(jotId, assetPath) => {
                     toast.info('reading photo…');
                     extractPhoto.mutate({ jotId, assetPath }, {
-                      onSuccess: (res) =>
-                        res.extracted ? toast.success('photo text extracted') : toast.info(`couldn't read photo: ${res.reason ?? ''}`),
+                      onSuccess: (res) => {
+                        if (res.extracted) {
+                          editorHandle.current?.replaceWith(res.body, 'doc');
+                          toast.success('photo text extracted');
+                        } else {
+                          toast.info(`couldn't read photo: ${res.reason ?? ''}`);
+                        }
+                      },
                       onError: (err) => toast.error(`extract failed: ${err.message}`),
                     });
                   }}
