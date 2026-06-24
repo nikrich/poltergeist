@@ -301,6 +301,7 @@ export interface JotListItem {
   created: string;
   updated: string;
   project?: string | null;
+  thumbnail?: string | null;
 }
 
 export interface JotsPage {

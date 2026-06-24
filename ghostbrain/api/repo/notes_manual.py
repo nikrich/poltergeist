@@ -16,6 +16,13 @@ from typing import Any, Iterable
 _SLUG_MAX = 32
 _TITLE_MAX = 80
 _TAG_RE = re.compile(r"(?:^|\s)#([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)", re.IGNORECASE)
+_IMG_RE = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
+
+
+def first_image_path(body: str) -> str | None:
+    """Return the vault-relative path of the first embedded image, or None."""
+    m = _IMG_RE.search(body)
+    return m.group(1) if m else None
 
 
 def make_slug(text: str) -> str:
@@ -386,6 +393,7 @@ def list_jots(
             "created": post.get("created") or "",
             "updated": post.get("updated") or "",
             "project": post.get("project"),
+            "thumbnail": first_image_path(body),
         }
         if context is not None and item["context"] != context:
             continue
