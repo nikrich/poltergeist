@@ -28,15 +28,62 @@ jobs:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     outputs:
-      release_created: ${{ steps.rp.outputs.releases_created }}
-      tag_name: ${{ steps.rp.outputs['desktop--tag_name'] }}
-      version: ${{ steps.rp.outputs['desktop--version'] }}
+      # rp wins when it actually cuts the release; otherwise the fallback's
+      # outputs take over. (Explicit `== 'true'` avoids the GHA footgun where a
+      # literal 'false' string is truthy for `||`.)
+      release_created: ${{ steps.rp.outputs.releases_created == 'true' && 'true' || steps.fallback.outputs.release_created }}
+      tag_name: ${{ steps.rp.outputs['desktop--tag_name'] || steps.fallback.outputs.tag_name }}
+      version: ${{ steps.rp.outputs['desktop--version'] || steps.fallback.outputs.version }}
     steps:
       - uses: googleapis/release-please-action@v4
         id: rp
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+      # release-please intermittently declines to cut the GitHub release on the
+      # push that merges a release PR — it logs "untagged, merged release PRs
+      # outstanding - aborting" and leaves the version bumped in the manifest
+      # but with no tag/release, so the build never fires. This fallback cuts
+      # the release itself in that case and flags release_created=true so the
+      # build jobs run in THIS same run (a GITHUB_TOKEN-created release does not
+      # emit a `release` event, so the build can't rely on that trigger).
+      - name: Checkout for fallback release
+        if: steps.rp.outputs.releases_created != 'true'
+        uses: actions/checkout@v4
+      - name: Fallback — cut release if release-please did not
+        id: fallback
+        if: steps.rp.outputs.releases_created != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version=$(jq -r '.desktop' .release-please-manifest.json)
+          tag="v${version}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "release $tag already exists — nothing to do"
+            exit 0
+          fi
+          # Only act when HEAD is the merge of a release PR.
+          subject=$(git log -1 --pretty=%s)
+          if ! printf '%s' "$subject" | grep -qiE 'chore: release|release main'; then
+            echo "HEAD ($subject) is not a release commit — skipping fallback"
+            exit 0
+          fi
+          # Extract this version's CHANGELOG section for the release notes.
+          awk -v hdr="## [${version}]" '
+            index($0, hdr) {inside=1}
+            inside && /^## \[/ && !index($0, hdr) {exit}
+            inside {print}
+          ' desktop/CHANGELOG.md > /tmp/notes.md || true
+          [ -s /tmp/notes.md ] || echo "Release ${tag}" > /tmp/notes.md
+          gh release create "$tag" --target "$GITHUB_SHA" --title "$tag" --notes-file /tmp/notes.md
+          {
+            echo "release_created=true"
+            echo "tag_name=${tag}"
+            echo "version=${version}"
+          } >> "$GITHUB_OUTPUT"
+          echo "fallback created release ${tag}"
 
   build-mac:
     needs: release-please
