@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.10](https://github.com/nikrich/poltergeist/compare/v0.3.9...v0.3.10) (2026-06-25)
+
+
+### Bug Fixes
+
+* **jots:** Grant claude file access to the image dir for vision extraction ([#50](https://github.com/nikrich/poltergeist/pull/50))
+
 ## [0.3.9](https://github.com/nikrich/poltergeist/compare/v0.3.8...v0.3.9) (2026-06-24)
 
 
