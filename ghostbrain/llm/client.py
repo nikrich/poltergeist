@@ -143,9 +143,21 @@ def run(
             "/usr/local/bin) are searched automatically."
         )
 
+    # When images are referenced, grant Claude Code's Read tool access to their
+    # directories. Without this, `--print` sandboxes file access to the cwd and
+    # refuses to read a vault asset ("The image file is outside the allowed
+    # working directories for this session"). `--add-dir` is VARIADIC, so it
+    # must be followed by another flag (here --output-format) — never the
+    # trailing prompt, which it would otherwise swallow as a directory.
+    add_dir: list[str] = []
+    if image_paths:
+        dirs = sorted({str(Path(p).resolve().parent) for p in image_paths})
+        add_dir = ["--add-dir", *dirs]
+
     cmd: list[str] = [
         binary,
         "--print",
+        *add_dir,
         "--output-format", "json",
         "--model", model,
         "--system-prompt", system_prompt or MINIMAL_SYSTEM_PROMPT,
