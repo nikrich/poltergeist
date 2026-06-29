@@ -21,7 +21,10 @@
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,html}\"",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "demo:record": "node scripts/demo/record.mjs",
+    "demo:post": "scripts/demo/postprocess.sh",
+    "demo": "electron-vite build && node scripts/demo/record.mjs && scripts/demo/postprocess.sh"
   },
   "dependencies": {
     "@codemirror/lang-markdown": "^6.5.0",
@@ -70,6 +73,7 @@
     "eslint-plugin-react": "^7.35.0",
     "eslint-plugin-react-hooks": "^5.0.0",
     "jsdom": "^25.0.0",
+    "playwright": "^1.61.1",
     "prettier": "^3.3.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.6.0",

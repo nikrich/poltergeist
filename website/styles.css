@@ -335,6 +335,35 @@ section { scroll-margin-top: 80px; }
 /* =========================================================================
    HOW IT WORKS
    ========================================================================= */
+.demo {
+  padding: 40px 32px 96px;
+  background: var(--bg-paper);
+}
+.demo__inner { max-width: 1100px; margin: 0 auto; }
+.demo__head { text-align: center; margin-bottom: 40px; }
+.demo__title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--ink-0);
+  margin: 12px 0 0;
+}
+.demo__frame {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid var(--hairline-2);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+  background: var(--bg-paper);
+}
+.demo__video {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
 .how {
   padding: 96px 32px;
   background: var(--bg-paper);

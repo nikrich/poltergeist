@@ -9,6 +9,7 @@ import { buildAppMenu } from './menu';
 import { Sidecar } from './sidecar';
 import { forward, isAllowedMethod } from './api-forwarder';
 import { startChatStream, stopChatStream } from './chat-stream';
+import type { ChatStreamEvent } from '../shared/api-types';
 import { startDocsStream, stopDocsStream } from './docs-stream';
 import { exportPdf } from './pdf-export';
 import { installTray, type TrayController } from './tray';
@@ -23,6 +24,12 @@ import {
   registerAssetProtocol,
   installAssetBridge,
 } from './assets';
+import { handleDemoApi, DEMO_SETTINGS } from './demo/fixtures';
+import { runDemoChatStream, stopDemoChat } from './demo/chat';
+
+// Showcase recording mode: serve fully synthetic fixtures and never spawn the
+// Python sidecar or touch the real vault. Enabled by the demo driver via env.
+const DEMO = process.env.GHOSTBRAIN_DEMO === '1';
 
 // Repo root: in dev, that's one level up from the desktop/ project dir
 // (app.getAppPath() resolves to the desktop/ folder). In prod (Phase 2 bundles
@@ -90,7 +97,9 @@ function createWindow() {
   // keeps the app reachable; explicit Quit comes from Cmd+Q / tray menu /
   // dock menu. On other platforms keep default close behavior — quit triggers
   // via window-all-closed below.
-  if (isMac) {
+  // In demo mode let the window close normally so the recorder's app.close()
+  // terminates the process; otherwise keep the tray-resident hide-on-close.
+  if (isMac && !DEMO) {
     win.on('close', (event) => {
       if (!isQuitting) {
         event.preventDefault();
@@ -105,7 +114,9 @@ function createWindow() {
   }
 }
 
-ipcMain.handle('gb:settings:getAll', () => settings.getAll());
+ipcMain.handle('gb:settings:getAll', () =>
+  DEMO ? DEMO_SETTINGS : settings.getAll(),
+);
 
 ipcMain.handle('gb:settings:set', async (_e, key: unknown, value: unknown) => {
   if (typeof key !== 'string' || !(key in settingsSchema.shape)) {
@@ -205,7 +216,9 @@ app.whenReady().then(async () => {
     },
     onQuit: () => void quitApp(),
   });
-  meetingNotifier = installMeetingNotifier({ sidecar });
+  if (!DEMO) {
+    meetingNotifier = installMeetingNotifier({ sidecar });
+  }
 
   const hotkey = settings.getAll().hotkeys?.jotOverlay ?? 'Alt+J';
   installJotOverlay({
@@ -218,6 +231,14 @@ app.whenReady().then(async () => {
       ? join(__dirname, '../renderer/overlay.html')
       : undefined,
   });
+
+  if (DEMO) {
+    // No backend in demo mode — tell the renderer the "sidecar" is ready so
+    // the UI leaves its connecting state and renders against the fixtures.
+    console.log('[demo] sidecar skipped — serving synthetic fixtures');
+    BrowserWindow.getAllWindows()[0]?.webContents.send('gb:sidecar:ready');
+    return;
+  }
 
   console.log('[sidecar] starting; repoRoot =', repoRoot());
   try {
@@ -247,6 +268,7 @@ sidecar.on('failed', (info: { reason: string }) => {
 let sidecarStopped = false;
 app.on('before-quit', (event) => {
   meetingNotifier?.destroy();
+  if (DEMO) return; // nothing to tear down — sidecar was never started
   if (!sidecarStopped) {
     event.preventDefault();
     sidecarStopped = true;
@@ -259,7 +281,7 @@ app.on('will-quit', () => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  if (process.platform !== 'darwin' || DEMO) app.quit();
 });
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -278,6 +300,7 @@ ipcMain.handle(
     if (!path.startsWith('/v1/')) {
       return { ok: false, error: 'Path not allowed (must start with /v1/)' };
     }
+    if (DEMO) return handleDemoApi(m, path, body);
     return forward(sidecar, m, path, body);
   },
 );
@@ -295,12 +318,22 @@ ipcMain.handle('gb:chat:send', async (e, convId: unknown, text: unknown) => {
     return { ok: false, error: 'Invalid request shape' };
   }
   const wc = e.sender;
+  const send = (event: ChatStreamEvent) => {
+    if (!wc.isDestroyed()) wc.send('gb:chat:event', { convId, event });
+  };
+  if (DEMO) {
+    const onDestroyed = () => stopDemoChat(convId);
+    wc.once('destroyed', onDestroyed);
+    try {
+      return await runDemoChatStream(convId, text, send);
+    } finally {
+      wc.removeListener('destroyed', onDestroyed);
+    }
+  }
   const onDestroyed = () => stopTurn(convId);
   wc.once('destroyed', onDestroyed);
   try {
-    return await startChatStream(sidecar, convId, text, (event) => {
-      if (!wc.isDestroyed()) wc.send('gb:chat:event', { convId, event });
-    });
+    return await startChatStream(sidecar, convId, text, send);
   } finally {
     wc.removeListener('destroyed', onDestroyed);
   }
@@ -310,7 +343,8 @@ ipcMain.handle('gb:chat:stop', (_e, convId: unknown) => {
   if (typeof convId !== 'string') {
     return { ok: false, error: 'Invalid request shape' };
   }
-  stopTurn(convId);
+  if (DEMO) stopDemoChat(convId);
+  else stopTurn(convId);
   return { ok: true };
 });
 
