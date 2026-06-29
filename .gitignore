@@ -29,3 +29,8 @@ desktop/resources/sidecar/
 # Claude Code linked worktrees (skills under .claude/skills/ ARE tracked)
 .claude/worktrees/
 .superpowers/
+
+# Demo recorder intermediates — regenerable via `npm run demo`. The committed
+# deliverables are media/poltergeist-demo.{mp4,gif}; the raw webm + palette are not.
+media/.raw/
+media/poltergeist-demo.webm
