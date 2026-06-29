@@ -12,10 +12,6 @@
 </p>
 
 <p align="center">
-  <img width="1510" height="864" alt="poltergeist desktop" src="https://github.com/user-attachments/assets/28bd797b-9491-44be-9326-0bd5684eaa02" />
-</p>
-
-<p align="center">
   <img alt="Poltergeist — a 40-second tour" src="media/poltergeist-demo.gif" width="900">
 </p>
 
