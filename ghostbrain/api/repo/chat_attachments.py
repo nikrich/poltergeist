@@ -14,12 +14,13 @@ from pathlib import Path
 
 import yaml
 
-from ghostbrain.api.repo import attachment_extract
+from ghostbrain.api.repo import attachment_caption, attachment_extract
 from ghostbrain.paths import vault_path
 
 ATTACHMENTS_DIR_REL = "20-contexts/chat-attachments"
 MAX_TEXT_BYTES = 1_000_000
 MAX_DOC_BYTES = 20_000_000
+MAX_IMAGE_BYTES = 20_000_000
 
 # Extension → fenced-code language. Markdown extensions map to "" (inline as-is).
 _LANG_BY_EXT = {
@@ -52,7 +53,17 @@ def _classify(filename: str, mime: str) -> str | None:
     ext = Path(filename).suffix.lower()
     if ext in TEXT_EXTENSIONS or mime.startswith("text/"):
         return "text"
+    if attachment_caption.is_image(filename, mime):
+        return "image"
     return attachment_extract.classify(filename, mime)  # "pdf" | "docx" | None
+
+
+def _cap_for(kind: str) -> int:
+    if kind == "text":
+        return MAX_TEXT_BYTES
+    if kind == "image":
+        return MAX_IMAGE_BYTES
+    return MAX_DOC_BYTES
 
 
 def _text_body(filename: str, content: bytes) -> str:
@@ -74,25 +85,16 @@ def save_attachment(conv_id: str, filename: str, mime: str, content: bytes) -> d
     if kind is None:
         raise UnsupportedAttachment(f"unsupported attachment type: {filename} ({mime})")
 
-    cap = MAX_TEXT_BYTES if kind == "text" else MAX_DOC_BYTES
+    cap = _cap_for(kind)
     if len(content) > cap:
         raise AttachmentTooLarge(f"{filename} exceeds {cap} bytes")
-
-    if kind == "text":
-        try:
-            body = _text_body(filename, content)
-        except UnicodeDecodeError as e:
-            raise UnsupportedAttachment(f"{filename} is not valid UTF-8 text") from e
-    else:
-        try:
-            body = attachment_extract.extract_text(filename, mime, content)
-        except attachment_extract.ExtractionError as e:
-            raise UnsupportedAttachment(str(e)) from e
 
     note_id = hashlib.sha256(content).hexdigest()[:12]
     target_dir = vault_path() / ATTACHMENTS_DIR_REL
     target_dir.mkdir(parents=True, exist_ok=True)
 
+    # Content-addressed reuse — checked BEFORE the expensive body step (image
+    # captioning, doc extraction) so a duplicate upload does no extra work.
     for existing in sorted(target_dir.glob("*.md")):
         if _frontmatter_id(existing) == note_id:
             return _result(
@@ -100,6 +102,8 @@ def save_attachment(conv_id: str, filename: str, mime: str, content: bytes) -> d
                 title=_frontmatter_title(existing) or filename,
                 kind=_frontmatter_kind(existing) or kind,
             )
+
+    body = _build_body(kind, filename, mime, content, note_id, target_dir)
 
     front = {
         "id": note_id,
@@ -114,6 +118,36 @@ def save_attachment(conv_id: str, filename: str, mime: str, content: bytes) -> d
     note_path = target_dir / f"{stamp}-{_slug(filename)}.md"
     note_path.write_text(_render(front, body), encoding="utf-8")
     return _result(note_path, title=filename, kind=kind)
+
+
+def _build_body(
+    kind: str, filename: str, mime: str, content: bytes, note_id: str, target_dir: Path
+) -> str:
+    if kind == "text":
+        try:
+            return _text_body(filename, content)
+        except UnicodeDecodeError as e:
+            raise UnsupportedAttachment(f"{filename} is not valid UTF-8 text") from e
+    if kind == "image":
+        return _image_body(filename, mime, content, note_id, target_dir)
+    try:
+        return attachment_extract.extract_text(filename, mime, content)
+    except attachment_extract.ExtractionError as e:
+        raise UnsupportedAttachment(str(e)) from e
+
+
+def _image_body(
+    filename: str, mime: str, content: bytes, note_id: str, target_dir: Path
+) -> str:
+    ext = attachment_caption.image_ext(filename, mime)
+    assets = target_dir / "assets"
+    assets.mkdir(parents=True, exist_ok=True)
+    asset_path = assets / f"{note_id}{ext}"
+    asset_path.write_bytes(content)
+    caption = attachment_caption.caption_image(asset_path)
+    caption_text = caption or "(image — no readable text extracted)"
+    embed = f"![[{ATTACHMENTS_DIR_REL}/assets/{note_id}{ext}]]"
+    return f"{caption_text}\n\n{embed}"
 
 
 def _result(note_path: Path, *, title: str, kind: str) -> dict:

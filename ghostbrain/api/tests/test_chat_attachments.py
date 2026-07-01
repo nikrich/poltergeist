@@ -38,7 +38,7 @@ def test_code_body_is_fenced_by_extension(tmp_vault: Path):
 
 def test_rejects_unsupported_type(tmp_vault: Path):
     with pytest.raises(repo.UnsupportedAttachment):
-        repo.save_attachment("c", "x.png", "image/png", b"\x89PNG")
+        repo.save_attachment("c", "x.zip", "application/zip", b"PK\x03\x04")
 
 
 def test_rejects_oversize(tmp_vault: Path):
@@ -115,8 +115,8 @@ def test_upload_unsupported_type_415(client, auth_headers):
     conv = client.post("/v1/chat", headers=auth_headers).json()
     res = client.post(
         f"/v1/chat/{conv['id']}/attachments",
-        json={"files": [{"name": "x.png", "mime": "image/png",
-                         "content_b64": _b64(b"\x89PNG")}]},
+        json={"files": [{"name": "x.zip", "mime": "application/zip",
+                         "content_b64": _b64(b"PK\x03\x04")}]},
         headers=auth_headers,
     )
     assert res.status_code == 415
@@ -210,3 +210,57 @@ def test_kind_for_path(tmp_vault):
     assert (
         repo.kind_for_path("20-contexts/chat-attachments/missing.md") == "text"
     )
+
+
+import base64
+from ghostbrain.api.repo import attachment_caption
+
+# 1x1 transparent PNG.
+PNG_1x1 = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+)
+
+
+def test_saves_image_note_with_caption_and_embed(tmp_vault, monkeypatch):
+    monkeypatch.setattr(attachment_caption, "caption_image", lambda p: "a red square")
+    result = repo.save_attachment("c", "shot.png", "image/png", PNG_1x1)
+    assert result["kind"] == "image"
+    assert result["title"] == "shot.png"
+    body = (tmp_vault / result["path"]).read_text(encoding="utf-8")
+    assert "kind: image" in body
+    assert "a red square" in body
+    # asset written under assets/, embedded by vault-relative path
+    assets = list((tmp_vault / "20-contexts" / "chat-attachments" / "assets").glob("*.png"))
+    assert len(assets) == 1
+    assert f"![[20-contexts/chat-attachments/assets/{assets[0].name}]]" in body
+
+
+def test_image_caption_failure_stores_placeholder(tmp_vault, monkeypatch):
+    monkeypatch.setattr(attachment_caption, "caption_image", lambda p: "")
+    result = repo.save_attachment("c", "blank.png", "image/png", PNG_1x1)
+    body = (tmp_vault / result["path"]).read_text(encoding="utf-8")
+    assert result["kind"] == "image"
+    assert "image" in body.lower()  # placeholder text present
+    assert "![[" in body  # still embeds the image
+
+
+def test_image_reuse_skips_recaption(tmp_vault, monkeypatch):
+    calls = {"n": 0}
+
+    def counting(_p):
+        calls["n"] += 1
+        return "cap"
+
+    monkeypatch.setattr(attachment_caption, "caption_image", counting)
+    a = repo.save_attachment("c", "x.png", "image/png", PNG_1x1)
+    b = repo.save_attachment("c", "x.png", "image/png", PNG_1x1)
+    assert a["path"] == b["path"]
+    assert b["kind"] == "image"
+    assert calls["n"] == 1  # captioned once, reuse skipped re-caption
+
+
+def test_image_over_cap_rejected(tmp_vault, monkeypatch):
+    monkeypatch.setattr(attachment_caption, "caption_image", lambda p: "cap")
+    big = PNG_1x1 + b"\x00" * (repo.MAX_IMAGE_BYTES)
+    with pytest.raises(repo.AttachmentTooLarge):
+        repo.save_attachment("c", "big.png", "image/png", big)
