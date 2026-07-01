@@ -41,6 +41,26 @@ class RenameRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
 
 
+class AttachmentFile(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    mime: str = Field("", max_length=255)
+    content_b64: str = Field(..., min_length=1)
+
+
+class AttachmentUploadRequest(BaseModel):
+    files: list[AttachmentFile] = Field(..., min_length=1)
+
+
+class Attachment(BaseModel):
+    path: str
+    title: str
+    kind: str
+
+
+class AttachmentUploadResponse(BaseModel):
+    attachments: list[Attachment]
+
+
 class ChatExportResponse(BaseModel):
     jot_id: str
     path: str

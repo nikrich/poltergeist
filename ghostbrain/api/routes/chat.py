@@ -5,6 +5,8 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from ghostbrain.api.models.chat import (
+    AttachmentUploadRequest,
+    AttachmentUploadResponse,
     ChatExportResponse,
     ChatMessageRequest,
     Conversation,
@@ -12,11 +14,14 @@ from ghostbrain.api.models.chat import (
     RenameRequest,
 )
 from ghostbrain.api.repo import chat as repo_chat
+from ghostbrain.api.repo import chat_attachments
 from ghostbrain.api.repo import chat_export as repo_chat_export
 from ghostbrain.api.repo import chat_store
 from ghostbrain.llm.client import LLMError
 
 router = APIRouter(prefix="/v1/chat", tags=["chat"])
+
+MAX_ATTACHMENTS_PER_MESSAGE = 10
 
 
 @router.get("", response_model=list[ConversationSummary])
@@ -72,6 +77,33 @@ def export_jot(conv_id: str) -> dict:
         )
     except LLMError as e:
         raise HTTPException(status_code=502, detail=f"summary failed: {e}")
+
+
+@router.post("/{conv_id}/attachments", response_model=AttachmentUploadResponse)
+def upload_attachments(conv_id: str, payload: AttachmentUploadRequest) -> dict:
+    import base64
+    import binascii
+
+    if chat_store.get(conv_id) is None:
+        raise HTTPException(status_code=404, detail="conversation not found")
+    if len(payload.files) > MAX_ATTACHMENTS_PER_MESSAGE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"at most {MAX_ATTACHMENTS_PER_MESSAGE} files per message",
+        )
+    out: list[dict] = []
+    for f in payload.files:
+        try:
+            content = base64.b64decode(f.content_b64, validate=True)
+        except (binascii.Error, ValueError):
+            raise HTTPException(status_code=400, detail=f"invalid base64: {f.name}")
+        try:
+            out.append(chat_attachments.save_attachment(conv_id, f.name, f.mime, content))
+        except chat_attachments.UnsupportedAttachment as e:
+            raise HTTPException(status_code=415, detail=str(e))
+        except chat_attachments.AttachmentTooLarge as e:
+            raise HTTPException(status_code=413, detail=str(e))
+    return {"attachments": out}
 
 
 @router.post("/{conv_id}/messages")
