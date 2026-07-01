@@ -68,6 +68,20 @@ function stubGet() {
   });
 }
 
+// Renders ChatScreen with a persisted 'c1' conversation whose messages are
+// overridden by the caller — used to assert on historical message rendering
+// (e.g. attachment chips) without touching the shared `conversation` fixture.
+function renderChatWithMessages(messages: Conversation['messages']) {
+  vi.mocked(client.get).mockImplementation((path: string) => {
+    if (path === '/v1/chat') return Promise.resolve(summaries) as never;
+    if (path.startsWith('/v1/chat/')) {
+      return Promise.resolve({ ...conversation, messages }) as never;
+    }
+    return Promise.reject(new Error(`unexpected path ${path}`)) as never;
+  });
+  return render(wrap(<ChatScreen />));
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   useChat.setState({ activeId: 'c1', streams: {}, errors: {} });
@@ -214,6 +228,19 @@ describe('ChatScreen', () => {
     const composer = await screen.findByPlaceholderText(/message poltergeist/i);
     fireEvent.drop(composer, { dataTransfer: { files: [file] } });
     expect(screen.queryByText('pic.png')).not.toBeInTheDocument();
+  });
+
+  it('renders attachment chips on a historical user message', async () => {
+    renderChatWithMessages([
+      {
+        role: 'user',
+        text: 'see this',
+        attachments: [
+          { path: '20-contexts/chat-attachments/a.md', title: 'a.md', kind: 'text' },
+        ],
+      },
+    ]);
+    expect(await screen.findByText('a.md')).toBeInTheDocument();
   });
 });
 

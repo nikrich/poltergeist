@@ -377,10 +377,29 @@ function Thread({ conversation, stream, error, onStop, onRetry }: ThreadProps) {
   );
 }
 
+function AttachmentChips({ attachments }: { attachments: ChatAttachment[] }) {
+  if (attachments.length === 0) return null;
+  return (
+    <div className="mb-1 flex flex-wrap justify-end gap-[6px]">
+      {attachments.map((a) => (
+        <span
+          key={a.path}
+          className="inline-flex items-center gap-1 rounded-xs bg-fog px-2 py-[2px] font-mono text-10 text-ink-2"
+          title={a.path}
+        >
+          <Lucide name="paperclip" size={9} color="var(--ink-3)" />
+          {a.title}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function Message({ message }: { message: ChatMessage }) {
   if (message.role === 'user') {
     return (
-      <div className="flex justify-end">
+      <div className="flex flex-col items-end">
+        <AttachmentChips attachments={message.attachments ?? []} />
         <div className="max-w-[80%] whitespace-pre-wrap rounded-r10 border border-hairline bg-vellum px-[14px] py-[10px] text-14 leading-[1.5] text-ink-0">
           {message.text}
         </div>
@@ -405,7 +424,8 @@ function Message({ message }: { message: ChatMessage }) {
 function StreamingTurn({ stream, onStop }: { stream: StreamState; onStop: () => void }) {
   return (
     <>
-      <div className="flex justify-end">
+      <div className="flex flex-col items-end">
+        <AttachmentChips attachments={stream.attachments} />
         <div className="max-w-[80%] whitespace-pre-wrap rounded-r10 border border-hairline bg-vellum px-[14px] py-[10px] text-14 leading-[1.5] text-ink-0">
           {stream.userText}
         </div>
