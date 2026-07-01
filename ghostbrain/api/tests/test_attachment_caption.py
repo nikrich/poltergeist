@@ -47,3 +47,16 @@ def test_caption_image_empty_on_llm_error(monkeypatch, tmp_path):
     img = tmp_path / "x.png"
     img.write_bytes(b"\x89PNG fake")
     assert cap.caption_image(img) == ""
+
+
+def test_caption_image_empty_on_generic_exception(monkeypatch, tmp_path):
+    """caption_image must never raise, even for non-LLMError failures
+    (e.g. an OSError bubbling up from the subprocess call)."""
+
+    def boom(*a, **k):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(llm_client, "run", boom)
+    img = tmp_path / "x.png"
+    img.write_bytes(b"\x89PNG fake")
+    assert cap.caption_image(img) == ""

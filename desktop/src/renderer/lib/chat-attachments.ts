@@ -34,7 +34,12 @@ export function isAccepted(file: File): boolean {
 }
 
 export function maxBytesFor(file: File): number {
-  return DOC_EXTENSIONS.includes(extOf(file)) ? MAX_DOC_BYTES : MAX_FILE_BYTES;
+  const large =
+    DOC_EXTENSIONS.includes(extOf(file)) ||
+    file.type.startsWith('image/') ||
+    file.type === 'application/pdf' ||
+    file.type === DOCX_MIME;
+  return large ? MAX_DOC_BYTES : MAX_FILE_BYTES;
 }
 
 export async function fileToBase64(file: File): Promise<string> {

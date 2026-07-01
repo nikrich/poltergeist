@@ -62,4 +62,16 @@ describe('image acceptance', () => {
   it('gives images the 20MB doc cap', () => {
     expect(maxBytesFor(new File(['x'], 'a.png'))).toBe(MAX_DOC_BYTES);
   });
+
+  it('gives an extension-less pasted image the doc cap via mime sniffing', () => {
+    expect(maxBytesFor(new File(['x'], 'pasted', { type: 'image/png' }))).toBe(MAX_DOC_BYTES);
+  });
+
+  it('gives an extension-less pdf the doc cap via mime sniffing', () => {
+    expect(maxBytesFor(new File(['x'], 'doc', { type: 'application/pdf' }))).toBe(MAX_DOC_BYTES);
+  });
+
+  it('still caps plain text at the small limit', () => {
+    expect(maxBytesFor(new File(['x'], 'a.txt', { type: 'text/plain' }))).toBe(MAX_FILE_BYTES);
+  });
 });

@@ -49,7 +49,7 @@ def caption_image(abs_path: str | Path) -> str:
         result = llm_client.run(
             CAPTION_PROMPT, image_paths=[str(abs_path)], model="sonnet"
         )
-    except llm_client.LLMError as e:
+    except Exception as e:  # noqa: BLE001 — captioning is best-effort; never block the send
         log.warning("image caption failed for %s: %s", abs_path, e)
         return ""
     return (getattr(result, "text", "") or "").strip()
