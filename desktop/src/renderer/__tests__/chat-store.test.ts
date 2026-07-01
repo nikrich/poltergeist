@@ -10,7 +10,12 @@ describe('chat store', () => {
     useChat.setState({ errors: { c1: { message: 'old boom', userText: 'old q' } } });
     useChat.getState().beginStream('c1', 'my question');
     const s = useChat.getState();
-    expect(s.streams.c1).toEqual({ userText: 'my question', text: '', tools: [] });
+    expect(s.streams.c1).toEqual({
+      userText: 'my question',
+      text: '',
+      tools: [],
+      attachments: [],
+    });
     expect(s.errors.c1).toBeUndefined();
   });
 
@@ -68,6 +73,16 @@ describe('chat store', () => {
   it('endStream is a no-op when no stream exists', () => {
     useChat.getState().endStream('nope');
     expect(useChat.getState().streams).toEqual({});
+  });
+
+  it('beginStream stores attachments on the stream', () => {
+    const { beginStream } = useChat.getState();
+    beginStream('c1', 'hi', [
+      { path: '20-contexts/chat-attachments/a.md', title: 'a.md', kind: 'text' },
+    ]);
+    expect(useChat.getState().streams['c1']?.attachments).toEqual([
+      { path: '20-contexts/chat-attachments/a.md', title: 'a.md', kind: 'text' },
+    ]);
   });
 
   it('export pending state is store-global (survives component unmount)', () => {

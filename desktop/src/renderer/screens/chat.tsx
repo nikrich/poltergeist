@@ -16,9 +16,12 @@ import {
   useDeleteConversation,
 } from '../lib/api/hooks';
 import { exportConversationToJot } from '../lib/chat-export';
+import { toast } from '../stores/toast';
+import { uploadAttachments, isAccepted, MAX_FILE_BYTES, MAX_FILES } from '../lib/chat-attachments';
 import { useChat } from '../stores/chat';
 import type { StreamState, TurnError } from '../stores/chat';
 import type {
+  ChatAttachment,
   ChatMessage,
   ChatToolUse,
   ConversationSummary,
@@ -63,19 +66,31 @@ export function ChatScreen() {
     if (first) setActive(first.id);
   }, [activeId, conversations.data, setActive]);
 
-  const sendMessage = (text: string) => {
+  const sendMessage = (text: string, files: File[] = []) => {
     if (!activeId) return;
-    beginStream(activeId, text);
-    void window.gb.chat.send(activeId, text).then((res) => {
-      if (!res.ok) {
-        applyEvent(activeId, { type: 'error', message: res.error });
+    void (async () => {
+      let attachments: ChatAttachment[] = [];
+      if (files.length > 0) {
+        try {
+          attachments = await uploadAttachments(activeId, files);
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : 'attachment upload failed');
+          return;
+        }
       }
-      // Finalizer: covers user-stop / relay teardown where no terminal event
-      // arrives. No-op when done/error already cleared the stream. Same
-      // cosmetic flicker window as the done|error path above applies here.
-      endStream(activeId);
-      qc.invalidateQueries({ queryKey: ['chat'] });
-    });
+      beginStream(activeId, text, attachments);
+      const paths = attachments.map((a) => a.path);
+      void window.gb.chat.send(activeId, text, paths).then((res) => {
+        if (!res.ok) {
+          applyEvent(activeId, { type: 'error', message: res.error });
+        }
+        // Finalizer: covers user-stop / relay teardown where no terminal event
+        // arrives. No-op when done/error already cleared the stream. Same
+        // cosmetic flicker window as the done|error path above applies here.
+        endStream(activeId);
+        qc.invalidateQueries({ queryKey: ['chat'] });
+      });
+    })();
   };
 
   return (
@@ -122,7 +137,7 @@ export function ChatScreen() {
               stream={stream}
               error={error}
               onStop={() => window.gb.chat.stop(activeId)}
-              onRetry={sendMessage}
+              onRetry={(t) => sendMessage(t, [])}
             />
             <Composer
               disabled={!!stream}
@@ -482,10 +497,13 @@ function Composer({
   onSend,
 }: {
   disabled: boolean;
-  onSend: (text: string) => void;
+  onSend: (text: string, files: File[]) => void;
 }) {
   const [text, setText] = useState('');
+  const [files, setFiles] = useState<File[]>([]);
+  const [dragging, setDragging] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Grow the textarea up to ~5 rows, then scroll internally. Keep overflow
   // hidden below the cap — otherwise a phantom scrollbar gutter renders at
@@ -498,48 +516,141 @@ function Composer({
     el.style.overflowY = el.scrollHeight > 132 ? 'auto' : 'hidden';
   };
 
+  const addFiles = (incoming: File[]) => {
+    const accepted: File[] = [];
+    for (const f of incoming) {
+      if (!isAccepted(f)) {
+        toast.error(`${f.name}: unsupported file type`);
+        continue;
+      }
+      if (f.size > MAX_FILE_BYTES) {
+        toast.error(`${f.name}: too large (max 1 MB)`);
+        continue;
+      }
+      accepted.push(f);
+    }
+    setFiles((prev) => {
+      const next = [...prev, ...accepted];
+      if (next.length > MAX_FILES) {
+        toast.error(`at most ${MAX_FILES} files per message`);
+        return next.slice(0, MAX_FILES);
+      }
+      return next;
+    });
+  };
+
+  const removeFile = (idx: number) =>
+    setFiles((prev) => prev.filter((_, i) => i !== idx));
+
   const submit = () => {
     const trimmed = text.trim();
-    if (!trimmed || disabled) return;
-    onSend(trimmed);
+    if ((!trimmed && files.length === 0) || disabled) return;
+    onSend(trimmed, files);
     setText('');
+    setFiles([]);
     requestAnimationFrame(autosize);
   };
 
   return (
-    <div className="flex-shrink-0 border-t border-hairline bg-paper px-6 py-4">
-      {/* AskPanel-style chrome: one bordered container, borderless textarea
-          inside, compact send button embedded — no double borders or rings. */}
-      <div className="mx-auto flex max-w-[760px] items-end gap-2 rounded-r10 border border-hairline-2 bg-vellum py-[6px] pl-[14px] pr-[6px] transition-colors duration-[120ms] focus-within:border-ink-3">
-        <textarea
-          ref={ref}
-          value={text}
-          rows={1}
-          disabled={disabled}
-          placeholder={
-            disabled ? 'poltergeist is responding…' : 'message poltergeist…'
-          }
-          onChange={(e) => {
-            setText(e.target.value);
-            autosize();
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              submit();
-            }
-          }}
-          className="flex-1 resize-none overflow-y-hidden border-none bg-transparent py-[7px] text-14 leading-[1.5] text-ink-0 placeholder:text-ink-3 focus:outline-none disabled:opacity-60"
-        />
-        <button
-          type="button"
-          aria-label="send"
-          disabled={disabled || text.trim().length === 0}
-          onClick={submit}
-          className="mb-[1px] flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-r6 bg-neon transition-all duration-[120ms] hover:bg-neon-dark disabled:cursor-not-allowed disabled:opacity-40"
+    <div
+      className="flex-shrink-0 border-t border-hairline bg-paper px-6 py-4"
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragging(false);
+        addFiles(Array.from(e.dataTransfer.files));
+      }}
+    >
+      <div className="mx-auto max-w-[760px]">
+        {files.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-[6px]">
+            {files.map((f, i) => (
+              <span
+                key={`${f.name}-${i}`}
+                className="inline-flex items-center gap-1 rounded-xs bg-fog px-2 py-[3px] font-mono text-10 text-ink-2"
+              >
+                <Lucide name="paperclip" size={9} color="var(--ink-3)" />
+                {f.name}
+                <button
+                  type="button"
+                  aria-label={`remove ${f.name}`}
+                  onClick={() => removeFile(i)}
+                  className="ml-1 text-ink-3 hover:text-oxblood"
+                >
+                  <Lucide name="x" size={9} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* AskPanel-style chrome: one bordered container, borderless textarea
+            inside, compact send button embedded — no double borders or rings. */}
+        <div
+          className={`flex items-end gap-2 rounded-r10 border bg-vellum py-[6px] pl-[14px] pr-[6px] transition-colors duration-[120ms] ${
+            dragging ? 'border-neon' : 'border-hairline-2 focus-within:border-ink-3'
+          }`}
         >
-          <Lucide name="arrow-up" size={15} color="#0E0F12" />
-        </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              addFiles(Array.from(e.target.files ?? []));
+              e.target.value = '';
+            }}
+          />
+          <button
+            type="button"
+            aria-label="attach files"
+            disabled={disabled}
+            onClick={() => fileInputRef.current?.click()}
+            className="mb-[1px] flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-r6 text-ink-3 hover:bg-fog hover:text-ink-1 disabled:opacity-40"
+          >
+            <Lucide name="paperclip" size={15} />
+          </button>
+          <textarea
+            ref={ref}
+            value={text}
+            rows={1}
+            disabled={disabled}
+            placeholder={
+              disabled ? 'poltergeist is responding…' : 'message poltergeist…'
+            }
+            onChange={(e) => {
+              setText(e.target.value);
+              autosize();
+            }}
+            onPaste={(e) => {
+              const pasted = Array.from(e.clipboardData.files);
+              if (pasted.length > 0) {
+                e.preventDefault();
+                addFiles(pasted);
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                submit();
+              }
+            }}
+            className="flex-1 resize-none overflow-y-hidden border-none bg-transparent py-[7px] text-14 leading-[1.5] text-ink-0 placeholder:text-ink-3 focus:outline-none disabled:opacity-60"
+          />
+          <button
+            type="button"
+            aria-label="send"
+            disabled={disabled || (text.trim().length === 0 && files.length === 0)}
+            onClick={submit}
+            className="mb-[1px] flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-r6 bg-neon transition-all duration-[120ms] hover:bg-neon-dark disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Lucide name="arrow-up" size={15} color="#0E0F12" />
+          </button>
+        </div>
       </div>
     </div>
   );

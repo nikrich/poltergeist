@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
@@ -50,6 +51,12 @@ function wrap(node: React.ReactNode) {
   return <QueryClientProvider client={qc}>{node}</QueryClientProvider>;
 }
 
+// Renders ChatScreen with the shared 'c1' conversation active — the setup
+// mirrors beforeEach() below (active conversation, mocked window.gb.chat).
+function renderChat() {
+  return render(wrap(<ChatScreen />));
+}
+
 // Route the mocked client by path so both the list and detail queries resolve.
 function stubGet() {
   vi.mocked(client.get).mockImplementation((path: string) => {
@@ -95,6 +102,7 @@ describe('ChatScreen', () => {
           userText: 'and refresh tokens?',
           text: 'Refresh tokens rotate.',
           tools: [{ name: 'search', summary: 'searched vault: refresh' }],
+          attachments: [],
         },
       },
       errors: {},
@@ -114,7 +122,7 @@ describe('ChatScreen', () => {
     useChat.setState({
       activeId: 'c1',
       streams: {
-        c1: { userText: 'q', text: '', tools: [] },
+        c1: { userText: 'q', text: '', tools: [], attachments: [] },
       },
       errors: {},
     });
@@ -133,7 +141,7 @@ describe('ChatScreen', () => {
     fireEvent.change(textarea, { target: { value: 'hello ghost' } });
     fireEvent.keyDown(textarea, { key: 'Enter' });
 
-    expect(window.gb.chat.send).toHaveBeenCalledWith('c1', 'hello ghost');
+    expect(window.gb.chat.send).toHaveBeenCalledWith('c1', 'hello ghost', []);
 
     // The send promise resolves on ANY stream end (done, error, user stop,
     // relay teardown). The screen's finalizer must clear the stream so the
@@ -179,7 +187,7 @@ describe('ChatScreen', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /retry/i }));
 
-    expect(window.gb.chat.send).toHaveBeenCalledWith('c1', 'how does auth work?');
+    expect(window.gb.chat.send).toHaveBeenCalledWith('c1', 'how does auth work?', []);
     // The send path goes through beginStream, which clears the error.
     expect(useChat.getState().errors.c1).toBeUndefined();
 
@@ -188,6 +196,24 @@ describe('ChatScreen', () => {
     await waitFor(() => {
       expect(useChat.getState().streams.c1).toBeUndefined();
     });
+  });
+
+  it('queues a dropped text file as a chip and clears it on remove', async () => {
+    renderChat();
+    const file = new File(['hello'], 'notes.md', { type: 'text/markdown' });
+    const composer = await screen.findByPlaceholderText(/message poltergeist/i);
+    fireEvent.drop(composer, { dataTransfer: { files: [file] } });
+    expect(await screen.findByText('notes.md')).toBeInTheDocument();
+    await userEvent.click(screen.getByLabelText('remove notes.md'));
+    expect(screen.queryByText('notes.md')).not.toBeInTheDocument();
+  });
+
+  it('rejects an unsupported dropped file with a toast and no chip', async () => {
+    renderChat();
+    const file = new File(['x'], 'pic.png', { type: 'image/png' });
+    const composer = await screen.findByPlaceholderText(/message poltergeist/i);
+    fireEvent.drop(composer, { dataTransfer: { files: [file] } });
+    expect(screen.queryByText('pic.png')).not.toBeInTheDocument();
   });
 });
 
