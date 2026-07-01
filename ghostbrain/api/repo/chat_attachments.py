@@ -14,10 +14,12 @@ from pathlib import Path
 
 import yaml
 
+from ghostbrain.api.repo import attachment_extract
 from ghostbrain.paths import vault_path
 
 ATTACHMENTS_DIR_REL = "20-contexts/chat-attachments"
 MAX_TEXT_BYTES = 1_000_000
+MAX_DOC_BYTES = 20_000_000
 
 # Extension → fenced-code language. Markdown extensions map to "" (inline as-is).
 _LANG_BY_EXT = {
@@ -46,8 +48,20 @@ def _slug(name: str) -> str:
     return slug or "attachment"
 
 
-def _is_text(filename: str, mime: str) -> bool:
-    return Path(filename).suffix.lower() in TEXT_EXTENSIONS or mime.startswith("text/")
+def _classify(filename: str, mime: str) -> str | None:
+    ext = Path(filename).suffix.lower()
+    if ext in TEXT_EXTENSIONS or mime.startswith("text/"):
+        return "text"
+    return attachment_extract.classify(filename, mime)  # "pdf" | "docx" | None
+
+
+def _text_body(filename: str, content: bytes) -> str:
+    text = content.decode("utf-8")  # may raise UnicodeDecodeError (caught by caller)
+    ext = Path(filename).suffix.lower()
+    lang = _LANG_BY_EXT.get(ext, "")
+    if ext in (".md", ".markdown"):
+        return text
+    return f"```{lang}\n{text}\n```" if lang else text
 
 
 def _render(front: dict, body: str) -> str:
@@ -56,31 +70,36 @@ def _render(front: dict, body: str) -> str:
 
 
 def save_attachment(conv_id: str, filename: str, mime: str, content: bytes) -> dict:
-    if not _is_text(filename, mime):
+    kind = _classify(filename, mime)
+    if kind is None:
         raise UnsupportedAttachment(f"unsupported attachment type: {filename} ({mime})")
-    if len(content) > MAX_TEXT_BYTES:
-        raise AttachmentTooLarge(f"{filename} exceeds {MAX_TEXT_BYTES} bytes")
 
-    try:
-        text = content.decode("utf-8")
-    except UnicodeDecodeError as e:
-        raise UnsupportedAttachment(f"{filename} is not valid UTF-8 text") from e
+    cap = MAX_TEXT_BYTES if kind == "text" else MAX_DOC_BYTES
+    if len(content) > cap:
+        raise AttachmentTooLarge(f"{filename} exceeds {cap} bytes")
+
+    if kind == "text":
+        try:
+            body = _text_body(filename, content)
+        except UnicodeDecodeError as e:
+            raise UnsupportedAttachment(f"{filename} is not valid UTF-8 text") from e
+    else:
+        try:
+            body = attachment_extract.extract_text(filename, mime, content)
+        except attachment_extract.ExtractionError as e:
+            raise UnsupportedAttachment(str(e)) from e
+
     note_id = hashlib.sha256(content).hexdigest()[:12]
-
     target_dir = vault_path() / ATTACHMENTS_DIR_REL
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    # Content-addressed reuse: a note whose frontmatter id matches is identical.
     for existing in sorted(target_dir.glob("*.md")):
         if _frontmatter_id(existing) == note_id:
-            stored_title = _frontmatter_title(existing) or filename
-            return _result(existing, stored_title)
-
-    ext = Path(filename).suffix.lower()
-    lang = _LANG_BY_EXT.get(ext, "")
-    body = text if lang == "" and ext in (".md", ".markdown") else (
-        f"```{lang}\n{text}\n```" if lang else text
-    )
+            return _result(
+                existing,
+                title=_frontmatter_title(existing) or filename,
+                kind=_frontmatter_kind(existing) or kind,
+            )
 
     front = {
         "id": note_id,
@@ -89,17 +108,17 @@ def save_attachment(conv_id: str, filename: str, mime: str, content: bytes) -> d
         "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "conversation_id": conv_id,
         "original_filename": filename,
-        "kind": "text",
+        "kind": kind,
     }
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
     note_path = target_dir / f"{stamp}-{_slug(filename)}.md"
     note_path.write_text(_render(front, body), encoding="utf-8")
-    return _result(note_path, filename)
+    return _result(note_path, title=filename, kind=kind)
 
 
-def _result(note_path: Path, filename: str) -> dict:
+def _result(note_path: Path, *, title: str, kind: str) -> dict:
     rel = note_path.resolve().relative_to(vault_path().resolve())
-    return {"path": str(rel), "title": filename, "kind": "text"}
+    return {"path": str(rel), "title": title, "kind": kind}
 
 
 def _frontmatter(path: Path) -> dict | None:
@@ -127,6 +146,11 @@ def _frontmatter_id(path: Path) -> str | None:
 def _frontmatter_title(path: Path) -> str | None:
     fm = _frontmatter(path)
     return fm.get("title") if fm else None
+
+
+def _frontmatter_kind(path: Path) -> str | None:
+    fm = _frontmatter(path)
+    return fm.get("kind") if fm else None
 
 
 def title_for_path(rel_path: str) -> str:

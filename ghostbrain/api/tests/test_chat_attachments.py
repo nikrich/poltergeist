@@ -1,8 +1,10 @@
+import io
 from pathlib import Path
 
 import pytest
 
 from ghostbrain.api.repo import chat_attachments as repo
+from ghostbrain.api.repo.attachment_extract import DOCX_MIME as repo_ex_DOCX_MIME
 
 
 def test_saves_text_note_under_contexts(tmp_vault: Path):
@@ -129,3 +131,74 @@ def test_upload_too_many_files_400(client, auth_headers):
         json={"files": files}, headers=auth_headers,
     )
     assert res.status_code == 400
+
+
+# A minimal single-page PDF drawing "Hello PDF world" via a BT/Tj text object.
+# pypdf logs a recoverable "incorrect startxref" warning and still extracts —
+# that warning is expected and harmless.
+MINIMAL_PDF = b"""%PDF-1.4
+1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
+2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
+3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Resources<</Font<</F1 5 0 R>>>>/Contents 4 0 R>>endobj
+4 0 obj<</Length 58>>stream
+BT /F1 24 Tf 72 700 Td (Hello PDF world) Tj ET
+endstream endobj
+5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj
+xref
+0 6
+0000000000 65535 f
+0000000009 00000 n
+0000000052 00000 n
+0000000101 00000 n
+0000000209 00000 n
+0000000317 00000 n
+trailer<</Size 6/Root 1 0 R>>
+startxref
+388
+%%EOF"""
+
+
+def _docx_bytes(*paragraphs: str) -> bytes:
+    from docx import Document
+
+    d = Document()
+    for p in paragraphs:
+        d.add_paragraph(p)
+    buf = io.BytesIO()
+    d.save(buf)
+    return buf.getvalue()
+
+
+def test_saves_pdf_note_with_extracted_text(tmp_vault):
+    result = repo.save_attachment("c", "report.pdf", "application/pdf", MINIMAL_PDF)
+    assert result["kind"] == "pdf"
+    assert result["title"] == "report.pdf"
+    body = (tmp_vault / result["path"]).read_text(encoding="utf-8")
+    assert "kind: pdf" in body
+    assert "Hello PDF world" in body
+
+
+def test_saves_docx_note_with_extracted_text(tmp_vault):
+    data = _docx_bytes("Hello DOCX world")
+    result = repo.save_attachment("c", "notes.docx", repo_ex_DOCX_MIME, data)
+    assert result["kind"] == "docx"
+    assert "Hello DOCX world" in (tmp_vault / result["path"]).read_text(encoding="utf-8")
+
+
+def test_pdf_over_doc_cap_rejected(tmp_vault):
+    big = MINIMAL_PDF + b"%" + b"a" * (repo.MAX_DOC_BYTES)
+    with pytest.raises(repo.AttachmentTooLarge):
+        repo.save_attachment("c", "big.pdf", "application/pdf", big)
+
+
+def test_scanned_pdf_no_text_rejected(tmp_vault):
+    # A structurally-valid PDF with no text content → UnsupportedAttachment.
+    with pytest.raises(repo.UnsupportedAttachment):
+        repo.save_attachment("c", "scan.pdf", "application/pdf", b"%PDF-1.4\n%%EOF")
+
+
+def test_pdf_reuse_preserves_kind(tmp_vault):
+    a = repo.save_attachment("c", "r.pdf", "application/pdf", MINIMAL_PDF)
+    b = repo.save_attachment("c", "r.pdf", "application/pdf", MINIMAL_PDF)
+    assert a["path"] == b["path"]
+    assert b["kind"] == "pdf"
