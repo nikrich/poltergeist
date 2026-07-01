@@ -202,3 +202,11 @@ def test_pdf_reuse_preserves_kind(tmp_vault):
     b = repo.save_attachment("c", "r.pdf", "application/pdf", MINIMAL_PDF)
     assert a["path"] == b["path"]
     assert b["kind"] == "pdf"
+
+
+def test_kind_for_path(tmp_vault):
+    result = repo.save_attachment("c", "r.pdf", "application/pdf", MINIMAL_PDF)
+    assert repo.kind_for_path(result["path"]) == "pdf"
+    assert (
+        repo.kind_for_path("20-contexts/chat-attachments/missing.md") == "text"
+    )

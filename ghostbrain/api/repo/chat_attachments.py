@@ -159,3 +159,9 @@ def title_for_path(rel_path: str) -> str:
     basename = rel_path.rsplit("/", 1)[-1]
     note = vault_path() / rel_path
     return _frontmatter_title(note) or basename
+
+
+def kind_for_path(rel_path: str) -> str:
+    """Attachment kind stored in the note's frontmatter, or "text" if unknown."""
+    note = vault_path() / rel_path
+    return _frontmatter_kind(note) or "text"
