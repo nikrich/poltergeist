@@ -39,6 +39,15 @@ def build_server(client: SidecarClient | None = None) -> FastMCP:
         from poltergeist_ask)."""
         return tools.get_note(client, path)
 
+    @mcp.tool()
+    def poltergeist_write_doc(title: str, html: str) -> str:
+        """Save a document the user asked you to write. Pass a COMPLETE,
+        self-contained HTML document (its own <style>; print-friendly layout
+        when appropriate) as `html`. Returns the vault-relative path of the
+        saved doc — cite it back to the user as a wikilink. Use this ONLY when
+        the user asks you to write/draft/create a document."""
+        return tools.write_doc(client, title, html)
+
     return mcp
 
 

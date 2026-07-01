@@ -15,6 +15,7 @@ class _Client(Protocol):
     def answer(self, q: str, limit: int = 8) -> dict: ...
     def search(self, q: str, limit: int = 10) -> dict: ...
     def get_note(self, path: str) -> dict: ...
+    def write_doc(self, title: str, html: str) -> dict: ...
 
 
 def ask(client: _Client, question: str, limit: int = 8) -> str:
@@ -65,3 +66,12 @@ def get_note(client: _Client, path: str) -> str:
     if context:
         header += f"  ·  context: {context}"
     return f"{header}\n\n{body}"
+
+
+def write_doc(client: _Client, title: str, html: str) -> str:
+    """Save an agent-generated HTML document to the vault; return its path."""
+    try:
+        data = client.write_doc(title, html)
+    except Exception as e:  # noqa: BLE001 — surface failure as text, never raise
+        return f"Poltergeist could not save the document: {e}"
+    return str(data.get("path") or "")

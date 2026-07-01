@@ -52,3 +52,6 @@ class SidecarClient:
 
     def get_note(self, path: str) -> dict:
         return self._request("GET", "/v1/notes", params={"path": path})
+
+    def write_doc(self, title: str, html: str) -> dict:
+        return self._request("POST", "/v1/docs/write", json={"title": title, "html": html})
