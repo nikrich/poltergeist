@@ -24,11 +24,19 @@ export function createSseParser(): (chunk: string) => string[] {
 // One in-flight stream per conversation; sending again aborts the previous.
 const active = new Map<string, AbortController>();
 
+export function buildMessageBody(
+  text: string,
+  attachmentPaths?: string[],
+): string {
+  return JSON.stringify({ text, attachment_paths: attachmentPaths ?? [] });
+}
+
 export async function startChatStream(
   sidecar: Sidecar,
   convId: string,
   text: string,
   send: (event: ChatStreamEvent) => void,
+  attachmentPaths?: string[],
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const info = sidecar.getInfo();
   if (!info) return { ok: false, error: 'Sidecar not ready' };
@@ -44,7 +52,7 @@ export async function startChatStream(
           'Content-Type': 'application/json',
           Authorization: `Bearer ${info.token}`,
         },
-        body: JSON.stringify({ text }),
+        body: buildMessageBody(text, attachmentPaths),
         // No timeout: agent turns are long-lived. The sidecar enforces its
         // own 5-minute turn ceiling; stop() aborts from our side.
         signal: ac.signal,

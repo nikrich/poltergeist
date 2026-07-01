@@ -165,3 +165,23 @@ def test_resume_failure_retries_without_session_with_history(chats, monkeypatch)
     saved = chat_store.get(conv["id"])
     assert saved["claude_session_id"] == "sess-2"
     assert saved["messages"][-1]["text"] == "recovered"
+
+
+def test_build_attachment_prompt_references_paths():
+    from ghostbrain.api.repo.chat import build_attachment_prompt
+
+    prompt = build_attachment_prompt(
+        "summarize these",
+        ["20-contexts/chat-attachments/a.md", "20-contexts/chat-attachments/b.md"],
+    )
+    assert "[[20-contexts/chat-attachments/a.md]]" in prompt
+    assert "[[20-contexts/chat-attachments/b.md]]" in prompt
+    assert "poltergeist_get_note" in prompt
+    assert prompt.endswith("summarize these")
+
+
+def test_build_attachment_prompt_no_paths_returns_text_unchanged():
+    from ghostbrain.api.repo.chat import build_attachment_prompt
+
+    assert build_attachment_prompt("hi", []) == "hi"
+    assert build_attachment_prompt("hi", None) == "hi"

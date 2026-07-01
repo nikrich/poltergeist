@@ -106,8 +106,13 @@ def delete(conv_id: str) -> bool:
     return True
 
 
-def append_user_message(conv: dict, text: str) -> dict:
-    conv["messages"].append({"role": "user", "text": text})
+def append_user_message(
+    conv: dict, text: str, *, attachments: list[dict] | None = None
+) -> dict:
+    msg: dict = {"role": "user", "text": text}
+    if attachments:
+        msg["attachments"] = attachments
+    conv["messages"].append(msg)
     if len(conv["messages"]) == 1:
         conv["title"] = derive_title(text)
     conv["updated_at"] = time.time()

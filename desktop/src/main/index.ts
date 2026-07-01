@@ -313,31 +313,38 @@ const stopTurn = (convId: string) => {
   void forward(sidecar, 'POST', `/v1/chat/${encodeURIComponent(convId)}/stop`);
 };
 
-ipcMain.handle('gb:chat:send', async (e, convId: unknown, text: unknown) => {
-  if (typeof convId !== 'string' || typeof text !== 'string') {
-    return { ok: false, error: 'Invalid request shape' };
-  }
-  const wc = e.sender;
-  const send = (event: ChatStreamEvent) => {
-    if (!wc.isDestroyed()) wc.send('gb:chat:event', { convId, event });
-  };
-  if (DEMO) {
-    const onDestroyed = () => stopDemoChat(convId);
+ipcMain.handle(
+  'gb:chat:send',
+  async (e, convId: unknown, text: unknown, attachmentPaths: unknown) => {
+    if (typeof convId !== 'string' || typeof text !== 'string') {
+      return { ok: false, error: 'Invalid request shape' };
+    }
+    const paths = Array.isArray(attachmentPaths)
+      ? attachmentPaths.filter((p): p is string => typeof p === 'string')
+      : [];
+    const wc = e.sender;
+    const send = (event: ChatStreamEvent) => {
+      if (!wc.isDestroyed()) wc.send('gb:chat:event', { convId, event });
+    };
+    if (DEMO) {
+      // Demo mode has no sidecar/vault — attachments aren't supported here.
+      const onDestroyed = () => stopDemoChat(convId);
+      wc.once('destroyed', onDestroyed);
+      try {
+        return await runDemoChatStream(convId, text, send);
+      } finally {
+        wc.removeListener('destroyed', onDestroyed);
+      }
+    }
+    const onDestroyed = () => stopTurn(convId);
     wc.once('destroyed', onDestroyed);
     try {
-      return await runDemoChatStream(convId, text, send);
+      return await startChatStream(sidecar, convId, text, send, paths);
     } finally {
       wc.removeListener('destroyed', onDestroyed);
     }
-  }
-  const onDestroyed = () => stopTurn(convId);
-  wc.once('destroyed', onDestroyed);
-  try {
-    return await startChatStream(sidecar, convId, text, send);
-  } finally {
-    wc.removeListener('destroyed', onDestroyed);
-  }
-});
+  },
+);
 
 ipcMain.handle('gb:chat:stop', (_e, convId: unknown) => {
   if (typeof convId !== 'string') {

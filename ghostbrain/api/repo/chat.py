@@ -10,7 +10,7 @@ import logging
 import threading
 from typing import Iterator
 
-from ghostbrain.api.repo import chat_store
+from ghostbrain.api.repo import chat_attachments, chat_store
 from ghostbrain.llm import agent
 
 log = logging.getLogger("ghostbrain.chat")
@@ -25,7 +25,25 @@ _active_lock = threading.Lock()
 _active: set[str] = set()
 
 
-def send_message(conv_id: str, text: str) -> Iterator[dict]:
+def build_attachment_prompt(text: str, paths: list[str] | None) -> str:
+    """Prepend attachment wikilinks + a read-first instruction to the turn.
+
+    Reference-by-path only: the agent fetches each note via
+    poltergeist_get_note. Content is never inlined here.
+    """
+    if not paths:
+        return text
+    links = "\n".join(f"- [[{p}]]" for p in paths)
+    return (
+        "The user attached the following notes to this message. Read each with "
+        "poltergeist_get_note before answering:\n"
+        f"{links}\n\n{text}"
+    )
+
+
+def send_message(
+    conv_id: str, text: str, attachment_paths: list[str] | None = None
+) -> Iterator[dict]:
     # Don't yield under the lock: a generator suspends at yield without
     # exiting the with-block, so a consumer that receives the busy error and
     # never resumes/closes the generator would keep the GLOBAL lock held,
@@ -45,15 +63,20 @@ def send_message(conv_id: str, text: str) -> Iterator[dict]:
         if conv is None:
             yield {"type": "error", "message": "conversation not found"}
             return
-        chat_store.append_user_message(conv, text)
+        attachments = [
+            {"path": p, "title": chat_attachments.title_for_path(p), "kind": "text"}
+            for p in (attachment_paths or [])
+        ]
+        chat_store.append_user_message(conv, text, attachments=attachments or None)
+        prompt = build_attachment_prompt(text, attachment_paths)
         session_id = conv.get("claude_session_id")
         try:
-            yield from _stream_turn(conv, text, session_id)
+            yield from _stream_turn(conv, prompt, session_id)
         except agent.ResumeFailed as e:
             log.warning(
                 "resume failed for %s (%s); retrying without session", conv_id, e
             )
-            yield from _stream_turn(conv, _with_history(conv, text), None)
+            yield from _stream_turn(conv, _with_history(conv, prompt), None)
     finally:
         with _active_lock:
             _active.discard(conv_id)

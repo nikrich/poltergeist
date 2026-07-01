@@ -1,7 +1,7 @@
 """Chat conversation schemas."""
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class ChatToolUse(BaseModel):
@@ -9,11 +9,18 @@ class ChatToolUse(BaseModel):
     summary: str
 
 
+class Attachment(BaseModel):
+    path: str
+    title: str
+    kind: str
+
+
 class ChatMessage(BaseModel):
     role: Literal["user", "assistant"]
     text: str
     tools: list[ChatToolUse] = []
     interrupted: bool = False
+    attachments: list[Attachment] = []
 
 
 class ConversationSummary(BaseModel):
@@ -34,11 +41,32 @@ class Conversation(BaseModel):
 
 
 class ChatMessageRequest(BaseModel):
-    text: str = Field(..., min_length=1, max_length=4000)
+    text: str = Field("", max_length=4000)
+    attachment_paths: list[str] = Field(default_factory=list, max_length=10)
+
+    @model_validator(mode="after")
+    def _require_text_or_attachments(self) -> "ChatMessageRequest":
+        if not self.text.strip() and not self.attachment_paths:
+            raise ValueError("message must have text or attachments")
+        return self
 
 
 class RenameRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
+
+
+class AttachmentFile(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    mime: str = Field("", max_length=255)
+    content_b64: str = Field(..., min_length=1)
+
+
+class AttachmentUploadRequest(BaseModel):
+    files: list[AttachmentFile] = Field(..., min_length=1)
+
+
+class AttachmentUploadResponse(BaseModel):
+    attachments: list[Attachment]
 
 
 class ChatExportResponse(BaseModel):

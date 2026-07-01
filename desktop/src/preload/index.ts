@@ -22,7 +22,8 @@ const bridge: GbBridge = {
     retry: () => ipcRenderer.invoke('gb:sidecar:retry'),
   },
   chat: {
-    send: (convId, text) => ipcRenderer.invoke('gb:chat:send', convId, text),
+    send: (convId, text, attachmentPaths) =>
+      ipcRenderer.invoke('gb:chat:send', convId, text, attachmentPaths),
     stop: (convId) => ipcRenderer.invoke('gb:chat:stop', convId),
   },
   docs: {

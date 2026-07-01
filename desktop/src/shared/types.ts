@@ -71,6 +71,7 @@ export interface GbBridge {
     send(
       convId: string,
       text: string,
+      attachmentPaths?: string[],
     ): Promise<{ ok: true } | { ok: false; error: string }>;
     stop(convId: string): Promise<{ ok: true } | { ok: false; error: string }>;
   };

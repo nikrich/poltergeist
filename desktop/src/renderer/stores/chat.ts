@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ChatStreamEvent, ChatToolUse } from '../../shared/api-types';
+import type { ChatStreamEvent, ChatToolUse, ChatAttachment } from '../../shared/api-types';
 
 export interface StreamState {
   /** The user message this turn answers — rendered optimistically until the
@@ -7,6 +7,7 @@ export interface StreamState {
   userText: string;
   text: string;
   tools: ChatToolUse[];
+  attachments: ChatAttachment[];
 }
 
 export interface TurnError {
@@ -14,6 +15,9 @@ export interface TurnError {
   /** The user message that triggered the failed turn — kept so the inline
    *  error banner can offer a retry that re-sends the original text. */
   userText: string;
+  /** The already-uploaded attachments from the failed turn — kept so retry
+   *  can re-send them by path instead of dropping grounding on the floor. */
+  attachments: ChatAttachment[];
 }
 
 interface ChatState {
@@ -23,7 +27,7 @@ interface ChatState {
   /** Last turn error per conversation, shown inline in the thread. */
   errors: Record<string, TurnError>;
   setActive: (id: string | null) => void;
-  beginStream: (id: string, userText: string) => void;
+  beginStream: (id: string, userText: string, attachments?: ChatAttachment[]) => void;
   applyEvent: (id: string, event: ChatStreamEvent) => void;
   /** Finalizer for streams that end without a terminal event (user stop,
    *  relay teardown). No-op when the stream is already gone. */
@@ -40,12 +44,12 @@ export const useChat = create<ChatState>((set) => ({
   streams: {},
   errors: {},
   setActive: (id) => set({ activeId: id }),
-  beginStream: (id, userText) =>
+  beginStream: (id, userText, attachments = []) =>
     set((s) => {
       const errors = { ...s.errors };
       delete errors[id];
       return {
-        streams: { ...s.streams, [id]: { userText, text: '', tools: [] } },
+        streams: { ...s.streams, [id]: { userText, text: '', tools: [], attachments } },
         errors,
       };
     }),
@@ -80,7 +84,11 @@ export const useChat = create<ChatState>((set) => ({
             streams,
             errors: {
               ...s.errors,
-              [id]: { message: event.message, userText: cur.userText },
+              [id]: {
+                message: event.message,
+                userText: cur.userText,
+                attachments: cur.attachments,
+              },
             },
           };
         }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createSseParser } from '../chat-stream';
+import { buildMessageBody, createSseParser } from '../chat-stream';
 
 describe('createSseParser', () => {
   it('extracts data payloads from complete blocks', () => {
@@ -22,5 +22,21 @@ describe('createSseParser', () => {
   it('ignores non-data lines and comments', () => {
     const parse = createSseParser();
     expect(parse(': keepalive\nevent: x\ndata: 3\n\n')).toEqual(['3']);
+  });
+});
+
+describe('buildMessageBody', () => {
+  it('includes attachment_paths when provided', () => {
+    expect(JSON.parse(buildMessageBody('hi', ['a.md', 'b.md']))).toEqual({
+      text: 'hi',
+      attachment_paths: ['a.md', 'b.md'],
+    });
+  });
+
+  it('sends an empty array when no attachments', () => {
+    expect(JSON.parse(buildMessageBody('hi', undefined))).toEqual({
+      text: 'hi',
+      attachment_paths: [],
+    });
   });
 });
