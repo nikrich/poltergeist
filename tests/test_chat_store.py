@@ -87,3 +87,18 @@ def test_interrupted_flag_persists(chats: Path):
     conv = chat_store.create()
     chat_store.append_assistant_message(conv, "partial", [], interrupted=True)
     assert chat_store.get(conv["id"])["messages"][0]["interrupted"] is True
+
+
+def test_append_user_message_stores_attachments(chats):
+    conv = chat_store.create()
+    atts = [{"path": "20-contexts/chat-attachments/a.md", "title": "a.md", "kind": "text"}]
+    chat_store.append_user_message(conv, "see attached", attachments=atts)
+    reloaded = chat_store.get(conv["id"])
+    msg = reloaded["messages"][-1]
+    assert msg["attachments"] == atts
+
+
+def test_append_user_message_omits_empty_attachments(chats):
+    conv = chat_store.create()
+    chat_store.append_user_message(conv, "plain")
+    assert "attachments" not in chat_store.get(conv["id"])["messages"][-1]

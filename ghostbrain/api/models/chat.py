@@ -9,11 +9,18 @@ class ChatToolUse(BaseModel):
     summary: str
 
 
+class Attachment(BaseModel):
+    path: str
+    title: str
+    kind: str
+
+
 class ChatMessage(BaseModel):
     role: Literal["user", "assistant"]
     text: str
     tools: list[ChatToolUse] = []
     interrupted: bool = False
+    attachments: list[Attachment] = []
 
 
 class ConversationSummary(BaseModel):
@@ -35,6 +42,7 @@ class Conversation(BaseModel):
 
 class ChatMessageRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=4000)
+    attachment_paths: list[str] = Field(default_factory=list, max_length=10)
 
 
 class RenameRequest(BaseModel):
@@ -49,12 +57,6 @@ class AttachmentFile(BaseModel):
 
 class AttachmentUploadRequest(BaseModel):
     files: list[AttachmentFile] = Field(..., min_length=1)
-
-
-class Attachment(BaseModel):
-    path: str
-    title: str
-    kind: str
 
 
 class AttachmentUploadResponse(BaseModel):
