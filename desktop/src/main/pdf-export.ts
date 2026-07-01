@@ -83,7 +83,7 @@ export async function renderVaultHtmlToPdf(
   }
   const htmlPath = join(vaultPath, rel);
   const pdfPath = htmlPath.replace(/\.html$/, '.pdf');
-  const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true } });
+  const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true, javascript: false } });
   try {
     // The agent's HTML is already a complete styled document — load as-is
     // (no wrapPrintableHtml), so its own CSS/@page rules drive the layout.

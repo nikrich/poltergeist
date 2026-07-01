@@ -153,7 +153,7 @@ COMPLETE, self-contained, styled HTML document (its own <style>; print-friendly 
 per-section layout when it suits the content) and call poltergeist_write_doc \
 with a short title and that HTML. Then tell the user the doc is ready and put \
 the tool's returned path on its own line as a wikilink, e.g. \
-[[20-contexts/generated-docs/…​.html]]. Do NOT paste the raw HTML into the chat."""
+[[20-contexts/generated-docs/….html]]. Do NOT paste the raw HTML into the chat."""
 
 
 def find_mcp_binary() -> list[str] | None:
