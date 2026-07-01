@@ -403,7 +403,7 @@ git commit -m "feat(chat): add POST /v1/chat/{id}/attachments upload endpoint"
 **Files:**
 - Modify: `ghostbrain/api/models/chat.py` (`ChatMessage.attachments`, `ChatMessageRequest.attachment_paths`)
 - Modify: `ghostbrain/api/repo/chat_store.py` (`append_user_message` accepts attachments)
-- Test: `ghostbrain/api/tests/test_chat_store.py` (or `test_chat_repo.py`)
+- Test: `tests/test_chat_store.py` (repo root — NOT `ghostbrain/api/tests/`)
 
 **Interfaces:**
 - Consumes: nothing new.
@@ -411,12 +411,10 @@ git commit -m "feat(chat): add POST /v1/chat/{id}/attachments upload endpoint"
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `ghostbrain/api/tests/test_chat_store.py`:
+Append to `tests/test_chat_store.py`. This file imports `from ghostbrain.api.repo import chat_store` at module top and defines a local `chats` fixture (sets `GHOSTBRAIN_CHATS_DIR`) — use that fixture, and rely on the existing module-level import (do NOT re-import inside the test):
 
 ```python
-def test_append_user_message_stores_attachments(tmp_chats_dir):
-    from ghostbrain.api.repo import chat_store
-
+def test_append_user_message_stores_attachments(chats):
     conv = chat_store.create()
     atts = [{"path": "20-contexts/chat-attachments/a.md", "title": "a.md", "kind": "text"}]
     chat_store.append_user_message(conv, "see attached", attachments=atts)
@@ -425,19 +423,15 @@ def test_append_user_message_stores_attachments(tmp_chats_dir):
     assert msg["attachments"] == atts
 
 
-def test_append_user_message_omits_empty_attachments(tmp_chats_dir):
-    from ghostbrain.api.repo import chat_store
-
+def test_append_user_message_omits_empty_attachments(chats):
     conv = chat_store.create()
     chat_store.append_user_message(conv, "plain")
     assert "attachments" not in chat_store.get(conv["id"])["messages"][-1]
 ```
 
-Note: `test_chat_store.py` already uses the `tmp_chats_dir` fixture (conftest line 81). Match its existing import style if it imports `chat_store` at module top.
-
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `pytest ghostbrain/api/tests/test_chat_store.py -v -k attachments`
+Run: `pytest tests/test_chat_store.py -v -k attachments`
 Expected: FAIL — `append_user_message()` got an unexpected keyword argument `attachments`.
 
 - [ ] **Step 3: Update the store + models**
@@ -480,13 +474,13 @@ Move the `Attachment` class definition above `ChatMessage` so it is defined befo
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `pytest ghostbrain/api/tests/test_chat_store.py -v -k attachments`
+Run: `pytest tests/test_chat_store.py -v -k attachments`
 Expected: PASS (2 tests).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add ghostbrain/api/repo/chat_store.py ghostbrain/api/models/chat.py ghostbrain/api/tests/test_chat_store.py
+git add ghostbrain/api/repo/chat_store.py ghostbrain/api/models/chat.py tests/test_chat_store.py
 git commit -m "feat(chat): persist attachment refs on the user message"
 ```
 
@@ -497,7 +491,7 @@ git commit -m "feat(chat): persist attachment refs on the user message"
 **Files:**
 - Modify: `ghostbrain/api/repo/chat.py` (`send_message` signature + augmentation)
 - Modify: `ghostbrain/api/routes/chat.py` (pass `attachment_paths` through)
-- Test: `ghostbrain/api/tests/test_chat_repo.py`
+- Test: `tests/test_chat_repo.py` (repo root — NOT `ghostbrain/api/tests/`)
 
 **Interfaces:**
 - Consumes: `chat_store.append_user_message(..., attachments=...)` (Task 3).
@@ -505,7 +499,7 @@ git commit -m "feat(chat): persist attachment refs on the user message"
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `ghostbrain/api/tests/test_chat_repo.py`:
+Append to `tests/test_chat_repo.py`:
 
 ```python
 def test_build_attachment_prompt_references_paths():
@@ -530,7 +524,7 @@ def test_build_attachment_prompt_no_paths_returns_text_unchanged():
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `pytest ghostbrain/api/tests/test_chat_repo.py -v -k attachment_prompt`
+Run: `pytest tests/test_chat_repo.py -v -k attachment_prompt`
 Expected: FAIL — `ImportError: cannot import name 'build_attachment_prompt'`.
 
 - [ ] **Step 3: Implement augmentation**
@@ -599,13 +593,13 @@ In `ghostbrain/api/routes/chat.py`, thread the paths from the request:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `pytest ghostbrain/api/tests/test_chat_repo.py -v`
+Run: `pytest tests/test_chat_repo.py -v`
 Expected: PASS (new tests + existing ones unaffected).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add ghostbrain/api/repo/chat.py ghostbrain/api/routes/chat.py ghostbrain/api/tests/test_chat_repo.py
+git add ghostbrain/api/repo/chat.py ghostbrain/api/routes/chat.py tests/test_chat_repo.py
 git commit -m "feat(chat): reference attached notes by path in the turn prompt"
 ```
 
