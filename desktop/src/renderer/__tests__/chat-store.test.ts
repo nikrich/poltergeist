@@ -7,7 +7,9 @@ describe('chat store', () => {
   });
 
   it('beginStream snapshots the pending user text and clears prior error', () => {
-    useChat.setState({ errors: { c1: { message: 'old boom', userText: 'old q' } } });
+    useChat.setState({
+      errors: { c1: { message: 'old boom', userText: 'old q', attachments: [] } },
+    });
     useChat.getState().beginStream('c1', 'my question');
     const s = useChat.getState();
     expect(s.streams.c1).toEqual({
@@ -48,13 +50,26 @@ describe('chat store', () => {
     useChat.getState().beginStream('c1', 'q');
     useChat.getState().applyEvent('c1', { type: 'error', message: 'boom' });
     expect(useChat.getState().streams.c1).toBeUndefined();
-    expect(useChat.getState().errors.c1).toEqual({ message: 'boom', userText: 'q' });
+    expect(useChat.getState().errors.c1).toEqual({
+      message: 'boom',
+      userText: 'q',
+      attachments: [],
+    });
   });
 
   it('error carries the originating user text for retry', () => {
     useChat.getState().beginStream('c1', 'what about refresh tokens?');
     useChat.getState().applyEvent('c1', { type: 'error', message: 'timeout' });
     expect(useChat.getState().errors.c1?.userText).toBe('what about refresh tokens?');
+  });
+
+  it('error carries the originating attachments so retry can re-send them', () => {
+    const attachments = [
+      { path: '20-contexts/chat-attachments/a.md', title: 'a.md', kind: 'text' as const },
+    ];
+    useChat.getState().beginStream('c1', 'hi', attachments);
+    useChat.getState().applyEvent('c1', { type: 'error', message: 'x' });
+    expect(useChat.getState().errors.c1?.attachments).toEqual(attachments);
   });
 
   it('events for conversations without a stream are ignored', () => {

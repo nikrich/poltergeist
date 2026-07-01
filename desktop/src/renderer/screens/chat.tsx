@@ -66,11 +66,15 @@ export function ChatScreen() {
     if (first) setActive(first.id);
   }, [activeId, conversations.data, setActive]);
 
-  const sendMessage = (text: string, files: File[] = []) => {
+  const sendMessage = (
+    text: string,
+    files: File[] = [],
+    preUploaded?: ChatAttachment[],
+  ) => {
     if (!activeId) return;
     void (async () => {
-      let attachments: ChatAttachment[] = [];
-      if (files.length > 0) {
+      let attachments: ChatAttachment[] = preUploaded ?? [];
+      if (!preUploaded && files.length > 0) {
         try {
           attachments = await uploadAttachments(activeId, files);
         } catch (err) {
@@ -137,7 +141,7 @@ export function ChatScreen() {
               stream={stream}
               error={error}
               onStop={() => window.gb.chat.stop(activeId)}
-              onRetry={(t) => sendMessage(t, [])}
+              onRetry={(err) => sendMessage(err.userText, [], err.attachments)}
             />
             <Composer
               disabled={!!stream}
@@ -311,10 +315,11 @@ interface ThreadProps {
   stream: StreamState | undefined;
   error: TurnError | undefined;
   onStop: () => void;
-  /** Re-sends the failed turn's user text through the normal send path —
+  /** Re-sends the failed turn's user text (and its already-uploaded
+   *  attachments, so grounding isn't lost) through the normal send path —
    *  beginStream clears the error. Standard resend semantics: the user
    *  message appears again in the transcript. */
-  onRetry: (text: string) => void;
+  onRetry: (error: TurnError) => void;
 }
 
 function Thread({ conversation, stream, error, onStop, onRetry }: ThreadProps) {
@@ -364,7 +369,7 @@ function Thread({ conversation, stream, error, onStop, onRetry }: ThreadProps) {
               variant="ghost"
               size="sm"
               icon={<Lucide name="rotate-ccw" size={12} />}
-              onClick={() => onRetry(error.userText)}
+              onClick={() => onRetry(error)}
             >
               retry
             </Btn>

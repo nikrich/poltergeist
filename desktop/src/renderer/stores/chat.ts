@@ -15,6 +15,9 @@ export interface TurnError {
   /** The user message that triggered the failed turn — kept so the inline
    *  error banner can offer a retry that re-sends the original text. */
   userText: string;
+  /** The already-uploaded attachments from the failed turn — kept so retry
+   *  can re-send them by path instead of dropping grounding on the floor. */
+  attachments: ChatAttachment[];
 }
 
 interface ChatState {
@@ -81,7 +84,11 @@ export const useChat = create<ChatState>((set) => ({
             streams,
             errors: {
               ...s.errors,
-              [id]: { message: event.message, userText: cur.userText },
+              [id]: {
+                message: event.message,
+                userText: cur.userText,
+                attachments: cur.attachments,
+              },
             },
           };
         }

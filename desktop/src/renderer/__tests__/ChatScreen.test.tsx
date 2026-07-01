@@ -173,6 +173,7 @@ describe('ChatScreen', () => {
         c1: {
           message: 'LLMTimeout: claude -p timed out',
           userText: 'how does auth work?',
+          attachments: [],
         },
       },
     });
@@ -193,6 +194,7 @@ describe('ChatScreen', () => {
         c1: {
           message: 'LLMTimeout: claude -p timed out',
           userText: 'how does auth work?',
+          attachments: [],
         },
       },
     });
@@ -207,6 +209,40 @@ describe('ChatScreen', () => {
 
     // Flush the resolved send promise (finalizer clears the new stream) so
     // no state updates land after the test body.
+    await waitFor(() => {
+      expect(useChat.getState().streams.c1).toBeUndefined();
+    });
+  });
+
+  it('clicking retry on a turn that had attachments re-sends them by path (no re-upload)', async () => {
+    useChat.setState({
+      activeId: 'c1',
+      streams: {},
+      errors: {
+        c1: {
+          message: 'LLMTimeout: claude -p timed out',
+          userText: 'summarize this note',
+          attachments: [
+            { path: '20-contexts/chat-attachments/a.md', title: 'a.md', kind: 'text' },
+          ],
+        },
+      },
+    });
+
+    render(wrap(<ChatScreen />));
+
+    fireEvent.click(await screen.findByRole('button', { name: /retry/i }));
+
+    expect(window.gb.chat.send).toHaveBeenCalledWith('c1', 'summarize this note', [
+      '20-contexts/chat-attachments/a.md',
+    ]);
+    // Re-sending already-uploaded attachments must not trigger another upload.
+    expect(client.post).not.toHaveBeenCalledWith(
+      expect.stringContaining('/attachments'),
+      expect.anything(),
+    );
+    expect(useChat.getState().errors.c1).toBeUndefined();
+
     await waitFor(() => {
       expect(useChat.getState().streams.c1).toBeUndefined();
     });
