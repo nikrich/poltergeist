@@ -15,9 +15,6 @@ describe('isAccepted', () => {
     expect(isAccepted(new File(['x'], 'a.md', { type: 'text/markdown' }))).toBe(true);
     expect(isAccepted(new File(['x'], 'a.txt', { type: 'text/plain' }))).toBe(true);
   });
-  it('rejects .png', () => {
-    expect(isAccepted(new File(['x'], 'a.png', { type: 'image/png' }))).toBe(false);
-  });
 });
 
 describe('uploadAttachments', () => {
@@ -51,5 +48,30 @@ describe('pdf/docx acceptance + caps', () => {
     expect(maxBytesFor(new File(['x'], 'a.pdf'))).toBe(MAX_DOC_BYTES);
     expect(maxBytesFor(new File(['x'], 'a.txt'))).toBe(MAX_FILE_BYTES);
     expect(MAX_DOC_BYTES).toBeGreaterThan(MAX_FILE_BYTES);
+  });
+});
+
+describe('image acceptance', () => {
+  it('accepts png/jpg/webp by extension and by image/* mime', () => {
+    expect(isAccepted(new File(['x'], 'a.png', { type: 'image/png' }))).toBe(true);
+    expect(isAccepted(new File(['x'], 'a.jpg', { type: 'image/jpeg' }))).toBe(true);
+    expect(isAccepted(new File(['x'], 'pasted', { type: 'image/png' }))).toBe(true);
+    expect(isAccepted(new File(['x'], 'a.webp', { type: '' }))).toBe(true);
+  });
+
+  it('gives images the 20MB doc cap', () => {
+    expect(maxBytesFor(new File(['x'], 'a.png'))).toBe(MAX_DOC_BYTES);
+  });
+
+  it('gives an extension-less pasted image the doc cap via mime sniffing', () => {
+    expect(maxBytesFor(new File(['x'], 'pasted', { type: 'image/png' }))).toBe(MAX_DOC_BYTES);
+  });
+
+  it('gives an extension-less pdf the doc cap via mime sniffing', () => {
+    expect(maxBytesFor(new File(['x'], 'doc', { type: 'application/pdf' }))).toBe(MAX_DOC_BYTES);
+  });
+
+  it('still caps plain text at the small limit', () => {
+    expect(maxBytesFor(new File(['x'], 'a.txt', { type: 'text/plain' }))).toBe(MAX_FILE_BYTES);
   });
 });

@@ -260,10 +260,10 @@ describe('ChatScreen', () => {
 
   it('rejects an unsupported dropped file with a toast and no chip', async () => {
     renderChat();
-    const file = new File(['x'], 'pic.png', { type: 'image/png' });
+    const file = new File(['x'], 'archive.zip', { type: 'application/zip' });
     const composer = await screen.findByPlaceholderText(/message poltergeist/i);
     fireEvent.drop(composer, { dataTransfer: { files: [file] } });
-    expect(screen.queryByText('pic.png')).not.toBeInTheDocument();
+    expect(screen.queryByText('archive.zip')).not.toBeInTheDocument();
   });
 
   it('renders attachment chips on a historical user message', async () => {
