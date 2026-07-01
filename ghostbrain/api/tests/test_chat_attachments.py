@@ -51,3 +51,17 @@ def test_identical_content_reuses_note(tmp_vault: Path):
     assert a["path"] == b["path"]
     notes = list((tmp_vault / "20-contexts" / "chat-attachments").glob("*.md"))
     assert len(notes) == 1
+
+
+def test_rejects_non_utf8_bytes(tmp_vault: Path):
+    with pytest.raises(repo.UnsupportedAttachment):
+        repo.save_attachment("c", "bad.txt", "text/plain", b"\xff\xfe\x00bad")
+
+
+def test_reuse_returns_stored_title(tmp_vault: Path):
+    a = repo.save_attachment("c", "first.txt", "text/plain", b"same")
+    b = repo.save_attachment("c", "second.txt", "text/plain", b"same")
+    assert b["path"] == a["path"]
+    assert b["title"] == "first.txt"
+    notes = list((tmp_vault / "20-contexts" / "chat-attachments").glob("*.md"))
+    assert len(notes) == 1

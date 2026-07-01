@@ -61,7 +61,10 @@ def save_attachment(conv_id: str, filename: str, mime: str, content: bytes) -> d
     if len(content) > MAX_TEXT_BYTES:
         raise AttachmentTooLarge(f"{filename} exceeds {MAX_TEXT_BYTES} bytes")
 
-    text = content.decode("utf-8", errors="replace")
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError as e:
+        raise UnsupportedAttachment(f"{filename} is not valid UTF-8 text") from e
     note_id = hashlib.sha256(content).hexdigest()[:12]
 
     target_dir = vault_path() / ATTACHMENTS_DIR_REL
@@ -70,7 +73,8 @@ def save_attachment(conv_id: str, filename: str, mime: str, content: bytes) -> d
     # Content-addressed reuse: a note whose frontmatter id matches is identical.
     for existing in sorted(target_dir.glob("*.md")):
         if _frontmatter_id(existing) == note_id:
-            return _result(existing, filename)
+            stored_title = _frontmatter_title(existing) or filename
+            return _result(existing, stored_title)
 
     ext = Path(filename).suffix.lower()
     lang = _LANG_BY_EXT.get(ext, "")
@@ -98,7 +102,7 @@ def _result(note_path: Path, filename: str) -> dict:
     return {"path": str(rel), "title": filename, "kind": "text"}
 
 
-def _frontmatter_id(path: Path) -> str | None:
+def _frontmatter(path: Path) -> dict | None:
     try:
         text = path.read_text(encoding="utf-8")
     except OSError:
@@ -112,4 +116,14 @@ def _frontmatter_id(path: Path) -> str | None:
         fm = yaml.safe_load(text[4:end])
     except yaml.YAMLError:
         return None
-    return fm.get("id") if isinstance(fm, dict) else None
+    return fm if isinstance(fm, dict) else None
+
+
+def _frontmatter_id(path: Path) -> str | None:
+    fm = _frontmatter(path)
+    return fm.get("id") if fm else None
+
+
+def _frontmatter_title(path: Path) -> str | None:
+    fm = _frontmatter(path)
+    return fm.get("title") if fm else None
