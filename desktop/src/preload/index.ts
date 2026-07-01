@@ -38,6 +38,15 @@ const bridge: GbBridge = {
     writeRich: (payload: { html: string; text: string }) =>
       ipcRenderer.invoke('gb:clipboard:write-rich', payload),
   },
+  assets: {
+    write: (payload) => ipcRenderer.invoke('gb:assets:write', payload),
+    toUrl: (vaultRelPath: string) =>
+      'gbasset://asset/' +
+      vaultRelPath
+        .split('/')
+        .map((seg) => encodeURIComponent(seg))
+        .join('/'),
+  },
   jot: {
     save: (body: string) => ipcRenderer.invoke('gb:jot:save', body),
     cancel: () => ipcRenderer.invoke('gb:jot:cancel'),

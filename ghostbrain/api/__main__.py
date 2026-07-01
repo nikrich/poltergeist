@@ -54,10 +54,7 @@ import secrets
 import socket
 import sys
 from datetime import datetime  # noqa: E402
-
-import uvicorn
-
-from ghostbrain.api.main import create_app
+from typing import IO  # noqa: E402
 
 log = logging.getLogger("ghostbrain.api.main")
 
@@ -80,16 +77,37 @@ def _include_recorder() -> bool:
     return raw in ("1", "true", "yes", "on")
 
 
-def _publish_descriptor(port: int, token: str) -> None:
-    """Write the runtime descriptor and remove it on normal exit.
+def _publish_descriptor(port: int, token: str) -> IO | None:
+    """Claim the sidecar singleton and, if won, publish the runtime descriptor.
+
+    The descriptor is a single shared file advertising one sidecar to MCP
+    clients. Gating its write on a dedicated ``sidecar`` flock means a second
+    instance — a stray ``python -m ghostbrain.api``, a restart race — cannot
+    clobber the primary's descriptor or orphan it with a dead pid on a hard
+    exit (which surfaced as the chat's vault tools reporting "not running"
+    while the app was plainly up). Only the lock holder publishes and, on a
+    clean exit, removes the descriptor; a non-holder leaves it untouched.
+
+    Returns the held lock (the caller MUST keep a reference for the process
+    lifetime — the OS frees it on exit/crash) or ``None`` if another live
+    sidecar already owns the descriptor.
 
     Cleanup relies on atexit: during the process lifetime uvicorn owns
     SIGTERM/SIGINT and shuts down gracefully, after which the interpreter exits
     normally and atexit fires. On SIGKILL or a crash the stale descriptor is
-    harmless — load_descriptor() pid-liveness-checks it.
+    harmless — load_descriptor() pid-liveness-checks it, and the next boot
+    reclaims the freed lock and republishes.
     """
     from ghostbrain.api import runtime
     from ghostbrain.api.main import API_VERSION
+
+    lock = runtime.acquire_singleton_lock("sidecar")
+    if lock is None:
+        log.warning(
+            "another ghostbrain.api sidecar already owns the descriptor; not "
+            "publishing this instance (MCP clients keep using the primary)"
+        )
+        return None
 
     runtime.write_descriptor(
         port=port,
@@ -99,13 +117,41 @@ def _publish_descriptor(port: int, token: str) -> None:
         started_at=datetime.now().astimezone().isoformat(),
     )
     atexit.register(runtime.remove_descriptor)
+    return lock
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    # The packaged build ships one executable. When invoked as `ghostbrain-api
+    # mcp` it serves the Poltergeist MCP stdio server instead of the HTTP sidecar
+    # — this is how chat gets vault tools without a second, ML-heavy PyInstaller
+    # bundle (see ghostbrain.llm.agent.find_mcp_binary).
+    if argv and argv[0] == "mcp":
+        from ghostbrain.mcp.__main__ import main as mcp_main
+
+        mcp_main()
+        return 0
+
+    return _run_api_server()
+
+
+def _run_api_server() -> int:
+    # Import the app stack lazily, AFTER the `mcp` dispatch above. The frozen
+    # `ghostbrain-api mcp` subprocess must not pay for — or crash/stall on — the
+    # full route tree (uvicorn + every route + their transitive deps) before its
+    # MCP handshake; that coupling surfaced as "vault server still connecting".
+    import uvicorn
+
+    from ghostbrain.api.main import create_app
+
     token = secrets.token_hex(32)
     port = _pick_port()
     app = create_app(token=token)
-    _publish_descriptor(port=port, token=token)
+    # Keep the descriptor lock alive for the process lifetime by stashing it on
+    # app.state (the OS frees it on exit/crash). None means another sidecar is
+    # the primary and owns the descriptor — this instance still serves its
+    # parent over HTTP, it just doesn't advertise itself to MCP clients.
+    app.state.descriptor_lock = _publish_descriptor(port=port, token=token)
 
     # Wire the scheduler lifecycle BEFORE printing READY, so the desktop can
     # query /v1/scheduler/status immediately and get a real answer.

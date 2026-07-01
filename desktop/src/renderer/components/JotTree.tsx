@@ -81,13 +81,20 @@ function MonthList({ ctx, byMonth, collapsed, toggle, selectedId, onSelect, inde
                         key={leaf.id}
                         type="button"
                         onClick={() => onSelect(leaf.id)}
-                        className={`truncate rounded-sm px-2 py-[3px] text-left ${
+                        className={`flex items-center gap-1.5 rounded-sm px-2 py-[3px] text-left ${
                           selectedId === leaf.id
                             ? 'bg-neon/12 text-ink-0'
                             : 'text-ink-1 hover:bg-vellum'
                         }`}
                       >
-                        {leaf.title}
+                        {leaf.thumbnail && (
+                          <img
+                            src={window.gb.assets.toUrl(leaf.thumbnail)}
+                            alt=""
+                            className="h-7 w-7 shrink-0 rounded-sm object-cover"
+                          />
+                        )}
+                        <span className="truncate">{leaf.title}</span>
                       </button>
                     ))}
                 </div>

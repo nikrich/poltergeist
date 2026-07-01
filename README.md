@@ -12,8 +12,10 @@
 </p>
 
 <p align="center">
-  <img width="1510" height="864" alt="poltergeist desktop" src="https://github.com/user-attachments/assets/28bd797b-9491-44be-9326-0bd5684eaa02" />
+  <img alt="Poltergeist — a 40-second tour" src="media/poltergeist-demo.gif" width="900">
 </p>
+
+<p align="center"><sub>A 40-second tour — today's digest, asking the archive, the capture inbox, live connectors, and quick jots.<br><a href="media/poltergeist-demo.mp4">Watch the higher-quality MP4 →</a></sub></p>
 
 Poltergeist quietly haunts every app you use — Claude Code & Desktop,
 GitHub, Jira, Confluence, Slack, Gmail, Teams, Calendar — pulls every

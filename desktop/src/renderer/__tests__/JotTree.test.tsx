@@ -82,6 +82,7 @@ function makeItem(overrides: Partial<JotListItem> & { id: string }): JotListItem
     created: overrides.created ?? '2026-06-01T00:00:00Z',
     updated: overrides.updated ?? '2026-06-01T00:00:00Z',
     project: overrides.project,
+    thumbnail: overrides.thumbnail,
   };
 }
 
@@ -94,5 +95,33 @@ describe('JotTree project grouping', () => {
     render(<JotTree items={projectItems} selectedId={null} onSelect={() => {}} />);
     expect(screen.getByText('poltergeist')).toBeTruthy();   // project node
     expect(screen.getByText('codeship')).toBeTruthy();      // context node
+  });
+});
+
+// ── Thumbnail rendering ───────────────────────────────────────────────────────
+
+describe('JotTree thumbnail', () => {
+  it('renders an img for a jot with a thumbnail', () => {
+    const thumbItems = [
+      makeItem({
+        id: 'thumb-jot',
+        context: 'codeship',
+        title: 'photo jot',
+        thumbnail: '90-meta/assets/jots/2026/06/a-1.jpg',
+      }),
+    ];
+    const { container } = render(<JotTree items={thumbItems} selectedId={null} onSelect={() => {}} />);
+    // alt="" makes the role "presentation"; query the element directly
+    const img = container.querySelector('img');
+    expect(img).toBeTruthy();
+    expect(img!.getAttribute('src')).toContain('90-meta/assets/jots/2026/06/a-1.jpg');
+  });
+
+  it('renders no img for a jot without a thumbnail', () => {
+    const noThumbItems = [
+      makeItem({ id: 'no-thumb', context: 'codeship', title: 'text only jot' }),
+    ];
+    const { container } = render(<JotTree items={noThumbItems} selectedId={null} onSelect={() => {}} />);
+    expect(container.querySelector('img')).toBeNull();
   });
 });

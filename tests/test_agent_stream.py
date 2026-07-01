@@ -149,10 +149,65 @@ def test_build_chat_command_resume_and_no_mcp():
     cmd = build_chat_command("/bin/claude", "again", session_id="s-9", mcp_binary=None)
     i = cmd.index("--resume")
     assert cmd[i + 1] == "s-9"
-    assert "--mcp-config" not in cmd
+    # No poltergeist server when the binary is missing, and no allowlist...
+    assert "--allowedTools" not in cmd
+
+
+def test_build_chat_command_mcp_argv_list_emits_command_and_args():
+    """Frozen builds re-use the api exe via a subcommand, so the MCP binary is an
+    argv list. The server JSON must split it into command + args."""
+    cmd = build_chat_command(
+        "/bin/claude", "hi", mcp_binary=["/app/ghostbrain-api", "mcp"]
+    )
+    i = cmd.index("--mcp-config")
+    assert json.loads(cmd[i + 1]) == {
+        "mcpServers": {
+            "poltergeist": {"command": "/app/ghostbrain-api", "args": ["mcp"]}
+        }
+    }
+
+
+def test_find_mcp_binary_frozen_reuses_api_exe_with_subcommand(monkeypatch):
+    """In a PyInstaller bundle there is no separate ghostbrain-mcp executable —
+    the api exe (sys.executable) serves the MCP server via its `mcp` subcommand."""
+    monkeypatch.setattr(agent_mod.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(agent_mod.sys, "executable", "/app/ghostbrain-api")
+    assert agent_mod.find_mcp_binary() == ["/app/ghostbrain-api", "mcp"]
+
+
+def test_build_chat_command_no_mcp_still_locks_out_global_servers():
+    """Even without the poltergeist binary we must pass --strict-mcp-config with
+    an empty server set, or claude inherits the user's global ~/.claude.json MCP
+    servers (e.g. mempalace) and runs them with no allowlist — the exact failure
+    that made chat reach for mcp__mempalace__* tools behind a dead permission wall."""
+    cmd = build_chat_command("/bin/claude", "hi", mcp_binary=None)
+    assert "--strict-mcp-config" in cmd
+    i = cmd.index("--mcp-config")
+    assert json.loads(cmd[i + 1]) == {"mcpServers": {}}
 
 
 def test_system_prompt_mentions_wikilink_citations():
     assert "[[" in CHAT_SYSTEM_PROMPT
     i = build_chat_command("/bin/claude", "x").index("--system-prompt")
     assert build_chat_command("/bin/claude", "x")[i + 1] == CHAT_SYSTEM_PROMPT
+
+
+from ghostbrain.llm import agent as agent_mod
+from ghostbrain.llm.agent import MCP_BINARY_MISSING_MESSAGE, run_chat_turn
+
+
+def test_run_chat_turn_errors_when_mcp_binary_missing(monkeypatch):
+    """A missing vault-tool binary must surface a real error, not silently run a
+    toolless turn that lets the model improvise a fake permission prompt."""
+    monkeypatch.setattr(agent_mod, "_find_claude_binary", lambda: "/bin/claude")
+    monkeypatch.setattr(agent_mod, "find_mcp_binary", lambda: None)
+    # If the guard works we never reach Popen — make it explode if we do.
+    monkeypatch.setattr(
+        agent_mod.subprocess,
+        "Popen",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("spawned despite missing MCP binary")),
+    )
+
+    events = list(run_chat_turn("what's new?"))
+
+    assert events == [{"type": "error", "message": MCP_BINARY_MISSING_MESSAGE}]

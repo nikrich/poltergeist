@@ -1,6 +1,6 @@
 {
   "name": "ghostbrain-desktop",
-  "version": "0.3.1",
+  "version": "0.3.10",
   "description": "Poltergeist — local-first second brain desktop app",
   "homepage": "https://github.com/nikrich/poltergeist",
   "author": {
@@ -21,12 +21,16 @@
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,html}\"",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "demo:record": "node scripts/demo/record.mjs",
+    "demo:post": "scripts/demo/postprocess.sh",
+    "demo": "electron-vite build && node scripts/demo/record.mjs && scripts/demo/postprocess.sh"
   },
   "dependencies": {
     "@codemirror/lang-markdown": "^6.5.0",
     "@tanstack/react-query": "^5.100.9",
     "@tiptap/core": "^2.27.2",
+    "@tiptap/extension-image": "^2.27.2",
     "@tiptap/extension-link": "^2.27.2",
     "@tiptap/extension-table": "^2.27.2",
     "@tiptap/extension-table-cell": "^2.27.2",
@@ -37,6 +41,7 @@
     "@tiptap/pm": "^2.27.2",
     "@tiptap/react": "^2.27.2",
     "@tiptap/starter-kit": "^2.27.2",
+    "@tiptap/suggestion": "^2.27.2",
     "@uiw/react-codemirror": "^4.25.10",
     "lucide-react": "^1.14.0",
     "react": "^18.3.1",
@@ -68,6 +73,7 @@
     "eslint-plugin-react": "^7.35.0",
     "eslint-plugin-react-hooks": "^5.0.0",
     "jsdom": "^25.0.0",
+    "playwright": "^1.61.1",
     "prettier": "^3.3.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.6.0",

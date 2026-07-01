@@ -1,5 +1,95 @@
 # Changelog
 
+## [0.3.10](https://github.com/nikrich/poltergeist/compare/v0.3.9...v0.3.10) (2026-06-25)
+
+
+### Bug Fixes
+
+* **jots:** Grant claude file access to the image dir for vision extraction ([#50](https://github.com/nikrich/poltergeist/pull/50))
+
+## [0.3.9](https://github.com/nikrich/poltergeist/compare/v0.3.8...v0.3.9) (2026-06-24)
+
+
+### Features
+
+* **search:** Show last-indexed time + manual reindex in Settings ([#48](https://github.com/nikrich/poltergeist/issues/48)) ([8b8733d](https://github.com/nikrich/poltergeist/commit/8b8733d079951fdca12dc07e669e0d2ebaa7cafc))
+
+## [0.3.8](https://github.com/nikrich/poltergeist/compare/v0.3.7...v0.3.8) (2026-06-24)
+
+
+### Features
+
+* **jots:** Expose gb.assets bridge (write + toUrl) ([a308ea2](https://github.com/nikrich/poltergeist/commit/a308ea2154dce8975bbf6dd5b84a9f6f1707fe0a))
+* **jots:** Final visual polish + inline image CSS ([ee9202b](https://github.com/nikrich/poltergeist/commit/ee9202b8c8a271c394fcc64496c4c7c0c172853c))
+* **jots:** Formatting toolbar ([869ca25](https://github.com/nikrich/poltergeist/commit/869ca2515256b4a3b246cc29d5fff7aacb3d5de1))
+* **jots:** Gbasset:// protocol + asset write IPC ([ea3c044](https://github.com/nikrich/poltergeist/commit/ea3c0446d3e236c936a2ebbc023eb4cab27f6aaf))
+* **jots:** Grant camera permission + NSCameraUsageDescription + entitlement ([a1af494](https://github.com/nikrich/poltergeist/commit/a1af494a0203f424c88f243af320d21dbd1c56d4))
+* **jots:** Inline image node with gbasset rendering + md round-trip ([d152886](https://github.com/nikrich/poltergeist/commit/d1528861d514198868afeef639778fb51a6abd73))
+* **jots:** Neon extract-callout rendering (md-portable) ([387a552](https://github.com/nikrich/poltergeist/commit/387a55265f741c05735962c462c54dc8dca4cae0))
+* **jots:** Open webcam from toolbar, slash, and top bar ([df2346d](https://github.com/nikrich/poltergeist/commit/df2346df385a64732d73372dddae213ae2cd8896))
+* **jots:** Paste/drop image insertion ([08fcbd5](https://github.com/nikrich/poltergeist/commit/08fcbd5962c41640d96431cf057cffcc758411f3))
+* **jots:** Slash command menu ([7c1c299](https://github.com/nikrich/poltergeist/commit/7c1c299bb52d1619787bb22283ab3747007bfd35))
+* **jots:** Thumbnails in the jot tree ([c7cd7e4](https://github.com/nikrich/poltergeist/commit/c7cd7e4fa0a869ea9c31dc52b1ee8de1f85692b7))
+* **jots:** Trigger vision extraction after photo insert ([3aa568d](https://github.com/nikrich/poltergeist/commit/3aa568d360228d3bad52d18d55cef04699296e7e))
+* **jots:** Webcam capture modal ([db2d1bf](https://github.com/nikrich/poltergeist/commit/db2d1bfbcbac3152d4bcc78b3928e5e81106f76b))
+* **jots:** WYSIWYG editor, webcam capture, vision extraction ([f6ddc43](https://github.com/nikrich/poltergeist/commit/f6ddc43dbf9f1a9b90e4f0e5259889490766ea48))
+
+
+### Bug Fixes
+
+* **jots:** Allow gbasset: scheme in renderer CSP so vault images load ([0953f00](https://github.com/nikrich/poltergeist/commit/0953f00254069788c2fed42a3f70b1a9652f388a))
+* **jots:** Drop unused join import in assets.ts ([31f919f](https://github.com/nikrich/poltergeist/commit/31f919f49bf0cdd780299563761811a469ae380a))
+* **jots:** Guard webcam getUserMedia race + restore test prototype stubs ([2275ded](https://github.com/nikrich/poltergeist/commit/2275ded69e601707095929bb16dc3b041980d95f))
+* **jots:** Reconcile editor after extraction (prevent callout overwrite); empty vision result -&gt; extracted=false ([d1429e5](https://github.com/nikrich/poltergeist/commit/d1429e56cb7cdef39659c4aa9c593cc16e43c309))
+* **jots:** Require jotId prop + cover image-insert failure path ([bdb613f](https://github.com/nikrich/poltergeist/commit/bdb613f718f3756dd210654520292148aaf225e1))
+* **jots:** Satisfy noUncheckedIndexedAccess in CSP test ([d67400a](https://github.com/nikrich/poltergeist/commit/d67400a626264dc60bd4797868f101b237da4a90))
+
+## [0.3.7](https://github.com/nikrich/poltergeist/compare/v0.3.6...v0.3.7) (2026-06-22)
+
+
+### Bug Fixes
+
+* **sidecar:** Gate runtime descriptor on a singleton lock so a second instance can't orphan it ([#44](https://github.com/nikrich/poltergeist/pull/44)) ([bc8d7dc](https://github.com/nikrich/poltergeist/commit/bc8d7dc))
+
+## [0.3.6](https://github.com/nikrich/poltergeist/compare/v0.3.5...v0.3.6) (2026-06-19)
+
+
+### Bug Fixes
+
+* **import:** Surface Confluence folders so folder-nested pages are importable ([#42](https://github.com/nikrich/poltergeist/issues/42)) ([b91d698](https://github.com/nikrich/poltergeist/commit/b91d6985d944b44b259a46c3ad8d1094bb2d02ad))
+
+## [0.3.5](https://github.com/nikrich/poltergeist/compare/v0.3.4...v0.3.5) (2026-06-18)
+
+
+### Bug Fixes
+
+* **chat:** Bundle the `mcp` library so the packaged `ghostbrain-api mcp` server starts — it was crashing with `ModuleNotFoundError: No module named 'mcp'`, so vault chat could never connect. `mcp` moved into the `[api]` extra the build installs, and its package metadata is now shipped (FastMCP reads `version("mcp")` at import) ([94cc3e3](https://github.com/nikrich/poltergeist/commit/94cc3e3))
+
+## [0.3.4](https://github.com/nikrich/poltergeist/compare/v0.3.3...v0.3.4) (2026-06-18)
+
+
+### Bug Fixes
+
+* **chat:** Start the MCP server before importing the api app so packaged vault chat connects — the bundled `ghostbrain-api mcp` no longer eagerly imports the full route tree before its MCP handshake ([fff11e8](https://github.com/nikrich/poltergeist/commit/fff11e8b7aa506f01858a5bc75e248230f338f3c))
+
+## [0.3.3](https://github.com/nikrich/poltergeist/compare/v0.3.2...v0.3.3) (2026-06-18)
+
+
+### Bug Fixes
+
+* **chat:** Pin MCP config so vault chat can't leak the user's global MCP servers or wedge on an unclearable permission prompt; bundled `ghostbrain-api` now serves the MCP tools via an `mcp` subcommand so packaged chat has vault tools ([5b833e2](https://github.com/nikrich/poltergeist/commit/5b833e2eabbbbbbbb382fa030f3d0f8be844f4d8))
+
+## [0.3.2](https://github.com/nikrich/poltergeist/compare/v0.3.1...v0.3.2) (2026-06-17)
+
+
+### Bug Fixes
+
+* Recorder: desktop Stop button now works — is_running() treats zombie PIDs as dead, and a single-instance lock stops a second sidecar double-recording meetings ([dcfb3d8](https://github.com/nikrich/poltergeist/commit/dcfb3d8877fe7e86f2433ae8fb03978fc2f40b0e))
+* Deb packaging metadata — author, homepage, description ([f8865fb](https://github.com/nikrich/poltergeist/commit/f8865fb52d4b3fa86c9a29795be4ed9e30d49168))
+* Deb packaging metadata for linux release builds ([1b03f40](https://github.com/nikrich/poltergeist/commit/1b03f40512b5c305ae972e877e9ce64bae774aff))
+* Lint errors blocking mac/linux release builds ([d8d2d69](https://github.com/nikrich/poltergeist/commit/d8d2d69d5627f796d0b34dc49d7b68c1e179b7d6))
+* Lint errors blocking mac/linux release builds ([e03d6e3](https://github.com/nikrich/poltergeist/commit/e03d6e391fc2473c8ee545c7a093bb459b7dede6))
+
 ## [0.3.1](https://github.com/nikrich/poltergeist/compare/v0.3.0...v0.3.1) (2026-06-10)
 
 

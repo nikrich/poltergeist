@@ -7,6 +7,7 @@ from fastapi.responses import Response
 
 from ghostbrain.api.models.note import (
     CreateNoteRequest,
+    ExtractPhotoRequest,
     RouteNoteRequest,
     UpdateNoteBodyRequest,
     UpdateNoteRequest,
@@ -21,6 +22,7 @@ from ghostbrain.api.repo.notes_manual import (
     JotNotFound,
     create_and_route_jot,
     delete_jot,
+    extract_photo_into_jot,
     list_jots,
     move_jot,
     route_existing_jot,
@@ -153,6 +155,19 @@ def route_note_auto(
     """
     try:
         return route_existing_jot(jot_id)
+    except JotNotFound:
+        raise HTTPException(status_code=404, detail=f"Jot not found: {jot_id}")
+
+
+@router.post("/{jot_id}/extract-photo")
+def extract_photo(
+    req: ExtractPhotoRequest,
+    jot_id: str = PathParam(..., min_length=8, max_length=128),
+) -> dict:
+    """Run vision on an embedded photo and append the extracted text as a
+    callout. Never 500s on LLM failure (returns extracted=false)."""
+    try:
+        return extract_photo_into_jot(jot_id, req.assetPath)
     except JotNotFound:
         raise HTTPException(status_code=404, detail=f"Jot not found: {jot_id}")
 

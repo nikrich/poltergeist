@@ -308,6 +308,7 @@ export interface JotListItem {
   created: string;
   updated: string;
   project?: string | null;
+  thumbnail?: string | null;
 }
 
 export interface JotsPage {
@@ -334,6 +335,14 @@ export interface AutoRouteResponse {
   context?: string | null;
 }
 
+export interface ExtractPhotoResponse {
+  id: string;
+  path: string;
+  body: string;
+  extracted: boolean;
+  reason?: string;
+}
+
 // ── Atlassian import (mirrors ghostbrain/api/models/import_atlassian.py) ──
 
 export interface ImportSpace {
@@ -348,6 +357,8 @@ export interface ImportPage {
   site: string;
   id: string;
   title: string;
+  // 'page' = importable + selectable; 'folder' = navigation node only.
+  type: 'page' | 'folder';
   parentId: string | null;
   hasChildren: boolean;
   updatedAt: string | null;

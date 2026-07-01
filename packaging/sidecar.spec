@@ -14,6 +14,7 @@ from PyInstaller.utils.hooks import (
     collect_submodules,
     collect_data_files,
     collect_dynamic_libs,
+    copy_metadata,
 )
 
 # Uvicorn and Starlette load protocol/loop implementations dynamically, so
@@ -68,6 +69,18 @@ hiddenimports += collect_submodules('ghostbrain.connectors')
 hiddenimports += collect_submodules('ghostbrain.worker')
 hiddenimports += collect_submodules('ghostbrain.recorder')
 hiddenimports += collect_submodules('ghostbrain.profile')
+
+# The `ghostbrain-api mcp` subcommand serves the Poltergeist MCP stdio server in
+# packaged builds (see ghostbrain.api.__main__ / ghostbrain.llm.agent). Its tree
+# and the FastMCP library are only reached through that runtime branch, so pull
+# them in explicitly — otherwise frozen chat has no vault tools.
+hiddenimports += collect_submodules('ghostbrain.mcp')
+# collect_all (not just collect_submodules) so any data files ship too, AND
+# copy_metadata because mcp/server/fastmcp/__init__.py runs
+# `version("mcp")` at import time — without the .dist-info the import dies with
+# importlib.metadata.PackageNotFoundError and the MCP server never starts.
+_mcp_datas, _mcp_bins, _mcp_hidden = collect_all('mcp')
+hiddenimports += _mcp_hidden
 hiddenimports += [
     'ghostbrain.scheduler',
     'ghostbrain.scheduler_jobs',
@@ -84,6 +97,9 @@ datas += collect_data_files('uvicorn')
 datas += collect_data_files('anthropic')
 # Data files (incl. source .py files for the lazy loaders) for the ML stack.
 datas += _tr_datas + _st_datas + _hf_datas
+# MCP library data + its package metadata (FastMCP reads version("mcp") on import).
+datas += _mcp_datas
+datas += copy_metadata('mcp')
 
 # The ML stack ships its native binaries as .so/.dylib alongside the Python
 # modules. collect_submodules only picks up .py files; collect_dynamic_libs is
@@ -96,6 +112,7 @@ binaries += collect_dynamic_libs('torch')
 binaries += collect_dynamic_libs('tokenizers')
 # Also any native libs picked up by collect_all for the ML stack.
 binaries += _tr_bins + _st_bins + _hf_bins
+binaries += _mcp_bins
 
 a = Analysis(
     ['../ghostbrain/api/__main__.py'],

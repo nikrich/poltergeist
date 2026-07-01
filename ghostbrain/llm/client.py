@@ -118,6 +118,7 @@ def run(
     system_prompt: str | None = None,
     budget_usd: float | None = None,
     timeout_s: int = DEFAULT_TIMEOUT_S,
+    image_paths: list[str] | None = None,
 ) -> LLMResult:
     """Run a single Claude prompt and return the result.
 
@@ -142,9 +143,21 @@ def run(
             "/usr/local/bin) are searched automatically."
         )
 
+    # When images are referenced, grant Claude Code's Read tool access to their
+    # directories. Without this, `--print` sandboxes file access to the cwd and
+    # refuses to read a vault asset ("The image file is outside the allowed
+    # working directories for this session"). `--add-dir` is VARIADIC, so it
+    # must be followed by another flag (here --output-format) — never the
+    # trailing prompt, which it would otherwise swallow as a directory.
+    add_dir: list[str] = []
+    if image_paths:
+        dirs = sorted({str(Path(p).resolve().parent) for p in image_paths})
+        add_dir = ["--add-dir", *dirs]
+
     cmd: list[str] = [
         binary,
         "--print",
+        *add_dir,
         "--output-format", "json",
         "--model", model,
         "--system-prompt", system_prompt or MINIMAL_SYSTEM_PROMPT,
@@ -155,7 +168,13 @@ def run(
     if json_schema is not None:
         cmd.extend(["--json-schema", json.dumps(json_schema)])
 
-    cmd.append(prompt)
+    effective_prompt = prompt
+    if image_paths:
+        refs = "\n".join(f"- {p}" for p in image_paths)
+        effective_prompt = (
+            f"{prompt}\n\nRead the following image file(s) and use their contents:\n{refs}"
+        )
+    cmd.append(effective_prompt)
 
     last_err: Exception | None = None
     for attempt, delay in enumerate((0,) + RETRY_DELAYS_S):

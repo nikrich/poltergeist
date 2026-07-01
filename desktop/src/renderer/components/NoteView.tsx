@@ -137,6 +137,7 @@ export function NoteView({ onEditorReady }: Props = {}) {
               key={path}
               markdown={editorBody}
               onSave={handleSaveBody}
+              jotId={path}
               onEditorReady={onEditorReady}
               onWikilinkClick={openNote}
             />

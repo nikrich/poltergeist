@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain, session, shell } from 'electron';
 import { join } from 'node:path';
 import * as settings from './settings';
 import { pickVaultFolder } from './dialogs';
@@ -9,6 +9,7 @@ import { buildAppMenu } from './menu';
 import { Sidecar } from './sidecar';
 import { forward, isAllowedMethod } from './api-forwarder';
 import { startChatStream, stopChatStream } from './chat-stream';
+import type { ChatStreamEvent } from '../shared/api-types';
 import { startDocsStream, stopDocsStream } from './docs-stream';
 import { exportPdf } from './pdf-export';
 import { installTray, type TrayController } from './tray';
@@ -18,12 +19,27 @@ import {
 } from './meeting-notifier';
 import { installJotOverlay } from './jot-overlay';
 import { installClipboardBridge } from './clipboard';
+import {
+  registerGbAssetScheme,
+  registerAssetProtocol,
+  installAssetBridge,
+} from './assets';
+import { handleDemoApi, DEMO_SETTINGS } from './demo/fixtures';
+import { runDemoChatStream, stopDemoChat } from './demo/chat';
+
+// Showcase recording mode: serve fully synthetic fixtures and never spawn the
+// Python sidecar or touch the real vault. Enabled by the demo driver via env.
+const DEMO = process.env.GHOSTBRAIN_DEMO === '1';
 
 // Repo root: in dev, that's one level up from the desktop/ project dir
 // (app.getAppPath() resolves to the desktop/ folder). In prod (Phase 2 bundles
 // the sidecar as a binary), this changes.
 function repoRoot(): string {
   return join(app.getAppPath(), '..');
+}
+
+function vaultRoot(): string {
+  return settings.getAll().vaultPath ?? '';
 }
 
 const sidecar = new Sidecar(repoRoot(), {
@@ -81,7 +97,9 @@ function createWindow() {
   // keeps the app reachable; explicit Quit comes from Cmd+Q / tray menu /
   // dock menu. On other platforms keep default close behavior — quit triggers
   // via window-all-closed below.
-  if (isMac) {
+  // In demo mode let the window close normally so the recorder's app.close()
+  // terminates the process; otherwise keep the tray-resident hide-on-close.
+  if (isMac && !DEMO) {
     win.on('close', (event) => {
       if (!isQuitting) {
         event.preventDefault();
@@ -96,7 +114,9 @@ function createWindow() {
   }
 }
 
-ipcMain.handle('gb:settings:getAll', () => settings.getAll());
+ipcMain.handle('gb:settings:getAll', () =>
+  DEMO ? DEMO_SETTINGS : settings.getAll(),
+);
 
 ipcMain.handle('gb:settings:set', async (_e, key: unknown, value: unknown) => {
   if (typeof key !== 'string' || !(key in settingsSchema.shape)) {
@@ -128,6 +148,9 @@ ipcMain.handle('gb:settings:set', async (_e, key: unknown, value: unknown) => {
 ipcMain.handle('gb:dialogs:pickVaultFolder', () => pickVaultFolder());
 
 installClipboardBridge();
+
+// Privileged scheme must be registered before the app is ready.
+registerGbAssetScheme();
 
 ipcMain.handle('gb:shell:openPath', async (_e, p: unknown) => {
   if (typeof p !== 'string' || p === '') {
@@ -171,8 +194,15 @@ ipcMain.handle('gb:shell:openExternal', async (_e, url: unknown) => {
 });
 
 app.whenReady().then(async () => {
+  registerAssetProtocol(vaultRoot);
+  installAssetBridge(vaultRoot);
   buildAppMenu();
   createWindow();
+  // First-party renderer (loaded from our own bundle / dev server). Grant
+  // camera/mic for webcam capture; deny everything else.
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+    callback(permission === 'media');
+  });
   trayController = installTray({
     onShow: showWindow,
     onSyncNow: async () => {
@@ -186,7 +216,9 @@ app.whenReady().then(async () => {
     },
     onQuit: () => void quitApp(),
   });
-  meetingNotifier = installMeetingNotifier({ sidecar });
+  if (!DEMO) {
+    meetingNotifier = installMeetingNotifier({ sidecar });
+  }
 
   const hotkey = settings.getAll().hotkeys?.jotOverlay ?? 'Alt+J';
   installJotOverlay({
@@ -199,6 +231,14 @@ app.whenReady().then(async () => {
       ? join(__dirname, '../renderer/overlay.html')
       : undefined,
   });
+
+  if (DEMO) {
+    // No backend in demo mode — tell the renderer the "sidecar" is ready so
+    // the UI leaves its connecting state and renders against the fixtures.
+    console.log('[demo] sidecar skipped — serving synthetic fixtures');
+    BrowserWindow.getAllWindows()[0]?.webContents.send('gb:sidecar:ready');
+    return;
+  }
 
   console.log('[sidecar] starting; repoRoot =', repoRoot());
   try {
@@ -228,6 +268,7 @@ sidecar.on('failed', (info: { reason: string }) => {
 let sidecarStopped = false;
 app.on('before-quit', (event) => {
   meetingNotifier?.destroy();
+  if (DEMO) return; // nothing to tear down — sidecar was never started
   if (!sidecarStopped) {
     event.preventDefault();
     sidecarStopped = true;
@@ -240,7 +281,7 @@ app.on('will-quit', () => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  if (process.platform !== 'darwin' || DEMO) app.quit();
 });
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -259,6 +300,7 @@ ipcMain.handle(
     if (!path.startsWith('/v1/')) {
       return { ok: false, error: 'Path not allowed (must start with /v1/)' };
     }
+    if (DEMO) return handleDemoApi(m, path, body);
     return forward(sidecar, m, path, body);
   },
 );
@@ -281,18 +323,23 @@ ipcMain.handle(
       ? attachmentPaths.filter((p): p is string => typeof p === 'string')
       : [];
     const wc = e.sender;
+    const send = (event: ChatStreamEvent) => {
+      if (!wc.isDestroyed()) wc.send('gb:chat:event', { convId, event });
+    };
+    if (DEMO) {
+      // Demo mode has no sidecar/vault — attachments aren't supported here.
+      const onDestroyed = () => stopDemoChat(convId);
+      wc.once('destroyed', onDestroyed);
+      try {
+        return await runDemoChatStream(convId, text, send);
+      } finally {
+        wc.removeListener('destroyed', onDestroyed);
+      }
+    }
     const onDestroyed = () => stopTurn(convId);
     wc.once('destroyed', onDestroyed);
     try {
-      return await startChatStream(
-        sidecar,
-        convId,
-        text,
-        (event) => {
-          if (!wc.isDestroyed()) wc.send('gb:chat:event', { convId, event });
-        },
-        paths,
-      );
+      return await startChatStream(sidecar, convId, text, send, paths);
     } finally {
       wc.removeListener('destroyed', onDestroyed);
     }
@@ -303,7 +350,8 @@ ipcMain.handle('gb:chat:stop', (_e, convId: unknown) => {
   if (typeof convId !== 'string') {
     return { ok: false, error: 'Invalid request shape' };
   }
-  stopTurn(convId);
+  if (DEMO) stopDemoChat(convId);
+  else stopTurn(convId);
   return { ok: true };
 });
 

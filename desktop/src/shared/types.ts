@@ -92,6 +92,14 @@ export interface GbBridge {
       text: string;
     }): Promise<{ ok: true } | { ok: false; error: string }>;
   };
+  assets: {
+    write(payload: {
+      jotId: string;
+      ext: string;
+      bytes: ArrayBuffer;
+    }): Promise<{ ok: true; path: string } | { ok: false; error: string }>;
+    toUrl(vaultRelPath: string): string;
+  };
   jot: {
     save(body: string): Promise<{ ok: true }>;
     cancel(): Promise<{ ok: true }>;

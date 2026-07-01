@@ -130,3 +130,82 @@ def search(q: str, limit: int = 10) -> dict:
             break
 
     return {"query": q, "total": len(hits), "items": hits}
+
+
+# ── Index status + manual reindex ───────────────────────────────────────────
+# The semantic-refresh scheduler job rebuilds the index every 15 min while the
+# app runs. These give the UI visibility into when that last happened and a way
+# to force it (so a freshly-imported note becomes searchable without waiting).
+
+import json  # noqa: E402 — kept beside the status helpers that use it
+import logging  # noqa: E402
+from datetime import datetime, timezone  # noqa: E402
+
+from ghostbrain.semantic.index import metadata_path  # noqa: E402
+
+log = logging.getLogger("ghostbrain.api.repo.search")
+
+_reindex_lock = threading.Lock()
+_reindex_state: dict = {"running": False, "last_error": None}
+
+
+def is_reindex_running() -> bool:
+    return bool(_reindex_state["running"])
+
+
+def index_status() -> dict:
+    """Lightweight index metadata — reads index.json only, never loads the
+    (multi-MB) vectors archive or the embedding model."""
+    p = metadata_path()
+    if not p.exists():
+        return {
+            "lastIndexedAt": None,
+            "noteCount": 0,
+            "model": None,
+            "running": is_reindex_running(),
+        }
+    try:
+        meta = json.loads(p.read_text(encoding="utf-8"))
+        entries = meta.get("entries") or {}
+        model = meta.get("model_name")
+    except (OSError, ValueError) as e:
+        log.warning("index metadata unreadable: %s", e)
+        entries, model = {}, None
+    return {
+        "lastIndexedAt": datetime.fromtimestamp(
+            p.stat().st_mtime, tz=timezone.utc
+        ).isoformat(),
+        "noteCount": len(entries),
+        "model": model,
+        "running": is_reindex_running(),
+    }
+
+
+def _do_refresh() -> None:
+    """Indirection over the heavy semantic refresh so callers (and tests) don't
+    drag torch/sentence-transformers into import time. Patch THIS in tests."""
+    from ghostbrain.semantic.refresh import refresh
+
+    refresh()
+
+
+def _reindex_worker() -> None:
+    try:
+        _do_refresh()
+    except Exception as e:  # noqa: BLE001 — never let a refresh crash the thread
+        _reindex_state["last_error"] = str(e)
+        log.exception("manual reindex failed")
+    finally:
+        _reindex_state["running"] = False
+
+
+def start_reindex() -> dict:
+    """Kick a semantic refresh on a background thread. Returns immediately;
+    callers poll ``index_status().running``. At most one runs at a time."""
+    with _reindex_lock:
+        if _reindex_state["running"]:
+            return {"started": False, "alreadyRunning": True}
+        _reindex_state["running"] = True
+        _reindex_state["last_error"] = None
+    threading.Thread(target=_reindex_worker, daemon=True, name="reindex").start()
+    return {"started": True, "alreadyRunning": False}
