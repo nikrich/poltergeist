@@ -271,21 +271,33 @@ const stopTurn = (convId: string) => {
   void forward(sidecar, 'POST', `/v1/chat/${encodeURIComponent(convId)}/stop`);
 };
 
-ipcMain.handle('gb:chat:send', async (e, convId: unknown, text: unknown) => {
-  if (typeof convId !== 'string' || typeof text !== 'string') {
-    return { ok: false, error: 'Invalid request shape' };
-  }
-  const wc = e.sender;
-  const onDestroyed = () => stopTurn(convId);
-  wc.once('destroyed', onDestroyed);
-  try {
-    return await startChatStream(sidecar, convId, text, (event) => {
-      if (!wc.isDestroyed()) wc.send('gb:chat:event', { convId, event });
-    });
-  } finally {
-    wc.removeListener('destroyed', onDestroyed);
-  }
-});
+ipcMain.handle(
+  'gb:chat:send',
+  async (e, convId: unknown, text: unknown, attachmentPaths: unknown) => {
+    if (typeof convId !== 'string' || typeof text !== 'string') {
+      return { ok: false, error: 'Invalid request shape' };
+    }
+    const paths = Array.isArray(attachmentPaths)
+      ? attachmentPaths.filter((p): p is string => typeof p === 'string')
+      : [];
+    const wc = e.sender;
+    const onDestroyed = () => stopTurn(convId);
+    wc.once('destroyed', onDestroyed);
+    try {
+      return await startChatStream(
+        sidecar,
+        convId,
+        text,
+        (event) => {
+          if (!wc.isDestroyed()) wc.send('gb:chat:event', { convId, event });
+        },
+        paths,
+      );
+    } finally {
+      wc.removeListener('destroyed', onDestroyed);
+    }
+  },
+);
 
 ipcMain.handle('gb:chat:stop', (_e, convId: unknown) => {
   if (typeof convId !== 'string') {
