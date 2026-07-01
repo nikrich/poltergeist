@@ -17,6 +17,7 @@ from ghostbrain.api.routes import scheduler as scheduler_routes
 from ghostbrain.api.routes import search as search_routes
 from ghostbrain.api.routes import settings as settings_routes
 from ghostbrain.api.routes import meetings as meetings_routes
+from ghostbrain.api.routes import ms_auth as ms_auth_routes
 from ghostbrain.api.routes import projects as projects_routes
 from ghostbrain.api.routes import suggestions as suggestions_routes
 from ghostbrain.api.routes import vault as vault_routes
@@ -34,6 +35,7 @@ def create_app(token: str) -> FastAPI:
     app.middleware("http")(make_auth_middleware(token))
     app.include_router(vault_routes.router)
     app.include_router(connectors_routes.router)
+    app.include_router(ms_auth_routes.router)
     app.include_router(captures_routes.router)
     app.include_router(meetings_routes.router)
     app.include_router(agenda_routes.router)

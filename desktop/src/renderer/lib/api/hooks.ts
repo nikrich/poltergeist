@@ -26,6 +26,7 @@ import type {
   ImportResponse,
   ImportSpace,
   MeetingsPage,
+  MicrosoftAuthStatus,
   Note,
   Prep,
   Project,
@@ -625,6 +626,38 @@ export function useUpdateProject() {
         archived: vars.archived,
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['projects'] }),
+  });
+}
+
+// ── Microsoft auth ────────────────────────────────────────────────────────
+
+export function useMicrosoftAuthStatus() {
+  return useQuery({
+    queryKey: ['microsoft', 'auth', 'status'],
+    queryFn: () => get<MicrosoftAuthStatus>('/v1/connectors/microsoft/auth/status'),
+    refetchInterval: (query) =>
+      query.state.data?.state === 'pending' ? 1_000 : false,
+    staleTime: 0,
+  });
+}
+
+export function useStartMicrosoftAuth() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => post<{ state: string }>('/v1/connectors/microsoft/auth/start'),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ['microsoft', 'auth', 'status'] }),
+  });
+}
+
+export function useDisconnectMicrosoft() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => post<{ state: string }>('/v1/connectors/microsoft/auth/disconnect'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['microsoft', 'auth', 'status'] });
+      qc.invalidateQueries({ queryKey: ['connectors'] });
+    },
   });
 }
 
