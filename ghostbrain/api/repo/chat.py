@@ -10,7 +10,7 @@ import logging
 import threading
 from typing import Iterator
 
-from ghostbrain.api.repo import chat_store
+from ghostbrain.api.repo import chat_attachments, chat_store
 from ghostbrain.llm import agent
 
 log = logging.getLogger("ghostbrain.chat")
@@ -64,7 +64,7 @@ def send_message(
             yield {"type": "error", "message": "conversation not found"}
             return
         attachments = [
-            {"path": p, "title": p.rsplit("/", 1)[-1], "kind": "text"}
+            {"path": p, "title": chat_attachments.title_for_path(p), "kind": "text"}
             for p in (attachment_paths or [])
         ]
         chat_store.append_user_message(conv, text, attachments=attachments or None)

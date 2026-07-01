@@ -58,6 +58,17 @@ def test_rejects_non_utf8_bytes(tmp_vault: Path):
         repo.save_attachment("c", "bad.txt", "text/plain", b"\xff\xfe\x00bad")
 
 
+def test_title_for_path_reads_original_filename_from_frontmatter(tmp_vault: Path):
+    result = repo.save_attachment("c", "notes.txt", "text/plain", b"hi")
+    assert repo.title_for_path(result["path"]) == "notes.txt"
+
+
+def test_title_for_path_falls_back_to_basename_when_unreadable(tmp_vault: Path):
+    assert (
+        repo.title_for_path("20-contexts/chat-attachments/missing.md") == "missing.md"
+    )
+
+
 def test_reuse_returns_stored_title(tmp_vault: Path):
     a = repo.save_attachment("c", "first.txt", "text/plain", b"same")
     b = repo.save_attachment("c", "second.txt", "text/plain", b"same")

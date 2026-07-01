@@ -1,7 +1,7 @@
 """Chat conversation schemas."""
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class ChatToolUse(BaseModel):
@@ -41,8 +41,14 @@ class Conversation(BaseModel):
 
 
 class ChatMessageRequest(BaseModel):
-    text: str = Field(..., min_length=1, max_length=4000)
+    text: str = Field("", max_length=4000)
     attachment_paths: list[str] = Field(default_factory=list, max_length=10)
+
+    @model_validator(mode="after")
+    def _require_text_or_attachments(self) -> "ChatMessageRequest":
+        if not self.text.strip() and not self.attachment_paths:
+            raise ValueError("message must have text or attachments")
+        return self
 
 
 class RenameRequest(BaseModel):

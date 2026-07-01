@@ -127,3 +127,11 @@ def _frontmatter_id(path: Path) -> str | None:
 def _frontmatter_title(path: Path) -> str | None:
     fm = _frontmatter(path)
     return fm.get("title") if fm else None
+
+
+def title_for_path(rel_path: str) -> str:
+    """Original filename stored in a chat-attachment note's frontmatter, or the
+    path basename if it can't be read."""
+    basename = rel_path.rsplit("/", 1)[-1]
+    note = vault_path() / rel_path
+    return _frontmatter_title(note) or basename

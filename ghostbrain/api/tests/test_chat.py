@@ -4,6 +4,9 @@ from __future__ import annotations
 import json
 
 import pytest
+from pydantic import ValidationError
+
+from ghostbrain.api.models.chat import ChatMessageRequest
 
 
 def sse_events(body: str) -> list[dict]:
@@ -34,6 +37,17 @@ def test_crud_roundtrip(client, tmp_chats_dir, auth_headers):
         == 200
     )
     assert client.get(f"/v1/chat/{created['id']}", headers=auth_headers).status_code == 404
+
+
+def test_chat_message_request_allows_empty_text_with_attachments():
+    req = ChatMessageRequest(text="", attachment_paths=["a"])
+    assert req.text == ""
+    assert req.attachment_paths == ["a"]
+
+
+def test_chat_message_request_rejects_empty_text_and_no_attachments():
+    with pytest.raises(ValidationError):
+        ChatMessageRequest(text="", attachment_paths=[])
 
 
 def test_missing_conversation_404s(client, tmp_chats_dir, auth_headers):
@@ -80,6 +94,34 @@ def test_send_message_validates_text(client, tmp_chats_dir, auth_headers):
     conv = client.post("/v1/chat", headers=auth_headers).json()
     resp = client.post(
         f"/v1/chat/{conv['id']}/messages", json={"text": ""}, headers=auth_headers
+    )
+    assert resp.status_code == 422
+
+
+def test_send_empty_text_with_attachments_accepted(client, tmp_chats_dir, auth_headers, monkeypatch):
+    """Empty caption is fine as long as an attachment is present (no orphan 422)."""
+
+    def fake_turn(prompt, *, session_id=None, **kw):
+        yield {"type": "session", "session_id": "s-1"}
+        yield {"type": "done", "text": "ok", "session_id": "s-1"}
+
+    monkeypatch.setattr("ghostbrain.api.repo.chat.agent.run_chat_turn", fake_turn)
+
+    conv = client.post("/v1/chat", headers=auth_headers).json()
+    resp = client.post(
+        f"/v1/chat/{conv['id']}/messages",
+        json={"text": "", "attachment_paths": ["20-contexts/chat-attachments/x.md"]},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+
+
+def test_send_empty_text_no_attachments_rejected(client, tmp_chats_dir, auth_headers):
+    conv = client.post("/v1/chat", headers=auth_headers).json()
+    resp = client.post(
+        f"/v1/chat/{conv['id']}/messages",
+        json={"text": "", "attachment_paths": []},
+        headers=auth_headers,
     )
     assert resp.status_code == 422
 
