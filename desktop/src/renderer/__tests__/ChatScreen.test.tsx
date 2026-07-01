@@ -278,6 +278,26 @@ describe('ChatScreen', () => {
     ]);
     expect(await screen.findByText('a.md')).toBeInTheDocument();
   });
+
+  it('shows an Open as PDF button for a generated-doc reply and calls openGenerated', async () => {
+    const openGenerated = vi.fn().mockResolvedValue({ ok: true, path: '/v/x.pdf' });
+    // ensure the stub bridge exposes docs.openGenerated (extend the test's window.gb stub)
+    (window.gb as unknown as { docs: { openGenerated: typeof openGenerated } }).docs = {
+      ...(window.gb as unknown as { docs: object }).docs,
+      openGenerated,
+    };
+    renderChatWithMessages([
+      {
+        role: 'assistant',
+        text: 'Your doc is ready:\n\n[[20-contexts/generated-docs/20260701T120000-brief.html]]',
+      },
+    ]);
+    const btn = await screen.findByRole('button', { name: /open as pdf/i });
+    await userEvent.click(btn);
+    expect(openGenerated).toHaveBeenCalledWith(
+      '20-contexts/generated-docs/20260701T120000-brief.html',
+    );
+  });
 });
 
 // ── Export to jots ─────────────────────────────────────────────────────────
