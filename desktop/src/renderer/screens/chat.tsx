@@ -17,7 +17,7 @@ import {
 } from '../lib/api/hooks';
 import { exportConversationToJot } from '../lib/chat-export';
 import { toast } from '../stores/toast';
-import { uploadAttachments, isAccepted, MAX_FILE_BYTES, MAX_FILES } from '../lib/chat-attachments';
+import { uploadAttachments, isAccepted, maxBytesFor, MAX_FILES } from '../lib/chat-attachments';
 import { useChat } from '../stores/chat';
 import type { StreamState, TurnError } from '../stores/chat';
 import type {
@@ -548,8 +548,9 @@ function Composer({
         toast.error(`${f.name}: unsupported file type`);
         continue;
       }
-      if (f.size > MAX_FILE_BYTES) {
-        toast.error(`${f.name}: too large (max 1 MB)`);
+      const cap = maxBytesFor(f);
+      if (f.size > cap) {
+        toast.error(`${f.name}: too large (max ${Math.round(cap / 1_000_000)} MB)`);
         continue;
       }
       accepted.push(f);
