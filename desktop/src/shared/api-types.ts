@@ -226,11 +226,18 @@ export interface ChatToolUse {
   summary: string;
 }
 
+export interface ChatAttachment {
+  path: string;
+  title: string;
+  kind: string;
+}
+
 export interface ChatMessage {
   role: 'user' | 'assistant';
   text: string;
   tools?: ChatToolUse[];
   interrupted?: boolean;
+  attachments?: ChatAttachment[];
 }
 
 export interface ConversationSummary {
