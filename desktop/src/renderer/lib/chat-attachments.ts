@@ -7,7 +7,7 @@ export const MAX_FILES = 10;
 
 const DOCX_MIME =
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-const DOC_EXTENSIONS = ['pdf', 'docx'];
+const DOC_EXTENSIONS = ['pdf', 'docx', 'png', 'jpg', 'jpeg', 'gif', 'webp'];
 
 // Mirror the sidecar's TEXT_EXTENSIONS (chat_attachments.py) for this slice.
 export const ACCEPTED_EXTENSIONS = [
@@ -15,6 +15,7 @@ export const ACCEPTED_EXTENSIONS = [
   'py', 'js', 'ts', 'tsx', 'jsx', 'go', 'rs', 'java', 'c', 'h', 'cpp', 'sh',
   'rb', 'sql', 'html', 'css', 'xml', 'toml', 'ini',
   'pdf', 'docx',
+  'png', 'jpg', 'jpeg', 'gif', 'webp',
 ];
 
 function extOf(file: File): string {
@@ -26,6 +27,7 @@ export function isAccepted(file: File): boolean {
   return (
     ACCEPTED_EXTENSIONS.includes(ext) ||
     file.type.startsWith('text/') ||
+    file.type.startsWith('image/') ||
     file.type === 'application/pdf' ||
     file.type === DOCX_MIME
   );
