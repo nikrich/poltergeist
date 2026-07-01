@@ -7,14 +7,16 @@ export const MAX_FILES = 10;
 
 const DOCX_MIME =
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-const DOC_EXTENSIONS = ['pdf', 'docx', 'png', 'jpg', 'jpeg', 'gif', 'webp'];
+const XLSX_MIME =
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const DOC_EXTENSIONS = ['pdf', 'docx', 'xlsx', 'png', 'jpg', 'jpeg', 'gif', 'webp'];
 
 // Mirror the sidecar's TEXT_EXTENSIONS (chat_attachments.py) for this slice.
 export const ACCEPTED_EXTENSIONS = [
   'md', 'markdown', 'txt', 'text', 'log', 'csv', 'tsv', 'json', 'yaml', 'yml',
   'py', 'js', 'ts', 'tsx', 'jsx', 'go', 'rs', 'java', 'c', 'h', 'cpp', 'sh',
   'rb', 'sql', 'html', 'css', 'xml', 'toml', 'ini',
-  'pdf', 'docx',
+  'pdf', 'docx', 'xlsx',
   'png', 'jpg', 'jpeg', 'gif', 'webp',
 ];
 
@@ -29,7 +31,8 @@ export function isAccepted(file: File): boolean {
     file.type.startsWith('text/') ||
     file.type.startsWith('image/') ||
     file.type === 'application/pdf' ||
-    file.type === DOCX_MIME
+    file.type === DOCX_MIME ||
+    file.type === XLSX_MIME
   );
 }
 
@@ -38,7 +41,8 @@ export function maxBytesFor(file: File): number {
     DOC_EXTENSIONS.includes(extOf(file)) ||
     file.type.startsWith('image/') ||
     file.type === 'application/pdf' ||
-    file.type === DOCX_MIME;
+    file.type === DOCX_MIME ||
+    file.type === XLSX_MIME;
   return large ? MAX_DOC_BYTES : MAX_FILE_BYTES;
 }
 

@@ -41,11 +41,25 @@ def _docx_bytes(*paragraphs: str) -> bytes:
     return buf.getvalue()
 
 
+def _xlsx_bytes(*rows: tuple) -> bytes:
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    for row in rows:
+        ws.append(list(row))
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
 def test_classify():
     assert ex.classify("a.pdf", "application/pdf") == "pdf"
     assert ex.classify("a.PDF", "") == "pdf"
     assert ex.classify("a.docx", ex.DOCX_MIME) == "docx"
     assert ex.classify("a.docx", "") == "docx"
+    assert ex.classify("a.xlsx", ex.XLSX_MIME) == "xlsx"
+    assert ex.classify("a.xlsx", "") == "xlsx"
     assert ex.classify("a.txt", "text/plain") is None
 
 
@@ -74,3 +88,30 @@ def test_extract_empty_docx_raises():
 def test_extract_unknown_kind_raises():
     with pytest.raises(ex.ExtractionError):
         ex.extract_text("a.txt", "text/plain", b"hi")
+
+
+def test_extract_xlsx_text():
+    data = _xlsx_bytes(("Name", "Age"), ("Alice", 30))
+    wb2 = _add_second_sheet(data)
+    out = ex.extract_text("a.xlsx", ex.XLSX_MIME, wb2)
+    assert "Name | Age" in out
+    assert "Alice | 30" in out
+    assert "## Sheet" in out
+    assert "## Sheet2" in out
+    assert "Second" in out
+
+
+def _add_second_sheet(data: bytes) -> bytes:
+    import openpyxl
+
+    wb = openpyxl.load_workbook(io.BytesIO(data))
+    ws2 = wb.create_sheet("Sheet2")
+    ws2.append(["Second", "Sheet"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def test_extract_empty_xlsx_raises():
+    with pytest.raises(ex.ExtractionError):
+        ex.extract_text("a.xlsx", ex.XLSX_MIME, _xlsx_bytes())
