@@ -115,7 +115,9 @@ def send_message(conv_id: str, payload: ChatMessageRequest) -> StreamingResponse
         # Sync generator: starlette runs it in a threadpool and closes it
         # (GeneratorExit) when the client disconnects — that propagates into
         # run_chat_turn's finally, killing the claude subprocess.
-        for event in repo_chat.send_message(conv_id, payload.text):
+        for event in repo_chat.send_message(
+            conv_id, payload.text, payload.attachment_paths
+        ):
             yield f"data: {json.dumps(event)}\n\n"
 
     return StreamingResponse(
