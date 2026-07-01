@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog } from 'electron';
+import { BrowserWindow, dialog, shell } from 'electron';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -61,5 +61,40 @@ export async function exportPdf(
   } finally {
     win.destroy();
     if (tempDir) await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+export function isGeneratedDocPath(rel: string): boolean {
+  const norm = rel.replace(/\\/g, '/');
+  return (
+    norm.startsWith('20-contexts/generated-docs/') &&
+    norm.endsWith('.html') &&
+    !norm.split('/').includes('..')
+  );
+}
+
+export async function renderVaultHtmlToPdf(
+  vaultPath: string,
+  rel: string,
+): Promise<{ ok: true; path: string } | { ok: false; error: string }> {
+  if (!vaultPath) return { ok: false, error: 'vault path not configured' };
+  if (!isGeneratedDocPath(rel)) {
+    return { ok: false, error: 'path is not a generated doc' };
+  }
+  const htmlPath = join(vaultPath, rel);
+  const pdfPath = htmlPath.replace(/\.html$/, '.pdf');
+  const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true } });
+  try {
+    // The agent's HTML is already a complete styled document — load as-is
+    // (no wrapPrintableHtml), so its own CSS/@page rules drive the layout.
+    await win.loadFile(htmlPath);
+    const pdf = await win.webContents.printToPDF({ printBackground: true });
+    await writeFile(pdfPath, pdf);
+    await shell.openPath(pdfPath);
+    return { ok: true, path: pdfPath };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  } finally {
+    win.destroy();
   }
 }

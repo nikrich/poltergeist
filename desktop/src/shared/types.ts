@@ -82,6 +82,9 @@ export interface GbBridge {
       title: string;
       html: string;
     }): Promise<{ ok: true; path: string } | { ok: false; error: string } | { ok: false; cancelled: true }>;
+    openGenerated(
+      path: string,
+    ): Promise<{ ok: true; path: string } | { ok: false; error: string }>;
   };
   tray: {
     setFailing(names: string[]): Promise<{ ok: true } | { ok: false; error: string }>;

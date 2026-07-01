@@ -11,7 +11,7 @@ import { forward, isAllowedMethod } from './api-forwarder';
 import { startChatStream, stopChatStream } from './chat-stream';
 import type { ChatStreamEvent } from '../shared/api-types';
 import { startDocsStream, stopDocsStream } from './docs-stream';
-import { exportPdf } from './pdf-export';
+import { exportPdf, renderVaultHtmlToPdf } from './pdf-export';
 import { installTray, type TrayController } from './tray';
 import {
   installMeetingNotifier,
@@ -405,6 +405,13 @@ ipcMain.handle('gb:docs:export-pdf', (e, payload: unknown) => {
     BrowserWindow.fromWebContents(e.sender),
     payload as { title: string; html: string },
   );
+});
+
+ipcMain.handle('gb:docs:open-generated', (_e, path: unknown) => {
+  if (typeof path !== 'string' || path === '') {
+    return { ok: false as const, error: 'open-generated: expected a path string' };
+  }
+  return renderVaultHtmlToPdf(settings.getAll().vaultPath ?? '', path);
 });
 
 ipcMain.handle('gb:tray:setFailing', (_e, names: unknown) => {

@@ -30,6 +30,7 @@ const bridge: GbBridge = {
     assist: (req) => ipcRenderer.invoke('gb:docs:assist', req),
     assistStop: (jotId) => ipcRenderer.invoke('gb:docs:assist-stop', jotId),
     exportPdf: (payload) => ipcRenderer.invoke('gb:docs:export-pdf', payload),
+    openGenerated: (path: string) => ipcRenderer.invoke('gb:docs:open-generated', path),
   },
   tray: {
     setFailing: (names: string[]) => ipcRenderer.invoke('gb:tray:setFailing', names),

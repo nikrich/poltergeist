@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { wrapPrintableHtml } from '../pdf-export';
+import { wrapPrintableHtml, isGeneratedDocPath } from '../pdf-export';
 
 describe('wrapPrintableHtml', () => {
   it('wraps body HTML inside a full document skeleton', () => {
@@ -42,5 +42,20 @@ describe('wrapPrintableHtml', () => {
   it('sets charset to utf-8', () => {
     const result = wrapPrintableHtml('T', '');
     expect(result).toContain('<meta charset="utf-8">');
+  });
+});
+
+describe('isGeneratedDocPath', () => {
+  it('accepts a generated-docs .html path', () => {
+    expect(isGeneratedDocPath('20-contexts/generated-docs/20260701T120000-x.html')).toBe(true);
+  });
+  it('rejects paths outside generated-docs', () => {
+    expect(isGeneratedDocPath('20-contexts/sanlam/notes/x.html')).toBe(false);
+  });
+  it('rejects non-.html', () => {
+    expect(isGeneratedDocPath('20-contexts/generated-docs/x.md')).toBe(false);
+  });
+  it('rejects path traversal', () => {
+    expect(isGeneratedDocPath('20-contexts/generated-docs/../../etc/x.html')).toBe(false);
   });
 });

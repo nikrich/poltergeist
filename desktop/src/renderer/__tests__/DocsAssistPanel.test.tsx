@@ -65,6 +65,7 @@ beforeEach(() => {
       assist: vi.fn(async () => ({ ok: true }) as const),
       assistStop: vi.fn(async () => ({ ok: true }) as const),
       exportPdf: vi.fn(async () => ({ ok: true, path: '/tmp/x.pdf' }) as const),
+      openGenerated: vi.fn(async () => ({ ok: true, path: '/tmp/x.pdf' }) as const),
     },
     on: (() => () => {}) as typeof window.gb.on,
   };
