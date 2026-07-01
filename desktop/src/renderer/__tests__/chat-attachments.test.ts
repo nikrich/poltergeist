@@ -51,6 +51,21 @@ describe('pdf/docx acceptance + caps', () => {
   });
 });
 
+describe('xlsx acceptance + caps', () => {
+  it('accepts .xlsx by extension and by xlsx mime', () => {
+    expect(isAccepted(new File(['x'], 'a.xlsx', { type: '' }))).toBe(true);
+    expect(
+      isAccepted(new File(['x'], 'a.xlsx', {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      })),
+    ).toBe(true);
+  });
+
+  it('gives .xlsx the 20MB doc cap', () => {
+    expect(maxBytesFor(new File(['x'], 'a.xlsx'))).toBe(MAX_DOC_BYTES);
+  });
+});
+
 describe('image acceptance', () => {
   it('accepts png/jpg/webp by extension and by image/* mime', () => {
     expect(isAccepted(new File(['x'], 'a.png', { type: 'image/png' }))).toBe(true);

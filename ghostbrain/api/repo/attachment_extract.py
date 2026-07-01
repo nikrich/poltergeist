@@ -10,6 +10,7 @@ import io
 from pathlib import Path
 
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 class ExtractionError(RuntimeError):
@@ -22,6 +23,8 @@ def classify(filename: str, mime: str) -> str | None:
         return "pdf"
     if ext == ".docx" or mime == DOCX_MIME:
         return "docx"
+    if ext == ".xlsx" or mime == XLSX_MIME:
+        return "xlsx"
     return None
 
 
@@ -31,6 +34,8 @@ def extract_text(filename: str, mime: str, content: bytes) -> str:
         text = _extract_pdf(content)
     elif kind == "docx":
         text = _extract_docx(content)
+    elif kind == "xlsx":
+        text = _extract_xlsx(content)
     else:
         raise ExtractionError(f"not an extractable document: {filename} ({mime})")
     if not text.strip():
@@ -68,3 +73,24 @@ def _extract_docx(content: bytes) -> str:
     except (PackageNotFoundError, KeyError, ValueError, OSError) as e:
         raise ExtractionError(f"could not read .docx: {e}") from e
     return "\n".join(p.text for p in document.paragraphs if p.text.strip())
+
+
+def _extract_xlsx(content: bytes) -> str:
+    import openpyxl
+
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+    except Exception as e:  # noqa: BLE001 — many corrupt-file exception types
+        raise ExtractionError(f"could not read .xlsx: {e}") from e
+    lines: list[str] = []
+    for sheet in wb.worksheets:
+        rows = [
+            [("" if c is None else str(c)) for c in row]
+            for row in sheet.iter_rows(values_only=True)
+        ]
+        rows = [r for r in rows if any(cell.strip() for cell in r)]
+        if not rows:
+            continue
+        lines.append(f"## {sheet.title}")
+        lines.extend(" | ".join(r) for r in rows)
+    return "\n".join(lines)
