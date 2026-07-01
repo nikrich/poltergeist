@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.4.0](https://github.com/nikrich/poltergeist/compare/v0.3.10...v0.4.0) (2026-07-01)
+
+
+### Features
+
+* **chat:** Accept Excel (.xlsx) attachments (openpyxl extraction) ([#59](https://github.com/nikrich/poltergeist/issues/59)) ([5dba9e1](https://github.com/nikrich/poltergeist/commit/5dba9e1093f4fab08014c766a397af2f4303771a))
+* **chat:** File attachments in chat (Slice 1 — text/markdown/code) ([#56](https://github.com/nikrich/poltergeist/issues/56)) ([3c4ca7d](https://github.com/nikrich/poltergeist/commit/3c4ca7d67f6b36d29b8e7e89d30648dc44773f88))
+* **chat:** Image attachments in chat (Slice 3 — vision caption) ([#58](https://github.com/nikrich/poltergeist/issues/58)) ([a4679bc](https://github.com/nikrich/poltergeist/commit/a4679bc61f6687b31c11490afa1d819c41aeb298))
+* **chat:** PDF/Word attachments in chat (Slice 2) [stacked on [#56](https://github.com/nikrich/poltergeist/issues/56)] ([#57](https://github.com/nikrich/poltergeist/issues/57)) ([db418a4](https://github.com/nikrich/poltergeist/commit/db418a429031662ab808b117bdd58c190cd2f1b9))
+* **docs:** In-chat doc generation (styled HTML → PDF) ([#60](https://github.com/nikrich/poltergeist/issues/60)) ([ea6a89b](https://github.com/nikrich/poltergeist/commit/ea6a89b757e77895ecdfeef785f5b18b11a15c28))
+
+
+### Chores
+
+* Release 0.4.0 ([d4f975d](https://github.com/nikrich/poltergeist/commit/d4f975d39fda7f4a5d330d334c98b0b88e7a0533))
+
 ## [0.3.10](https://github.com/nikrich/poltergeist/compare/v0.3.9...v0.3.10) (2026-06-25)
 
 
