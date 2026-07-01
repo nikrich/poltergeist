@@ -1,7 +1,7 @@
 """Request models for the docs assistant + export routes."""
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class DocsAssistRequest(BaseModel):
@@ -21,3 +21,13 @@ class ConfluenceExportRequest(BaseModel):
     parent_id: str | None = None
     title: str | None = None
     force_new: bool = False
+
+
+class WriteDocRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    html: str = Field(..., min_length=1)
+
+
+class WriteDocResponse(BaseModel):
+    path: str
+    title: str

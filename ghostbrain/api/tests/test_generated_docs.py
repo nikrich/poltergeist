@@ -37,3 +37,30 @@ def test_oversize_html_rejected(tmp_vault: Path):
     big = "<p>" + "a" * (repo.MAX_HTML_BYTES) + "</p>"
     with pytest.raises(ValueError):
         repo.write_doc("t", big)
+
+
+def test_write_endpoint_happy(client, auth_headers):
+    res = client.post(
+        "/v1/docs/write",
+        json={"title": "Board Update", "html": HTML},
+        headers=auth_headers,
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["title"] == "Board Update"
+    assert body["path"].startswith("20-contexts/generated-docs/")
+
+
+def test_write_endpoint_empty_html_422(client, auth_headers):
+    res = client.post(
+        "/v1/docs/write", json={"title": "x", "html": ""}, headers=auth_headers
+    )
+    assert res.status_code == 422
+
+
+def test_write_endpoint_oversize_400(client, auth_headers):
+    big = "<p>" + "a" * (repo.MAX_HTML_BYTES) + "</p>"
+    res = client.post(
+        "/v1/docs/write", json={"title": "x", "html": big}, headers=auth_headers
+    )
+    assert res.status_code == 400

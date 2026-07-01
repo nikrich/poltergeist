@@ -9,8 +9,10 @@ from ghostbrain.api.models.docs import (
     ConfluenceExportRequest,
     DocsAssistRequest,
     DocsAssistStopRequest,
+    WriteDocRequest,
+    WriteDocResponse,
 )
-from ghostbrain.api.repo import docs_assist, export_confluence
+from ghostbrain.api.repo import docs_assist, export_confluence, generated_docs
 from ghostbrain.api.repo.import_atlassian import ImportNotConfiguredError
 from ghostbrain.api.repo.notes_manual import JotNotFound
 from ghostbrain.connectors.atlassian._base import AtlassianAuthError
@@ -41,6 +43,14 @@ def assist(payload: DocsAssistRequest) -> StreamingResponse:
 @router.post("/assist/stop")
 def stop(payload: DocsAssistStopRequest) -> dict:
     return {"stopped": docs_assist.cancel(payload.jot_id)}
+
+
+@router.post("/write", response_model=WriteDocResponse)
+def write_doc(payload: WriteDocRequest) -> dict:
+    try:
+        return generated_docs.write_doc(payload.title, payload.html)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/export/confluence")
