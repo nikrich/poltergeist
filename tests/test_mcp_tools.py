@@ -64,3 +64,25 @@ def test_get_note_renders_title_and_body():
     assert "Title" in out
     assert "Body text" in out
     assert "p.md" in out
+
+
+def test_write_doc_returns_path():
+    class FakeClient:
+        def write_doc(self, title, html):
+            return {"path": "20-contexts/generated-docs/20260701T120000-x.html", "title": title}
+
+    from ghostbrain.mcp import tools
+
+    out = tools.write_doc(FakeClient(), "X", "<html></html>")
+    assert out == "20-contexts/generated-docs/20260701T120000-x.html"
+
+
+def test_write_doc_error_is_returned_not_raised():
+    class BoomClient:
+        def write_doc(self, title, html):
+            raise RuntimeError("sidecar down")
+
+    from ghostbrain.mcp import tools
+
+    out = tools.write_doc(BoomClient(), "X", "<html></html>")
+    assert "could not save" in out.lower()

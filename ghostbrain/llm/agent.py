@@ -52,6 +52,7 @@ TOOL_SUMMARIES: dict[str, tuple[str, str]] = {
     "mcp__poltergeist__poltergeist_search": ("search", "searched vault: {query}"),
     "mcp__poltergeist__poltergeist_get_note": ("get_note", "read note: {path}"),
     "mcp__poltergeist__poltergeist_ask": ("ask", "asked the archive: {question}"),
+    "mcp__poltergeist__poltergeist_write_doc": ("write_doc", "wrote doc: {title}"),
 }
 
 
@@ -146,7 +147,13 @@ about the user's work.
 4. Answer in markdown. Lead with the answer; keep it concrete and specific, \
 using the user's own terminology.
 5. This is an ongoing conversation — you may rely on earlier turns without \
-re-fetching notes you already read."""
+re-fetching notes you already read.
+6. When the user asks you to write, draft, or create a document, produce a \
+COMPLETE, self-contained, styled HTML document (its own <style>; print-friendly \
+per-section layout when it suits the content) and call poltergeist_write_doc \
+with a short title and that HTML. Then tell the user the doc is ready and put \
+the tool's returned path on its own line as a wikilink, e.g. \
+[[20-contexts/generated-docs/….html]]. Do NOT paste the raw HTML into the chat."""
 
 
 def find_mcp_binary() -> list[str] | None:

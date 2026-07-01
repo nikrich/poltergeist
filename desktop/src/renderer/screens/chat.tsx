@@ -400,6 +400,36 @@ function AttachmentChips({ attachments }: { attachments: ChatAttachment[] }) {
   );
 }
 
+const GENERATED_DOC_RE = /20-contexts\/generated-docs\/[^\s\]]+\.html/g;
+
+function generatedDocPaths(text: string): string[] {
+  return [...new Set(text.match(GENERATED_DOC_RE) ?? [])];
+}
+
+function OpenDocButtons({ paths }: { paths: string[] }) {
+  if (paths.length === 0) return null;
+  const open = (p: string) => {
+    void window.gb.docs.openGenerated(p).then((res) => {
+      if (!res.ok) toast.error(res.error);
+    });
+  };
+  return (
+    <div className="flex flex-wrap gap-2">
+      {paths.map((p) => (
+        <Btn
+          key={p}
+          variant="ghost"
+          size="sm"
+          icon={<Lucide name="file-text" size={12} />}
+          onClick={() => open(p)}
+        >
+          open as pdf
+        </Btn>
+      ))}
+    </div>
+  );
+}
+
 function Message({ message }: { message: ChatMessage }) {
   if (message.role === 'user') {
     return (
@@ -419,6 +449,7 @@ function Message({ message }: { message: ChatMessage }) {
       <MarkdownBody className="text-14 leading-[1.65] text-ink-0">
         {message.text}
       </MarkdownBody>
+      <OpenDocButtons paths={generatedDocPaths(message.text)} />
       {message.interrupted && (
         <div className="font-mono text-10 text-ink-3">⏱ turn was interrupted</div>
       )}
@@ -439,9 +470,12 @@ function StreamingTurn({ stream, onStop }: { stream: StreamState; onStop: () => 
       <div className="flex flex-col gap-2">
         {stream.tools.length > 0 && <ToolChips tools={stream.tools} />}
         {stream.text ? (
-          <MarkdownBody className="text-14 leading-[1.65] text-ink-0">
-            {stream.text}
-          </MarkdownBody>
+          <>
+            <MarkdownBody className="text-14 leading-[1.65] text-ink-0">
+              {stream.text}
+            </MarkdownBody>
+            <OpenDocButtons paths={generatedDocPaths(stream.text)} />
+          </>
         ) : (
           <div className="flex items-center gap-2 text-12 text-ink-2">
             <Lucide name="sparkles" size={13} color="var(--neon)" />

@@ -159,3 +159,9 @@ def test_cancel_turn_on_resumed_turn_with_no_output_yields_stopped_not_resume_fa
     # Must not have raised ResumeFailed.
     assert not exc_holder, f"unexpected exception: {exc_holder[0]}"
     assert events[-1] == {"type": "error", "message": "stopped", "interrupted": True}
+
+
+def test_write_doc_tool_is_allowlisted():
+    from ghostbrain.llm.agent import ALLOWED_TOOLS
+
+    assert "mcp__poltergeist__poltergeist_write_doc" in ALLOWED_TOOLS

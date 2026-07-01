@@ -64,6 +64,7 @@ const stubBridge: GbBridge = {
     assist: async () => ({ ok: true }),
     assistStop: async () => ({ ok: true }),
     exportPdf: async () => ({ ok: true, path: '/tmp/doc.pdf' }),
+    openGenerated: async () => ({ ok: true, path: '/tmp/doc.pdf' }),
   },
   tray: { setFailing: async () => ({ ok: true }) },
   clipboard: { writeRich: async () => ({ ok: true }) },
