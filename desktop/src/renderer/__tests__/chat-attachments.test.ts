@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 import * as client from '../lib/api/client';
-import { isAccepted, uploadAttachments } from '../lib/chat-attachments';
+import { isAccepted, uploadAttachments, maxBytesFor, MAX_DOC_BYTES, MAX_FILE_BYTES } from '../lib/chat-attachments';
 
 vi.mock('../lib/api/client', () => ({
   get: vi.fn(),
@@ -34,5 +34,22 @@ describe('uploadAttachments', () => {
     expect(spy).toHaveBeenCalledWith('/v1/chat/conv1/attachments', {
       files: [{ name: 'a.md', mime: 'text/markdown', content_b64: expect.any(String) }],
     });
+  });
+});
+
+describe('pdf/docx acceptance + caps', () => {
+  it('accepts .pdf and .docx by extension and mime', () => {
+    expect(isAccepted(new File(['x'], 'a.pdf', { type: 'application/pdf' }))).toBe(true);
+    expect(
+      isAccepted(new File(['x'], 'a.docx', {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      })),
+    ).toBe(true);
+  });
+
+  it('gives docs a larger byte cap than text', () => {
+    expect(maxBytesFor(new File(['x'], 'a.pdf'))).toBe(MAX_DOC_BYTES);
+    expect(maxBytesFor(new File(['x'], 'a.txt'))).toBe(MAX_FILE_BYTES);
+    expect(MAX_DOC_BYTES).toBeGreaterThan(MAX_FILE_BYTES);
   });
 });

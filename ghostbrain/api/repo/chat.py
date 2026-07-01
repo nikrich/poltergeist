@@ -64,7 +64,11 @@ def send_message(
             yield {"type": "error", "message": "conversation not found"}
             return
         attachments = [
-            {"path": p, "title": chat_attachments.title_for_path(p), "kind": "text"}
+            {
+                "path": p,
+                "title": chat_attachments.title_for_path(p),
+                "kind": chat_attachments.kind_for_path(p),
+            }
             for p in (attachment_paths or [])
         ]
         chat_store.append_user_message(conv, text, attachments=attachments or None)

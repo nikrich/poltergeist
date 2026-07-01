@@ -31,6 +31,8 @@ dependencies = [
     "slack-sdk>=3.27",
     "markdownify>=0.13",
     "markdown>=3.6",
+    "pypdf>=4.0",
+    "python-docx>=1.1",
     # macOS Calendar connector reads via EventKit (PyObjC) so recurring
     # events get expanded — AppleScript's `whose` predicate misses them.
     "pyobjc-framework-EventKit>=11.0; sys_platform == 'darwin'",
