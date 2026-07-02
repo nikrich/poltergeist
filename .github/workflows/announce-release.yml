@@ -1,0 +1,48 @@
+name: announce-release
+
+# Auto-draft a tracking issue on every published release so launch tasks +
+# user feedback for that version have a single home.
+on:
+  release:
+    types: [published]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  announce:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ensure "release" label exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh label create release --repo "$GITHUB_REPOSITORY" --color 0E8A16 --description "Release tracking" --force
+
+      - name: Draft release tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+          NAME: ${{ github.event.release.name }}
+          URL: ${{ github.event.release.html_url }}
+          NOTES: ${{ github.event.release.body }}
+        run: |
+          set -euo pipefail
+          {
+            echo "**${NAME:-$TAG}** is out — $URL"
+            echo ""
+            echo "This issue tracks launch tasks and user feedback for **$TAG**."
+            echo ""
+            echo "## Release notes"
+            echo "${NOTES:-_(no notes)_}"
+            echo ""
+            echo "## Launch checklist"
+            echo "- [ ] Announce in Discussions"
+            echo "- [ ] Cross-post (Reddit / Discord / X)"
+            echo "- [ ] DM day-one testers"
+            echo "- [ ] Triage issues in the first 48h"
+          } > /tmp/issue-body.md
+          gh issue create --repo "$GITHUB_REPOSITORY" \
+            --title "Release $TAG — launch & feedback" \
+            --label release \
+            --body-file /tmp/issue-body.md
