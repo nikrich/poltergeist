@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { join } from 'node:path';
+import { resolve } from 'node:path';
 import { assetVaultRelPath, resolveAssetPath } from '../assets';
 
 describe('assetVaultRelPath', () => {
@@ -12,8 +12,10 @@ describe('assetVaultRelPath', () => {
 describe('resolveAssetPath', () => {
   const vault = '/vault';
   it('resolves a path inside the asset dir', () => {
+    // Mirror the implementation's path.resolve so the expectation matches on
+    // Windows too (resolve adds a drive letter to a rooted path; join does not).
     expect(resolveAssetPath(vault, '90-meta/assets/jots/2026/06/a-1.jpg')).toBe(
-      join(vault, '90-meta/assets/jots/2026/06/a-1.jpg'),
+      resolve(vault, '90-meta/assets/jots/2026/06/a-1.jpg'),
     );
   });
   it('rejects traversal outside the asset dir', () => {
