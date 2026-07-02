@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/nikrich/poltergeist/compare/v0.4.0...v0.4.1) (2026-07-02)
+
+
+### Features
+
+* **chat:** the chat agent can now use WebFetch + WebSearch to pull in public/external information ([#61](https://github.com/nikrich/poltergeist/issues/61))
+
 ## [0.4.0](https://github.com/nikrich/poltergeist/compare/v0.3.10...v0.4.0) (2026-07-01)
 
 
