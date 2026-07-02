@@ -165,3 +165,10 @@ def test_write_doc_tool_is_allowlisted():
     from ghostbrain.llm.agent import ALLOWED_TOOLS
 
     assert "mcp__poltergeist__poltergeist_write_doc" in ALLOWED_TOOLS
+
+
+def test_web_tools_are_allowlisted():
+    from ghostbrain.llm.agent import ALLOWED_TOOLS
+
+    assert "WebFetch" in ALLOWED_TOOLS
+    assert "WebSearch" in ALLOWED_TOOLS

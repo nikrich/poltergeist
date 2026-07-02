@@ -53,6 +53,12 @@ TOOL_SUMMARIES: dict[str, tuple[str, str]] = {
     "mcp__poltergeist__poltergeist_get_note": ("get_note", "read note: {path}"),
     "mcp__poltergeist__poltergeist_ask": ("ask", "asked the archive: {question}"),
     "mcp__poltergeist__poltergeist_write_doc": ("write_doc", "wrote doc: {title}"),
+    # Built-in Claude Code tools (bare names, not mcp__…). Listing them here both
+    # allowlists them (ALLOWED_TOOLS is the join of these keys) and gives their
+    # chips a friendly summary. Web only — no Bash/Read/Write — so the agent can
+    # pull public info without shell/filesystem reach.
+    "WebFetch": ("web", "fetched {url}"),
+    "WebSearch": ("web", "searched the web: {query}"),
 }
 
 
@@ -153,7 +159,12 @@ COMPLETE, self-contained, styled HTML document (its own <style>; print-friendly 
 per-section layout when it suits the content) and call poltergeist_write_doc \
 with a short title and that HTML. Then tell the user the doc is ready and put \
 the tool's returned path on its own line as a wikilink, e.g. \
-[[20-contexts/generated-docs/….html]]. Do NOT paste the raw HTML into the chat."""
+[[20-contexts/generated-docs/….html]]. Do NOT paste the raw HTML into the chat.
+7. You may use WebFetch and WebSearch to pull in public/external information — a \
+URL the user gives you, documentation, or general web research. Prefer the vault \
+tools for anything about the user's own work; use the web for public facts, and \
+attribute web-sourced claims with their URL so they're not confused with \
+vault-grounded answers."""
 
 
 def find_mcp_binary() -> list[str] | None:
