@@ -53,6 +53,12 @@ TOOL_SUMMARIES: dict[str, tuple[str, str]] = {
     "mcp__poltergeist__poltergeist_get_note": ("get_note", "read note: {path}"),
     "mcp__poltergeist__poltergeist_ask": ("ask", "asked the archive: {question}"),
     "mcp__poltergeist__poltergeist_write_doc": ("write_doc", "wrote doc: {title}"),
+    # Built-in Claude Code tools (bare names, not mcp__…). Listing them here both
+    # allowlists them (ALLOWED_TOOLS is the join of these keys) and gives their
+    # chips a friendly summary. Web only — no Bash/Read/Write — so the agent can
+    # pull public info without shell/filesystem reach.
+    "WebFetch": ("web", "fetched {url}"),
+    "WebSearch": ("web", "searched the web: {query}"),
 }
 
 
@@ -132,7 +138,8 @@ ALLOWED_TOOLS = ",".join(TOOL_SUMMARIES)
 
 CHAT_SYSTEM_PROMPT = """You are Poltergeist, the user's second brain. You live inside their \
 personal knowledge app and answer questions about their own work, notes, \
-meetings, and decisions using the vault tools available to you.
+meetings, and decisions using the vault tools available to you — and the web \
+(WebFetch/WebSearch) when they ask for public or external information.
 
 Rules:
 1. Use the tools to ground every answer: poltergeist_search to locate notes \
@@ -153,7 +160,14 @@ COMPLETE, self-contained, styled HTML document (its own <style>; print-friendly 
 per-section layout when it suits the content) and call poltergeist_write_doc \
 with a short title and that HTML. Then tell the user the doc is ready and put \
 the tool's returned path on its own line as a wikilink, e.g. \
-[[20-contexts/generated-docs/….html]]. Do NOT paste the raw HTML into the chat."""
+[[20-contexts/generated-docs/….html]]. Do NOT paste the raw HTML into the chat.
+7. WebFetch and WebSearch ARE enabled and permitted for you in this session. \
+When the user asks you to fetch a URL or look something up online, just DO it \
+with WebFetch/WebSearch — never claim you lack permission and never refuse it as \
+"outside your role" (accessing the web IS part of your role here). Prefer the \
+vault tools for the user's own work; use the web for public/external facts, and \
+attribute web-sourced claims with their URL so they aren't confused with \
+vault-grounded answers."""
 
 
 def find_mcp_binary() -> list[str] | None:
