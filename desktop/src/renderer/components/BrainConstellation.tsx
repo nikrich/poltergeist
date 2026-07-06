@@ -10,6 +10,7 @@ import {
   toWorld,
   type Camera,
 } from '../lib/constellation-engine';
+import { useNoteView } from '../stores/note-view';
 import { useSettings } from '../stores/settings';
 import { toast } from '../stores/toast';
 import { Btn } from './Btn';
@@ -112,6 +113,7 @@ export function BrainConstellation() {
   const graphQuery = useVaultGraph();
   const graph = graphQuery.data;
   const vaultPath = useSettings((s) => s.vaultPath);
+  const openNote = useNoteView((s) => s.open);
 
   const reduceMotion = useMemo(
     () =>
@@ -166,10 +168,20 @@ export function BrainConstellation() {
     const regionColor = new Map(graph.regions.map((r) => [r.id, r.color] as const));
     const fallbackColor = '#8a8fa3';
 
+    // The mockup was tuned on a few hundred synthetic nodes; a real vault packs
+    // thousands into tight embedding clusters, and the additive glow/edge passes
+    // saturate to solid white. Scale intensity and dot size down with density so
+    // dense vaults stay legible while small ones keep the full bloom.
+    const glowScale = Math.min(1, Math.sqrt(180 / Math.max(graph.nodes.length, 1)));
+    const edgeScale = Math.min(1, Math.sqrt(600 / Math.max(graph.edges.length, 1)));
+    const glowRadiusScale = 0.55 + 0.45 * glowScale;
+    const nodeScale = 0.5 + 0.5 * glowScale;
+    const coreDotDegree = graph.nodes.length > 1500 ? 14 : 6;
+
     const renderNodes: RenderNode[] = graph.nodes.map((node, index) => ({
       index,
       node,
-      r: nodeRadius(node.degree),
+      r: nodeRadius(node.degree) * nodeScale,
       phase: Math.random() * Math.PI * 2,
       tw: 0.6 + Math.random() * 0.8,
       appear: Math.random() * 0.5,
@@ -313,12 +325,13 @@ export function BrainConstellation() {
       }
     };
 
+    // Selecting a node only opens the side card; the card's footer offers the
+    // in-app viewer and the on-disk editor explicitly.
     const openNodeCard = (idx: number) => {
       const rn = renderNodes[idx];
       if (!rn) return;
       selectedIdxRef.current = idx;
       setSelectedPath(rn.node.path);
-      void onOpenPath(rn.node.path);
     };
 
     const onPointerUp = (e: PointerEvent) => {
@@ -403,7 +416,8 @@ export function BrainConstellation() {
         const rad = 265 * cam.scale;
         const g = ctx.createRadialGradient(x, y, 0, x, y, rad);
         const { r, g: gr, b } = hexRgb(region.color);
-        const a = (isolatedRef.current === region.id ? 0.32 : 0.17) * appearT;
+        const a =
+          (isolatedRef.current === region.id ? 0.32 : 0.17) * appearT * (0.5 + 0.5 * glowScale);
         g.addColorStop(0, `rgba(${r},${gr},${b},${a})`);
         g.addColorStop(1, `rgba(${r},${gr},${b},0)`);
         ctx.fillStyle = g;
@@ -447,7 +461,7 @@ export function BrainConstellation() {
           )
             continue;
           const col = hexRgb(regionColor.get(e.a.node.context) ?? fallbackColor);
-          const base = e.bridge ? 0.5 : 0.26;
+          const base = (e.bridge ? 0.5 : 0.26) * (inFocus ? 1 : edgeScale);
           const a = base * dim * appearT * (inFocus ? 2.6 : 1);
           ctx.strokeStyle = `rgba(${col.r},${col.g},${col.b},${a})`;
           ctx.lineWidth = (e.bridge ? 1.4 : 0.9) * (inFocus ? 1.8 : 1);
@@ -493,10 +507,11 @@ export function BrainConstellation() {
         const dim = dimOf(rn);
         const isFoc = focusNode === rn;
         const tw = motionRef.current ? 0.82 + 0.18 * Math.sin(t * rn.tw * 1.6 + rn.phase) : 1;
-        const glowR = (rn.r * cam.scale + 5) * (isFoc ? 3.8 : 2.7) * (0.9 + tw * 0.2);
+        const glowR =
+          (rn.r * cam.scale + 5) * (isFoc ? 3.8 : 2.7 * glowRadiusScale) * (0.9 + tw * 0.2);
         const sprite = glowSprites.get(regionColor.get(rn.node.context) ?? fallbackColor);
         if (!sprite) continue;
-        ctx.globalAlpha = Math.min(1, dim * na * (isFoc ? 1.15 : 0.98) * tw);
+        ctx.globalAlpha = Math.min(1, dim * na * (isFoc ? 1.15 : 0.98 * glowScale) * tw);
         ctx.drawImage(sprite, x - glowR, y - glowR, glowR * 2, glowR * 2);
       }
       ctx.globalAlpha = 1;
@@ -518,7 +533,7 @@ export function BrainConstellation() {
         ctx.beginPath();
         ctx.arc(x, y, Math.max(1, r), 0, Math.PI * 2);
         ctx.fill();
-        if (isFoc || rn.node.degree >= 6) {
+        if (isFoc || rn.node.degree >= coreDotDegree) {
           ctx.globalAlpha = na;
           ctx.fillStyle = '#fff';
           ctx.beginPath();
@@ -804,12 +819,22 @@ export function BrainConstellation() {
               </div>
             </>
           )}
-          <div className="flex items-center justify-between border-t border-hairline pt-[13px] text-[11.5px] text-ink-2">
-            <span>{card.node.updated ? `updated ${card.node.updated}` : 'no update recorded'}</span>
+          <div className="flex items-center gap-[12px] border-t border-hairline pt-[13px] text-[11.5px] text-ink-2">
+            <span className="min-w-0 flex-1 truncate">
+              {card.node.updated ? `updated ${card.node.updated}` : 'no update recorded'}
+            </span>
+            <button
+              type="button"
+              onClick={() => openNote(card.node.path)}
+              className="flex shrink-0 items-center gap-[6px] whitespace-nowrap border-0 bg-transparent p-0 text-neon"
+            >
+              <Lucide name="eye" size={11} color="var(--neon)" />
+              view note
+            </button>
             <button
               type="button"
               onClick={() => onOpenPath(card.node.path)}
-              className="flex items-center gap-[6px] border-0 bg-transparent p-0 text-neon"
+              className="flex shrink-0 items-center gap-[6px] whitespace-nowrap border-0 bg-transparent p-0 text-neon"
             >
               <Lucide name="external-link" size={11} color="var(--neon)" />
               open in vault
