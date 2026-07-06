@@ -1,4 +1,4 @@
-import type { ChatStreamEvent } from './api-types';
+import type { ChatStreamEvent, DocsAssistEvent, DocsAssistRequest } from './api-types';
 import type { ActivePluginInfo, PluginRecord } from './plugin-types';
 
 export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
@@ -141,6 +141,10 @@ export interface GbBridge {
   on(
     channel: 'chat:event',
     listener: (payload: { convId: string; event: ChatStreamEvent }) => void,
+  ): () => void;
+  on(
+    channel: 'docs:event',
+    listener: (payload: { jotId: string; event: DocsAssistEvent }) => void,
   ): () => void;
 }
 
