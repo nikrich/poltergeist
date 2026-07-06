@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0](https://github.com/nikrich/poltergeist/compare/v0.5.0...v0.6.0) (2026-07-06)
+
+
+### Features
+
+* **plugins:** sidecar bridge — plugins can call the local `/v1/*` API through the host ([#67](https://github.com/nikrich/poltergeist/issues/67))
+* **import:** Atlassian (Jira/Confluence) import is now an installable plugin — the tab is no longer in core. Install it from Plugins → git URL `https://github.com/nikrich/poltergeist-atlassian-import` if you use Atlassian ([#67](https://github.com/nikrich/poltergeist/issues/67))
+
 ## [0.5.0](https://github.com/nikrich/poltergeist/compare/v0.4.1...v0.5.0) (2026-07-06)
 
 
