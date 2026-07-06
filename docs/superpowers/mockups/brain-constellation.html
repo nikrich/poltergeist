@@ -1,0 +1,819 @@
+<title>Poltergeist — your brain</title>
+
+<style>
+  :root {
+    --bg: #07080d;
+    --bg-2: #0b0d15;
+    --panel: rgba(16, 18, 27, 0.66);
+    --panel-solid: #10121b;
+    --hair: rgba(255, 255, 255, 0.09);
+    --hair-strong: rgba(255, 255, 255, 0.16);
+    --ink-0: #eceef5;
+    --ink-1: #aab0c2;
+    --ink-2: #6b7183;
+    --ink-3: #474d5e;
+    --accent: #6ee7a8;
+    --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--ink-0);
+    font-family: var(--font-ui);
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #stage {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+  }
+
+  canvas#sky {
+    position: absolute;
+    inset: 0;
+    display: block;
+    cursor: grab;
+  }
+  canvas#sky.dragging { cursor: grabbing; }
+  canvas#sky.hovering { cursor: pointer; }
+
+  /* ---- top bar ---- */
+  .topbar {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 20px;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(7, 8, 13, 0.8) 0%, rgba(7, 8, 13, 0) 100%);
+    z-index: 5;
+  }
+  .brand { display: flex; align-items: center; gap: 11px; }
+  .ghost {
+    width: 26px; height: 26px;
+    filter: drop-shadow(0 0 10px rgba(110, 231, 168, 0.55));
+    animation: bob 5.5s ease-in-out infinite;
+  }
+  @keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+  .brand .name {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .brand .sub {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    margin-top: 1px;
+  }
+  .stats { display: flex; gap: 8px; pointer-events: auto; }
+  .chip {
+    display: flex; align-items: center; gap: 7px;
+    padding: 6px 11px;
+    background: var(--panel);
+    border: 1px solid var(--hair);
+    border-radius: 999px;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-1);
+    white-space: nowrap;
+  }
+  .chip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  .chip b { color: var(--ink-0); font-weight: 600; }
+
+  /* ---- legend ---- */
+  .legend {
+    position: absolute;
+    left: 20px; bottom: 20px;
+    width: 216px;
+    padding: 14px 14px 12px;
+    background: var(--panel);
+    border: 1px solid var(--hair);
+    border-radius: 16px;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    z-index: 5;
+  }
+  .legend .lead {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    margin-bottom: 10px;
+  }
+  .region {
+    display: flex; align-items: center; gap: 10px;
+    width: 100%;
+    padding: 6px 7px;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--ink-1);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .region:hover { background: rgba(255, 255, 255, 0.05); }
+  .region.dimmed { opacity: 0.34; }
+  .region .swatch {
+    width: 9px; height: 9px; border-radius: 50%;
+    flex: none;
+    box-shadow: 0 0 9px currentColor;
+  }
+  .region .rname { flex: 1; color: var(--ink-0); }
+  .region .rcount {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-2);
+    font-variant-numeric: tabular-nums;
+  }
+  .legend .hint {
+    margin-top: 9px;
+    padding-top: 10px;
+    border-top: 1px solid var(--hair);
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--ink-2);
+  }
+  .legend .hint kbd {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--ink-1);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--hair);
+    border-radius: 4px;
+    padding: 1px 4px;
+  }
+
+  /* ---- controls ---- */
+  .controls {
+    position: absolute;
+    right: 20px; bottom: 20px;
+    display: flex;
+    gap: 7px;
+    z-index: 5;
+  }
+  .ctl {
+    display: flex; align-items: center; gap: 6px;
+    padding: 7px 12px;
+    background: var(--panel);
+    border: 1px solid var(--hair);
+    border-radius: 999px;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    color: var(--ink-1);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: lowercase;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+  }
+  .ctl:hover { color: var(--ink-0); border-color: var(--hair-strong); }
+  .ctl.on { color: #08130d; background: var(--accent); border-color: var(--accent); }
+
+  /* ---- note card ---- */
+  .card {
+    position: absolute;
+    top: 68px; right: 20px;
+    width: 316px;
+    padding: 18px;
+    background: var(--panel);
+    border: 1px solid var(--hair-strong);
+    border-radius: 18px;
+    backdrop-filter: blur(22px);
+    -webkit-backdrop-filter: blur(22px);
+    box-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.7);
+    z-index: 6;
+    opacity: 0;
+    transform: translateX(14px) scale(0.98);
+    pointer-events: none;
+    transition: opacity 0.22s ease, transform 0.22s ease;
+  }
+  .card.show { opacity: 1; transform: none; pointer-events: auto; }
+  .card .kctx {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-1);
+  }
+  .card .kctx .swatch { width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 8px currentColor; }
+  .card h3 {
+    margin: 11px 0 8px;
+    font-size: 18px;
+    line-height: 1.24;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+    color: var(--ink-0);
+  }
+  .card .path {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--ink-2);
+    word-break: break-all;
+    margin-bottom: 12px;
+  }
+  .card .excerpt {
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--ink-1);
+    margin-bottom: 14px;
+  }
+  .card .rel-lead {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-bottom: 8px;
+  }
+  .card .rel { display: flex; flex-direction: column; gap: 7px; margin-bottom: 15px; }
+  .card .rel a {
+    display: flex; align-items: center; gap: 9px;
+    font-size: 12.5px;
+    color: var(--ink-1);
+    text-decoration: none;
+    cursor: pointer;
+    transition: color 0.14s;
+  }
+  .card .rel a:hover { color: var(--ink-0); }
+  .card .rel .swatch { width: 7px; height: 7px; border-radius: 50%; flex: none; box-shadow: 0 0 7px currentColor; }
+  .card .rel .wt { margin-left: auto; font-family: var(--font-mono); font-size: 10px; color: var(--ink-3); }
+  .card .foot {
+    display: flex; align-items: center; justify-content: space-between;
+    padding-top: 13px;
+    border-top: 1px solid var(--hair);
+    font-size: 11.5px;
+    color: var(--ink-2);
+  }
+  .card .foot .open { display: flex; align-items: center; gap: 6px; color: var(--accent); }
+  .card .foot kbd {
+    font-family: var(--font-mono); font-size: 10px;
+    background: rgba(110, 231, 168, 0.12);
+    border: 1px solid rgba(110, 231, 168, 0.3);
+    border-radius: 4px; padding: 1px 5px; color: var(--accent);
+  }
+  .card .close {
+    position: absolute; top: 13px; right: 14px;
+    width: 22px; height: 22px;
+    display: grid; place-items: center;
+    border: 0; border-radius: 7px;
+    background: transparent; color: var(--ink-2);
+    cursor: pointer; font-size: 15px; line-height: 1;
+    transition: color 0.14s, background 0.14s;
+  }
+  .card .close:hover { color: var(--ink-0); background: rgba(255, 255, 255, 0.06); }
+
+  /* floating hover label */
+  .hoverlabel {
+    position: absolute;
+    z-index: 4;
+    padding: 5px 10px;
+    background: rgba(10, 12, 19, 0.86);
+    border: 1px solid var(--hair-strong);
+    border-radius: 8px;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    font-size: 12px;
+    color: var(--ink-0);
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transform: translate(-50%, -140%);
+    transition: opacity 0.12s;
+  }
+  .hoverlabel .ctxdot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 6px; vertical-align: middle; box-shadow: 0 0 6px currentColor; }
+
+  /* first-load caption, fades out */
+  .caption {
+    position: absolute;
+    left: 50%; bottom: 88px;
+    transform: translateX(-50%);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    z-index: 5;
+    pointer-events: none;
+    animation: capfade 6.5s ease forwards;
+  }
+  @keyframes capfade {
+    0%, 62% { opacity: 0; }
+    12%, 52% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
+  @media (max-width: 640px) {
+    .card { display: none; }
+    .legend { width: 180px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ghost, .caption { animation: none; }
+  }
+</style>
+
+<div id="stage">
+  <canvas id="sky"></canvas>
+
+  <div class="topbar">
+    <div class="brand">
+      <svg class="ghost" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+        <path d="M6 26V15a10 10 0 0 1 20 0v11l-3.3-2.4-3.4 2.4-3.3-2.4-3.4 2.4L9 24.5 6 26Z"
+              fill="#6ee7a8" fill-opacity="0.14" stroke="#6ee7a8" stroke-width="1.6" stroke-linejoin="round"/>
+        <circle cx="12.4" cy="14.5" r="1.7" fill="#6ee7a8"/>
+        <circle cx="19.6" cy="14.5" r="1.7" fill="#6ee7a8"/>
+      </svg>
+      <div>
+        <div class="name">poltergeist</div>
+        <div class="sub">your brain · semantic map</div>
+      </div>
+    </div>
+    <div class="stats">
+      <div class="chip"><span class="dot"></span><b id="s-notes">0</b> notes</div>
+      <div class="chip"><span class="dot" style="background:#38bdf8;box-shadow:0 0 8px #38bdf8"></span><b id="s-links">0</b> links</div>
+      <div class="chip"><span class="dot" style="background:#a78bfa;box-shadow:0 0 8px #a78bfa"></span><b id="s-regions">0</b> regions</div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <div class="lead">regions</div>
+    <div id="region-list"></div>
+    <div class="hint">click a <kbd>region</kbd> to isolate · click a <kbd>star</kbd> to open its note</div>
+  </div>
+
+  <div class="controls">
+    <button class="ctl on" id="c-edges">synapses</button>
+    <button class="ctl on" id="c-motion">motion</button>
+    <button class="ctl" id="c-reset">reset view</button>
+  </div>
+
+  <div class="card" id="card">
+    <button class="close" id="card-close" aria-label="close">×</button>
+    <div class="kctx" id="card-ctx"><span class="swatch"></span><span class="lbl"></span></div>
+    <h3 id="card-title"></h3>
+    <div class="path" id="card-path"></div>
+    <div class="excerpt" id="card-excerpt"></div>
+    <div class="rel-lead">related — by meaning</div>
+    <div class="rel" id="card-rel"></div>
+    <div class="foot">
+      <span id="card-date"></span>
+      <span class="open"><kbd>↵</kbd> open in vault</span>
+    </div>
+  </div>
+
+  <div class="hoverlabel" id="hoverlabel"></div>
+  <div class="caption">semantic layout · notes cluster by meaning</div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // ----- regions (embedding clusters) -----
+  const LOBES = [
+    { id: "poltergeist", label: "poltergeist", color: "#6ee7a8", titles: [
+      "LLM backend — shell out to claude -p", "launchd → in-app scheduler cutover",
+      "chat file attachments — 3 slices", "semantic related: frontmatter",
+      "recorder daemon — zombie PID fix", "vault indexing pipeline",
+      "MCP recall server", "microsoft graph auth flow", "Poltergeist naming decision",
+      "connector relevance scoring", "onboarding — bootstrap the vault", "activity heatmap",
+      "in-app Microsoft sign-in", "meeting prep pipeline" ] },
+    { id: "sanlam", label: "sanlam · capstone", color: "#38bdf8", titles: [
+      "SFT capstone — add BFF endpoint", "Digisure standup", "CreateClaimRequest handler",
+      "local-runner bootstrap", "Bruno E2E — claims happy path", "prd incident — DLQ triage",
+      "correlation-id tracing", "memory palace — drawer", "hive assign — multi-repo",
+      "fe-ascp-v2 audit", "InputSanitizer at BFF boundary", "Avro schema — tampering defense",
+      "CoE draft — correction of error", "Cognito session expiry" ] },
+    { id: "personal", label: "personal", color: "#a78bfa", titles: [
+      "flat — lease renewal", "training block — July", "books to read",
+      "budget — July", "Cape Town — trip notes", "birthday — mom",
+      "dentist appointment", "weekend plans", "car service", "photos to back up" ] },
+    { id: "reducedrecipes", label: "reducedrecipes", color: "#fbbf24", titles: [
+      "pantry model", "recipe scaling algorithm", "grocery API integration",
+      "meal-plan UI", "cost-per-serving calc", "landing page copy",
+      "beta feedback round 1", "ingredient substitution graph", "onboarding funnel" ] },
+    { id: "codeship", label: "codeship", color: "#f472b6", titles: [
+      "MCP connectors config", "project import flow", "epic templates",
+      "ship CLI — session mgmt", "client onboarding", "connector: jira",
+      "billing model", "second-brain integration" ] },
+  ];
+
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const gauss = () => { let u = 0, v = 0; while (!u) u = Math.random(); while (!v) v = Math.random();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
+  const gclamp = () => Math.max(-2.1, Math.min(2.1, gauss())); // no far outliers → tighter framing
+
+  // ----- build nodes -----
+  const nodes = [];
+  const N_LOBES = LOBES.length;
+  LOBES.forEach((lobe, li) => {
+    const ang = (li / N_LOBES) * Math.PI * 2 - Math.PI / 2;
+    const cx = Math.cos(ang) * 300;
+    const cy = Math.sin(ang) * 246;
+    lobe.cx = cx; lobe.cy = cy;
+    const count = Math.round(rand(22, 40));
+    lobe.count = count;
+    for (let i = 0; i < count; i++) {
+      const spread = 96;
+      const x = cx + gclamp() * spread;
+      const y = cy + gclamp() * spread * 0.92;
+      const t = lobe.titles[i % lobe.titles.length];
+      const isRepeat = i >= lobe.titles.length;
+      nodes.push({
+        lobe: li, x, y, bx: x, by: y,
+        title: isRepeat ? datedVariant(t, i) : t,
+        deg: 0, phase: Math.random() * Math.PI * 2,
+        tw: rand(0.6, 1.4), appear: Math.random() * 0.5,
+      });
+    }
+  });
+
+  function datedVariant(t, i) {
+    const d = 2 + ((i * 7) % 26);
+    return t + " · 06-" + String(d).padStart(2, "0");
+  }
+
+  // ----- build edges -----
+  const edges = [];
+  const byLobe = LOBES.map((_, li) => nodes.map((n, idx) => ({ n, idx })).filter(o => o.n.lobe === li));
+  byLobe.forEach(group => {
+    group.forEach((o, gi) => {
+      // connect to a few nearest neighbours within the region
+      const others = group
+        .filter((_, j) => j !== gi)
+        .map(p => ({ p, d: dist2(o.n, p.n) }))
+        .sort((a, b) => a.d - b.d)
+        .slice(0, Math.round(rand(2, 4)));
+      others.forEach(({ p }) => {
+        if (o.idx < p.idx) addEdge(o.idx, p.idx, rand(0.5, 0.9), false);
+      });
+    });
+  });
+  // semantic bridges between related regions (the "discovery" wow)
+  const BRIDGES = [["poltergeist", "sanlam"], ["poltergeist", "codeship"],
+    ["sanlam", "codeship"], ["personal", "reducedrecipes"], ["poltergeist", "personal"]];
+  BRIDGES.forEach(([a, b]) => {
+    const ai = LOBES.findIndex(l => l.id === a), bi = LOBES.findIndex(l => l.id === b);
+    const ga = byLobe[ai], gb = byLobe[bi];
+    const k = Math.round(rand(2, 4));
+    for (let i = 0; i < k; i++) {
+      const na = ga[Math.floor(Math.random() * ga.length)];
+      const nb = gb[Math.floor(Math.random() * gb.length)];
+      addEdge(na.idx, nb.idx, rand(0.55, 0.85), true);
+    }
+  });
+
+  function dist2(a, b) { const dx = a.x - b.x, dy = a.y - b.y; return dx * dx + dy * dy; }
+  function addEdge(a, b, w, bridge) {
+    edges.push({ a, b, w, bridge });
+    nodes[a].deg++; nodes[b].deg++;
+  }
+
+  // node radius from degree
+  nodes.forEach(n => { n.r = 2.7 + Math.min(n.deg, 14) * 0.62; });
+
+  // adjacency for highlighting + related list
+  const adj = nodes.map(() => []);
+  edges.forEach((e, ei) => { adj[e.a].push({ o: e.b, w: e.w, ei }); adj[e.b].push({ o: e.a, w: e.w, ei }); });
+
+  // ----- stats -----
+  document.getElementById("s-notes").textContent = nodes.length;
+  document.getElementById("s-links").textContent = edges.length;
+  document.getElementById("s-regions").textContent = LOBES.length;
+
+  // ----- legend -----
+  const regionList = document.getElementById("region-list");
+  let isolated = -1;
+  LOBES.forEach((lobe, li) => {
+    const btn = document.createElement("button");
+    btn.className = "region";
+    btn.innerHTML = `<span class="swatch" style="background:${lobe.color};color:${lobe.color}"></span>`
+      + `<span class="rname">${lobe.label}</span><span class="rcount">${lobe.count}</span>`;
+    btn.addEventListener("click", () => {
+      isolated = isolated === li ? -1 : li;
+      [...regionList.children].forEach((c, ci) => c.classList.toggle("dimmed", isolated !== -1 && ci !== isolated));
+    });
+    regionList.appendChild(btn);
+  });
+
+  // ----- canvas + camera -----
+  const canvas = document.getElementById("sky");
+  const ctx = canvas.getContext("2d");
+  let W = 0, H = 0, DPR = 1;
+  const cam = { x: 0, y: 0, scale: 0.62, tx: 0, ty: 0, tscale: 0.62 };
+
+  function resize() {
+    DPR = Math.min(devicePixelRatio || 1, 2);
+    W = innerWidth; H = innerHeight;
+    canvas.width = W * DPR; canvas.height = H * DPR;
+    canvas.style.width = W + "px"; canvas.style.height = H + "px";
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  resize();
+  addEventListener("resize", resize);
+
+  function fitView() {
+    let minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
+    nodes.forEach(n => { minX = Math.min(minX, n.bx); minY = Math.min(minY, n.by);
+      maxX = Math.max(maxX, n.bx); maxY = Math.max(maxY, n.by); });
+    const pad = 70;
+    const s = Math.max(0.7, Math.min(1.5, Math.min(W / (maxX - minX + pad * 2), H / (maxY - minY + pad * 2)) * 1.04));
+    cam.tscale = s; cam.scale = s;
+    cam.tx = (minX + maxX) / 2; cam.ty = (minY + maxY) / 2;
+    cam.x = cam.tx; cam.y = cam.ty;
+  }
+  fitView();
+
+  const toScreen = (wx, wy) => [(wx - cam.x) * cam.scale + W / 2, (wy - cam.y) * cam.scale + H / 2];
+  const toWorld = (sx, sy) => [(sx - W / 2) / cam.scale + cam.x, (sy - H / 2) / cam.scale + cam.y];
+
+  // ----- glow sprites per lobe -----
+  const SPRITE = 96;
+  const glows = LOBES.map(lobe => {
+    const c = document.createElement("canvas"); c.width = c.height = SPRITE;
+    const g = c.getContext("2d");
+    const rad = g.createRadialGradient(SPRITE / 2, SPRITE / 2, 0, SPRITE / 2, SPRITE / 2, SPRITE / 2);
+    const { r, gr, b } = hexRgb(lobe.color);
+    rad.addColorStop(0, `rgba(${Math.min(255, r + 70)},${Math.min(255, gr + 70)},${Math.min(255, b + 70)},0.98)`);
+    rad.addColorStop(0.18, `rgba(${r},${gr},${b},0.66)`);
+    rad.addColorStop(0.5, `rgba(${r},${gr},${b},0.22)`);
+    rad.addColorStop(1, `rgba(${r},${gr},${b},0)`);
+    g.fillStyle = rad; g.fillRect(0, 0, SPRITE, SPRITE);
+    return c;
+  });
+  function hexRgb(h) { const n = parseInt(h.slice(1), 16); return { r: n >> 16 & 255, gr: n >> 8 & 255, b: n & 255 }; }
+  function mixWhite(h, t) { const { r, gr, b } = hexRgb(h);
+    return `rgb(${Math.round(r + (255 - r) * t)},${Math.round(gr + (255 - gr) * t)},${Math.round(b + (255 - b) * t)})`; }
+
+  // ----- interaction state -----
+  let hoverIdx = -1, selIdx = -1;
+  let showEdges = true, motion = !reduceMotion, appearT = reduceMotion ? 1 : 0;
+  const signals = [];
+
+  // ----- pointer: pan / hover / click -----
+  let dragging = false, dragMoved = false, lastX = 0, lastY = 0, downX = 0, downY = 0;
+  canvas.addEventListener("pointerdown", e => {
+    dragging = true; dragMoved = false;
+    lastX = downX = e.clientX; lastY = downY = e.clientY;
+    canvas.classList.add("dragging"); canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener("pointermove", e => {
+    if (dragging) {
+      const dx = e.clientX - lastX, dy = e.clientY - lastY;
+      if (Math.abs(e.clientX - downX) + Math.abs(e.clientY - downY) > 4) dragMoved = true;
+      cam.x -= dx / cam.scale; cam.y -= dy / cam.scale;
+      cam.tx = cam.x; cam.ty = cam.y;
+      lastX = e.clientX; lastY = e.clientY;
+    } else {
+      pickHover(e.clientX, e.clientY);
+    }
+  });
+  canvas.addEventListener("pointerup", e => {
+    dragging = false; canvas.classList.remove("dragging");
+    if (!dragMoved) {
+      pickHover(e.clientX, e.clientY);
+      if (hoverIdx !== -1) openCard(hoverIdx);
+      else closeCard();
+    }
+  });
+  canvas.addEventListener("wheel", e => {
+    e.preventDefault();
+    const [wx, wy] = toWorld(e.clientX, e.clientY);
+    const factor = Math.exp(-e.deltaY * 0.0014);
+    cam.scale = Math.max(0.2, Math.min(4, cam.scale * factor));
+    cam.tscale = cam.scale;
+    // keep cursor anchored
+    cam.x = wx - (e.clientX - W / 2) / cam.scale;
+    cam.y = wy - (e.clientY - H / 2) / cam.scale;
+    cam.tx = cam.x; cam.ty = cam.y;
+  }, { passive: false });
+
+  const hoverLabel = document.getElementById("hoverlabel");
+  function pickHover(sx, sy) {
+    let best = -1, bestD = 22 * 22;
+    for (let i = 0; i < nodes.length; i++) {
+      const [x, y] = toScreen(nodes[i].x, nodes[i].y);
+      const d = (x - sx) ** 2 + (y - sy) ** 2;
+      const rr = Math.max(9, nodes[i].r * cam.scale + 7);
+      if (d < Math.max(bestD, rr * rr) && d < rr * rr) { bestD = d; best = i; }
+    }
+    hoverIdx = best;
+    canvas.classList.toggle("hovering", best !== -1);
+    if (best !== -1) {
+      const [x, y] = toScreen(nodes[best].x, nodes[best].y);
+      const lobe = LOBES[nodes[best].lobe];
+      hoverLabel.style.left = x + "px"; hoverLabel.style.top = y + "px";
+      hoverLabel.innerHTML = `<span class="ctxdot" style="background:${lobe.color};color:${lobe.color}"></span>${nodes[best].title}`;
+      hoverLabel.style.opacity = "1";
+    } else hoverLabel.style.opacity = "0";
+  }
+
+  // ----- note card -----
+  const card = document.getElementById("card");
+  function openCard(i) {
+    selIdx = i;
+    const n = nodes[i], lobe = LOBES[n.lobe];
+    card.querySelector("#card-ctx .swatch").style.cssText = `background:${lobe.color};color:${lobe.color}`;
+    card.querySelector("#card-ctx .lbl").textContent = lobe.label;
+    document.getElementById("card-title").textContent = n.title;
+    const slug = n.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
+    document.getElementById("card-path").textContent = `vault/${lobe.id}/${slug}.md`;
+    document.getElementById("card-excerpt").textContent = excerptFor(lobe.id);
+    document.getElementById("card-date").textContent = "updated 2026-07-0" + (1 + (i % 5));
+    const rel = document.getElementById("card-rel"); rel.innerHTML = "";
+    adj[i].slice().sort((a, b) => b.w - a.w).slice(0, 4).forEach(({ o, w }) => {
+      const rn = nodes[o], rl = LOBES[rn.lobe];
+      const a = document.createElement("a");
+      a.innerHTML = `<span class="swatch" style="background:${rl.color};color:${rl.color}"></span>`
+        + `<span>${rn.title}</span><span class="wt">${w.toFixed(2)}</span>`;
+      a.addEventListener("click", () => { focusNode(o); openCard(o); });
+      rel.appendChild(a);
+    });
+    card.classList.add("show");
+  }
+  function closeCard() { card.classList.remove("show"); selIdx = -1; }
+  document.getElementById("card-close").addEventListener("click", closeCard);
+  function focusNode(i) {
+    const n = nodes[i];
+    cam.tx = n.bx; cam.ty = n.by;
+    cam.tscale = Math.max(cam.scale, 1.1);
+  }
+  function excerptFor(id) {
+    const m = {
+      poltergeist: "Decision captured from a working session — the rationale, the tradeoff considered, and what it means for the next slice of the build.",
+      sanlam: "Traced through BFF → command-status → Kinesis handler. Root cause noted with the correlation id and the follow-up owner.",
+      personal: "A quick capture — the thing to remember, the date it matters, and who to loop in.",
+      reducedrecipes: "Product note — the model, the constraint it solves, and the open question left for the next iteration.",
+      codeship: "Integration note — the connector, its config surface, and how it threads into the wider session.",
+    };
+    return m[id];
+  }
+
+  // ----- controls -----
+  const cE = document.getElementById("c-edges"), cM = document.getElementById("c-motion");
+  cE.addEventListener("click", () => { showEdges = !showEdges; cE.classList.toggle("on", showEdges); });
+  cM.addEventListener("click", () => { motion = !motion; cM.classList.toggle("on", motion); });
+  cM.classList.toggle("on", motion);
+  document.getElementById("c-reset").addEventListener("click", () => { fitView(); closeCard(); isolated = -1;
+    [...regionList.children].forEach(c => c.classList.remove("dimmed")); });
+
+  // ----- render loop -----
+  let last = performance.now();
+  const startT = performance.now();
+  function frame(now) {
+    const dt = Math.min(50, now - last); last = now;
+    const t = now * 0.001;
+
+    // camera easing
+    cam.x += (cam.tx - cam.x) * 0.12;
+    cam.y += (cam.ty - cam.y) * 0.12;
+    cam.scale += (cam.tscale - cam.scale) * 0.12;
+    // wall-clock drives the intro so a single rendered frame shows the full scene
+    // (robust to background-tab rAF throttling)
+    appearT = reduceMotion ? 1 : Math.min(1, (now - startT) / 1500);
+
+    // node drift
+    if (motion) {
+      for (const n of nodes) {
+        n.x = n.bx + Math.sin(t * 0.28 + n.phase) * 5.5;
+        n.y = n.by + Math.cos(t * 0.24 + n.phase * 1.3) * 5.5;
+      }
+    }
+
+    // background
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    const bg = ctx.createRadialGradient(W / 2, H * 0.44, 0, W / 2, H * 0.44, Math.max(W, H) * 0.75);
+    bg.addColorStop(0, "#101422"); bg.addColorStop(0.55, "#090b14"); bg.addColorStop(1, "#050609");
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+    // nebulas per lobe (ambient region glow)
+    ctx.globalCompositeOperation = "lighter";
+    LOBES.forEach((lobe, li) => {
+      if (isolated !== -1 && isolated !== li) return;
+      const [x, y] = toScreen(lobe.cx, lobe.cy);
+      const rad = 265 * cam.scale;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, rad);
+      const { r, gr, b } = hexRgb(lobe.color);
+      const a = (isolated === li ? 0.32 : 0.17) * appearT;
+      g.addColorStop(0, `rgba(${r},${gr},${b},${a})`);
+      g.addColorStop(1, `rgba(${r},${gr},${b},0)`);
+      ctx.fillStyle = g; ctx.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+    });
+
+    const focus = selIdx !== -1 ? selIdx : hoverIdx;
+    const focusSet = focus !== -1 ? new Set([focus, ...adj[focus].map(a => a.o)]) : null;
+    const dimOf = i => {
+      if (isolated !== -1 && nodes[i].lobe !== isolated) return 0.12;
+      if (focusSet && !focusSet.has(i)) return 0.16;
+      return 1;
+    };
+
+    // edges
+    if (showEdges) {
+      for (const e of edges) {
+        const na = nodes[e.a], nb = nodes[e.b];
+        let dim = Math.min(dimOf(e.a), dimOf(e.b));
+        const inFocus = focus !== -1 && (e.a === focus || e.b === focus);
+        if (focusSet && !inFocus) dim = Math.min(dim, 0.14);
+        if (isolated !== -1 && (na.lobe !== isolated && nb.lobe !== isolated)) continue;
+        const [x1, y1] = toScreen(na.x, na.y), [x2, y2] = toScreen(nb.x, nb.y);
+        if (Math.max(x1, x2) < -50 || Math.min(x1, x2) > W + 50 || Math.max(y1, y2) < -50 || Math.min(y1, y2) > H + 50) continue;
+        const col = hexRgb(LOBES[na.lobe].color);
+        const base = e.bridge ? 0.5 : 0.26;
+        const a = base * dim * appearT * (inFocus ? 2.6 : 1);
+        ctx.strokeStyle = `rgba(${col.r},${col.gr},${col.b},${a})`;
+        ctx.lineWidth = (e.bridge ? 1.4 : 0.9) * (inFocus ? 1.8 : 1);
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      }
+    }
+
+    // signals firing along synapses
+    if (motion) {
+      if (Math.random() < 0.05 && signals.length < 22) {
+        const e = edges[Math.floor(Math.random() * edges.length)];
+        signals.push({ e, t: 0, spd: rand(0.5, 1.1), bridge: e.bridge });
+      }
+      for (let i = signals.length - 1; i >= 0; i--) {
+        const s = signals[i]; s.t += (dt / 1000) * s.spd;
+        if (s.t >= 1) { signals.splice(i, 1); continue; }
+        const na = nodes[s.e.a], nb = nodes[s.e.b];
+        const [x1, y1] = toScreen(na.x, na.y), [x2, y2] = toScreen(nb.x, nb.y);
+        const x = x1 + (x2 - x1) * s.t, y = y1 + (y2 - y1) * s.t;
+        const col = hexRgb(LOBES[na.lobe].color);
+        const g = ctx.createRadialGradient(x, y, 0, x, y, s.bridge ? 9 : 6);
+        g.addColorStop(0, `rgba(${col.r},${col.gr},${col.b},0.95)`);
+        g.addColorStop(1, `rgba(${col.r},${col.gr},${col.b},0)`);
+        ctx.fillStyle = g; ctx.fillRect(x - 9, y - 9, 18, 18);
+      }
+    }
+
+    // node glows
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      const na = appearT >= 1 ? 1 : Math.max(0, Math.min(1, (appearT - n.appear) / 0.35));
+      if (na <= 0) continue;
+      const [x, y] = toScreen(n.x, n.y);
+      if (x < -60 || x > W + 60 || y < -60 || y > H + 60) continue;
+      const dim = dimOf(i);
+      const isFoc = focus === i;
+      const tw = motion ? 0.82 + 0.18 * Math.sin(t * n.tw * 1.6 + n.phase) : 1;
+      const glowR = (n.r * cam.scale + 5) * (isFoc ? 3.8 : 2.7) * (0.9 + tw * 0.2);
+      ctx.globalAlpha = Math.min(1, dim * na * (isFoc ? 1.15 : 0.98) * tw);
+      ctx.drawImage(glows[n.lobe], x - glowR, y - glowR, glowR * 2, glowR * 2);
+    }
+    ctx.globalAlpha = 1;
+
+    // node cores
+    ctx.globalCompositeOperation = "source-over";
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      const na = appearT >= 1 ? 1 : Math.max(0, Math.min(1, (appearT - n.appear) / 0.35));
+      if (na <= 0) continue;
+      const [x, y] = toScreen(n.x, n.y);
+      if (x < -20 || x > W + 20 || y < -20 || y > H + 20) continue;
+      const dim = dimOf(i);
+      const isFoc = focus === i;
+      const r = n.r * cam.scale * (isFoc ? 1.5 : 1) * na;
+      ctx.globalAlpha = Math.max(dim, 0.28) * na;
+      ctx.fillStyle = mixWhite(LOBES[n.lobe].color, isFoc ? 0.85 : 0.62);
+      ctx.beginPath(); ctx.arc(x, y, Math.max(1, r), 0, Math.PI * 2); ctx.fill();
+      if (isFoc || n.deg >= 6) {
+        ctx.globalAlpha = na; ctx.fillStyle = "#fff";
+        ctx.beginPath(); ctx.arc(x, y, Math.max(0.5, r * 0.42), 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+
+    // keep hover label glued while panning/drifting
+    if (hoverIdx !== -1 && !dragging) {
+      const [x, y] = toScreen(nodes[hoverIdx].x, nodes[hoverIdx].y);
+      hoverLabel.style.left = x + "px"; hoverLabel.style.top = y + "px";
+    }
+
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
