@@ -11,10 +11,12 @@ import json
 import logging
 import os
 from pathlib import Path
-
-import numpy as np
+from typing import TYPE_CHECKING
 
 from ghostbrain.semantic.index import Index, index_dir
+
+if TYPE_CHECKING:
+    import numpy as np
 
 log = logging.getLogger("ghostbrain.semantic.projection")
 
@@ -28,6 +30,8 @@ def last_method() -> str:
 
 def _normalise(coords: np.ndarray) -> np.ndarray:
     """Scale each axis into [-_COORD_RANGE, _COORD_RANGE], centred."""
+    import numpy as np
+
     out = np.asarray(coords, dtype="float64")
     if out.shape[0] < 2:
         return np.zeros((out.shape[0], 2), dtype="float64")
@@ -39,6 +43,8 @@ def _normalise(coords: np.ndarray) -> np.ndarray:
 
 
 def _pca_2d(vectors: np.ndarray) -> np.ndarray:
+    import numpy as np  # noqa: F401 — np.linalg below
+
     centred = vectors - vectors.mean(axis=0, keepdims=True)
     # Economy SVD; first two right-singular vectors are the top components.
     _, _, vt = np.linalg.svd(centred, full_matrices=False)
@@ -46,6 +52,10 @@ def _pca_2d(vectors: np.ndarray) -> np.ndarray:
 
 
 def project(vectors: np.ndarray) -> np.ndarray:
+    # numpy comes from the optional [semantic] extra; import lazily so the API
+    # (which only reads layout.json via load_layout) never requires it.
+    import numpy as np
+
     global _last_method
     vectors = np.asarray(vectors, dtype="float32")
     n = vectors.shape[0]
