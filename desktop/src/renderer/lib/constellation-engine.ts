@@ -26,9 +26,11 @@ export function fitCamera(nodes: VaultGraphNode[], w: number, h: number): Camera
 export function hitTest(cam: Camera, w: number, h: number, nodes: VaultGraphNode[], sx: number, sy: number): number {
   let best = -1, bestD = Infinity;
   for (let i = 0; i < nodes.length; i++) {
-    const [x, y] = toScreen(cam, w, h, nodes[i].x, nodes[i].y);
+    const n = nodes[i];
+    if (!n) continue;
+    const [x, y] = toScreen(cam, w, h, n.x, n.y);
     const d = (x - sx) ** 2 + (y - sy) ** 2;
-    const r = Math.max(9, (2.7 + Math.min(nodes[i].degree, 14) * 0.62) * cam.scale + 7);
+    const r = Math.max(9, (2.7 + Math.min(n.degree, 14) * 0.62) * cam.scale + 7);
     if (d < r * r && d < bestD) { bestD = d; best = i; }
   }
   return best;
