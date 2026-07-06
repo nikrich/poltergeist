@@ -15,7 +15,6 @@ import { TodayScreen } from './screens/today';
 import { ActivityScreen } from './screens/activity';
 import { ChatScreen } from './screens/chat';
 import { ConnectorsScreen } from './screens/connectors';
-import { ImportScreen } from './screens/import';
 import { MeetingsScreen } from './screens/meetings';
 import { CaptureScreen } from './screens/capture';
 import { VaultScreen } from './screens/vault';
@@ -118,7 +117,6 @@ export default function App() {
           {active === 'activity' && <ActivityScreen />}
           {active === 'chat' && <ChatScreen />}
           {active === 'connectors' && <ConnectorsScreen />}
-          {active === 'import' && <ImportScreen />}
           {active === 'meetings' && <MeetingsScreen />}
           {active === 'capture' && <CaptureScreen />}
           {active === 'vault' && <VaultScreen />}
