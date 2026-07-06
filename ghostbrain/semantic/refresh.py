@@ -27,6 +27,7 @@ from ghostbrain.semantic.index import (
     text_hash,
     DEFAULT_MODEL_NAME,
 )
+from ghostbrain.semantic.projection import build_layout, save_layout
 
 log = logging.getLogger("ghostbrain.semantic.refresh")
 
@@ -36,6 +37,14 @@ DEFAULT_MIN_SIMILARITY = 0.45
 # longer dominate; we index them so meeting content participates in
 # cross-context linking. Audio files and other non-markdown live elsewhere.
 SKIP_DIR_PARTS: tuple[str, ...] = ()
+
+
+def _refresh_layout(index: Index) -> None:
+    """Recompute + persist the 2-D layout. Never fails the refresh."""
+    try:
+        save_layout(build_layout(index))
+    except Exception as e:  # noqa: BLE001
+        log.warning("layout projection failed: %s", e)
 
 
 @dataclasses.dataclass
@@ -125,6 +134,7 @@ def refresh(
     paths_to_score = list(note_texts.keys())
     if not paths_to_score or index.vectors is None:
         save_index(index)
+        _refresh_layout(index)
         return RefreshResult(
             embedded=embedded,
             reused=reused,
@@ -143,6 +153,7 @@ def refresh(
     )
 
     save_index(index)
+    _refresh_layout(index)
 
     return RefreshResult(
         embedded=embedded,

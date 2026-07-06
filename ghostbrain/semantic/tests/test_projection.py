@@ -63,3 +63,25 @@ def test_build_and_roundtrip_layout(tmp_path, monkeypatch):
 def test_build_layout_empty_index_is_empty():
     layout = build_layout(Index(model_name="m"))
     assert layout.positions == {}
+
+
+def test_refresh_writes_layout(tmp_path, monkeypatch):
+    monkeypatch.setenv("GHOSTBRAIN_SEMANTIC_INDEX_DIR", str(tmp_path / "sem"))
+    vault = tmp_path / "vault"
+    (vault / "20-contexts" / "a").mkdir(parents=True)
+    (vault / "20-contexts" / "b").mkdir(parents=True)
+    (vault / "20-contexts" / "a" / "one.md").write_text("---\ntitle: One\n---\napples and oranges")
+    (vault / "20-contexts" / "b" / "two.md").write_text("---\ntitle: Two\n---\nfruit basket")
+    monkeypatch.setenv("VAULT_PATH", str(vault))
+
+    class FakeEmbedder:
+        def encode(self, texts, show_progress_bar=False):
+            return np.random.default_rng(3).standard_normal((len(texts), 8)).astype("float32")
+
+    from ghostbrain.semantic.refresh import refresh
+    from ghostbrain.semantic.projection import load_layout
+
+    refresh(embedder=FakeEmbedder(), min_similarity=-1.0)
+    layout = load_layout()
+    assert layout is not None
+    assert len(layout.positions) == 2
