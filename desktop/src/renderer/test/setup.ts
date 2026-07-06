@@ -92,6 +92,7 @@ const stubBridge: GbBridge = {
     invoke: async () => undefined,
     on: () => () => {},
     settings: { get: async () => undefined, set: async () => {} },
+    sidecar: { request: async () => ({ ok: true, data: null }) },
   }),
   on: (() => () => {}) as GbBridge['on'],
 };

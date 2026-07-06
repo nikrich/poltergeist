@@ -27,7 +27,7 @@ import {
 import { handleDemoApi, DEMO_SETTINGS } from './demo/fixtures';
 import { runDemoChatStream, stopDemoChat } from './demo/chat';
 import { createLoader, type PluginLoader } from './plugins/loader';
-import { installPluginsIpc } from './plugins/ipc';
+import { installPluginsIpc, makeSidecarHandler } from './plugins/ipc';
 import { registerPluginScheme, installPluginProtocol } from './plugins/protocol';
 
 // Showcase recording mode: serve fully synthetic fixtures and never spawn the
@@ -78,7 +78,13 @@ function installPlugins(): void {
     }
   });
   installPluginProtocol((id) => loader.dirFor(id));
-  installPluginsIpc({ loader, pluginsRoot });
+  const sidecarBridge = makeSidecarHandler({
+    forward: (m, p, b) => forward(sidecar, m as never, p, b),
+    isAllowedMethod,
+    demo: DEMO,
+    handleDemoApi: (m, p, b) => handleDemoApi(m as never, p, b),
+  });
+  installPluginsIpc({ loader, pluginsRoot, sidecarBridge });
 }
 
 function showWindow(): void {

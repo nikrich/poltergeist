@@ -343,7 +343,7 @@ export interface ExtractPhotoResponse {
   reason?: string;
 }
 
-// ── Atlassian import (mirrors ghostbrain/api/models/import_atlassian.py) ──
+// ── Confluence space list (shared with the Confluence export dialog) ──
 
 export interface ImportSpace {
   site: string;
@@ -351,57 +351,6 @@ export interface ImportSpace {
   key: string;
   name: string;
   context: string;
-}
-
-export interface ImportPage {
-  site: string;
-  id: string;
-  title: string;
-  // 'page' = importable + selectable; 'folder' = navigation node only.
-  type: 'page' | 'folder';
-  parentId: string | null;
-  hasChildren: boolean;
-  updatedAt: string | null;
-  version: number | null;
-  space: string | null;
-}
-
-export interface ConfluencePagesResponse {
-  items: ImportPage[];
-  nextCursor: string | null;
-}
-
-export interface ImportJiraIssue {
-  site: string;
-  key: string;
-  summary: string;
-  status: string | null;
-  project: string | null;
-  updatedAt: string | null;
-}
-
-export type ImportItemKind = 'confluence_page' | 'jira_issue';
-
-export interface ImportItem {
-  kind: ImportItemKind;
-  site: string;
-  id?: string;
-  key?: string;
-}
-
-export interface ImportItemResult {
-  kind: ImportItemKind;
-  id?: string | null;
-  key?: string | null;
-  ok: boolean;
-  path?: string | null;
-  context?: string | null;
-  updated?: boolean | null;
-  error?: string | null;
-}
-
-export interface ImportResponse {
-  results: ImportItemResult[];
 }
 
 // ── Projects ──────────────────────────────────────────────────────────────

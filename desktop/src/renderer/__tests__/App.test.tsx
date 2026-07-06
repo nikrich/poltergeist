@@ -33,11 +33,4 @@ describe('App', () => {
     ).toBeInTheDocument();
   });
 
-  it('navigates to the import screen from the sidebar', async () => {
-    wrap();
-    fireEvent.click(await screen.findByRole('button', { name: 'import' }));
-    expect(
-      await screen.findByRole('heading', { name: 'import', level: 1 }),
-    ).toBeInTheDocument();
-  });
 });

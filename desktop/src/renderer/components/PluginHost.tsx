@@ -21,6 +21,13 @@ export interface PluginApi {
     get(key: string): Promise<unknown>;
     set(key: string, v: unknown): Promise<void>;
   };
+  sidecar: {
+    request(
+      method: string,
+      path: string,
+      body?: unknown,
+    ): Promise<{ ok: true; data: unknown } | { ok: false; error: string; status?: number }>;
+  };
   openExternal(url: string): void;
   theme: Record<string, string>;
 }
@@ -51,6 +58,7 @@ export function PluginHost({ plugin }: { plugin: ActivePluginInfo }) {
       pluginId: plugin.id,
       ipc: { invoke: bridge.invoke, on: bridge.on },
       settings: bridge.settings,
+      sidecar: bridge.sidecar,
       openExternal: (url) => void window.gb.shell.openExternal(url),
       theme: themeVars(),
     };

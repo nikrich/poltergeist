@@ -90,6 +90,10 @@ const bridge: GbBridge = {
       get: (key: string) => ipcRenderer.invoke('gb:plugins:data:get', id, key),
       set: (key: string, v: unknown) => ipcRenderer.invoke('gb:plugins:data:set', id, key, v),
     },
+    sidecar: {
+      request: (method: string, path: string, body?: unknown) =>
+        ipcRenderer.invoke('gb:plugins:sidecar', method, path, body),
+    },
   }),
   on: ((channel: string, listener: (...args: unknown[]) => void) => {
     const wrapped = (_e: Electron.IpcRendererEvent, ...args: unknown[]) =>
