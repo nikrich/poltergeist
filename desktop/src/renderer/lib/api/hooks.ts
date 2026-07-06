@@ -33,6 +33,7 @@ import type {
   UpdateNoteBodyResponse,
   UpdateProjectRequest,
   UpdateRecorderSettings,
+  VaultGraph,
   VaultStats,
 } from '../../../shared/api-types';
 import { del, get, patch, post } from './client';
@@ -43,6 +44,14 @@ export function useVaultStats() {
     queryFn: () => get<VaultStats>('/v1/vault/stats'),
     staleTime: 30_000,
     refetchInterval: 30_000,
+  });
+}
+
+export function useVaultGraph() {
+  return useQuery({
+    queryKey: ['vault', 'graph'],
+    queryFn: () => get<VaultGraph>('/v1/vault/graph'),
+    staleTime: 60_000,
   });
 }
 

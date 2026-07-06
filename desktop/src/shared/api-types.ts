@@ -385,3 +385,36 @@ export interface ChatExportResponse {
   project: string | null;
   title: string;
 }
+
+// ── Brain Constellation ───────────────────────────────────────────────────────
+
+export interface VaultGraphNode {
+  path: string;
+  title: string;
+  context: string;
+  tags: string[];
+  x: number;
+  y: number;
+  degree: number;
+  updated: string | null;
+}
+
+export interface VaultGraphEdge {
+  source: string;
+  target: string;
+  weight: number;
+  kind: 'related' | 'wikilink';
+}
+
+export interface VaultGraphRegion {
+  id: string;
+  label: string;
+  color: string;
+  count: number;
+}
+
+export interface VaultGraph {
+  nodes: VaultGraphNode[];
+  edges: VaultGraphEdge[];
+  regions: VaultGraphRegion[];
+}

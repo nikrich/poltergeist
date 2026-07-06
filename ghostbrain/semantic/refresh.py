@@ -27,6 +27,7 @@ from ghostbrain.semantic.index import (
     text_hash,
     DEFAULT_MODEL_NAME,
 )
+from ghostbrain.semantic.projection import build_layout, load_layout, save_layout
 
 log = logging.getLogger("ghostbrain.semantic.refresh")
 
@@ -36,6 +37,25 @@ DEFAULT_MIN_SIMILARITY = 0.45
 # longer dominate; we index them so meeting content participates in
 # cross-context linking. Audio files and other non-markdown live elsewhere.
 SKIP_DIR_PARTS: tuple[str, ...] = ()
+
+
+def _refresh_layout(index: Index, embedded: int) -> None:
+    """Recompute + persist the 2-D layout. Never fails the refresh.
+
+    Skipped when nothing was embedded this run AND the on-disk layout
+    already covers exactly the same set of notes — recomputing the
+    projection is expensive (UMAP) and every 15-minute scheduler tick
+    would otherwise reshuffle the whole constellation for no reason.
+    """
+    try:
+        if embedded == 0:
+            existing = load_layout()
+            if existing is not None and set(existing.positions.keys()) == set(index.entries.keys()):
+                log.debug("layout unchanged (no new embeddings); skipping recompute")
+                return
+        save_layout(build_layout(index))
+    except Exception as e:  # noqa: BLE001
+        log.warning("layout projection failed: %s", e)
 
 
 @dataclasses.dataclass
@@ -125,6 +145,7 @@ def refresh(
     paths_to_score = list(note_texts.keys())
     if not paths_to_score or index.vectors is None:
         save_index(index)
+        _refresh_layout(index, embedded)
         return RefreshResult(
             embedded=embedded,
             reused=reused,
@@ -143,6 +164,7 @@ def refresh(
     )
 
     save_index(index)
+    _refresh_layout(index, embedded)
 
     return RefreshResult(
         embedded=embedded,
