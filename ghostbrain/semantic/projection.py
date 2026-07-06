@@ -54,7 +54,9 @@ def project(vectors: np.ndarray) -> np.ndarray:
         return np.zeros((n, 2), dtype="float64")
     try:
         import umap  # type: ignore
-        reducer = umap.UMAP(n_components=2, n_neighbors=min(15, n - 1), metric="cosine")
+        reducer = umap.UMAP(
+            n_components=2, n_neighbors=min(15, n - 1), metric="cosine", random_state=42
+        )
         coords = reducer.fit_transform(vectors)
         _last_method = "umap"
     except Exception as e:  # noqa: BLE001 — any UMAP failure → PCA
@@ -107,8 +109,31 @@ def load_layout() -> Layout | None:
     except (OSError, json.JSONDecodeError) as e:
         log.warning("layout.json unreadable: %s", e)
         return None
+
+    if not isinstance(data, dict):
+        log.warning("layout.json malformed: expected an object, got %s", type(data).__name__)
+        return None
+
+    raw_positions = data.get("positions") or {}
+    if not isinstance(raw_positions, dict):
+        log.warning(
+            "layout.json malformed: 'positions' expected an object, got %s",
+            type(raw_positions).__name__,
+        )
+        return None
+
+    positions: dict[str, list[float]] = {}
+    for k, v in raw_positions.items():
+        try:
+            if not isinstance(v, (list, tuple)) or len(v) != 2:
+                raise ValueError("entry is not a 2-item [x, y] list")
+            positions[k] = [float(v[0]), float(v[1])]
+        except (TypeError, ValueError) as e:
+            log.warning("layout.json malformed: skipping entry %r (%s)", k, e)
+            continue
+
     return Layout(
         model_name=str(data.get("model_name", "")),
         method=str(data.get("method", "pca")),
-        positions={k: [float(v[0]), float(v[1])] for k, v in (data.get("positions") or {}).items()},
+        positions=positions,
     )
