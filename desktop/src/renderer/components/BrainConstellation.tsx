@@ -327,7 +327,12 @@ export function BrainConstellation() {
       if (!dragMoved) {
         const [x, y] = pointerPos(e);
         pickHover(x, y);
-        if (hoverIdxRef.current !== -1) openNodeCard(hoverIdxRef.current);
+        if (hoverIdxRef.current !== -1) {
+          openNodeCard(hoverIdxRef.current);
+        } else {
+          setSelectedPath(null);
+          selectedIdxRef.current = -1;
+        }
       }
     };
 
@@ -554,16 +559,24 @@ export function BrainConstellation() {
     if (!node) return null;
     const regionColor = new Map(graph.regions.map((r) => [r.id, r.color] as const));
     const byPath = new Map(graph.nodes.map((n) => [n.path, n] as const));
-    const related: { node: VaultGraphNode; weight: number }[] = [];
+    const relatedByPath = new Map<string, { node: VaultGraphNode; weight: number }>();
     for (const e of graph.edges) {
+      let n: VaultGraphNode | undefined;
+      let weight = e.weight;
       if (e.source === selectedPath) {
-        const n = byPath.get(e.target);
-        if (n) related.push({ node: n, weight: e.weight });
+        n = byPath.get(e.target);
       } else if (e.target === selectedPath) {
-        const n = byPath.get(e.source);
-        if (n) related.push({ node: n, weight: e.weight });
+        n = byPath.get(e.source);
+      }
+      if (!n) continue;
+      // The builder can emit two edges for the same pair (e.g. "related" +
+      // "wikilink"); keep only the strongest one so keys and rows don't dupe.
+      const existing = relatedByPath.get(n.path);
+      if (!existing || weight > existing.weight) {
+        relatedByPath.set(n.path, { node: n, weight });
       }
     }
+    const related = Array.from(relatedByPath.values());
     related.sort((a, b) => b.weight - a.weight);
     return {
       node,
