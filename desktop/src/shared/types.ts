@@ -130,6 +130,13 @@ export interface GbBridge {
       get(key: string): Promise<unknown>;
       set(key: string, v: unknown): Promise<void>;
     };
+    sidecar: {
+      request(
+        method: string,
+        path: string,
+        body?: unknown,
+      ): Promise<{ ok: true; data: unknown } | { ok: false; error: string; status?: number }>;
+    };
   };
   on(channel: 'nav:settings', listener: () => void): () => void;
   on(channel: 'sidecar:ready', listener: () => void): () => void;

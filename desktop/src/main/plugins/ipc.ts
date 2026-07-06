@@ -13,8 +13,41 @@ function err(e: unknown): Result {
   return { ok: false, error: e instanceof Error ? e.message : String(e) };
 }
 
-export function installPluginsIpc(opts: { loader: PluginLoader; pluginsRoot: string }): void {
+type ApiResult = { ok: true; data: unknown } | { ok: false; error: string; status?: number };
+
+/**
+ * The plugin sidecar bridge, factored as a pure function over injected deps so
+ * it is unit-testable without electron. Guards mirror the app's own
+ * gb:api:request handler: method allowlist + path must start with /v1/.
+ */
+export function makeSidecarHandler(deps: {
+  forward: (m: string, p: string, b?: unknown) => Promise<ApiResult>;
+  isAllowedMethod: (m: string) => boolean;
+  demo: boolean;
+  handleDemoApi: (m: string, p: string, b?: unknown) => Promise<ApiResult> | ApiResult;
+}) {
+  return async (method: unknown, path: unknown, body?: unknown): Promise<ApiResult> => {
+    if (typeof method !== 'string' || typeof path !== 'string') {
+      return { ok: false, error: 'Invalid request shape' };
+    }
+    const m = method.toUpperCase();
+    if (!deps.isAllowedMethod(m)) return { ok: false, error: 'Method not allowed' };
+    if (!path.startsWith('/v1/')) return { ok: false, error: 'Path not allowed (must start with /v1/)' };
+    if (deps.demo) return deps.handleDemoApi(m, path, body);
+    return deps.forward(m, path, body);
+  };
+}
+
+export function installPluginsIpc(opts: {
+  loader: PluginLoader;
+  pluginsRoot: string;
+  sidecarBridge: (method: unknown, path: unknown, body?: unknown) => Promise<ApiResult>;
+}): void {
   const { loader, pluginsRoot } = opts;
+
+  ipcMain.handle('gb:plugins:sidecar', (_e, method, path, body) =>
+    opts.sidecarBridge(method, path, body),
+  );
 
   const broadcastChanged = (): void => {
     for (const win of BrowserWindow.getAllWindows()) {
