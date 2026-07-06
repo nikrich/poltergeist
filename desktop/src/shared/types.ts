@@ -1,4 +1,5 @@
-import type { ChatStreamEvent, DocsAssistEvent, DocsAssistRequest } from './api-types';
+import type { ChatStreamEvent } from './api-types';
+import type { ActivePluginInfo, PluginRecord } from './plugin-types';
 
 export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 
@@ -109,6 +110,27 @@ export interface GbBridge {
     onFocus(cb: () => void): () => void;
     onSaveFailed(cb: (payload: { body: string; error: string }) => void): () => void;
   };
+  plugins: {
+    list(): Promise<PluginRecord[]>;
+    active(): Promise<ActivePluginInfo[]>;
+    setEnabled(id: string, on: boolean): Promise<{ ok: true } | { ok: false; error: string }>;
+    reload(): Promise<{ ok: true } | { ok: false; error: string }>;
+    installFromFolder(): Promise<{ ok: true } | { ok: false; error: string }>;
+    installFromGit(
+      url: string,
+      subdir?: string,
+    ): Promise<{ ok: true } | { ok: false; error: string }>;
+    uninstall(id: string): Promise<{ ok: true } | { ok: false; error: string }>;
+    onChanged(cb: (active: ActivePluginInfo[]) => void): () => void;
+  };
+  plugin(id: string): {
+    invoke(channel: string, ...args: unknown[]): Promise<unknown>;
+    on(channel: string, cb: (payload: unknown) => void): () => void;
+    settings: {
+      get(key: string): Promise<unknown>;
+      set(key: string, v: unknown): Promise<void>;
+    };
+  };
   on(channel: 'nav:settings', listener: () => void): () => void;
   on(channel: 'sidecar:ready', listener: () => void): () => void;
   on(
@@ -119,10 +141,6 @@ export interface GbBridge {
   on(
     channel: 'chat:event',
     listener: (payload: { convId: string; event: ChatStreamEvent }) => void,
-  ): () => void;
-  on(
-    channel: 'docs:event',
-    listener: (payload: { jotId: string; event: DocsAssistEvent }) => void,
   ): () => void;
 }
 
