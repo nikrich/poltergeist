@@ -26,6 +26,9 @@ import {
 } from './assets';
 import { handleDemoApi, DEMO_SETTINGS } from './demo/fixtures';
 import { runDemoChatStream, stopDemoChat } from './demo/chat';
+import { createLoader, type PluginLoader } from './plugins/loader';
+import { installPluginsIpc } from './plugins/ipc';
+import { registerPluginScheme, installPluginProtocol } from './plugins/protocol';
 
 // Showcase recording mode: serve fully synthetic fixtures and never spawn the
 // Python sidecar or touch the real vault. Enabled by the demo driver via env.
@@ -48,6 +51,35 @@ const sidecar = new Sidecar(repoRoot(), {
 
 let trayController: TrayController | null = null;
 let meetingNotifier: MeetingNotifierController | null = null;
+let pluginLoader: PluginLoader | null = null;
+
+// plugin:// must be registered as privileged before app ready.
+registerPluginScheme();
+
+function installPlugins(): void {
+  const pluginsRoot = join(app.getPath('userData'), 'plugins');
+  const dataRoot = join(app.getPath('userData'), 'plugin-data');
+  const loader = createLoader({
+    pluginsRoot,
+    dataRoot,
+    registerHandler: (channel, fn) => ipcMain.handle(channel, (_e, ...args) => fn(...args)),
+    unregisterHandler: (channel) => ipcMain.removeHandler(channel),
+    broadcast: (channel, payload) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.webContents.send(channel, payload);
+      }
+    },
+  });
+  pluginLoader = loader;
+  loader.scan();
+  void loader.activateEnabled().then(() => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send('gb:plugins:changed', loader.active());
+    }
+  });
+  installPluginProtocol((id) => loader.dirFor(id));
+  installPluginsIpc({ loader, pluginsRoot });
+}
 
 function showWindow(): void {
   let win = BrowserWindow.getAllWindows()[0];
@@ -197,6 +229,7 @@ app.whenReady().then(async () => {
   registerAssetProtocol(vaultRoot);
   installAssetBridge(vaultRoot);
   buildAppMenu();
+  installPlugins();
   createWindow();
   // First-party renderer (loaded from our own bundle / dev server). Grant
   // camera/mic for webcam capture; deny everything else.
@@ -268,6 +301,7 @@ sidecar.on('failed', (info: { reason: string }) => {
 let sidecarStopped = false;
 app.on('before-quit', (event) => {
   meetingNotifier?.destroy();
+  void pluginLoader?.deactivateAll();
   if (DEMO) return; // nothing to tear down — sidecar was never started
   if (!sidecarStopped) {
     event.preventDefault();

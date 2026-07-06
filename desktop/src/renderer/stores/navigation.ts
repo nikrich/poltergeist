@@ -12,7 +12,9 @@ export type ScreenId =
   | 'daily'
   | 'setup'
   | 'settings'
-  | 'jots';
+  | 'jots'
+  | 'plugins'
+  | `plugin:${string}`;
 
 interface NavState {
   active: ScreenId;

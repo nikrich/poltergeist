@@ -3,3 +3,7 @@ out/
 dist/
 *.tsbuildinfo
 .DS_Store
+
+# test fixture plugins ship their "built" entries — unignore them
+!src/main/plugins/__tests__/fixtures/**/dist/
+!src/main/plugins/__tests__/fixtures/**/dist/**

@@ -62,6 +62,35 @@ const bridge: GbBridge = {
       return () => ipcRenderer.removeListener('gb:jot:save-failed', handler as Parameters<typeof ipcRenderer.on>[1]);
     },
   },
+  plugins: {
+    list: () => ipcRenderer.invoke('gb:plugins:list'),
+    active: () => ipcRenderer.invoke('gb:plugins:active'),
+    setEnabled: (id, on) => ipcRenderer.invoke('gb:plugins:setEnabled', id, on),
+    reload: () => ipcRenderer.invoke('gb:plugins:reload'),
+    installFromFolder: () => ipcRenderer.invoke('gb:plugins:installFromFolder'),
+    installFromGit: (url, subdir) => ipcRenderer.invoke('gb:plugins:installFromGit', url, subdir),
+    uninstall: (id) => ipcRenderer.invoke('gb:plugins:uninstall', id),
+    onChanged: (cb) => {
+      const handler = (_e: Electron.IpcRendererEvent, active: unknown) =>
+        cb(active as Parameters<typeof cb>[0]);
+      ipcRenderer.on('gb:plugins:changed', handler);
+      return () => ipcRenderer.removeListener('gb:plugins:changed', handler);
+    },
+  },
+  plugin: (id: string) => ({
+    invoke: (channel: string, ...args: unknown[]) =>
+      ipcRenderer.invoke(`gb:plugin:${id}:${channel}`, ...args),
+    on: (channel: string, cb: (payload: unknown) => void) => {
+      const full = `gb:plugin:${id}:${channel}`;
+      const handler = (_e: Electron.IpcRendererEvent, payload: unknown) => cb(payload);
+      ipcRenderer.on(full, handler);
+      return () => ipcRenderer.removeListener(full, handler);
+    },
+    settings: {
+      get: (key: string) => ipcRenderer.invoke('gb:plugins:data:get', id, key),
+      set: (key: string, v: unknown) => ipcRenderer.invoke('gb:plugins:data:set', id, key, v),
+    },
+  }),
   on: ((channel: string, listener: (...args: unknown[]) => void) => {
     const wrapped = (_e: Electron.IpcRendererEvent, ...args: unknown[]) =>
       listener(...args);
