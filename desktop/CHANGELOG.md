@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.7.0](https://github.com/nikrich/poltergeist/compare/v0.6.0...v0.7.0) (2026-07-06)
+
+
+### Features
+
+* feat(brain-constellation): density-aware rendering; card owns note-open actions
+* feat(desktop): vault screen hosts the brain constellation
+* feat(desktop): BrainConstellation canvas component (ported from mockup)
+* feat(desktop): pure constellation engine (camera, hit-test, adjacency)
+* feat(desktop): useVaultGraph hook + graph types
+* feat(api): GET /v1/vault/graph
+* feat(api): vault graph builder (nodes by embedding, related/wikilink edges)
+* feat(semantic): deterministic region palette
+* feat(semantic): recompute 2-D layout on index refresh
+* feat(semantic): 2-D projection of the embedding index (UMAP/PCA) + layout cache
+
+### Bug Fixes
+
+* fix(semantic): lazy numpy import so the API works without the [semantic] extra
+* fix(brain-constellation): dedupe related list and close card on empty-canvas click
+* fix(semantic): stable UMAP layout, skip redundant recompute, tolerate malformed layout.json
+* fix(desktop): satisfy strict indexed access in hitTest
+
 ## [0.6.0](https://github.com/nikrich/poltergeist/compare/v0.5.0...v0.6.0) (2026-07-06)
 
 
