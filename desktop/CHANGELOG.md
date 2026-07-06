@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/nikrich/poltergeist/compare/v0.4.1...v0.5.0) (2026-07-06)
+
+
+### Features
+
+* **plugins:** runtime plugin system — install plugins from a folder or git URL, crash-isolated loader, path-contained `plugin://` renderer host, and a Plugins management screen ([#65](https://github.com/nikrich/poltergeist/issues/65))
+
 ## [0.4.1](https://github.com/nikrich/poltergeist/compare/v0.4.0...v0.4.1) (2026-07-02)
 
 
