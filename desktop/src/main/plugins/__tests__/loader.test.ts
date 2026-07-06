@@ -47,10 +47,10 @@ describe('loader', () => {
     const loader = createLoader(deps);
     const records = loader.scan();
     const byId = Object.fromEntries(records.map((r) => [r.id, r]));
-    expect(byId.hello.state).toBe('disabled');
-    expect(byId.broken.state).toBe('disabled');
-    expect(byId.garbage.state).toBe('invalid');
-    expect(byId.garbage.manifest).toBeNull();
+    expect(byId.hello!.state).toBe('disabled');
+    expect(byId.broken!.state).toBe('disabled');
+    expect(byId.garbage!.state).toBe('invalid');
+    expect(byId.garbage!.manifest).toBeNull();
   });
 
   it('activates enabled plugins with namespaced handlers', async () => {
