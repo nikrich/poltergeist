@@ -113,14 +113,10 @@ export function createLoader(deps: LoaderDeps) {
             throw new Error(`ipc channel registered twice: ${channel}`);
           }
           channels.add(full);
-          deps.registerHandler(full, (...args) => {
-            try {
-              return fn(...args);
-            } catch (err) {
-              fail(record, err);
-              return { ok: false, error: record.error };
-            }
-          });
+          // A throwing handler rejects that one call (the renderer sees the
+          // error); it does NOT mark the plugin errored — only activate/load
+          // failures do. A validation error must not kill the plugin.
+          deps.registerHandler(full, (...args) => fn(...args));
         },
         send: (channel, payload) => {
           if (!CHANNEL_RE.test(channel)) return;
