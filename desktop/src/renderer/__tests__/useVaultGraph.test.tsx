@@ -7,9 +7,7 @@ import { useVaultGraph } from '../lib/api/hooks';
 const request = vi.fn();
 beforeEach(() => {
   request.mockReset();
-  (globalThis as any).window = Object.assign((globalThis as any).window ?? {}, {
-    gb: { api: { request } },
-  });
+  window.gb = { ...window.gb, api: { request } } as typeof window.gb;
 });
 
 function wrapper({ children }: { children: ReactNode }) {

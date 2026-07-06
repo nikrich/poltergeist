@@ -565,7 +565,6 @@ export function BrainConstellation() {
       canvas.removeEventListener('pointerup', onPointerUp);
       canvas.removeEventListener('wheel', onWheel);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graph, reduceMotion]);
 
   const card = useMemo<CardData | null>(() => {

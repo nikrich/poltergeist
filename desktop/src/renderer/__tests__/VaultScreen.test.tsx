@@ -7,9 +7,11 @@ const request = vi.fn();
 beforeEach(() => {
   request.mockReset();
   request.mockResolvedValue({ ok: true, data: { nodes: [], edges: [], regions: [] } });
-  (globalThis as any).window = Object.assign((globalThis as any).window ?? {}, {
-    gb: { api: { request }, shell: { openPath: vi.fn().mockResolvedValue({ ok: true }) } },
-  });
+  window.gb = {
+    ...window.gb,
+    api: { request },
+    shell: { ...window.gb?.shell, openPath: vi.fn().mockResolvedValue({ ok: true }) },
+  } as typeof window.gb;
 });
 
 function renderScreen() {
