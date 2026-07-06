@@ -23,6 +23,18 @@ import { DailyScreen } from './screens/daily';
 import { SetupScreen } from './screens/setup';
 import { SettingsScreen } from './screens/settings';
 import { JotsScreen } from './screens/jots';
+import { PluginsScreen, useActivePlugins } from './screens/plugins';
+import { PluginHost } from './components/PluginHost';
+import { PanelError } from './components/PanelError';
+
+function PluginRoute({ id }: { id: string }) {
+  const plugins = useActivePlugins();
+  const plugin = plugins.find((p) => p.id === id);
+  if (!plugin) {
+    return <PanelError message={`plugin "${id}" is not active`} />;
+  }
+  return <PluginHost key={id} plugin={plugin} />;
+}
 
 export default function App() {
   const { theme, density, ready, hydrate } = useSettings();
@@ -114,6 +126,10 @@ export default function App() {
           {active === 'setup' && <SetupScreen />}
           {active === 'settings' && <SettingsScreen />}
           {active === 'jots' && <JotsScreen />}
+          {active === 'plugins' && <PluginsScreen />}
+          {active.startsWith('plugin:') && (
+            <PluginRoute id={active.slice('plugin:'.length)} />
+          )}
         </main>
       </div>
       <StatusBar />

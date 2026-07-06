@@ -8,6 +8,7 @@ import { useSettings } from '../stores/settings';
 import { unreadCount as countUnread, useReadCaptures } from '../stores/read-captures';
 import { isMac } from '../lib/platform';
 import { APP_VERSION } from '../lib/version';
+import { useActivePlugins } from '../screens/plugins';
 
 const NAV_ITEMS: Array<{ id: ScreenId; icon: string; label: string }> = [
   { id: 'today', icon: 'sparkles', label: 'today' },
@@ -20,6 +21,7 @@ const NAV_ITEMS: Array<{ id: ScreenId; icon: string; label: string }> = [
   { id: 'capture', icon: 'inbox', label: 'capture' },
   { id: 'jots', icon: 'pencil', label: 'jots' },
   { id: 'vault', icon: 'book-open', label: 'vault' },
+  { id: 'plugins', icon: 'blocks', label: 'plugins' },
   { id: 'settings', icon: 'settings', label: 'settings' },
 ];
 
@@ -51,6 +53,7 @@ export function Sidebar() {
   const readSet = useReadCaptures((s) => s.read);
   const captureUnread = countUnread(captures.data?.items ?? [], readSet);
   const vaultPath = useSettings((s) => s.vaultPath);
+  const activePlugins = useActivePlugins().filter((p) => p.hasRenderer);
   const vaultFolders: Array<{ id: ScreenId; icon: string; label: string; count: number | null }> = [
     { id: 'daily', icon: 'folder', label: 'Daily', count: daily.data?.total ?? null },
     { id: 'meetings', icon: 'folder', label: 'Meetings', count: meetings.data?.total ?? null },
@@ -94,6 +97,20 @@ export function Sidebar() {
             }
           />
         ))}
+        {activePlugins.length > 0 && (
+          <>
+            <Eyebrow className="mt-4 px-[10px] py-[6px]">plugins</Eyebrow>
+            {activePlugins.map((p) => (
+              <NavRow
+                key={p.id}
+                item={{ id: `plugin:${p.id}`, icon: p.icon || 'puzzle', label: p.name.toLowerCase() }}
+                active={active === `plugin:${p.id}`}
+                onClick={() => setActive(`plugin:${p.id}`)}
+                badge={null}
+              />
+            ))}
+          </>
+        )}
         <Eyebrow className="mt-4 px-[10px] py-[6px]">vault</Eyebrow>
         {vaultFolders.map((f) => (
           <VaultRow

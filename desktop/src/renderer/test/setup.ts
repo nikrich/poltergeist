@@ -78,6 +78,21 @@ const stubBridge: GbBridge = {
     onFocus: () => () => {},
     onSaveFailed: () => () => {},
   },
+  plugins: {
+    list: async () => [],
+    active: async () => [],
+    setEnabled: async () => ({ ok: true }),
+    reload: async () => ({ ok: true }),
+    installFromFolder: async () => ({ ok: true }),
+    installFromGit: async () => ({ ok: true }),
+    uninstall: async () => ({ ok: true }),
+    onChanged: () => () => {},
+  },
+  plugin: () => ({
+    invoke: async () => undefined,
+    on: () => () => {},
+    settings: { get: async () => undefined, set: async () => {} },
+  }),
   on: (() => () => {}) as GbBridge['on'],
 };
 
