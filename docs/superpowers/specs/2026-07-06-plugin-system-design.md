@@ -46,7 +46,7 @@ New `plugins.tsx` screen following the `connectors.tsx` pattern, plus a sidebar 
 
 - **Install from folder** — native directory picker → validate manifest → copy to `<userData>/plugins/<id>/`. Refuse if id already installed (offer replace).
 - **Install from git** — dialog: URL + optional subdirectory. `git clone --depth 1` to a temp dir, take the subdir (or root), validate, copy in, delete temp. Uses the system `git`; a clear error if missing. (Séance: URL `https://github.com/nikrich/seance`, subdir `poltergeist-plugin`.)
-- **Enable/disable toggle** — persisted in the existing settings store under `plugins.enabled` (id → bool). Disable calls `deactivate()`, unloads renderer entry, removes sidebar item.
+- **Enable/disable toggle** — persisted in `<userData>/plugins.json` (own atomic store, NOT the app settings store: `gb:settings:set` validates against a closed zod shape, plugin data is dynamic). Disable calls `deactivate()`, unloads renderer entry, removes sidebar item.
 - **Uninstall** — confirm dialog → `deactivate()` → delete `<userData>/plugins/<id>/`. Plugin data dir (`<userData>/plugin-data/<id>/`) survives; noted in the confirm text.
 - **Reload plugins** — full deactivate/rescan/reactivate cycle (dev loop; also the recovery path after updating a plugin).
 
@@ -75,7 +75,8 @@ interface PluginContext {
 
 Rules:
 
-- Every plugin call (activate, deactivate, each ipc handler) is wrapped in try/catch. A throw → plugin state `errored` with the message, its IPC handlers removed, sidebar entry dropped. The app never crashes because of a plugin.
+- Activate/load failures are try/caught: a throw → plugin state `errored` with the message, its IPC handlers removed, sidebar entry dropped. A throwing IPC *handler* rejects only that call (the renderer surfaces the error) — a validation error must not kill the plugin. The app never crashes because of a plugin.
+- The renderer CSP allows the `plugin:` scheme for script/img/connect (`script-src 'self' plugin:` etc.) — without this the dynamic import is blocked.
 - `ipc.handle` rejects channels not matching `^[a-z0-9:_-]+$` and registers at most once per channel.
 - `deactivate()` is called on disable, uninstall, reload, and app quit (best-effort, 2s timeout).
 - Reload uses `delete require.cache[...]` for the plugin's module tree under its dir.
