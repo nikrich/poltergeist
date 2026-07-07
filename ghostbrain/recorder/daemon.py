@@ -28,7 +28,7 @@ import yaml
 from ghostbrain.connectors.calendar.macos import MacosCalendarConnector
 from ghostbrain.paths import queue_dir, state_dir, vault_path
 from ghostbrain.recorder import audio_capture, audio_switcher, state as state_mod
-from ghostbrain.recorder.linker import link_transcript
+from ghostbrain.recorder.linker import TranscriptTooShort, link_transcript
 from ghostbrain.recorder.manual import run_recovery_pass as manual_recovery_pass
 from ghostbrain.recorder.policy import RecorderPolicy, should_record
 from ghostbrain.recorder.transcribe import TranscribeError, transcribe
@@ -311,6 +311,18 @@ def _finalize(
             started_at=started_at,
             duration_s=(datetime.now(timezone.utc) - started_at).total_seconds(),
         )
+    except TranscriptTooShort as e:
+        # Silent recording (whisper hallucinated a word or two). Terminal:
+        # clean up the audio + txt so the daemon doesn't re-transcribe the
+        # same silence on every pass.
+        log.info("discarding silent recording for %s: %s", active.event_id, e)
+        audit_log("transcript_discarded_short", active.event_id, error=str(e))
+        for p in (wav, txt_path):
+            try:
+                p.unlink()
+            except OSError:
+                pass
+        return
     except Exception as e:  # noqa: BLE001
         log.exception("link failed for %s: %s", active.event_id, e)
         audit_log("transcript_link_failed", active.event_id, error=str(e))

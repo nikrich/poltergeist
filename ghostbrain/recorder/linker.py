@@ -18,6 +18,19 @@ log = logging.getLogger("ghostbrain.recorder.linker")
 
 MATCH_TOLERANCE = timedelta(minutes=15)
 
+# Whisper hallucinates a lone word ("you") or a few filler tokens on silent
+# recordings. Anything under this many words carries no meeting content and
+# would become a junk note that pollutes semantic search.
+MIN_TRANSCRIPT_WORDS = 12
+
+
+class TranscriptTooShort(RuntimeError):
+    """Transcript has too little content to be worth a vault note.
+
+    Distinct from a generic link failure so the daemon can discard the
+    recording terminally instead of retrying it on every pass.
+    """
+
 
 @dataclasses.dataclass
 class LinkResult:
@@ -47,6 +60,11 @@ def link_transcript(
     body = transcript_txt.read_text(encoding="utf-8").strip()
     if not body:
         raise RuntimeError(f"transcript empty: {transcript_txt}")
+    if len(body.split()) < MIN_TRANSCRIPT_WORDS:
+        raise TranscriptTooShort(
+            f"transcript has fewer than {MIN_TRANSCRIPT_WORDS} words "
+            f"(likely a silent recording): {transcript_txt}"
+        )
 
     parent = _find_matching_event(started_at)
 
