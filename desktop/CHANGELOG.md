@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.8.0](https://github.com/nikrich/poltergeist/compare/v0.7.0...v0.8.0) (2026-07-07)
+
+
+### Features
+
+* feat(search): recency-aware ranking + days filter for time-anchored queries
+
+### Bug Fixes
+
+* fix(tests): skip recency ranking tests where numpy isn't installed
+* fix(recorder): discard silent-recording transcripts instead of writing junk notes
+* fix(scheduler): don't restore transient running flag from persisted state
+* fix(desktop): lint-clean test mocks and remove stale eslint-disable
+
 ## [0.7.0](https://github.com/nikrich/poltergeist/compare/v0.6.0...v0.7.0) (2026-07-06)
 
 
