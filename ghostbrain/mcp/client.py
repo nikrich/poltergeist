@@ -47,8 +47,11 @@ class SidecarClient:
     def answer(self, q: str, limit: int = 8) -> dict:
         return self._request("POST", "/v1/answer", json={"q": q, "limit": limit})
 
-    def search(self, q: str, limit: int = 10) -> dict:
-        return self._request("POST", "/v1/search", json={"q": q, "limit": limit})
+    def search(self, q: str, limit: int = 10, days: int | None = None) -> dict:
+        payload: dict = {"q": q, "limit": limit}
+        if days is not None:
+            payload["days"] = days
+        return self._request("POST", "/v1/search", json=payload)
 
     def get_note(self, path: str) -> dict:
         return self._request("GET", "/v1/notes", params={"path": path})

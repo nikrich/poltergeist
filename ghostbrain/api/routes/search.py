@@ -18,7 +18,7 @@ router = APIRouter(prefix="/v1/search", tags=["search"])
 
 @router.post("", response_model=SearchResponse)
 def search(payload: SearchRequest) -> dict:
-    return repo_search(q=payload.q, limit=payload.limit)
+    return repo_search(q=payload.q, limit=payload.limit, days=payload.days)
 
 
 @router.get("/status")
