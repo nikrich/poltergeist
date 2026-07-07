@@ -483,6 +483,12 @@ class Scheduler:
             clean = {k: v for k, v in blob.items() if k in allowed}
             clean.setdefault("name", name)
             clean.setdefault("schedule_label", "unknown")
+            # `running` is process-transient: nothing can be mid-run in a
+            # freshly constructed scheduler. A sidecar killed mid-run persists
+            # running=true, and restoring it makes _invoke skip the job as
+            # "already_running" on every tick — permanently (this silently
+            # stopped daily digests and semantic-refresh in production).
+            clean["running"] = False
             self._status[name] = JobStatus(**clean)
 
     def _save_status(self) -> None:
