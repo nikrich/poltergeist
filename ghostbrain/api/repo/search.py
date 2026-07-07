@@ -10,8 +10,10 @@ needing a restart.
 """
 from __future__ import annotations
 
+import re
 import threading
-from pathlib import Path
+import time
+from datetime import datetime
 
 import frontmatter
 
@@ -26,6 +28,30 @@ _state: dict = {"index": None, "embedder": None, "index_mtime": 0.0}
 # to 0.456 with this boost, comfortably top-3 ahead of content-light calendar
 # stubs and irrelevant Slack DMs about other "yesterdays".
 TRANSCRIPT_PATH_BOOST = 0.08
+
+# Cosine similarity has no notion of time: "what meetings did I have today"
+# ranks a similar May note above this morning's transcript. Add a freshness
+# boost that decays with the note's indexed mtime — ~+0.06 for notes touched
+# in the last hours, ~+0.03 at one week, effectively nothing past a month.
+# Small enough that a clearly better content match (Δcos > 0.06) still wins.
+RECENCY_BOOST = 0.06
+RECENCY_HALF_LIFE_DAYS = 7.0
+
+# Most vault notes carry their real date in the filename (20260622T090000-…).
+# Prefer it over the index mtime: the semantic refresh rewrites `related:`
+# frontmatter into old notes, so mtime says "today" for notes about January.
+_FILENAME_DATE_RE = re.compile(r"(?:^|/)(\d{8})T(\d{6})-")
+
+
+def _note_timestamp(rel_path: str, mtime: float) -> float:
+    m = _FILENAME_DATE_RE.search(rel_path)
+    if not m:
+        return mtime
+    try:
+        dt = datetime.strptime(m.group(1) + m.group(2), "%Y%m%d%H%M%S")
+    except ValueError:
+        return mtime
+    return dt.timestamp()
 
 
 def _get_index() -> Index:
@@ -74,8 +100,13 @@ def _hit_for(rel_path: str, score: float) -> dict | None:
     }
 
 
-def search(q: str, limit: int = 10) -> dict:
-    """Top-K cosine matches for `q` against the embedding index."""
+def search(q: str, limit: int = 10, days: int | None = None) -> dict:
+    """Top-K cosine matches for `q` against the embedding index.
+
+    ``days`` hard-filters to notes whose indexed mtime is within the last
+    N days — for time-anchored questions ("today", "this week") where old
+    notes are wrong answers no matter how similar.
+    """
     import numpy as np
 
     with _lock:
@@ -113,12 +144,23 @@ def search(q: str, limit: int = 10) -> dict:
         if "/transcripts/" in rel:
             boosts[row] = TRANSCRIPT_PATH_BOOST
     scores = scores + boosts
+
+    now = time.time()
+    for rel, entry in index.entries.items():
+        note_ts = _note_timestamp(rel, entry.mtime)
+        age_days = max(0.0, (now - note_ts) / 86400.0)
+        scores[entry.row] += RECENCY_BOOST * 0.5 ** (age_days / RECENCY_HALF_LIFE_DAYS)
+        if days is not None and note_ts < now - days * 86400:
+            scores[entry.row] = -np.inf
+
     take = min(limit * 3, scores.shape[0])  # over-fetch in case some files are gone
     top = np.argpartition(-scores, take - 1)[:take]
     top = top[np.argsort(-scores[top])]
 
     hits: list[dict] = []
     for row in top:
+        if not np.isfinite(scores[row]):
+            continue  # excluded by the days filter
         rel = by_row.get(int(row))
         if rel is None:
             continue
@@ -139,9 +181,8 @@ def search(q: str, limit: int = 10) -> dict:
 
 import json  # noqa: E402 — kept beside the status helpers that use it
 import logging  # noqa: E402
-from datetime import datetime, timezone  # noqa: E402
+from datetime import timezone  # noqa: E402
 
-from ghostbrain.semantic.index import metadata_path  # noqa: E402
 
 log = logging.getLogger("ghostbrain.api.repo.search")
 

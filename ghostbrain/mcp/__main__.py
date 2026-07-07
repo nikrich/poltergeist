@@ -26,11 +26,14 @@ def build_server(client: SidecarClient | None = None) -> FastMCP:
         return tools.ask(client, question, limit=limit)
 
     @mcp.tool()
-    def poltergeist_search(query: str, limit: int = 10) -> str:
+    def poltergeist_search(query: str, limit: int = 10, days: int | None = None) -> str:
         """Semantic search across the user's vault. Cheap and fast (no LLM).
         Returns ranked note paths with snippets; follow up with
-        poltergeist_get_note to read a full note."""
-        return tools.search(client, query, limit=limit)
+        poltergeist_get_note to read a full note. For time-anchored questions
+        pass days to only match recent notes (today → days=1, "this week" →
+        days=7) — without it, ranking is content-similarity with only a mild
+        recency preference."""
+        return tools.search(client, query, limit=limit, days=days)
 
     @mcp.tool()
     def poltergeist_get_note(path: str) -> str:

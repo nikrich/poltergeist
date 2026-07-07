@@ -13,7 +13,7 @@ from typing import Protocol
 
 class _Client(Protocol):
     def answer(self, q: str, limit: int = 8) -> dict: ...
-    def search(self, q: str, limit: int = 10) -> dict: ...
+    def search(self, q: str, limit: int = 10, days: int | None = None) -> dict: ...
     def get_note(self, path: str) -> dict: ...
     def write_doc(self, title: str, html: str) -> dict: ...
 
@@ -38,8 +38,8 @@ def ask(client: _Client, question: str, limit: int = 8) -> str:
     return "\n".join(lines)
 
 
-def search(client: _Client, query: str, limit: int = 10) -> str:
-    data = client.search(query, limit=limit)
+def search(client: _Client, query: str, limit: int = 10, days: int | None = None) -> str:
+    data = client.search(query, limit=limit, days=days)
     items = data.get("items") or []
     if not items:
         return "No matching notes found in the vault."

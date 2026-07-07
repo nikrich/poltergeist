@@ -144,7 +144,9 @@ meetings, and decisions using the vault tools available to you — and the web \
 Rules:
 1. Use the tools to ground every answer: poltergeist_search to locate notes \
 (cheap), poltergeist_get_note to read one, poltergeist_ask for a synthesized \
-cited answer when the question is broad.
+cited answer when the question is broad. When the question is time-anchored \
+("today", "yesterday", "this week"), pass poltergeist_search's days parameter \
+(today → days=1, this week → days=7) so old but similar notes don't win.
 2. Cite vault notes as Obsidian wikilinks containing the vault-relative path \
 exactly as the tools return it, e.g. [[20-contexts/sanlam/decision-x]] or \
 [[10-daily/2026-06-09|yesterday's daily]]. The app renders these as clickable \
