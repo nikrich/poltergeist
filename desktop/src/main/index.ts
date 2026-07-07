@@ -306,6 +306,13 @@ sidecar.on('failed', (info: { reason: string }) => {
 
 let sidecarStopped = false;
 app.on('before-quit', (event) => {
+  // Every quit path (Cmd+Q, app-menu Quit, tray, dock) routes through
+  // before-quit. Mark quitting here so the macOS hide-on-close handler lets the
+  // window actually close instead of hiding it. Without this, only the tray's
+  // Quit (which goes through quitApp) set the flag, so Cmd+Q / the app menu
+  // just hid the window and left the process — sidecar, timers, shortcuts —
+  // running in the background.
+  isQuitting = true;
   meetingNotifier?.destroy();
   void pluginLoader?.deactivateAll();
   if (DEMO) return; // nothing to tear down — sidecar was never started
