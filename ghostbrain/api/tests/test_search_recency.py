@@ -13,8 +13,13 @@ import time
 
 import pytest
 
-from ghostbrain.api.repo import search as repo_search
-from ghostbrain.semantic.index import Index, IndexEntry
+# numpy ships with the optional [semantic] extra; CI's backend job installs
+# [dev,api] only. These ranking tests exercise the numpy code path, so they
+# skip (not fail) where the extra isn't installed.
+np = pytest.importorskip("numpy")
+
+from ghostbrain.api.repo import search as repo_search  # noqa: E402
+from ghostbrain.semantic.index import Index, IndexEntry  # noqa: E402
 
 
 class _FakeEmbedder:
@@ -25,8 +30,6 @@ class _FakeEmbedder:
 @pytest.fixture()
 def two_note_index(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     """Two notes with IDENTICAL embeddings; only their mtimes differ."""
-    import numpy as np
-
     now = time.time()
     index = Index(
         entries={
@@ -73,8 +76,6 @@ def test_filename_date_beats_lying_mtime(
     """The semantic refresh rewrites `related:` frontmatter into old notes,
     bumping their mtime — an old calendar stub must still be excluded by
     days=1 because its filename carries the real date."""
-    import numpy as np
-
     now = time.time()
     index = Index(
         entries={
@@ -109,8 +110,6 @@ def test_recency_boost_does_not_overpower_content(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
     """A clearly better content match must beat a fresh weak match."""
-    import numpy as np
-
     now = time.time()
     index = Index(
         entries={
