@@ -5,7 +5,7 @@ import { Pill } from '../components/Pill';
 import { Eyebrow } from '../components/Eyebrow';
 import { Ghost } from '../components/Ghost';
 import { ConnectorAuthFlow } from '../components/ConnectorAuthFlow';
-import { VaultCard } from './setup';
+import { VaultCard } from '../components/VaultCard';
 import { useConnectors } from '../lib/api/hooks';
 import { useSettings } from '../stores/settings';
 import { useNavigation } from '../stores/navigation';

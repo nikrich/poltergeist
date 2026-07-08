@@ -7,7 +7,6 @@ import { Pill } from '../components/Pill';
 import { Eyebrow } from '../components/Eyebrow';
 import { Toggle } from '../components/Toggle';
 import { ConnectorAuthFlow } from '../components/ConnectorAuthFlow';
-import { useNavigation } from '../stores/navigation';
 import type { Connector, ConnectorDetail, ConnectorState } from '../../shared/api-types';
 import {
   useConnector,
@@ -23,6 +22,7 @@ import { PanelEmpty } from '../components/PanelEmpty';
 import { PanelError } from '../components/PanelError';
 import { stub, toast } from '../stores/toast';
 import { formatRelativeTime } from '../lib/format';
+import { CONNECTOR_CARDS, cardForId } from '../lib/connector-catalog';
 
 type Filter = 'all' | ConnectorState;
 
@@ -43,9 +43,11 @@ export function ConnectorsScreen() {
   const scheduler = useSchedulerStatus({ intervalMs: 15_000 });
   const diagnostics = useSchedulerDiagnostics();
   const syncAll = useSyncAllConnectors();
-  const setActive = useNavigation((s) => s.setActive);
+  const qc = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>('all');
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerAuthId, setPickerAuthId] = useState<string | null>(null);
 
   // Default selection to first connector once data arrives
   useEffect(() => {
@@ -63,7 +65,17 @@ export function ConnectorsScreen() {
     schedulerEnabled && diagnostics.data?.double_scheduling
   );
 
+  const handlePickerAuthDone = () => {
+    const id = pickerAuthId;
+    setPickerAuthId(null);
+    if (!id) return;
+    toast.info(`${cardForId(id)?.displayName ?? id} connected`);
+    qc.invalidateQueries({ queryKey: ['connectors'] });
+    qc.invalidateQueries({ queryKey: ['connector', id] });
+  };
+
   return (
+    <>
     <div className="flex flex-1 flex-col overflow-hidden bg-paper">
       <TopBar
         title="connectors"
@@ -114,7 +126,7 @@ export function ConnectorsScreen() {
               size="sm"
               // intentional fixed color: icon must read dark on the always-bright neon button
               icon={<Lucide name="plus" size={13} color="#0E0F12" />}
-              onClick={() => setActive('setup')}
+              onClick={() => setPickerOpen(true)}
             >
               add connector
             </Btn>
@@ -203,7 +215,7 @@ export function ConnectorsScreen() {
                     onClick={() => setSelectedId(c.id)}
                   />
                 ))}
-                <AddConnectorRow />
+                <AddConnectorRow onClick={() => setPickerOpen(true)} />
               </div>
             </>
           )}
@@ -230,6 +242,24 @@ export function ConnectorsScreen() {
         {selected.data && <ConnectorDetailPanel c={selected.data} />}
       </div>
     </div>
+    {pickerOpen && (
+      <ConnectorPickerModal
+        onSelect={(id) => {
+          setPickerOpen(false);
+          setPickerAuthId(id);
+        }}
+        onClose={() => setPickerOpen(false)}
+      />
+    )}
+    {pickerAuthId && (
+      <ConnectorAuthModal
+        connectorId={pickerAuthId}
+        displayName={cardForId(pickerAuthId)?.displayName ?? pickerAuthId}
+        onDone={handlePickerAuthDone}
+        onCancel={() => setPickerAuthId(null)}
+      />
+    )}
+    </>
   );
 }
 
@@ -296,11 +326,61 @@ function ConnectorRow({ c, selected, onClick }: ConnectorRowProps) {
   );
 }
 
-function AddConnectorRow() {
+function AddConnectorRow({ onClick }: { onClick: () => void }) {
   return (
-    <div className="mt-2 flex cursor-pointer items-center gap-[10px] rounded-r6 border border-dashed border-hairline-2 p-[14px] text-13 text-ink-2">
+    <button
+      type="button"
+      onClick={onClick}
+      className="mt-2 flex w-full cursor-pointer items-center gap-[10px] rounded-r6 border border-dashed border-hairline-2 p-[14px] text-left text-13 text-ink-2"
+    >
       <Lucide name="plus" size={14} />
       <span>request a connector — figma, intercom, hubspot, anywhere else</span>
+    </button>
+  );
+}
+
+interface ConnectorPickerModalProps {
+  onSelect: (id: string) => void;
+  onClose: () => void;
+}
+
+function ConnectorPickerModal({ onSelect, onClose }: ConnectorPickerModalProps) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+      <div className="w-[460px] overflow-hidden rounded-lg border border-hairline-2 bg-vellum shadow-float">
+        <div className="flex items-center justify-between border-b border-hairline px-4 py-3">
+          <span className="text-13 font-semibold text-ink-0">add a connector</span>
+          <button
+            type="button"
+            aria-label="close"
+            onClick={onClose}
+            className="text-ink-3 hover:text-ink-1"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="flex max-h-[420px] flex-col gap-2 overflow-y-auto p-4">
+          {CONNECTOR_CARDS.map((card) => (
+            <button
+              key={card.id}
+              type="button"
+              onClick={() => onSelect(card.id)}
+              className="flex items-center gap-3 rounded-r6 border border-hairline bg-paper p-3 text-left hover:border-hairline-2"
+            >
+              <img
+                src={connectorIconSrc(card.id)}
+                alt=""
+                className="h-[22px] w-[22px] flex-shrink-0"
+              />
+              <div className="min-w-0 flex-1 leading-[1.25]">
+                <div className="text-13 font-medium text-ink-0">{card.displayName}</div>
+                <div className="truncate text-11 text-ink-2">{card.blurb}</div>
+              </div>
+              <Lucide name="chevron-right" size={14} color="var(--ink-3)" />
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
