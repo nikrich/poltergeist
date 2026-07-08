@@ -40,8 +40,10 @@ import type {
   UpdateProjectRequest,
   UpdateRecorderSettings,
   VaultStats,
+  McpServersResponse,
+  McpServerWrite,
 } from '../../../shared/api-types';
-import { del, get, patch, post } from './client';
+import { del, get, patch, post, put } from './client';
 
 export function useVaultStats() {
   return useQuery({
@@ -671,3 +673,20 @@ export function useUpdateProject() {
   });
 }
 
+
+export function useMcpServers() {
+  return useQuery({
+    queryKey: ['chat', 'mcp-servers'],
+    queryFn: () => get<McpServersResponse>('/v1/chat/mcp-servers'),
+    staleTime: 30_000,
+  });
+}
+
+export function useSaveMcpServers() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (servers: McpServerWrite[]) =>
+      put<{ servers: McpServersResponse['servers'] }>('/v1/chat/mcp-servers', { servers }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['chat', 'mcp-servers'] }),
+  });
+}

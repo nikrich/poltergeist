@@ -6,6 +6,7 @@ from ghostbrain.api.routes import activity as activity_routes
 from ghostbrain.api.routes import agenda as agenda_routes
 from ghostbrain.api.routes import answer as answer_routes
 from ghostbrain.api.routes import chat as chat_routes
+from ghostbrain.api.routes import mcp_servers as mcp_servers_routes
 from ghostbrain.api.routes import captures as captures_routes
 from ghostbrain.api.routes import connectors as connectors_routes
 from ghostbrain.api.routes import daily as daily_routes
@@ -47,6 +48,7 @@ def create_app(token: str) -> FastAPI:
     app.include_router(settings_routes.router)
     app.include_router(activity_routes.router)
     app.include_router(answer_routes.router)
+    app.include_router(mcp_servers_routes.router)  # before chat: its /v1/chat/{id} catch-all
     app.include_router(chat_routes.router)
     app.include_router(suggestions_routes.router)
     app.include_router(projects_routes.router)

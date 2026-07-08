@@ -46,3 +46,9 @@ export async function del<T = null>(path: string): Promise<T> {
   if (!result.ok) throw new Error(result.error);
   return result.data as T;
 }
+
+export async function put<T>(path: string, body?: unknown): Promise<T> {
+  const result = await window.gb.api.request<T>('PUT', path, body);
+  if (!result.ok) throw new ApiError(result.error, result.status);
+  return result.data;
+}
