@@ -50,6 +50,12 @@ _DISPLAY: dict[str, dict] = {
         "pulls": ["mentions", "threads"],
         "vaultDestination": "20-contexts/{ctx}/slack/",
     },
+    "joplin": {
+        "displayName": "Joplin",
+        "scopes": ["read notes"],
+        "pulls": ["notes", "notebooks"],
+        "vaultDestination": "20-contexts/{ctx}/joplin/",
+    },
     "gmail": {
         "displayName": "gmail",
         "scopes": ["read messages", "read labels"],
