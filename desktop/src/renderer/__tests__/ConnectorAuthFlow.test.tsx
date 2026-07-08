@@ -15,11 +15,10 @@ beforeEach(() => {
     'POST /v1/connectors/slack/auth/submit': { session_id: 's', status: 'success', account: '@me', error: null,
       next: { kind: 'done', fields: null, auth_url: null, verification_uri: null, user_code: null, message: null } },
   };
-  window.gb = {
-    ...window.gb,
-    api: { request: vi.fn((m: string, p: string) => Promise.resolve({ ok: true, data: responses[`${m} ${p}`] })) },
-    shell: { openExternal: vi.fn().mockResolvedValue({ ok: true }) },
-  };
+  window.gb.api.request = vi.fn((m: string, p: string) =>
+    Promise.resolve({ ok: true, data: responses[`${m} ${p}`] }),
+  ) as unknown as typeof window.gb.api.request;
+  window.gb.shell.openExternal = vi.fn().mockResolvedValue({ ok: true });
 });
 
 describe('ConnectorAuthFlow', () => {
@@ -33,10 +32,7 @@ describe('ConnectorAuthFlow', () => {
   });
 
   it('shows an error state with retry when the status poll fails persistently', async () => {
-    window.gb = {
-    ...window.gb,
-      api: {
-        request: vi.fn((m: string, p: string) => {
+    window.gb.api.request = vi.fn((m: string, p: string) => {
           if (m === 'POST' && p === '/v1/connectors/slack/auth/start') {
             return Promise.resolve({
               ok: true,
@@ -49,11 +45,9 @@ describe('ConnectorAuthFlow', () => {
           if (m === 'GET' && p.startsWith('/v1/connectors/slack/auth/status')) {
             return Promise.resolve({ ok: false, error: 'boom', status: 500 });
           }
-          return Promise.resolve({ ok: false, error: 'unexpected', status: 500 });
-        }),
-      },
-      shell: { openExternal: vi.fn().mockResolvedValue({ ok: true }) },
-    };
+      return Promise.resolve({ ok: false, error: 'unexpected', status: 500 });
+    }) as unknown as typeof window.gb.api.request;
+    window.gb.shell.openExternal = vi.fn().mockResolvedValue({ ok: true });
 
     wrap(<ConnectorAuthFlow connectorId="slack" onDone={() => {}} onCancel={() => {}} />);
 
