@@ -59,19 +59,30 @@ they never throw across the bridge.
 
 ### 1.2 `POST /v1/llm/run` (sidecar)
 
-New route `ghostbrain/api/routes/llm.py`:
+New route `ghostbrain/api/routes/llm.py` (as built — the client's
+`--json-schema` support made structured output a natural part of the
+contract):
 
 ```
 POST /v1/llm/run
-{ "prompt": str, "system": str | null, "timeoutSeconds": int = 600 }
-→ { "text": str, "error": str | null }
+{ "prompt": str, "system": str | null, "model": str = "sonnet",
+  "jsonSchema": dict | null, "timeoutSeconds": int = 600,
+  "budgetUsd": float | null }
+→ { "text": str, "structured": Any | null, "error": str | null,
+    "costUsd": float | null, "durationMs": int | null }
 ```
 
 Runs the existing `claude -p` client (`ghostbrain/llm`) synchronously,
-non-streaming. Follows the `answer.py` pattern: all exceptions caught and
-returned as a structured `error`, traceback to the sidecar log. Long default
-timeout — sweep runs are minutes-long. No vault access, no tools: it is a pure
-prompt runner; the caller assembles all context.
+non-streaming; `jsonSchema` passes through to `--json-schema` and comes back
+parsed in `structured`. Follows the `answer.py` pattern: all exceptions
+caught and returned as a structured `error` (never a 500), traceback to the
+sidecar log. Long default timeout — sweep runs are minutes-long. No vault
+access, no tools: it is a pure prompt runner; the caller assembles all
+context.
+
+The desktop forwarder gained `PUT` in its allowed methods and an optional
+per-call timeout override; both plugin bridges forward with a 15-minute
+ceiling (the sweep's LLM call uses `timeoutSeconds: 840` to stay under it).
 
 ## Part 2 — The plugin
 
@@ -155,10 +166,12 @@ persists without re-reading the archive. Created on first run if absent.
   counts, error.
 - On completion, `ipc.send('run:finished', {...})` so an open UI refreshes.
 
-The plugin writes these notes via note create/update endpoints addressed by
-path. If the current notes API turns out to be jot-id-centric only for updates,
-extending it with path-addressed upsert (`PUT /v1/notes?path=…`) is in scope for
-Part 1 — the implementation plan verifies this before building.
+The plugin writes these notes via `PUT /v1/notes` `{path, content}` →
+`{path, created}` — the path-addressed upsert this spec flagged as
+in-scope-if-needed turned out to be needed (the existing notes API was
+jot-id-centric for creation) and was added in Part 1. Content is written
+verbatim except a trailing newline is ensured (house convention, matching
+`save_note_body`); path safety reuses the house `_resolve_safe` guard.
 
 ### 2.2 Tracker notes (data model)
 
@@ -179,6 +192,14 @@ tag). The plugin parses/regenerates this file; the id comment is the stable key.
 Editing it by hand is allowed — parse errors on a line demote that line to an
 "unparsed" section rather than being lost.
 
+**Round-trip safety (as built):** parsing anchors the
+`(from [source](…), first seen …)` suffix and the status tag to the end of
+the line (greedy head), and rendering sanitizes the format's own delimiter
+substrings out of free-text fields (`' — owed to '` → hyphen variant,
+`'(from [source]('` → spaced variant) — so LLM-authored text containing
+those phrases can never silently corrupt `owedTo`/`sourcePath` on
+round-trip. Review-verified against adversarial inputs.
+
 `Familiar/decisions.md`: append-only dated list, same style, no state.
 
 **Merge rule** (plugin code, not LLM): the LLM's returned `openLoops` is merged
@@ -191,9 +212,11 @@ UI/user-only — model output never sets or clears it.
 Sidebar entry **Familiar** (ghost icon). One screen, framework-free DOM, themed
 via the `theme` tokens:
 
-- **Latest briefing** rendered as markdown (self-contained tiny md renderer or
-  pre-rendered HTML from marked bundled into the plugin — bundling is fine,
-  plugins commit dist).
+- **Latest briefing** rendered as markdown via bundled `marked`, configured
+  to drop raw HTML tokens (LLM/connector-derived content is untrusted;
+  markdown renders, embedded HTML does not — defense-in-depth on top of the
+  app CSP). All free-text UI (decisions, history, loop labels) is built with
+  DOM `textContent`, never interpolated into `innerHTML`.
 - **Open loops** list: checkbox (→ done), dismiss button, owed-to/source-link
   metadata. Mutations parse-modify-regenerate `open-loops.md` via the notes API
   (through renderer `api.fetch`), then re-render.
