@@ -27,6 +27,58 @@ describe('open loops round-trip', () => {
     expect(unparsed).toEqual(['- hand-written todo without id']);
     expect(renderOpenLoops(loops, unparsed)).toContain('## Unparsed');
   });
+
+  it('text containing " — owed to " does not corrupt owedTo when owedTo is null', () => {
+    const loop = {
+      id: 'loop-owed-embed',
+      text: 'Tell them — owed to nobody about the delay',
+      owedTo: null,
+      sourcePath: 'real.md',
+      firstSeen: '2024-01-01',
+      status: 'open',
+    };
+    const { loops } = parseOpenLoops(renderOpenLoops([loop], []));
+    expect(loops).toEqual([{ ...loop, text: 'Tell them - owed to nobody about the delay' }]);
+  });
+
+  it('text containing "(from [source](" does not corrupt sourcePath or truncate text', () => {
+    const loop = {
+      id: 'loop-source-embed',
+      text: 'Send report (from [source](inner.md), first seen 2020-01-01) done',
+      owedTo: null,
+      sourcePath: 'real.md',
+      firstSeen: '2024-01-01',
+      status: 'open',
+    };
+    const { loops } = parseOpenLoops(renderOpenLoops([loop], []));
+    expect(loops).toEqual([{
+      ...loop,
+      text: 'Send report (from [source] (inner.md), first seen 2020-01-01) done',
+    }]);
+  });
+
+  it('preserves fixed fields exactly and free-text fields up to sanitization', () => {
+    const loop = {
+      id: 'loop-mixed',
+      text: 'Ping — owed to someone (from [source](embedded.md), first seen 2019-01-01) after',
+      owedTo: 'Alex — the reviewer',
+      sourcePath: 'real.md',
+      firstSeen: '2024-01-01',
+      status: 'open',
+    };
+    const sanitize = (s) => s
+      .replace(/ — owed to /g, ' - owed to ')
+      .replace(/\(from \[source\]\(/g, '(from [source] (');
+    const { loops } = parseOpenLoops(renderOpenLoops([loop], []));
+    expect(loops).toHaveLength(1);
+    const [parsed] = loops;
+    expect(parsed.id).toBe(loop.id);
+    expect(parsed.sourcePath).toBe(loop.sourcePath);
+    expect(parsed.firstSeen).toBe(loop.firstSeen);
+    expect(parsed.status).toBe(loop.status);
+    expect(parsed.text).toBe(sanitize(loop.text));
+    expect(parsed.owedTo).toBe(sanitize(loop.owedTo));
+  });
 });
 
 describe('mergeLoops', () => {
@@ -60,6 +112,18 @@ describe('decisions', () => {
   const DEC = { date: '2026-07-01', text: 'Use plugin architecture', sourcePath: 'a.md' };
   it('round-trips', () => {
     expect(parseDecisions(renderDecisions([DEC]))).toEqual([DEC]);
+  });
+  it('text containing "(from [source](" does not corrupt sourcePath', () => {
+    const dec = {
+      date: '2026-07-01',
+      text: 'Approved (from [source](old.md), first seen 2020-01-01) after review',
+      sourcePath: 'real.md',
+    };
+    const parsed = parseDecisions(renderDecisions([dec]));
+    expect(parsed).toEqual([{
+      ...dec,
+      text: 'Approved (from [source] (old.md), first seen 2020-01-01) after review',
+    }]);
   });
   it('merge appends new, dedups by date+text', () => {
     const merged = mergeDecisions([DEC], [DEC, { ...DEC, text: 'Another' }]);
