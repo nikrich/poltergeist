@@ -37,8 +37,18 @@ function lastScheduledSlot(config2, now) {
   return d;
 }
 function isRunDue(config2, state, now = /* @__PURE__ */ new Date()) {
-  if (!state.lastSuccessfulRunAt) return true;
-  return new Date(state.lastSuccessfulRunAt) < lastScheduledSlot(config2, now);
+  const s = state ?? {};
+  if (!s.lastSuccessfulRunAt) return true;
+  return new Date(s.lastSuccessfulRunAt) < lastScheduledSlot(config2, now);
+}
+function inFailureCooldown(state, now, cooldownMs = 4 * 36e5) {
+  const s = state ?? {};
+  if (!s.lastAttemptAt) return false;
+  const lastAttempt = new Date(s.lastAttemptAt).getTime();
+  const lastSuccess = s.lastSuccessfulRunAt ? new Date(s.lastSuccessfulRunAt).getTime() : 0;
+  const attemptFailed = lastAttempt > lastSuccess;
+  const withinCooldown = now.getTime() - lastAttempt < cooldownMs;
+  return attemptFailed && withinCooldown;
 }
 function nextRunAt(config2, now = /* @__PURE__ */ new Date()) {
   const next = new Date(lastScheduledSlot(config2, now));
@@ -189,6 +199,12 @@ function parseSweepOutput(res) {
   if (typeof data.briefingMarkdown !== "string" || typeof data.memoryMarkdown !== "string") {
     throw new Error("briefingMarkdown/memoryMarkdown must be strings");
   }
+  if (!data.briefingMarkdown.trim()) {
+    throw new Error("briefingMarkdown must not be empty or whitespace-only");
+  }
+  if (!data.memoryMarkdown.trim()) {
+    throw new Error("memoryMarkdown must not be empty or whitespace-only");
+  }
   if (!Array.isArray(data.openLoops)) {
     throw new Error("openLoops must be an array");
   }
@@ -253,7 +269,7 @@ function parseOpenLoops(md) {
 }
 function sanitizeField(s) {
   if (s == null) return s;
-  return s.replace(/ — owed to /g, " - owed to ").replace(/\(from \[source\]\(/g, "(from [source] (");
+  return s.replace(/ — owed to /g, " - owed to ").replace(/\(from \[source\]\(/g, "(from [source] (").replace(/\s*\n\s*/g, " ");
 }
 function renderLoop(l) {
   const box = l.status === "done" ? "x" : " ";
@@ -299,7 +315,7 @@ function renderDecisions(list) {
   return ["# Decisions", "", ...list.map((d) => `- ${d.date} \u2014 ${sanitizeField(d.text)} (from [source](${d.sourcePath}))`)].join("\n") + "\n";
 }
 function mergeDecisions(current, fromModel) {
-  const key = (d) => `${d.date}${d.text}`;
+  const key = (d) => `${d.date}${sanitizeField(d.text)}`;
   const seen = new Set(current.map(key));
   const out = [...current];
   for (const d of fromModel) {
@@ -392,7 +408,11 @@ Your previous output was rejected: ${lastErr}. Return ONLY the JSON object.` : u
         system: SYSTEM_PROMPT,
         model: settings.model,
         jsonSchema: SWEEP_JSON_SCHEMA,
-        timeoutSeconds: 840
+        timeoutSeconds: 840,
+        // The backend's claude client defaults to a $0.50/call safety cap;
+        // an opus sweep at the full budgetChars deterministically exceeds
+        // that, so raise the cap for this call specifically.
+        budgetUsd: 5
       });
       if (!r.ok) throw new Error(`llm/run transport: ${r.error}`);
       if (r.data.error) throw new Error(`llm/run: ${r.data.error}`);
@@ -443,6 +463,22 @@ var TICK_MS = 15 * 60 * 1e3;
 var FIRST_TICK_MS = 30 * 1e3;
 var STALE_RUN_MS = 30 * 60 * 1e3;
 var DEFAULT_CONFIG = { cadence: "weekly", day: "monday", hour: 7, model: "sonnet", budgetChars: 15e4 };
+var VALID_DAYS = /* @__PURE__ */ new Set(["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]);
+var VALID_MODELS = /* @__PURE__ */ new Set(["haiku", "sonnet", "opus"]);
+function validateConfigPartial(partial) {
+  if ("day" in partial && !VALID_DAYS.has(partial.day)) {
+    throw new Error(`config.day must be one of ${[...VALID_DAYS].join(", ")}; got ${JSON.stringify(partial.day)}`);
+  }
+  if ("hour" in partial && (!Number.isInteger(partial.hour) || partial.hour < 0 || partial.hour > 23)) {
+    throw new Error(`config.hour must be an integer 0-23; got ${JSON.stringify(partial.hour)}`);
+  }
+  if ("model" in partial && !VALID_MODELS.has(partial.model)) {
+    throw new Error(`config.model must be one of ${[...VALID_MODELS].join(", ")}; got ${JSON.stringify(partial.model)}`);
+  }
+  if ("budgetChars" in partial && (!Number.isInteger(partial.budgetChars) || partial.budgetChars <= 0)) {
+    throw new Error(`config.budgetChars must be a positive integer; got ${JSON.stringify(partial.budgetChars)}`);
+  }
+}
 var ctx = null;
 var timer = null;
 var firstTimer = null;
@@ -471,6 +507,7 @@ function lastRuns(n = 10) {
   }
 }
 async function sweep(trigger) {
+  const c = ctx;
   const state = loadState();
   if (running) return { started: false, reason: "already running" };
   if (state.runningSince && Date.now() - new Date(state.runningSince).getTime() < STALE_RUN_MS) {
@@ -483,32 +520,37 @@ async function sweep(trigger) {
   let report;
   try {
     report = await runSweep({
-      api: ctx.api,
+      api: c.api,
       settings: { model: cfg.model, budgetChars: cfg.budgetChars },
       state,
       now: /* @__PURE__ */ new Date(),
-      log: ctx.log
+      log: c.log
     });
   } catch (e) {
     report = { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
   running = false;
+  if (ctx === null) {
+    return { started: true };
+  }
   const next = loadState();
   delete next.runningSince;
   if (report.ok) next.lastSuccessfulRunAt = report.windowEnd;
   saveState(next);
-  (0, import_node_fs.mkdirSync)(ctx.dataDir, { recursive: true });
+  (0, import_node_fs.mkdirSync)(c.dataDir, { recursive: true });
   if (report.rawOutput) {
-    (0, import_node_fs.writeFileSync)((0, import_node_path.join)(ctx.dataDir, `failed-${Date.now()}.txt`), report.rawOutput);
+    (0, import_node_fs.writeFileSync)((0, import_node_path.join)(c.dataDir, `failed-${Date.now()}.txt`), report.rawOutput);
     delete report.rawOutput;
   }
   (0, import_node_fs.appendFileSync)(runsPath(), JSON.stringify({ startedAt, finishedAt: (/* @__PURE__ */ new Date()).toISOString(), trigger, ...report }) + "\n");
-  ctx.ipc.send("run:finished", report);
-  ctx.log(`sweep ${report.ok ? "ok" : `FAILED: ${report.error}`}`);
+  c.ipc.send("run:finished", report);
+  c.log(`sweep ${report.ok ? "ok" : `FAILED: ${report.error}`}`);
   return { started: true };
 }
 function tick() {
-  if (isRunDue(config(), loadState(), /* @__PURE__ */ new Date())) void sweep("schedule");
+  const state = loadState();
+  if (inFailureCooldown(state, /* @__PURE__ */ new Date())) return;
+  if (isRunDue(config(), state, /* @__PURE__ */ new Date())) void sweep("schedule");
 }
 function activate(context) {
   ctx = context;
@@ -522,6 +564,7 @@ function activate(context) {
   ctx.ipc.handle("run", () => sweep("manual"));
   ctx.ipc.handle("config:set", (partial) => {
     if (typeof partial !== "object" || partial === null) throw new Error("config must be an object");
+    validateConfigPartial(partial);
     ctx.settings.set("config", { ...config(), ...partial });
     return config();
   });

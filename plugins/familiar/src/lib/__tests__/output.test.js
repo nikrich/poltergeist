@@ -67,4 +67,24 @@ describe('parseSweepOutput', () => {
     const text = 'Here you go:\n```json\n' + JSON.stringify(GOOD) + '\n```';
     expect(parseSweepOutput({ text, structured: null })).toEqual(GOOD);
   });
+
+  // Empty markdown must be rejected here so the retry loop in runSweep gets
+  // a chance to fix it — the notes API 422s on empty content, and that
+  // failure path is past the retry loop.
+  it('throws a field-named error when briefingMarkdown is empty', () => {
+    const bad = { ...GOOD, briefingMarkdown: '' };
+    expect(() => parseSweepOutput({ text: '', structured: bad })).toThrow(/briefingMarkdown/);
+  });
+  it('throws a field-named error when briefingMarkdown is whitespace-only', () => {
+    const bad = { ...GOOD, briefingMarkdown: '   \n  ' };
+    expect(() => parseSweepOutput({ text: '', structured: bad })).toThrow(/briefingMarkdown/);
+  });
+  it('throws a field-named error when memoryMarkdown is empty', () => {
+    const bad = { ...GOOD, memoryMarkdown: '' };
+    expect(() => parseSweepOutput({ text: '', structured: bad })).toThrow(/memoryMarkdown/);
+  });
+  it('throws a field-named error when memoryMarkdown is whitespace-only', () => {
+    const bad = { ...GOOD, memoryMarkdown: '\t\n' };
+    expect(() => parseSweepOutput({ text: '', structured: bad })).toThrow(/memoryMarkdown/);
+  });
 });

@@ -65,6 +65,11 @@ describe('runSweep', () => {
     expect(fake.notes.get('Familiar/briefings/2026-07-08.md')).toContain('type: familiar-briefing');
   });
 
+  it('raises the per-call budget cap above the backend default so an opus sweep at full budget does not get cut off', async () => {
+    await runSweep(DEPS(fake.api));
+    expect(fake.llmCalls[0].budgetUsd).toBe(5.0);
+  });
+
   it('excludes Familiar/ notes from the delta it sends the model', async () => {
     fake.notes.set(MEMORY_PATH, '# Memory');
     await runSweep(DEPS(fake.api));

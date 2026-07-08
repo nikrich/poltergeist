@@ -81,6 +81,37 @@ describe('open loops round-trip', () => {
   });
 });
 
+describe('newline sanitization', () => {
+  it('a loop whose text contains embedded newlines round-trips to a single-line entry, preserving id/status', () => {
+    const loop = {
+      id: 'loop-multiline',
+      text: 'Follow up with\nAlex about the\n  proposal',
+      owedTo: null,
+      sourcePath: 'a.md',
+      firstSeen: '2026-07-01',
+      status: 'open',
+    };
+    const md = renderOpenLoops([loop], []);
+    // exactly one list-item line for this loop — no stray continuation lines
+    const itemLines = md.split('\n').filter((l) => l.startsWith('- ['));
+    expect(itemLines).toHaveLength(1);
+    const { loops } = parseOpenLoops(md);
+    expect(loops).toHaveLength(1);
+    expect(loops[0].id).toBe('loop-multiline');
+    expect(loops[0].status).toBe('open');
+    expect(loops[0].text).toBe('Follow up with Alex about the proposal');
+  });
+
+  it('a decision with embedded newlines survives render→parse as a single line', () => {
+    const dec = { date: '2026-07-01', text: 'Chose plugin\narchitecture\nover monolith', sourcePath: 'a.md' };
+    const md = renderDecisions([dec]);
+    const itemLines = md.split('\n').filter((l) => l.startsWith('- '));
+    expect(itemLines).toHaveLength(1);
+    const parsed = parseDecisions(md);
+    expect(parsed).toEqual([{ ...dec, text: 'Chose plugin architecture over monolith' }]);
+  });
+});
+
 describe('mergeLoops', () => {
   it('model flips open→done', () => {
     const merged = mergeLoops([LOOP], [{ ...LOOP, status: 'done' }]);
@@ -128,5 +159,17 @@ describe('decisions', () => {
   it('merge appends new, dedups by date+text', () => {
     const merged = mergeDecisions([DEC], [DEC, { ...DEC, text: 'Another' }]);
     expect(merged.length).toBe(2);
+  });
+
+  it('sanitizes model-decision text before computing the dedup key, so a re-emitted delimiter-bearing decision does not duplicate every run', () => {
+    // Simulate a decision already on disk: written once via renderDecisions
+    // (which sanitizes), then read back via parseDecisions — so its stored
+    // text is the sanitized form.
+    const rawText = 'Approved (from [source](old.md), first seen 2020-01-01) after review';
+    const onDisk = parseDecisions(renderDecisions([{ date: '2026-07-01', text: rawText, sourcePath: 'real.md' }]));
+    // The model re-emits the SAME decision, unsanitized, on the next sweep.
+    const fromModel = [{ date: '2026-07-01', text: rawText, sourcePath: 'real.md' }];
+    const merged = mergeDecisions(onDisk, fromModel);
+    expect(merged.length).toBe(1);
   });
 });

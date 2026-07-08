@@ -2039,7 +2039,7 @@ function parseOpenLoops(md) {
 }
 function sanitizeField(s) {
   if (s == null) return s;
-  return s.replace(/ — owed to /g, " - owed to ").replace(/\(from \[source\]\(/g, "(from [source] (");
+  return s.replace(/ — owed to /g, " - owed to ").replace(/\(from \[source\]\(/g, "(from [source] (").replace(/\s*\n\s*/g, " ");
 }
 function renderLoop(l) {
   const box = l.status === "done" ? "x" : " ";
@@ -2284,8 +2284,21 @@ function mount(el, api) {
     await refreshStatus();
   };
   const off = api.ipc.on("run:finished", () => void refreshAll());
+  const onBriefingClick = (e) => {
+    const a = e.target.closest?.("a");
+    if (!a) return;
+    e.preventDefault();
+    const href = a.getAttribute("href") || "";
+    if (href.startsWith("http://") || href.startsWith("https://")) {
+      api.openExternal(href);
+    }
+  };
+  sections.briefing.addEventListener("click", onBriefingClick);
   void refreshAll();
-  return () => off();
+  return () => {
+    off();
+    sections.briefing.removeEventListener("click", onBriefingClick);
+  };
 }
 export {
   mount

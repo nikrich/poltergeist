@@ -218,7 +218,29 @@ export function mount(el, api) {
     await refreshStatus();
   };
   const off = api.ipc.on('run:finished', () => void refreshAll());
+
+  // Briefing markdown is untrusted LLM/connector content (see the marked
+  // html-renderer override above): links must never navigate the app window
+  // in place. One delegated listener on the section (its innerHTML is
+  // replaced wholesale by renderBriefing, but the <section> element itself
+  // persists across refreshes) intercepts every anchor click; only
+  // http(s) links are forwarded to the OS browser via openExternal, anything
+  // else (relative hrefs, javascript:, etc.) is just suppressed.
+  const onBriefingClick = (e) => {
+    const a = e.target.closest?.('a');
+    if (!a) return;
+    e.preventDefault();
+    const href = a.getAttribute('href') || '';
+    if (href.startsWith('http://') || href.startsWith('https://')) {
+      api.openExternal(href);
+    }
+  };
+  sections.briefing.addEventListener('click', onBriefingClick);
+
   void refreshAll();
 
-  return () => off();
+  return () => {
+    off();
+    sections.briefing.removeEventListener('click', onBriefingClick);
+  };
 }

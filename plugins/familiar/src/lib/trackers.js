@@ -51,7 +51,12 @@ function sanitizeField(s) {
   if (s == null) return s;
   return s
     .replace(/ — owed to /g, ' - owed to ')
-    .replace(/\(from \[source\]\(/g, '(from [source] (');
+    .replace(/\(from \[source\]\(/g, '(from [source] (')
+    // Tracker notes are one machine-parseable line per item; an embedded
+    // newline in model- or user-supplied text would otherwise split the
+    // entry across lines and corrupt the file (unparseable, or parsed as a
+    // truncated entry plus a stray "unparsed" line).
+    .replace(/\s*\n\s*/g, ' ');
 }
 
 function renderLoop(l) {
@@ -107,7 +112,13 @@ export function renderDecisions(list) {
 }
 
 export function mergeDecisions(current, fromModel) {
-  const key = (d) => `${d.date}${d.text}`;
+  // `current` was read back through parseDecisions, so its text is already
+  // sanitized (renderDecisions sanitizes before writing). `fromModel` is raw
+  // LLM output — sanitize its text before computing the dedup key (the same
+  // transform renderDecisions applies at write time), or a delimiter-bearing
+  // decision the model re-emits every run would never match its own
+  // previously-written (sanitized) copy and would duplicate on every sweep.
+  const key = (d) => `${d.date}${sanitizeField(d.text)}`;
   const seen = new Set(current.map(key));
   const out = [...current];
   for (const d of fromModel) {

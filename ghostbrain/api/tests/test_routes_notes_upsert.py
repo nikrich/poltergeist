@@ -28,6 +28,11 @@ def test_upsert_rejects_traversal_and_non_md(client, tmp_vault, auth_headers):
     assert client.put("/v1/notes", json={"path": "Familiar/run.sh", "content": "x"}, headers=auth_headers).status_code == 400
 
 
+def test_upsert_rejects_absolute_path(client, tmp_vault, auth_headers):
+    r = client.put("/v1/notes", json={"path": "/etc/x.md", "content": "x"}, headers=auth_headers)
+    assert r.status_code == 400
+
+
 def test_upsert_rejects_empty_content(client, tmp_vault, auth_headers):
     r = client.put("/v1/notes", json={"path": "Familiar/memory.md", "content": "  "}, headers=auth_headers)
     assert r.status_code == 422

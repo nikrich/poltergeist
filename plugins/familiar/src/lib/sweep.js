@@ -93,6 +93,10 @@ export async function runSweep(deps) {
       const r = await api.fetch('POST', '/v1/llm/run', {
         prompt, system: SYSTEM_PROMPT, model: settings.model,
         jsonSchema: SWEEP_JSON_SCHEMA, timeoutSeconds: 840,
+        // The backend's claude client defaults to a $0.50/call safety cap;
+        // an opus sweep at the full budgetChars deterministically exceeds
+        // that, so raise the cap for this call specifically.
+        budgetUsd: 5.0,
       });
       if (!r.ok) throw new Error(`llm/run transport: ${r.error}`);
       if (r.data.error) throw new Error(`llm/run: ${r.data.error}`);

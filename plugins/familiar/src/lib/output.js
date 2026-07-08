@@ -55,6 +55,15 @@ export function parseSweepOutput(res) {
   if (typeof data.briefingMarkdown !== 'string' || typeof data.memoryMarkdown !== 'string') {
     throw new Error('briefingMarkdown/memoryMarkdown must be strings');
   }
+  // The notes API 422s on empty/whitespace-only content, and that failure
+  // path skips the retry loop in runSweep — so an empty markdown field must
+  // be rejected here, where it still triggers the "reject and retry" path.
+  if (!data.briefingMarkdown.trim()) {
+    throw new Error('briefingMarkdown must not be empty or whitespace-only');
+  }
+  if (!data.memoryMarkdown.trim()) {
+    throw new Error('memoryMarkdown must not be empty or whitespace-only');
+  }
   if (!Array.isArray(data.openLoops)) {
     throw new Error('openLoops must be an array');
   }
