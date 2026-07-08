@@ -308,6 +308,7 @@ sidecar.on('failed', (info: { reason: string }) => {
 
 let sidecarStopped = false;
 app.on('before-quit', (event) => {
+  isQuitting = true;
   meetingNotifier?.destroy();
   void pluginLoader?.deactivateAll();
   if (DEMO) return; // nothing to tear down — sidecar was never started

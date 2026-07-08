@@ -112,7 +112,8 @@ export function TodayScreen() {
               <br />
               <span className="text-neon-ink">poltergeist caught</span>
               <br />
-              {stats.data?.indexedCount ?? '…'} things.
+              {stats.data?.indexedCount ?? '…'}{' '}
+              {stats.data?.indexedCount === 1 ? 'thing' : 'things'}.
             </h2>
             <p className="mb-[18px] mt-[14px] max-w-[46ch] text-14 leading-[1.5] text-ink-1">
               {connectors.data
