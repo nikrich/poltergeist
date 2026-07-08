@@ -160,7 +160,7 @@ describe('ConnectorsScreen disconnect flow', () => {
 
     // Override the API request for this test
     const originalRequest = window.gb.api.request;
-    window.gb.api.request = request as typeof window.gb.api.request;
+    window.gb.api.request = request as unknown as typeof window.gb.api.request;
 
     // Mock window.confirm to return true
     const originalConfirm = window.confirm;

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { toast } from './stores/toast';
 import { useSettings } from './stores/settings';
 import { useNavigation } from './stores/navigation';
@@ -22,6 +22,7 @@ import { DailyScreen } from './screens/daily';
 import { SetupScreen } from './screens/setup';
 import { SettingsScreen } from './screens/settings';
 import { JotsScreen } from './screens/jots';
+import { OnboardingScreen } from './screens/onboarding';
 import { PluginsScreen, useActivePlugins } from './screens/plugins';
 import { PluginHost } from './components/PluginHost';
 import { PanelError } from './components/PanelError';
@@ -36,7 +37,7 @@ function PluginRoute({ id }: { id: string }) {
 }
 
 export default function App() {
-  const { theme, density, ready, hydrate } = useSettings();
+  const { theme, density, ready, hydrate, onboardingComplete } = useSettings();
   const active = useNavigation((s) => s.active);
   const setActive = useNavigation((s) => s.setActive);
   const sidecarStatus = useSidecar((s) => s.status);
@@ -46,6 +47,20 @@ export default function App() {
   useEffect(() => {
     hydrate();
   }, [hydrate]);
+
+  // First-run redirect into the onboarding wizard. Guarded so it only ever
+  // fires once, right when settings finish hydrating — otherwise it would
+  // fight the user every time they navigate away from onboarding before
+  // finishing (onboardingComplete stays false until they finish or skip).
+  const onboardingRedirectDone = useRef(false);
+  useEffect(() => {
+    if (!ready || onboardingRedirectDone.current) return;
+    onboardingRedirectDone.current = true;
+    if (!onboardingComplete) {
+      setActive('onboarding');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
 
   useEffect(() => {
     if (!ready) return;
@@ -125,6 +140,7 @@ export default function App() {
           {active === 'settings' && <SettingsScreen />}
           {active === 'jots' && <JotsScreen />}
           {active === 'plugins' && <PluginsScreen />}
+          {active === 'onboarding' && <OnboardingScreen />}
           {active.startsWith('plugin:') && (
             <PluginRoute id={active.slice('plugin:'.length)} />
           )}

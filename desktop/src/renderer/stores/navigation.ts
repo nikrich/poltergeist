@@ -13,6 +13,7 @@ export type ScreenId =
   | 'settings'
   | 'jots'
   | 'plugins'
+  | 'onboarding'
   | `plugin:${string}`;
 
 interface NavState {

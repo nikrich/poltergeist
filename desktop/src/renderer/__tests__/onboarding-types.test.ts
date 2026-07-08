@@ -8,6 +8,6 @@ describe('onboarding wiring', () => {
       next: { kind: 'need_input', auth_url: null, verification_uri: null, user_code: null,
               fields: [{ name: 'token', label: 'T', type: 'password' }], message: null },
     };
-    expect(v.next.fields?.[0].name).toBe('token');
+    expect(v.next.fields?.[0]?.name).toBe('token');
   });
 });

@@ -69,7 +69,9 @@ function Intro() {
   );
 }
 
-function VaultCard({ vaultPath }: { vaultPath: string }) {
+// Exported so the G2 onboarding wizard's vault step can reuse the same
+// vault-path display/config UI instead of duplicating it.
+export function VaultCard({ vaultPath }: { vaultPath: string }) {
   const onOpen = async () => {
     if (!vaultPath) return;
     const result = await window.gb.shell.openPath(vaultPath);
