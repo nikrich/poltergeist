@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ConnectorAuthFlow } from '../components/ConnectorAuthFlow';
+import type { GbBridge } from '../../shared/types';
 
 function wrap(ui: React.ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -17,8 +18,8 @@ beforeEach(() => {
   };
   window.gb = {
     ...window.gb,
-    api: { request: vi.fn((m: string, p: string) => Promise.resolve({ ok: true, data: responses[`${m} ${p}`] })) },
-    shell: { openExternal: vi.fn().mockResolvedValue({ ok: true }) },
+    api: { request: vi.fn((m: string, p: string) => Promise.resolve({ ok: true as const, data: responses[`${m} ${p}`] })) as GbBridge['api']['request'] },
+    shell: { openPath: vi.fn().mockResolvedValue({ ok: true }), openExternal: vi.fn().mockResolvedValue({ ok: true }) },
   };
 });
 
@@ -39,7 +40,7 @@ describe('ConnectorAuthFlow', () => {
         request: vi.fn((m: string, p: string) => {
           if (m === 'POST' && p === '/v1/connectors/slack/auth/start') {
             return Promise.resolve({
-              ok: true,
+              ok: true as const,
               data: {
                 session_id: 's', status: 'pending', account: null, error: null,
                 next: { kind: 'open_browser', fields: null, auth_url: 'https://example.com/auth', verification_uri: null, user_code: null, message: null },
@@ -47,12 +48,12 @@ describe('ConnectorAuthFlow', () => {
             });
           }
           if (m === 'GET' && p.startsWith('/v1/connectors/slack/auth/status')) {
-            return Promise.resolve({ ok: false, error: 'boom', status: 500 });
+            return Promise.resolve({ ok: false as const, error: 'boom', status: 500 });
           }
-          return Promise.resolve({ ok: false, error: 'unexpected', status: 500 });
-        }),
+          return Promise.resolve({ ok: false as const, error: 'unexpected', status: 500 });
+        }) as GbBridge['api']['request'],
       },
-      shell: { openExternal: vi.fn().mockResolvedValue({ ok: true }) },
+      shell: { openPath: vi.fn().mockResolvedValue({ ok: true }), openExternal: vi.fn().mockResolvedValue({ ok: true }) },
     };
 
     wrap(<ConnectorAuthFlow connectorId="slack" onDone={() => {}} onCancel={() => {}} />);
