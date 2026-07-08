@@ -11,11 +11,13 @@ from ghostbrain.api.models.note import (
     RouteNoteRequest,
     UpdateNoteBodyRequest,
     UpdateNoteRequest,
+    UpsertNoteRequest,
 )
 from ghostbrain.api.repo.note import (
     NoteInvalidPath,
     NoteNotFound,
     get_note,
+    save_note_at_path,
     save_note_body,
 )
 from ghostbrain.api.repo.notes_manual import (
@@ -70,6 +72,17 @@ def get_notes(
     raise HTTPException(
         status_code=400, detail=f"unsupported source filter: {source}",
     )
+
+
+@router.put("", status_code=status.HTTP_200_OK)
+def upsert_note(req: UpsertNoteRequest) -> dict:
+    """Create or replace a vault note at an explicit path (plugin write-back)."""
+    if not req.content.strip():
+        raise HTTPException(status_code=422, detail="content must not be empty")
+    try:
+        return save_note_at_path(req.path, req.content)
+    except NoteInvalidPath as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("", status_code=status.HTTP_200_OK)

@@ -60,3 +60,8 @@ class RouteNoteRequest(BaseModel):
 
 class ExtractPhotoRequest(BaseModel):
     assetPath: str = Field(min_length=1, max_length=500)
+
+
+class UpsertNoteRequest(BaseModel):
+    path: str
+    content: str

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { forward } from '../api-forwarder';
+import { forward, isAllowedMethod, isSafeApiPath } from '../api-forwarder';
 import type { Sidecar } from '../sidecar';
 
 const fetchMock = vi.fn();
@@ -45,5 +45,24 @@ describe('api forwarder', () => {
     const init = fetchMock.mock.calls[0]![1] as RequestInit;
     expect(init.headers).not.toHaveProperty('Content-Type');
     expect(result.ok).toBe(true);
+  });
+});
+
+describe('isSafeApiPath', () => {
+  it('accepts vault-relative api paths', () => {
+    expect(isSafeApiPath('/v1/notes?path=Familiar/memory.md')).toBe(true);
+  });
+  it('rejects paths not starting with /', () => {
+    expect(isSafeApiPath('v1/notes')).toBe(false);
+    expect(isSafeApiPath('http://evil/v1')).toBe(false);
+  });
+  it('rejects traversal', () => {
+    expect(isSafeApiPath('/v1/../admin')).toBe(false);
+  });
+});
+
+describe('isAllowedMethod', () => {
+  it('includes PUT', () => {
+    expect(isAllowedMethod('PUT')).toBe(true);
   });
 });

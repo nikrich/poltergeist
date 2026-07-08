@@ -69,6 +69,8 @@ function installPlugins(): void {
         win.webContents.send(channel, payload);
       }
     },
+    // 15-minute ceiling covers long LLM sweeps plugins may kick off.
+    fetchApi: (method, path, body) => forward(sidecar, method, path, body, 900_000),
   });
   pluginLoader = loader;
   loader.scan();

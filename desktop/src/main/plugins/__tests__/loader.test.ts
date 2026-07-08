@@ -13,7 +13,7 @@ import * as store from '../store';
 
 const FIXTURES = join(__dirname, 'fixtures');
 
-function makeDeps(pluginsRoot: string) {
+function makeDeps(pluginsRoot: string, overrides: Partial<LoaderDeps> = {}) {
   const handlers = new Map<string, (...args: unknown[]) => unknown>();
   const broadcasts: Array<{ channel: string; payload: unknown }> = [];
   const deps: LoaderDeps = {
@@ -22,6 +22,8 @@ function makeDeps(pluginsRoot: string) {
     registerHandler: (ch, fn) => handlers.set(ch, fn),
     unregisterHandler: (ch) => handlers.delete(ch),
     broadcast: (channel, payload) => broadcasts.push({ channel, payload }),
+    fetchApi: async () => ({ ok: false, error: 'fetchApi not stubbed in this test' }),
+    ...overrides,
   };
   return { deps, handlers, broadcasts };
 }
@@ -133,5 +135,34 @@ describe('loader', () => {
     );
     await loader.reloadAll();
     expect(await handlers.get('gb:plugin:hello:ping')!()).toBe('v2');
+  });
+
+  it('exposes api.fetch that validates and delegates to deps.fetchApi', async () => {
+    const root = freshRoot('ctx-capture');
+    const calls: unknown[][] = [];
+    const { deps } = makeDeps(root, {
+      fetchApi: async (...args: unknown[]) => {
+        calls.push(args);
+        return { ok: true, data: { hello: 1 } };
+      },
+    });
+    store.setEnabled('ctx-capture', true);
+    const loader = createLoader(deps);
+    loader.scan();
+    await loader.activateEnabled();
+
+    const ctx = (globalThis as { __lastCtx?: import('../loader').PluginContext }).__lastCtx;
+    expect(ctx).toBeDefined();
+
+    const ok = await ctx!.api.fetch('GET', '/v1/vault/stats');
+    expect(ok).toEqual({ ok: true, data: { hello: 1 } });
+    expect(calls).toEqual([['GET', '/v1/vault/stats', undefined]]);
+
+    const badMethod = await ctx!.api.fetch('TRACE', '/v1/x');
+    expect(badMethod.ok).toBe(false);
+
+    const badPath = await ctx!.api.fetch('GET', 'v1/../x');
+    expect(badPath.ok).toBe(false);
+    expect(calls.length).toBe(1); // invalid calls never reach fetchApi
   });
 });

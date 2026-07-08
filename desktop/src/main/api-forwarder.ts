@@ -8,10 +8,16 @@ export const ALLOWED_METHODS: readonly HttpMethod[] = [
   'POST',
   'PATCH',
   'DELETE',
+  'PUT',
 ];
 
 export function isAllowedMethod(method: string): method is HttpMethod {
   return (ALLOWED_METHODS as readonly string[]).includes(method);
+}
+
+/** Plugin-facing guard: sidecar paths only — absolute-from-root, no traversal. */
+export function isSafeApiPath(path: string): boolean {
+  return path.startsWith('/') && !path.includes('..');
 }
 
 export type ApiResult<T = unknown> =
@@ -23,6 +29,7 @@ export async function forward<T = unknown>(
   method: HttpMethod,
   path: string,
   body?: unknown,
+  timeoutMs = 300_000,
 ): Promise<ApiResult<T>> {
   const info = sidecar.getInfo();
   if (!info) return { ok: false, error: 'Sidecar not ready' };
@@ -38,8 +45,8 @@ export async function forward<T = unknown>(
       // 5min ceiling. /v1/answer (RAG + LLM synthesis) and the first /v1/search
       // call (cold-loads sentence-transformers) can legitimately take a minute
       // or two. Everything else returns in milliseconds; we'd rather wait too
-      // long than chop off a genuine answer.
-      signal: AbortSignal.timeout(300_000),
+      // long than chop off a genuine answer. Plugins may override this.
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (res.status === 204) {
       return { ok: true, data: null as T };

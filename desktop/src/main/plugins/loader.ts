@@ -8,6 +8,7 @@ import {
   type PluginRecord,
 } from '../../shared/plugin-types';
 import * as store from './store';
+import { isAllowedMethod, isSafeApiPath, type ApiResult, type HttpMethod } from '../api-forwarder';
 
 // Loads trusted plugin code. Every call into a plugin is fenced: a throw marks
 // the plugin `errored`, removes its IPC handlers, and never propagates.
@@ -27,6 +28,9 @@ export interface PluginContext {
     handle(channel: string, fn: (...args: unknown[]) => unknown): void;
     send(channel: string, payload: unknown): void;
   };
+  api: {
+    fetch(method: string, path: string, body?: unknown): Promise<ApiResult>;
+  };
   log: (...args: unknown[]) => void;
 }
 
@@ -36,6 +40,7 @@ export interface LoaderDeps {
   registerHandler(channel: string, fn: (...args: unknown[]) => unknown): void;
   unregisterHandler(channel: string): void;
   broadcast(channel: string, payload: unknown): void;
+  fetchApi(method: HttpMethod, path: string, body?: unknown): Promise<ApiResult>;
 }
 
 interface PluginModule {
@@ -121,6 +126,17 @@ export function createLoader(deps: LoaderDeps) {
         send: (channel, payload) => {
           if (!CHANNEL_RE.test(channel)) return;
           deps.broadcast(`gb:plugin:${record.id}:${channel}`, payload);
+        },
+      },
+      api: {
+        fetch: async (method, path, body) => {
+          if (!isAllowedMethod(method)) {
+            return { ok: false, error: `method not allowed: ${method}` };
+          }
+          if (typeof path !== 'string' || !isSafeApiPath(path)) {
+            return { ok: false, error: 'invalid api path' };
+          }
+          return deps.fetchApi(method, path, body);
         },
       },
       log: (...args) => console.log(`[plugin:${record.id}]`, ...args),

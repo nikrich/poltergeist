@@ -1,0 +1,16 @@
+{
+  "name": "poltergeist-plugin-familiar",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "vitest run --passWithNoTests"
+  },
+  "devDependencies": {
+    "esbuild": "^0.21.0",
+    "vitest": "^1.6.0"
+  },
+  "dependencies": {
+    "marked": "^12.0.0"
+  }
+}
