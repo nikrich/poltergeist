@@ -5,6 +5,7 @@ import type {
   ActivityRow,
   AgendaItem,
   AutoRouteResponse,
+  AuthSessionView,
   ExtractPhotoResponse,
   Capture,
   CapturesPage,
@@ -590,6 +591,50 @@ export function useUpdateProject() {
         archived: vars.archived,
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['projects'] }),
+  });
+}
+
+// ── Connector Auth Sessions ───────────────────────────────────────────────────
+
+export function useStartAuth() {
+  return useMutation({
+    mutationFn: (a: { id: string; params?: Record<string, unknown> }) =>
+      post<AuthSessionView>(`/v1/connectors/${a.id}/auth/start`, { params: a.params ?? {} }),
+  });
+}
+
+export function useSubmitAuth() {
+  return useMutation({
+    mutationFn: (a: { id: string; sessionId: string; data: Record<string, unknown> }) =>
+      post<AuthSessionView>(`/v1/connectors/${a.id}/auth/submit`, { session_id: a.sessionId, data: a.data }),
+  });
+}
+
+export function useAuthStatus(id: string | null, sessionId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ['auth-status', id, sessionId],
+    queryFn: () => get<AuthSessionView>(`/v1/connectors/${id}/auth/status?session_id=${sessionId}`),
+    enabled: enabled && id !== null && sessionId !== null,
+    refetchInterval: (q) => {
+      const s = q.state.data?.status;
+      return s === 'pending' || s === 'waiting_input' ? 2000 : false;
+    },
+  });
+}
+
+export function useCancelAuth() {
+  return useMutation({
+    mutationFn: (a: { id: string; sessionId: string }) =>
+      post(`/v1/connectors/${a.id}/auth/cancel`, { session_id: a.sessionId }),
+  });
+}
+
+export function useDisconnectConnector() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (a: { id: string; account?: string }) =>
+      del(`/v1/connectors/${a.id}/credentials${a.account ? `?account=${encodeURIComponent(a.account)}` : ''}`),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['connectors'] }),
   });
 }
 
