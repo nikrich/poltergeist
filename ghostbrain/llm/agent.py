@@ -19,6 +19,8 @@ import threading
 from pathlib import Path
 from typing import Callable
 
+from ghostbrain.llm import mcp_servers
+
 from ghostbrain.llm.client import _find_claude_binary
 
 log = logging.getLogger("ghostbrain.llm.agent")
@@ -190,6 +192,22 @@ def find_mcp_binary() -> list[str] | None:
     return [found] if found else None
 
 
+def _user_server_config(server: dict) -> dict:
+    out: dict = {"command": server["command"]}
+    if server.get("args"):
+        out["args"] = list(server["args"])
+    if server.get("env"):
+        out["env"] = dict(server["env"])
+    return out
+
+
+def _user_allowed_tools(server: dict) -> list[str]:
+    tools = [t.strip() for t in server.get("tools", "").split(",") if t.strip()]
+    if not tools:
+        return [f"mcp__{server['name']}"]  # server-wide grant
+    return [f"mcp__{server['name']}__{t}" for t in tools]
+
+
 def build_chat_command(
     binary: str,
     prompt: str,
@@ -199,6 +217,7 @@ def build_chat_command(
     mcp_binary: str | list[str] | None = None,
     system_prompt: str | None = None,
     allowed_tools: str | None = None,
+    user_servers: list[dict] | None = None,
 ) -> list[str]:
     cmd = [
         binary,
@@ -212,12 +231,21 @@ def build_chat_command(
         "--max-budget-usd", f"{CHAT_BUDGET_USD:.4f}",
     ]
     # --strict-mcp-config + an explicit --mcp-config are UNCONDITIONAL: without
-    # them claude inherits the user's global ~/.claude.json MCP servers (e.g.
-    # mempalace) and runs them in --print mode with no allowlist, where every
-    # tool call hits a permission wall that has no interactive dialog to clear.
-    # We attach the poltergeist server only when its binary is present, but we
-    # always pin the server set so nothing else can leak in.
-    servers: dict[str, dict] = {}
+    # them claude inherits the user's global ~/.claude.json MCP servers and
+    # runs them in --print mode with no allowlist, where every tool call hits a
+    # permission wall that has no interactive dialog to clear. Servers the user
+    # explicitly opted in (settings → mcp-servers.json) merge into the SAME
+    # pinned config and are allowlisted; the vault server is set last so a user
+    # server can never shadow it.
+    servers: dict[str, dict] = {
+        s["name"]: _user_server_config(s) for s in user_servers or []
+    }
+    grants = [
+        t
+        for s in user_servers or []
+        if s["name"] != "poltergeist"
+        for t in _user_allowed_tools(s)
+    ]
     if mcp_binary:
         # Accept either a bare path (dev console script) or a full argv list
         # (frozen build: the api exe + its `mcp` subcommand).
@@ -226,12 +254,13 @@ def build_chat_command(
         if len(argv) > 1:
             server["args"] = argv[1:]
         servers["poltergeist"] = server
+        grants = (allowed_tools or ALLOWED_TOOLS).split(",") + grants
     cmd += [
         "--mcp-config", json.dumps({"mcpServers": servers}),
         "--strict-mcp-config",
     ]
-    if mcp_binary:
-        cmd += ["--allowedTools", allowed_tools or ALLOWED_TOOLS]
+    if grants:
+        cmd += ["--allowedTools", ",".join(grants)]
     if session_id:
         cmd += ["--resume", session_id]
     # `--` terminates option parsing — without it a variadic flag like
@@ -292,14 +321,22 @@ def run_chat_turn(
             yield {"type": "error", "message": MCP_BINARY_MISSING_MESSAGE}
             return
 
+    # User MCP servers ride along only on real chat turns (mcp_binary present);
+    # explicit mcp_binary=None is the bare-run opt-out used by lifecycle tests.
+    user_servers = mcp_servers.load_enabled() if mcp_binary else None
+
     cmd = build_chat_command(
         binary, prompt,
         session_id=session_id,
         mcp_binary=mcp_binary,
         system_prompt=system_prompt,
         allowed_tools=allowed_tools,
+        user_servers=user_servers,
     )
-    log.info("chat turn: resume=%s mcp=%s", bool(session_id), bool(mcp_binary))
+    log.info(
+        "chat turn: resume=%s mcp=%s user_servers=%d",
+        bool(session_id), bool(mcp_binary), len(user_servers or []),
+    )
     proc = subprocess.Popen(
         cmd,
         stdin=subprocess.DEVNULL,
