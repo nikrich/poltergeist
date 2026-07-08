@@ -29,6 +29,7 @@ class Session:
     account: str | None = None
     error: str | None = None
     created_at: float = field(default_factory=time.monotonic)
+    _poll_started: bool = field(default=False, repr=False)
 
 
 class AuthSessionManager:
@@ -52,7 +53,8 @@ class AuthSessionManager:
         with self._lock:
             self._sessions[sess.id] = sess
         # kick off background poll for long-running flows
-        if action.kind in ("open_browser", "show_device_code", "need_grant"):
+        if action.kind in ("open_browser", "show_device_code", "need_grant") and not sess._poll_started:
+            sess._poll_started = True
             threading.Thread(
                 target=self._run_poll, args=(sess, provider), daemon=True
             ).start()
@@ -82,6 +84,19 @@ class AuthSessionManager:
             sess.status = _STATUS_FOR_KIND.get(action.kind, sess.status)
         if sess.status == "success" and sess.account is None:
             sess.account = provider.account_label(sess)
+        # a submit can also transition into a long-running flow (e.g. MS device
+        # code: user submits client_id/tenant_id, then we need to poll MSAL) -
+        # spawn the same background poll thread that start() would, guarding
+        # against double-spawning if a poll is already running for this session.
+        if (
+            sess.status not in ("success", "error")
+            and action.kind in ("open_browser", "show_device_code", "need_grant")
+            and not sess._poll_started
+        ):
+            sess._poll_started = True
+            threading.Thread(
+                target=self._run_poll, args=(sess, provider), daemon=True
+            ).start()
         return sess
 
     def cancel(self, session_id: str) -> None:

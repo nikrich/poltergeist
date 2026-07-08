@@ -77,12 +77,19 @@ class MicrosoftProvider:
         return action
 
     def poll(self, connector_id, session):
-        cfg = _app_config()
-        app = _build_app(cfg)
-        flow = getattr(session, "_ms_flow", None) or getattr(self, "_pending_flow", None)
+        # Narrow the shared-instance handoff window: whichever flow was stashed
+        # (session._ms_flow from submit(), or self._pending_flow from a
+        # start()-goes-straight-to-device-code path) is copied onto the
+        # session up front, so the rest of poll() has a single, consistent
+        # source of truth even if self._pending_flow changes afterwards.
+        if getattr(session, "_ms_flow", None) is None:
+            session._ms_flow = getattr(self, "_pending_flow", None)  # type: ignore[attr-defined]
+        flow = session._ms_flow  # type: ignore[attr-defined]
         if flow is None:
             session.status = "error"; session.error = "No device flow in progress"
             return
+        cfg = _app_config()
+        app = _build_app(cfg)
         result = app.acquire_token_by_device_flow(flow)  # blocks until done/expired
         if "access_token" not in result:
             session.status = "error"
