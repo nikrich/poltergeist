@@ -100,7 +100,12 @@ def save_note_body(rel_path: str, body: str) -> dict:
 
 
 def save_note_at_path(rel_path: str, content: str) -> dict:
-    """Create or fully replace a vault note at ``rel_path`` (verbatim content).
+    """Create or fully replace a vault note at ``rel_path``.
+
+    Content is written verbatim except a trailing newline is ensured (house
+    convention, matching ``save_note_body``): if ``content`` does not end
+    with ``\\n``, exactly one is appended; if it already ends with ``\\n``,
+    no additional newline is added.
 
     Unlike ``save_note_body`` this does not preserve frontmatter — the caller
     owns the whole file. Parent directories are created. Reuses the house

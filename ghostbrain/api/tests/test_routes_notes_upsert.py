@@ -31,3 +31,26 @@ def test_upsert_rejects_traversal_and_non_md(client, tmp_vault, auth_headers):
 def test_upsert_rejects_empty_content(client, tmp_vault, auth_headers):
     r = client.put("/v1/notes", json={"path": "Familiar/memory.md", "content": "  "}, headers=auth_headers)
     assert r.status_code == 422
+
+
+def test_upsert_normalizes_trailing_newline(client, tmp_vault, auth_headers):
+    """Content lacking trailing newline gets exactly one appended; already-present newline is not double-appended."""
+    # Test 1: content without trailing newline — exactly one \n is added
+    r = client.put(
+        "/v1/notes",
+        json={"path": "Familiar/no_newline.md", "content": "# No newline"},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    on_disk = (tmp_vault / "Familiar" / "no_newline.md").read_text()
+    assert on_disk == "# No newline\n"
+
+    # Test 2: content with trailing newline — no additional newline is added
+    r = client.put(
+        "/v1/notes",
+        json={"path": "Familiar/with_newline.md", "content": "# With newline\n"},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    on_disk = (tmp_vault / "Familiar" / "with_newline.md").read_text()
+    assert on_disk == "# With newline\n"
