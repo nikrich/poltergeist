@@ -1,7 +1,7 @@
 import type { ChatStreamEvent, DocsAssistEvent, DocsAssistRequest } from './api-types';
 import type { ActivePluginInfo, PluginRecord } from './plugin-types';
 
-export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
+export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE' | 'PUT';
 
 export type Theme = 'dark' | 'light';
 export type Density = 'comfortable' | 'compact';
