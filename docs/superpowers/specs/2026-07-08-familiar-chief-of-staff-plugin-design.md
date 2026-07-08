@@ -217,16 +217,21 @@ via the `theme` tokens:
   markdown renders, embedded HTML does not — defense-in-depth on top of the
   app CSP). All free-text UI (decisions, history, loop labels) is built with
   DOM `textContent`, never interpolated into `innerHTML`.
-- **Open loops** list: checkbox (→ done), dismiss button, owed-to/source-link
-  metadata. Mutations parse-modify-regenerate `open-loops.md` via the notes API
+- **Open loops** list: checkbox (→ done), dismiss button, owed-to metadata
+  (the source path lives in the tracker note's rendered line; no in-UI link
+  in v1). Mutations parse-modify-regenerate `open-loops.md` via the notes API
   (through renderer `api.fetch`), then re-render.
 - **Decisions** log (read-only list).
-- **History**: past briefings by date, click to view.
+- **History**: past briefings listed by date (v1 lists them; open the note in
+  the vault to read older ones — no in-place click-to-view).
 - **Run now** button with live status (running / last run result / next
-  scheduled), driven by `run:finished` events + a status invoke.
-- **Settings**: cadence day/time, char budget. Stored via plugin `settings`.
-- Failure banner when the last run failed, with the error and a "view raw
-  output" affordance.
+  scheduled), driven by `run:finished` events + a status invoke. Scheduled
+  runs back off for 4h after a failed attempt; Run now is exempt.
+- **Settings**: cadence day/time, model, char budget — validated in the
+  `config:set` handler. Stored via plugin `settings`.
+- Failure status line when the last run failed, with the error message; raw
+  rejected LLM output is persisted to `dataDir/failed-<ts>.txt` for debugging
+  (no in-app raw viewer in v1).
 
 ### 2.4 Error handling
 
