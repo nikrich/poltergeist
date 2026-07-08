@@ -97,3 +97,17 @@ def save_note_body(rel_path: str, body: str) -> dict:
         target.write_text(body if body.endswith("\n") else body + "\n", encoding="utf-8")
     updated = post.metadata.get("updated")
     return {"path": rel_path, "updated": str(updated) if updated is not None else None}
+
+
+def save_note_at_path(rel_path: str, content: str) -> dict:
+    """Create or fully replace a vault note at ``rel_path`` (verbatim content).
+
+    Unlike ``save_note_body`` this does not preserve frontmatter — the caller
+    owns the whole file. Parent directories are created. Reuses the house
+    ``_resolve_safe`` guard (vault-relative, no traversal, .md only).
+    """
+    target = _resolve_safe(rel_path)
+    created = not target.exists()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content if content.endswith("\n") else content + "\n", encoding="utf-8")
+    return {"path": rel_path, "created": created}

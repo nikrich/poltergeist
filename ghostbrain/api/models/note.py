@@ -28,7 +28,6 @@ class NoteListItem(BaseModel):
     tags: list[str]
     created: str  # ISO8601
     updated: str  # ISO8601
-    project: str | None = None
 
 
 class NotesPage(BaseModel):
@@ -60,3 +59,8 @@ class RouteNoteRequest(BaseModel):
 
 class ExtractPhotoRequest(BaseModel):
     assetPath: str = Field(min_length=1, max_length=500)
+
+
+class UpsertNoteRequest(BaseModel):
+    path: str
+    content: str
