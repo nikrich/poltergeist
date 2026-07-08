@@ -50,6 +50,12 @@ _DISPLAY: dict[str, dict] = {
         "pulls": ["mentions", "threads"],
         "vaultDestination": "20-contexts/{ctx}/slack/",
     },
+    "joplin": {
+        "displayName": "Joplin",
+        "scopes": ["read notes"],
+        "pulls": ["notes", "notebooks"],
+        "vaultDestination": "20-contexts/{ctx}/joplin/",
+    },
     "gmail": {
         "displayName": "gmail",
         "scopes": ["read messages", "read labels"],
@@ -184,23 +190,27 @@ def _connector_record(connector_id: str) -> dict:
         "pulls": [],
         "vaultDestination": f"20-contexts/{{ctx}}/{connector_id}/",
     })
-    # A connector is 'on' if EITHER:
-    #   - it has a .last_run file (polling connector that has run successfully), or
-    #   - it has captures already in the inbox (event-driven connector like claude_code).
-    # Either signal means the connector is configured and producing data. Recency
-    # surfaces via lastSyncAt; the UI flags stale runs there.
+    from ghostbrain.api.repo.connector_probe import probe
+
     last_run = _read_last_run(connector_id)
     has_inbox = _has_inbox_captures(connector_id)
-    run_state = "on" if (last_run or has_inbox) else "off"
+    p = probe(connector_id)
+    # Probe is authoritative for off/on/err from credentials. But a connector
+    # that has synced before (last_run) or produced captures stays 'on' even if
+    # the offline probe can't see its credential (e.g. gh in a headless env).
+    if p.state == "off" and (last_run or has_inbox):
+        state = "on"
+    else:
+        state = p.state
     return {
         "id": connector_id,
         "displayName": display["displayName"],
-        "state": run_state,
+        "state": state,
         "count": _count_indexed(connector_id),
         "lastSyncAt": last_run,
-        "account": None,
+        "account": p.account,
         "throughput": None,
-        "error": None,
+        "error": p.error,
     }
 
 

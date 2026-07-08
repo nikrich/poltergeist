@@ -34,6 +34,7 @@ export const useSettings = create<SettingsState>((set) => ({
   folderStructure: 'by-source',
 
   schedulerEnabled: false,
+  onboardingComplete: false,
 
   hotkeys: {
     jotOverlay: 'Alt+J',

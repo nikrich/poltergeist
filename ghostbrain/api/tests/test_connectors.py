@@ -36,14 +36,20 @@ def test_microsoft_connectors_are_syncable():
 def test_connector_state_off_when_no_state_file(
     client: TestClient, auth_headers: dict[str, str], tmp_state_dir: Path
 ):
-    """A connector defined in ghostbrain/connectors/ but with no .last_run reports state='off'."""
+    """A connector with no credentials/state reports state='off'.
+
+    Uses gmail (not github) because gmail's off-state is deterministic: the probe
+    looks only for gmail.*.token files in GHOSTBRAIN_STATE_DIR (empty tmp dir here).
+    GitHub's state depends on ambient `gh auth status`, making it environment-dependent.
+    """
     res = client.get("/v1/connectors", headers=auth_headers)
     data = res.json()
-    # github is one of the connectors that exists; without state it should be 'off'
-    github = next((c for c in data if c["id"] == "github"), None)
-    if github is not None:
-        assert github["state"] == "off"
-        assert github["lastSyncAt"] is None
+    # gmail probe checks for token files in the temp state_dir; with none present,
+    # it deterministically reports 'off' regardless of host machine state.
+    gmail = next((c for c in data if c["id"] == "gmail"), None)
+    assert gmail is not None, "gmail connector must be in the list"
+    assert gmail["state"] == "off"
+    assert gmail["lastSyncAt"] is None
 
 
 def test_connector_state_on_with_recent_sync(

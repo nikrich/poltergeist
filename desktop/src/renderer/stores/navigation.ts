@@ -9,10 +9,10 @@ export type ScreenId =
   | 'capture'
   | 'vault'
   | 'daily'
-  | 'setup'
   | 'settings'
   | 'jots'
   | 'plugins'
+  | 'onboarding'
   | `plugin:${string}`;
 
 interface NavState {

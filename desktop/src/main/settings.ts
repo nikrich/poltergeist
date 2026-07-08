@@ -33,6 +33,7 @@ const defaults: Settings = {
   folderStructure: 'by-source',
 
   schedulerEnabled: false,
+  onboardingComplete: false,
 
   hotkeys: {
     jotOverlay: 'Alt+J',
