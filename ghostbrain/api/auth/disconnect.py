@@ -6,7 +6,7 @@ from ghostbrain.paths import state_dir
 def _rm(path) -> None:
     try:
         path.unlink()
-    except (FileNotFoundError, OSError):
+    except OSError:
         pass
 
 
@@ -43,8 +43,14 @@ def disconnect(connector_id: str, account: str | None) -> None:
         if p.exists():
             try:
                 doc = json.loads(p.read_text())
-                doc.get("hooks", {}).pop("SessionEnd", None)
-                p.write_text(json.dumps(doc, indent=2))
-            except (OSError, ValueError):
+                # Guard: if parsed JSON is not a dict, skip processing
+                if not isinstance(doc, dict):
+                    return
+                # Guard: ensure hooks is a dict before popping
+                hooks = doc.get("hooks")
+                if isinstance(hooks, dict):
+                    hooks.pop("SessionEnd", None)
+                    p.write_text(json.dumps(doc, indent=2))
+            except (OSError, ValueError, AttributeError, TypeError):
                 pass
     # github: nothing we own (gh manages its own login); no-op.
