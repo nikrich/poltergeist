@@ -10,8 +10,27 @@ def _rm(path) -> None:
         pass
 
 
+def _safe_account(account: str | None) -> str | None:
+    """Guard against path-manipulating account values.
+
+    Returns None if account is None/empty, or contains any of: "/", "\\", "..", "\x00".
+    Otherwise returns account unchanged.
+    """
+    if not account or not account.strip():
+        return None
+    if "/" in account or "\\" in account or ".." in account or "\x00" in account:
+        return None
+    return account
+
+
 def disconnect(connector_id: str, account: str | None) -> None:
     d = state_dir()
+
+    # Record if a raw account was provided before sanitizing.
+    raw_account_provided = bool(account and account.strip())
+    # Sanitize account to reject path-manipulating values.
+    account = _safe_account(account)
+
     if connector_id == "gmail" and account:
         from ghostbrain.connectors.gmail.auth import token_path
         _rm(token_path(account))
@@ -22,7 +41,9 @@ def disconnect(connector_id: str, account: str | None) -> None:
         if account:
             from ghostbrain.connectors.slack.auth import token_path
             _rm(token_path(account))
-        else:
+        elif not raw_account_provided:
+            # Only delete all slack tokens if no account was provided at all.
+            # If a raw account was provided but got sanitized to None, skip.
             for f in d.glob("slack.*.token"):
                 _rm(f)
     elif connector_id == "joplin":

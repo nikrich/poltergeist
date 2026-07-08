@@ -1,5 +1,5 @@
 import pytest
-from ghostbrain.api.auth.disconnect import disconnect
+from ghostbrain.api.auth.disconnect import disconnect, _safe_account
 
 
 @pytest.fixture
@@ -78,3 +78,39 @@ def test_disconnect_claude_code_malformed_json_is_noop(env, monkeypatch, tmp_pat
 
     # Verify settings.json was not modified (it's still invalid)
     assert settings_file.read_text() == "[1, 2, 3]"
+
+
+def test_disconnect_rejects_path_traversal_account():
+    """Verify _safe_account rejects path-manipulating values."""
+    # Test rejected cases
+    assert _safe_account("../x") is None
+    assert _safe_account("a/b") is None
+    assert _safe_account("a\\b") is None
+    assert _safe_account("x\x00y") is None
+    assert _safe_account("..") is None
+    assert _safe_account("../../../etc/passwd") is None
+
+    # Test edge cases
+    assert _safe_account(None) is None
+    assert _safe_account("") is None
+    assert _safe_account("   ") is None
+
+    # Test accepted cases
+    assert _safe_account("you@gmail.com") == "you@gmail.com"
+    assert _safe_account("work") == "work"
+    assert _safe_account("you.name@corp.co") == "you.name@corp.co"
+
+
+def test_disconnect_slack_rejected_account_does_not_delete_all(env):
+    """Verify rejected account does not trigger delete-all-workspaces branch."""
+    s, _ = env
+    # Seed two slack token files
+    (s / "slack.work.token").write_text("xoxp-work")
+    (s / "slack.other.token").write_text("xoxp-other")
+
+    # Call disconnect with a path-manipulating account
+    disconnect("slack", account="../evil")
+
+    # Verify BOTH slack token files STILL EXIST
+    assert (s / "slack.work.token").exists(), "slack.work.token should not be deleted"
+    assert (s / "slack.other.token").exists(), "slack.other.token should not be deleted"
