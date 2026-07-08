@@ -34,9 +34,17 @@ export interface PluginApi {
 
 function themeVars(): Record<string, string> {
   const style = getComputedStyle(document.documentElement);
-  const vars: Record<string, string> = {};
-  for (const name of ['--paper', '--vellum', '--fog', '--hairline', '--hairline-2', '--ink-0', '--ink-1', '--ink-2', '--neon', '--moss', '--oxblood']) {
-    vars[name] = style.getPropertyValue(name).trim();
+  const read = (name: string) => style.getPropertyValue(name).trim();
+  // The plugin contract exposes surface tokens as --paper/--vellum/--fog,
+  // but the app's stylesheet names them --bg-*; map them so plugins don't
+  // silently fall back to their own defaults (white-on-white in dark mode).
+  const vars: Record<string, string> = {
+    '--paper': read('--bg-paper'),
+    '--vellum': read('--bg-vellum'),
+    '--fog': read('--bg-fog'),
+  };
+  for (const name of ['--hairline', '--hairline-2', '--ink-0', '--ink-1', '--ink-2', '--neon', '--moss', '--oxblood']) {
+    vars[name] = read(name);
   }
   return vars;
 }
