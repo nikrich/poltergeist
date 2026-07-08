@@ -1,5 +1,61 @@
 # Changelog
 
+## [0.9.0](https://github.com/nikrich/poltergeist/compare/v0.8.0...v0.9.0) (2026-07-08)
+
+
+### Features
+
+* feat(chat): user MCP servers on main + release lint fixes (#75)
+* feat(connectors): add joplin icon asset
+* feat(familiar): briefing screen with open-loop check-off and run-now
+* feat(familiar): sweep orchestration, scheduling tick, run audit trail
+* feat(familiar): sweep prompt builder and output contract validation
+* feat(familiar): tracker notes parse/render/merge with user-edits-win semantics
+* feat(familiar): delta window and char-budget trimming
+* feat(familiar): weekly schedule due-run math
+* feat(familiar): plugin scaffold with esbuild + committed dist
+* feat(api): POST /v1/llm/run raw prompt runner
+* feat(api): PUT /v1/notes path-addressed upsert
+* feat(plugins): ctx.api.fetch raw passthrough to sidecar for main-process plugins
+* feat(plugins): PUT method, path guard, timeout override in api forwarder
+* feat(desktop): first-run connector onboarding wizard
+* feat(desktop): real connect/reauthorize/disconnect on connectors screen
+* feat(desktop): ConnectorAuthFlow driver renders server-driven auth steps
+* feat(desktop): connector catalog (cards + auth patterns)
+* feat(desktop): react-query hooks for connector auth sessions
+* feat(desktop): auth-session wire types + onboardingComplete setting
+* feat(auth): disconnect endpoint removes per-connector credentials
+* feat(auth): register all connector auth providers
+* feat(auth): google oauth provider for gmail + calendar
+* feat(auth): microsoft device-code provider with visible user code
+* feat(auth): github cli-login + claude-code/macos local-grant providers
+* feat(auth): atlassian API-token provider for jira + confluence
+* feat(auth): paste-token provider for slack + joplin
+* feat(auth): connector auth-session router + provider registry
+* feat(auth): AuthSession manager + provider protocol
+* feat(connectors): .env upsert/remove helper for Atlassian creds
+* feat(connectors): atomic routing.yaml merge/remove helper
+* feat(connectors): report real off/on/err state and account from probe
+* feat(connectors): credential-presence probes for off/on/err
+* feat(connectors): surface joplin in connector registry
+
+### Bug Fixes
+
+* fix(plugins): map plugin theme tokens to the app's --bg-* variables
+* fix(familiar): merge-prep fixes from whole-branch review (budget cap, failure backoff, newline sanitization, link handling, deactivate race, empty-output validation)
+* fix(familiar): run-now click handles invoke rejection without wedging the button
+* fix(familiar): escape free-text rendering, strip raw HTML in marked, immediate run-now status
+* fix(familiar): close schema/parse drift in sweep output validation
+* fix(familiar): unambiguous tracker-line parsing (end-anchored suffix + render sanitization)
+* fix(connectors): atlassian connect/disconnect reflects live (os.environ + per-app probe)
+* fix(desktop): disconnect invalidates the connector detail query too
+* fix(desktop): ConnectorAuthFlow surfaces persistent poll errors with retry
+* fix(auth): disconnect tolerates non-object settings.json; test atlassian env-token preserved
+* fix(auth): submit() spawns poll for long-running flows; harden MS device-flow poll
+* fix(auth): add submit no-ops; macos calendar poll checks real EventKit authorization
+* fix(auth): slack validates before persisting; joplin error omits token
+* fix(auth): reject cross-connector submit/cancel on auth sessions
+
 ## [0.8.0](https://github.com/nikrich/poltergeist/compare/v0.7.0...v0.8.0) (2026-07-07)
 
 
