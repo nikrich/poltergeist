@@ -2,6 +2,11 @@ import { marked } from 'marked';
 import { parseOpenLoops, renderOpenLoops, parseDecisions } from './lib/trackers.js';
 import { statusLine, toggleLoop } from './lib/ui.js';
 
+// Briefing bodies come from LLM/connector content and must be treated as
+// untrusted (prompt-injection defense): markdown still renders, but any raw
+// HTML tokens (block or inline) are dropped instead of passed through.
+marked.use({ renderer: { html: () => '' } });
+
 const LOOPS_PATH = 'Familiar/open-loops.md';
 const DECISIONS_PATH = 'Familiar/decisions.md';
 
@@ -81,14 +86,20 @@ export function mount(el, api) {
     }
     const body = await readNote(api, latest.briefingPath);
     sections.briefing.insertAdjacentHTML('beforeend', body ? marked.parse(body) : `<p style="color:${ink2};">(briefing note missing)</p>`);
-    const historyRows = runs
-      .slice(0, -1)
-      .reverse()
-      .map((r) => `<div style="padding:4px 0;border-top:1px solid ${hairline2};color:${ink1};">${r.briefingPath}</div>`)
-      .join('');
-    sections.history.innerHTML = historyRows
-      ? `<h2 style="margin-top:0;font-size:15px;">History</h2>${historyRows}`
-      : '';
+    const older = runs.slice(0, -1).reverse();
+    sections.history.innerHTML = '';
+    if (older.length) {
+      const heading = document.createElement('h2');
+      heading.textContent = 'History';
+      heading.style.cssText = 'margin-top:0;font-size:15px;';
+      sections.history.appendChild(heading);
+      for (const r of older) {
+        const row = document.createElement('div');
+        row.style.cssText = `padding:4px 0;border-top:1px solid ${hairline2};color:${ink1};`;
+        row.textContent = r.briefingPath;
+        sections.history.appendChild(row);
+      }
+    }
   }
 
   async function renderLoops() {
@@ -131,12 +142,15 @@ export function mount(el, api) {
   async function renderDecisionLog() {
     const body = (await readNote(api, DECISIONS_PATH)) ?? '';
     const list = parseDecisions(body);
-    const rows = list
-      .slice()
-      .reverse()
-      .map((d) => `<div style="padding:4px 0;border-top:1px solid ${hairline2};color:${ink1};"><strong>${d.date}</strong> — ${d.text}</div>`)
-      .join('');
-    sections.decisions.innerHTML = `<h2 style="margin-top:0;font-size:15px;">Decisions</h2>${rows}`;
+    sections.decisions.innerHTML = '<h2 style="margin-top:0;font-size:15px;">Decisions</h2>';
+    for (const d of list.slice().reverse()) {
+      const row = document.createElement('div');
+      row.style.cssText = `padding:4px 0;border-top:1px solid ${hairline2};color:${ink1};`;
+      const date = document.createElement('strong');
+      date.textContent = d.date;
+      row.append(date, ` — ${d.text}`);
+      sections.decisions.appendChild(row);
+    }
   }
 
   function renderSettings(st) {
@@ -197,7 +211,9 @@ export function mount(el, api) {
   }
 
   runBtn.onclick = async () => {
-    const r = await api.ipc.invoke('run');
+    const pending = api.ipc.invoke('run');
+    await refreshStatus();
+    const r = await pending;
     if (r?.started === false) status.textContent = r.reason;
     await refreshStatus();
   };

@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { isRunDue, nextRunAt } from './lib/schedule.js';
 import { runSweep } from './lib/sweep.js';

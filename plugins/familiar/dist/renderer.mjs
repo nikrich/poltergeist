@@ -2079,6 +2079,7 @@ function statusLine(status) {
 }
 
 // src/renderer.js
+marked.use({ renderer: { html: () => "" } });
 var LOOPS_PATH = "Familiar/open-loops.md";
 var DECISIONS_PATH = "Familiar/decisions.md";
 function tv(theme, name, fallback) {
@@ -2156,8 +2157,20 @@ function mount(el, api) {
     }
     const body = await readNote(api, latest.briefingPath);
     sections.briefing.insertAdjacentHTML("beforeend", body ? marked.parse(body) : `<p style="color:${ink2};">(briefing note missing)</p>`);
-    const historyRows = runs.slice(0, -1).reverse().map((r) => `<div style="padding:4px 0;border-top:1px solid ${hairline2};color:${ink1};">${r.briefingPath}</div>`).join("");
-    sections.history.innerHTML = historyRows ? `<h2 style="margin-top:0;font-size:15px;">History</h2>${historyRows}` : "";
+    const older = runs.slice(0, -1).reverse();
+    sections.history.innerHTML = "";
+    if (older.length) {
+      const heading2 = document.createElement("h2");
+      heading2.textContent = "History";
+      heading2.style.cssText = "margin-top:0;font-size:15px;";
+      sections.history.appendChild(heading2);
+      for (const r of older) {
+        const row = document.createElement("div");
+        row.style.cssText = `padding:4px 0;border-top:1px solid ${hairline2};color:${ink1};`;
+        row.textContent = r.briefingPath;
+        sections.history.appendChild(row);
+      }
+    }
   }
   async function renderLoops() {
     const body = await readNote(api, LOOPS_PATH) ?? "";
@@ -2198,8 +2211,15 @@ function mount(el, api) {
   async function renderDecisionLog() {
     const body = await readNote(api, DECISIONS_PATH) ?? "";
     const list2 = parseDecisions(body);
-    const rows = list2.slice().reverse().map((d) => `<div style="padding:4px 0;border-top:1px solid ${hairline2};color:${ink1};"><strong>${d.date}</strong> \u2014 ${d.text}</div>`).join("");
-    sections.decisions.innerHTML = `<h2 style="margin-top:0;font-size:15px;">Decisions</h2>${rows}`;
+    sections.decisions.innerHTML = '<h2 style="margin-top:0;font-size:15px;">Decisions</h2>';
+    for (const d of list2.slice().reverse()) {
+      const row = document.createElement("div");
+      row.style.cssText = `padding:4px 0;border-top:1px solid ${hairline2};color:${ink1};`;
+      const date = document.createElement("strong");
+      date.textContent = d.date;
+      row.append(date, ` \u2014 ${d.text}`);
+      sections.decisions.appendChild(row);
+    }
   }
   function renderSettings(st) {
     const cfg = st.config;
@@ -2257,7 +2277,9 @@ function mount(el, api) {
     await Promise.all([renderBriefing(st), renderLoops(), renderDecisionLog()]);
   }
   runBtn.onclick = async () => {
-    const r = await api.ipc.invoke("run");
+    const pending = api.ipc.invoke("run");
+    await refreshStatus();
+    const r = await pending;
     if (r?.started === false) status.textContent = r.reason;
     await refreshStatus();
   };
