@@ -56,7 +56,13 @@ def _joplin_probe() -> ProbeResult:
     return ProbeResult("on") if token else ProbeResult("off")
 
 
-def _atlassian_probe() -> ProbeResult:
+def _atlassian_probe(connector_id: str) -> ProbeResult:
+    from ghostbrain.api.repo.routing import load_routing
+
+    sites = ((load_routing().get(connector_id) or {}).get("sites")) or {}
+    if not sites:
+        return ProbeResult("off")
+
     email = os.environ.get("ATLASSIAN_EMAIL")
     has_token = any(
         k == "ATLASSIAN_TOKEN" or k.startswith("ATLASSIAN_TOKEN_")
@@ -115,7 +121,7 @@ def probe(connector_id: str) -> ProbeResult:
     if connector_id == "joplin":
         return _joplin_probe()
     if connector_id in ("jira", "confluence"):
-        return _atlassian_probe()
+        return _atlassian_probe(connector_id)
     if connector_id in ("outlook_mail", "teams_chat", "teams_meetings"):
         return _microsoft_probe()
     if connector_id == "github":

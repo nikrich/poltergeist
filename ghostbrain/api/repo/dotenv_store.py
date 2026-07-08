@@ -65,6 +65,8 @@ def set_env(pairs: dict[str, str]) -> None:
             lines.append(f"{k}={v}")
 
     _rewrite(mutate)
+    for k, v in pairs.items():
+        os.environ[k] = v
 
 
 def remove_env(keys: list[str]) -> None:
@@ -81,3 +83,5 @@ def remove_env(keys: list[str]) -> None:
         ]
 
     _rewrite(mutate)
+    for k in keys:
+        os.environ.pop(k, None)
