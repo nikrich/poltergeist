@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from ghostbrain.api.auth import registry
+from ghostbrain.api.auth.disconnect import disconnect as _disconnect
 from ghostbrain.api.auth.session import AuthSessionManager, Session
 
 router = APIRouter(prefix="/v1/connectors", tags=["connector-auth"])
@@ -96,4 +97,10 @@ def auth_cancel(connector_id: str, body: CancelBody, request: Request) -> dict:
         raise HTTPException(404, "Unknown or expired auth session")
     # Session is valid (either doesn't exist or belongs to this connector) → idempotent cancel
     mgr.cancel(body.session_id)
+    return {"ok": True}
+
+
+@router.delete("/{connector_id}/credentials")
+def credentials_delete(connector_id: str, account: str | None = Query(None)) -> dict:
+    _disconnect(connector_id, account)
     return {"ok": True}
