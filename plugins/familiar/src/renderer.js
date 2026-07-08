@@ -211,7 +211,7 @@ export function mount(el, api) {
   }
 
   runBtn.onclick = async () => {
-    const pending = api.ipc.invoke('run');
+    const pending = api.ipc.invoke('run').catch((e) => ({ started: false, reason: e instanceof Error ? e.message : String(e) }));
     await refreshStatus();
     const r = await pending;
     if (r?.started === false) status.textContent = r.reason;
