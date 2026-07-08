@@ -33,6 +33,7 @@ export interface Settings {
   folderStructure: FolderStructure;
 
   schedulerEnabled: boolean;
+  onboardingComplete: boolean;
 
   hotkeys: {
     jotOverlay: string;

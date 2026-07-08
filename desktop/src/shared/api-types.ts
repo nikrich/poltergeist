@@ -418,3 +418,31 @@ export interface VaultGraph {
   edges: VaultGraphEdge[];
   regions: VaultGraphRegion[];
 }
+
+// ── Auth Session ──────────────────────────────────────────────────────────
+
+export type AuthStatus = 'pending' | 'waiting_input' | 'success' | 'error';
+
+export interface AuthField {
+  name: string;
+  label: string;
+  type: 'text' | 'password' | 'textarea';
+  placeholder?: string;
+}
+
+export interface AuthNext {
+  kind: 'open_browser' | 'show_device_code' | 'need_input' | 'need_grant' | 'done';
+  auth_url: string | null;
+  verification_uri: string | null;
+  user_code: string | null;
+  fields: AuthField[] | null;
+  message: string | null;
+}
+
+export interface AuthSessionView {
+  session_id: string;
+  status: AuthStatus;
+  account: string | null;
+  error: string | null;
+  next: AuthNext;
+}

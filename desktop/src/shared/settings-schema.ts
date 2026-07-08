@@ -28,6 +28,8 @@ export const settingsSchema = z.object({
   // Cutover flow: run scripts/disable-launchd.sh, then flip this on.
   schedulerEnabled: z.boolean(),
 
+  onboardingComplete: z.boolean(),
+
   // Global hotkeys (Electron accelerator format).
   // Note: Electron uses 'Alt' rather than 'Option' even on macOS.
   hotkeys: z.object({
