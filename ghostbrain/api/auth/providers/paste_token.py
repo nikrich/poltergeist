@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import logging
+
 from ghostbrain.api.auth.providers.base import NextAction
 from ghostbrain.api.repo.routing import merge_routing
+
+log = logging.getLogger("ghostbrain.api.auth.providers.paste_token")
 
 
 def _slack_auth_test(token: str) -> dict:
@@ -40,14 +44,19 @@ class SlackTokenProvider:
         if not slug:
             session.status = "error"; session.error = "Workspace slug is required"
             return NextAction(kind="need_input", fields=[])
-        try:
-            save_token(slug, token)          # validates xoxp/xoxb prefix
-            ident = _slack_auth_test(token)  # network validate
-        except SlackAuthError as e:
-            session.status = "error"; session.error = str(e)
+        if not token.startswith(("xoxp-", "xoxb-")):
+            session.status = "error"
+            session.error = "Token must start with xoxp- (User OAuth) or xoxb- (Bot)."
             return NextAction(kind="need_input", fields=[])
+        try:
+            ident = _slack_auth_test(token)  # network validate, no persist yet
         except Exception as e:  # noqa: BLE001
             session.status = "error"; session.error = f"Slack rejected the token: {e}"
+            return NextAction(kind="need_input", fields=[])
+        try:
+            save_token(slug, token)  # only persist after a successful auth.test
+        except SlackAuthError as e:
+            session.status = "error"; session.error = str(e)
             return NextAction(kind="need_input", fields=[])
         session.status = "success"
         session.account = f"@{ident.get('user')} · {ident.get('team')}"
@@ -85,7 +94,16 @@ class JoplinTokenProvider:
         try:
             ok = _joplin_ping(host, token)
         except Exception as e:  # noqa: BLE001
-            session.status = "error"; session.error = f"Could not reach Joplin: {e}"
+            # _joplin_ping sends the token as a URL query param, so the
+            # exception string from a failed request may contain it
+            # (e.g. connection errors echo the full URL). Never put `e`
+            # into session.error — log it server-side instead.
+            log.warning("Joplin ping failed for host %s: %s", host, e)
+            session.status = "error"
+            session.error = (
+                "Could not reach Joplin — check the host and that the "
+                "Web Clipper service is running."
+            )
             return NextAction(kind="need_input", fields=[])
         if not ok:
             session.status = "error"; session.error = "Joplin rejected the token or Web Clipper is off"

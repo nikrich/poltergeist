@@ -50,3 +50,34 @@ def test_joplin_submit_saves_token_to_routing(state, monkeypatch):
     assert sess.status == "success"
     from ghostbrain.api.repo.routing import load_routing
     assert load_routing()["joplin"]["token"] == "abc"
+
+
+def test_slack_submit_network_failure_does_not_persist(state, monkeypatch):
+    import ghostbrain.api.auth.providers.paste_token as mod
+    from ghostbrain.connectors.slack.auth import save_token, token_path
+
+    monkeypatch.setattr(mod, "_slack_auth_test", lambda t: (_ for _ in ()).throw(Exception("nope")))
+    slug = "work"
+    save_token(slug, "xoxp-good")
+
+    p = SlackTokenProvider()
+    sess = _sess("slack")
+    p.submit("slack", sess, {"workspace_slug": slug, "token": "xoxp-bad"})
+
+    assert sess.status == "error"
+    assert token_path(slug).read_text(encoding="utf-8").strip() == "xoxp-good"
+
+
+def test_joplin_ping_exception_does_not_leak_token(state, monkeypatch):
+    import ghostbrain.api.auth.providers.paste_token as mod
+
+    def _raise(host, token):
+        raise Exception("connect to http://localhost:41184/ping?token=SECRET123 failed")
+
+    monkeypatch.setattr(mod, "_joplin_ping", _raise)
+    p = JoplinTokenProvider()
+    sess = _sess("joplin")
+    p.submit("joplin", sess, {"token": "SECRET123", "host": "http://localhost:41184"})
+
+    assert sess.status == "error"
+    assert "SECRET123" not in (sess.error or "")
