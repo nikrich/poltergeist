@@ -332,7 +332,10 @@ function ConnectorDetailPanel({ c }: ConnectorDetailProps) {
     disconnect.mutate(
       { id: c.id, account: c.account ?? undefined },
       {
-        onSuccess: () => toast.info(`${c.displayName} disconnected`),
+        onSuccess: () => {
+          toast.info(`${c.displayName} disconnected`);
+          qc.invalidateQueries({ queryKey: ['connector', c.id] });
+        },
         onError: (e) =>
           toast.error(e instanceof Error ? e.message : `${c.displayName}: disconnect failed`),
       },

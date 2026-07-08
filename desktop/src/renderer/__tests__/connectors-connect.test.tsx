@@ -27,6 +27,24 @@ const slackDetail: ConnectorDetail = {
   vaultDestination: '20-contexts/slack',
 };
 
+const slackConnected: Connector = {
+  id: 'slack',
+  displayName: 'Slack',
+  state: 'on',
+  count: 42,
+  lastSyncAt: '2026-07-08T12:00:00Z',
+  account: 'work',
+  throughput: '5 events/min',
+  error: null,
+};
+
+const slackConnectedDetail: ConnectorDetail = {
+  ...slackConnected,
+  scopes: ['channels:history'],
+  pulls: ['messages'],
+  vaultDestination: '20-contexts/slack',
+};
+
 function wrap(node: React.ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return <QueryClientProvider client={qc}>{node}</QueryClientProvider>;
@@ -102,5 +120,89 @@ describe('ConnectorsScreen connect flow', () => {
 
     // The auth flow's need_input step renders the Token field once /auth/start resolves.
     expect(await screen.findByLabelText('Token')).toBeInTheDocument();
+  });
+});
+
+describe('ConnectorsScreen disconnect flow', () => {
+  it('sends DELETE request when clicking disconnect', async () => {
+    // Create request mock specifically for this test with DELETE support
+    const request = vi.fn((method: string, path: string) => {
+      if (method === 'GET' && path === '/v1/connectors') {
+        return Promise.resolve({ ok: true, status: 200, data: [slackConnected] });
+      }
+      if (method === 'GET' && path === '/v1/connectors/slack') {
+        return Promise.resolve({ ok: true, status: 200, data: slackConnectedDetail });
+      }
+      if (method === 'GET' && path === '/v1/scheduler/status') {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          data: { enabled: false, jobs: {} },
+        });
+      }
+      if (method === 'GET' && path === '/v1/scheduler/diagnostics') {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          data: {
+            enabled: false,
+            active_launchd_plists: [],
+            double_scheduling: false,
+            ffmpeg_available: true,
+          },
+        });
+      }
+      if (method === 'DELETE' && path === '/v1/connectors/slack/credentials') {
+        return Promise.resolve({ ok: true, status: 200 });
+      }
+      return Promise.resolve({ ok: false, status: 500, error: `unexpected ${method} ${path}` });
+    });
+
+    // Override the API request for this test
+    const originalRequest = window.gb.api.request;
+    window.gb.api.request = request as typeof window.gb.api.request;
+
+    // Mock window.confirm to return true
+    const originalConfirm = window.confirm;
+    window.confirm = vi.fn(() => true);
+
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <ConnectorsScreen />
+      </QueryClientProvider>,
+    );
+
+    // Wait for the list to load
+    await waitFor(() => {
+      expect(screen.getByText('Slack')).toBeInTheDocument();
+    });
+
+    // Wait for detail panel to render by checking for detail content
+    await waitFor(() => {
+      expect(screen.getByText('channels:history')).toBeInTheDocument();
+    });
+
+    // Find and click the disconnect button (in detail panel, not the filter chip)
+    const allBtns = screen.getAllByRole('button');
+    const disconnectBtn = allBtns.find(btn => {
+      // The disconnect button in the detail panel has the unplug icon and "disconnect" text
+      const text = btn.textContent || '';
+      return text.toLowerCase().includes('disconnect') && btn.className.includes('oxblood');
+    });
+    expect(disconnectBtn).toBeInTheDocument();
+    await userEvent.click(disconnectBtn!);
+
+    // Verify the DELETE request was sent and succeeded
+    await waitFor(() => {
+      expect(request).toHaveBeenCalledWith(
+        'DELETE',
+        expect.stringContaining('/v1/connectors/slack/credentials'),
+      );
+    });
+
+    // Cleanup
+    window.gb.api.request = originalRequest;
+    window.confirm = originalConfirm;
   });
 });
