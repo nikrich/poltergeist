@@ -76,15 +76,24 @@ def auth_status(connector_id: str, request: Request, session_id: str = Query(...
 
 @router.post("/{connector_id}/auth/submit")
 def auth_submit(connector_id: str, body: SubmitBody, request: Request) -> dict:
-    provider = _provider(connector_id)
-    try:
-        sess = _manager(request).submit(body.session_id, provider, body.data)
-    except KeyError:
+    mgr = _manager(request)
+    # Check session exists and belongs to this connector
+    sess = mgr.status(body.session_id)
+    if sess is None or sess.connector_id != connector_id:
         raise HTTPException(404, "Unknown or expired auth session")
+    # Session is valid, proceed with submit
+    provider = _provider(connector_id)
+    sess = mgr.submit(body.session_id, provider, body.data)
     return _view(sess)
 
 
 @router.post("/{connector_id}/auth/cancel")
 def auth_cancel(connector_id: str, body: CancelBody, request: Request) -> dict:
-    _manager(request).cancel(body.session_id)
+    mgr = _manager(request)
+    # Check if session exists and belongs to a different connector
+    sess = mgr.status(body.session_id)
+    if sess is not None and sess.connector_id != connector_id:
+        raise HTTPException(404, "Unknown or expired auth session")
+    # Session is valid (either doesn't exist or belongs to this connector) → idempotent cancel
+    mgr.cancel(body.session_id)
     return {"ok": True}
