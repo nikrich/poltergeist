@@ -5,6 +5,7 @@ import { Eyebrow } from '../components/Eyebrow';
 import { Lucide } from '../components/Lucide';
 import { Toggle } from '../components/Toggle';
 import { Ghost } from '../components/Ghost';
+import { McpServersPanel } from '../components/McpServersPanel';
 import { useSettings } from '../stores/settings';
 import {
   useCreateProject,
@@ -49,7 +50,8 @@ type SectionId =
   | 'hotkeys'
   | 'account'
   | 'about'
-  | 'projects';
+  | 'projects'
+  | 'chat';
 
 const SECTIONS: Array<{ id: SectionId; label: string; icon: string }> = [
   { id: 'display', label: 'display', icon: 'sun' },
@@ -59,6 +61,7 @@ const SECTIONS: Array<{ id: SectionId; label: string; icon: string }> = [
   { id: 'meeting', label: 'meetings', icon: 'mic' },
   { id: 'background', label: 'background', icon: 'activity' },
   { id: 'projects', label: 'projects', icon: 'folder' },
+  { id: 'chat', label: 'chat', icon: 'message-square' },
   { id: 'hotkeys', label: 'hotkeys', icon: 'command' },
   { id: 'account', label: 'account', icon: 'user' },
   { id: 'about', label: 'about', icon: 'info' },
@@ -91,6 +94,7 @@ export function SettingsScreen() {
           {section === 'meeting' && <MeetingSettings />}
           {section === 'background' && <BackgroundSettings />}
           {section === 'projects' && <ProjectsSettings />}
+          {section === 'chat' && <McpServersPanel />}
           {section === 'hotkeys' && <HotkeySettings />}
           {section === 'account' && <AccountSettings />}
           {section === 'about' && <AboutSettings />}

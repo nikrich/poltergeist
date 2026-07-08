@@ -446,3 +446,34 @@ export interface AuthSessionView {
   error: string | null;
   next: AuthNext;
 }
+
+/** User MCP server opted into chat (env values are write-only: envKeys echoes names). */
+export interface McpServer {
+  name: string;
+  command: string;
+  args: string[];
+  envKeys: string[];
+  enabled: boolean;
+  tools: string;
+}
+
+export interface McpServerAvailable {
+  name: string;
+  command: string;
+  args: string[];
+}
+
+export interface McpServersResponse {
+  servers: McpServer[];
+  available: McpServerAvailable[];
+}
+
+/** PUT payload entry: env null = keep whatever is stored for this name. */
+export interface McpServerWrite {
+  name: string;
+  command: string;
+  args: string[];
+  env: Record<string, string> | null;
+  enabled: boolean;
+  tools: string;
+}
