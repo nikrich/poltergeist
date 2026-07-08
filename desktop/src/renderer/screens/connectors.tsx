@@ -1,15 +1,18 @@
 import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { TopBar } from '../components/TopBar';
 import { Btn } from '../components/Btn';
 import { Lucide } from '../components/Lucide';
 import { Pill } from '../components/Pill';
 import { Eyebrow } from '../components/Eyebrow';
 import { Toggle } from '../components/Toggle';
+import { ConnectorAuthFlow } from '../components/ConnectorAuthFlow';
 import { useNavigation } from '../stores/navigation';
 import type { Connector, ConnectorDetail, ConnectorState } from '../../shared/api-types';
 import {
   useConnector,
   useConnectors,
+  useDisconnectConnector,
   useSchedulerDiagnostics,
   useSchedulerStatus,
   useSyncAllConnectors,
@@ -309,9 +312,35 @@ interface ConnectorDetailProps {
 function ConnectorDetailPanel({ c }: ConnectorDetailProps) {
   const syncOne = useSyncConnector();
   const scheduler = useSchedulerStatus();
+  const disconnect = useDisconnectConnector();
+  const qc = useQueryClient();
   const schedulerEnabled = scheduler.data?.enabled === true;
   const jobStatus = scheduler.data?.jobs[c.id];
+  const [authOpen, setAuthOpen] = useState(false);
+
+  const handleAuthDone = () => {
+    setAuthOpen(false);
+    toast.info(`${c.displayName} connected`);
+    qc.invalidateQueries({ queryKey: ['connectors'] });
+    qc.invalidateQueries({ queryKey: ['connector', c.id] });
+  };
+
+  const handleDisconnect = () => {
+    if (!window.confirm(`Disconnect ${c.displayName}? This removes its stored credentials.`)) {
+      return;
+    }
+    disconnect.mutate(
+      { id: c.id, account: c.account ?? undefined },
+      {
+        onSuccess: () => toast.info(`${c.displayName} disconnected`),
+        onError: (e) =>
+          toast.error(e instanceof Error ? e.message : `${c.displayName}: disconnect failed`),
+      },
+    );
+  };
+
   return (
+    <>
     <aside className="flex flex-col overflow-y-auto border-l border-hairline bg-vellum">
       {/* hero */}
       <div className="gb-noise relative overflow-hidden border-b border-hairline p-6">
@@ -334,7 +363,7 @@ function ConnectorDetailPanel({ c }: ConnectorDetailProps) {
               size="sm"
               // intentional fixed color: icon must read dark on the always-bright neon button
               icon={<Lucide name="link" size={13} color="#0E0F12" />}
-              onClick={() => stub(3)}
+              onClick={() => setAuthOpen(true)}
             >
               connect {c.displayName}
             </Btn>
@@ -345,7 +374,7 @@ function ConnectorDetailPanel({ c }: ConnectorDetailProps) {
               size="sm"
               // intentional fixed color: icon must read dark on the always-bright neon button
               icon={<Lucide name="refresh-cw" size={13} color="#0E0F12" />}
-              onClick={() => stub(3)}
+              onClick={() => setAuthOpen(true)}
             >
               reauthorize
             </Btn>
@@ -479,13 +508,53 @@ function ConnectorDetailPanel({ c }: ConnectorDetailProps) {
             size="sm"
             icon={<Lucide name="unplug" size={13} />}
             className="mt-2 self-start"
-            onClick={() => stub(3)}
+            onClick={handleDisconnect}
+            disabled={disconnect.isPending}
           >
-            disconnect
+            {disconnect.isPending ? 'disconnecting…' : 'disconnect'}
           </Btn>
         )}
       </div>
     </aside>
+    {authOpen && (
+      <ConnectorAuthModal
+        connectorId={c.id}
+        displayName={c.displayName}
+        onDone={handleAuthDone}
+        onCancel={() => setAuthOpen(false)}
+      />
+    )}
+    </>
+  );
+}
+
+interface ConnectorAuthModalProps {
+  connectorId: string;
+  displayName: string;
+  onDone: (account?: string) => void;
+  onCancel: () => void;
+}
+
+function ConnectorAuthModal({ connectorId, displayName, onDone, onCancel }: ConnectorAuthModalProps) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+      <div className="w-[420px] overflow-hidden rounded-lg border border-hairline-2 bg-vellum shadow-float">
+        <div className="flex items-center justify-between border-b border-hairline px-4 py-3">
+          <span className="text-13 font-semibold text-ink-0">connect {displayName}</span>
+          <button
+            type="button"
+            aria-label="close"
+            onClick={onCancel}
+            className="text-ink-3 hover:text-ink-1"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="p-4">
+          <ConnectorAuthFlow connectorId={connectorId} onDone={onDone} onCancel={onCancel} />
+        </div>
+      </div>
+    </div>
   );
 }
 
