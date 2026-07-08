@@ -90,6 +90,35 @@ class ClaudeCodeProvider:
         return session.account
 
 
+def _macos_calendar_authorized() -> bool | None:
+    """Best-effort check of EventKit calendar authorization status.
+
+    Returns True if access is granted, False if explicitly denied/restricted,
+    or None if the status cannot be determined (not macOS, EventKit unavailable,
+    or authorization is still not-determined).
+    """
+    try:
+        from EventKit import EKAuthorizationStatusAuthorized, EKEntityTypeEvent, EKEventStore
+
+        current = EKEventStore.authorizationStatusForEntityType_(EKEntityTypeEvent)
+        if current == EKAuthorizationStatusAuthorized:
+            return True
+        # EKAuthorizationStatusDenied / Restricted are non-zero, non-authorized
+        # statuses distinct from NotDetermined (0). Without importing every
+        # symbol, treat any determined-but-not-authorized status as denied,
+        # and fall back to "unknown" only when we can't tell.
+        try:
+            from EventKit import EKAuthorizationStatusDenied, EKAuthorizationStatusRestricted
+
+            if current in (EKAuthorizationStatusDenied, EKAuthorizationStatusRestricted):
+                return False
+        except ImportError:
+            pass
+        return None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 class MacosCalendarProvider:
     """Provider for macOS Calendar access (best-effort EventKit check)."""
 
@@ -102,17 +131,28 @@ class MacosCalendarProvider:
             message="Grant Calendar access when macOS prompts, then press Re-check.",
         )
 
+    def submit(self, connector_id, session, data):
+        """No form input for this flow; return the session's current next action unchanged."""
+        return session.next
+
     def poll(self, connector_id, session):
-        """Best-effort: attempt EventKit read to trigger/confirm the grant."""
+        """Best-effort: check EventKit authorization status to confirm the grant."""
         try:
-            from ghostbrain.connectors.calendar.macos import macos_calendar_available
-            ok = macos_calendar_available()
+            status = _macos_calendar_authorized()
         except Exception:  # noqa: BLE001
-            ok = True  # can't verify; assume the user granted it
-        session.status = "success" if ok else "error"
-        session.next = NextAction(kind="done")
-        if not ok:
-            session.error = "Calendar access not granted"
+            status = None
+        if status is False:
+            session.status = "error"
+            session.error = (
+                "Calendar access was denied. Grant it in System Settings → "
+                "Privacy → Calendars, then re-check."
+            )
+            session.next = NextAction(kind="need_grant", message=session.error)
+        else:
+            # True (authorized) or None (can't confirm, e.g. non-macOS) —
+            # best-effort: assume granted per spec §9.
+            session.status = "success"
+            session.next = NextAction(kind="done")
 
     def account_label(self, session):
         """Return account label."""

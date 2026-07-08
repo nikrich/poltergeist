@@ -45,6 +45,10 @@ class GitHubProvider:
         )
         return NextAction(kind="need_grant", message=msg)
 
+    def submit(self, connector_id, session, data):
+        """No form input for this flow; return the session's current next action unchanged."""
+        return session.next
+
     def poll(self, connector_id, session):
         """Poll for gh login completion (up to 120 seconds)."""
         deadline = time.monotonic() + 120

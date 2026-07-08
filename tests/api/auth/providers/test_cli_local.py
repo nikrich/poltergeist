@@ -1,7 +1,7 @@
 import json
 import pytest
 from ghostbrain.api.auth.providers.cli_login import GitHubProvider
-from ghostbrain.api.auth.providers.local_grant import ClaudeCodeProvider
+from ghostbrain.api.auth.providers.local_grant import ClaudeCodeProvider, MacosCalendarProvider
 from ghostbrain.api.auth.session import Session
 from ghostbrain.api.auth.providers.base import NextAction
 
@@ -38,3 +38,44 @@ def test_claude_code_writes_hook(tmp_path, monkeypatch):
     assert sess.status == "success"
     data = json.loads((home / ".claude" / "settings.json").read_text())
     assert "SessionEnd" in data["hooks"]
+
+
+def test_github_submit_is_noop():
+    sess = _sess("github")
+    action = GitHubProvider().submit("github", sess, {})
+    assert action is sess.next
+    assert sess.status == "pending"
+
+
+def test_macos_submit_is_noop():
+    sess = _sess("macos_calendar")
+    action = MacosCalendarProvider().submit("macos_calendar", sess, {})
+    assert action is sess.next
+    assert sess.status == "pending"
+
+
+def test_macos_poll_denied_sets_error(monkeypatch):
+    import ghostbrain.api.auth.providers.local_grant as mod
+    monkeypatch.setattr(mod, "_macos_calendar_authorized", lambda: False)
+    sess = _sess("macos_calendar")
+    MacosCalendarProvider().poll("macos_calendar", sess)
+    assert sess.status == "error"
+    assert sess.next.kind == "need_grant"
+
+
+def test_macos_poll_success_when_authorized(monkeypatch):
+    import ghostbrain.api.auth.providers.local_grant as mod
+    monkeypatch.setattr(mod, "_macos_calendar_authorized", lambda: True)
+    sess = _sess("macos_calendar")
+    MacosCalendarProvider().poll("macos_calendar", sess)
+    assert sess.status == "success"
+    assert sess.next.kind == "done"
+
+
+def test_macos_poll_success_when_unknown(monkeypatch):
+    import ghostbrain.api.auth.providers.local_grant as mod
+    monkeypatch.setattr(mod, "_macos_calendar_authorized", lambda: None)
+    sess = _sess("macos_calendar")
+    MacosCalendarProvider().poll("macos_calendar", sess)
+    assert sess.status == "success"
+    assert sess.next.kind == "done"
