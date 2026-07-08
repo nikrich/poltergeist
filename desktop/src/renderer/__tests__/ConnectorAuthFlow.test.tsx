@@ -15,7 +15,8 @@ beforeEach(() => {
     'POST /v1/connectors/slack/auth/submit': { session_id: 's', status: 'success', account: '@me', error: null,
       next: { kind: 'done', fields: null, auth_url: null, verification_uri: null, user_code: null, message: null } },
   };
-  (globalThis as any).window.gb = {
+  window.gb = {
+    ...window.gb,
     api: { request: vi.fn((m: string, p: string) => Promise.resolve({ ok: true, data: responses[`${m} ${p}`] })) },
     shell: { openExternal: vi.fn().mockResolvedValue({ ok: true }) },
   };
@@ -32,7 +33,8 @@ describe('ConnectorAuthFlow', () => {
   });
 
   it('shows an error state with retry when the status poll fails persistently', async () => {
-    (globalThis as any).window.gb = {
+    window.gb = {
+    ...window.gb,
       api: {
         request: vi.fn((m: string, p: string) => {
           if (m === 'POST' && p === '/v1/connectors/slack/auth/start') {

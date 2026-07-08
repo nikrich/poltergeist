@@ -445,6 +445,8 @@ export interface AuthSessionView {
   account: string | null;
   error: string | null;
   next: AuthNext;
+}
+
 /** User MCP server opted into chat (env values are write-only: envKeys echoes names). */
 export interface McpServer {
   name: string;
