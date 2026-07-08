@@ -49,10 +49,10 @@ Implemented over the existing `api-forwarder.ts` `forward()` — same
 `ALLOWED_METHODS` gate, same sidecar port/auth resolution. Plugins never see the
 port or token. `path` must start with `/` and contain no `..`; reject otherwise.
 
-Add the renderer mirror to **`PluginApi`** (handed to `mount`): identical
-signature, routed over a host IPC channel (`gb:plugins:api-fetch`) that performs
-the same forward from main. One channel for all plugins; the host tags calls with
-the plugin id for logging.
+Renderer-side, plugins use the app's existing `PluginApi.sidecar.request`
+bridge (channel `gb:plugins:sidecar`, `/v1/` path rule) — main already shipped
+it, so no second renderer channel was added; only `PUT` support flows in via
+the shared `ALLOWED_METHODS`.
 
 Failures return the forwarder's structured error result (`{ok: false, ...}`) —
 they never throw across the bridge.

@@ -2086,7 +2086,7 @@ function tv(theme, name, fallback) {
   return theme?.[name] || fallback;
 }
 async function readNote(api, path) {
-  const r = await api.api.fetch("GET", `/v1/notes?path=${encodeURIComponent(path)}`);
+  const r = await api.sidecar.request("GET", `/v1/notes?path=${encodeURIComponent(path)}`);
   return r.ok ? r.data.body : null;
 }
 function mount(el, api) {
@@ -2193,7 +2193,7 @@ function mount(el, api) {
       const save = async (updated) => {
         const fresh = parseOpenLoops(await readNote(api, LOOPS_PATH) ?? "");
         const next = fresh.loops.map((l) => l.id === updated.id ? updated : l);
-        await api.api.fetch("PUT", "/v1/notes", { path: LOOPS_PATH, content: renderOpenLoops(next, fresh.unparsed) });
+        await api.sidecar.request("PUT", "/v1/notes", { path: LOOPS_PATH, content: renderOpenLoops(next, fresh.unparsed) });
         await renderLoops();
       };
       box.onchange = () => void save(toggleLoop(loop));
