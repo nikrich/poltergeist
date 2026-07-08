@@ -108,6 +108,25 @@ export function ConnectorAuthFlow({ connectorId, onDone, onCancel }: Props) {
     );
   }
 
+  // The poll query itself can fail persistently (session expired → 404,
+  // sidecar 500s, sidecar process drops) rather than returning a session
+  // whose status is 'error'. React Query retries a couple times and then
+  // settles into isError — without this, the user is stuck on whatever
+  // spinner was last rendered with no way out but Cancel.
+  if (pollEnabled && status.isError) {
+    return (
+      <ErrorPanel
+        message={
+          status.error instanceof Error
+            ? status.error.message
+            : 'Lost connection while waiting for authorization.'
+        }
+        onRetry={start}
+        onCancel={handleCancel}
+      />
+    );
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <StepBody

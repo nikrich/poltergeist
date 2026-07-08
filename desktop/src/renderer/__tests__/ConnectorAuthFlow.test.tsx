@@ -30,4 +30,32 @@ describe('ConnectorAuthFlow', () => {
     fireEvent.click(screen.getByRole('button', { name: /connect|submit|save/i }));
     await waitFor(() => expect(onDone).toHaveBeenCalledWith('@me'));
   });
+
+  it('shows an error state with retry when the status poll fails persistently', async () => {
+    (globalThis as any).window.gb = {
+      api: {
+        request: vi.fn((m: string, p: string) => {
+          if (m === 'POST' && p === '/v1/connectors/slack/auth/start') {
+            return Promise.resolve({
+              ok: true,
+              data: {
+                session_id: 's', status: 'pending', account: null, error: null,
+                next: { kind: 'open_browser', fields: null, auth_url: 'https://example.com/auth', verification_uri: null, user_code: null, message: null },
+              },
+            });
+          }
+          if (m === 'GET' && p.startsWith('/v1/connectors/slack/auth/status')) {
+            return Promise.resolve({ ok: false, error: 'boom', status: 500 });
+          }
+          return Promise.resolve({ ok: false, error: 'unexpected', status: 500 });
+        }),
+      },
+      shell: { openExternal: vi.fn().mockResolvedValue({ ok: true }) },
+    };
+
+    wrap(<ConnectorAuthFlow connectorId="slack" onDone={() => {}} onCancel={() => {}} />);
+
+    expect(await screen.findByRole('button', { name: /retry/i })).toBeInTheDocument();
+    expect(screen.getByText('boom')).toBeInTheDocument();
+  });
 });
