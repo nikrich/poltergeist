@@ -9,8 +9,10 @@ import { useActivityHeatmap } from '../lib/api/hooks';
 import { useNavigation } from '../stores/navigation';
 import { useSelectedDay } from '../stores/selected-day';
 
-const TILE_WEEKS = 26;
-const TILE_DAYS = TILE_WEEKS * 7; // 182
+// 52 weeks — at 18px max cells the grid spans ~1040px, so it fills the
+// dashboard's max-w-[1100px] column edge to edge instead of centring small.
+const TILE_WEEKS = 52;
+const TILE_DAYS = TILE_WEEKS * 7; // 364
 
 export function ActivityHeatmapTile() {
   const heatmap = useActivityHeatmap(TILE_DAYS);
@@ -24,7 +26,7 @@ export function ActivityHeatmapTile() {
   return (
     <Panel
       title="ghost activity"
-      subtitle="last 26 weeks"
+      subtitle="last 52 weeks"
       action={
         <Btn
           variant="ghost"

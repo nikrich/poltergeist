@@ -171,6 +171,9 @@ export function TodayScreen() {
           </div>
         </div>
 
+        {/* Full-width 52-week activity heatmap */}
+        <ActivityHeatmapTile />
+
         {/* Two-column: agenda + activity */}
         <div className="grid grid-cols-2 gap-4">
           {/* Agenda */}
@@ -204,40 +207,13 @@ export function TodayScreen() {
             {agenda.data && agenda.data.length === 0 && (
               <PanelEmpty icon="calendar" message="no events today" />
             )}
-            {agenda.data?.map((item, i) => (
-              <AgendaItemRow
-                key={item.id}
-                time={item.time}
-                dur={item.duration}
-                title={item.title}
-                people={item.with}
-                status={item.status}
-                cta={
-                  item.status === 'recorded' ? (
-                    <Pill tone="moss">
-                      <Lucide name="check" size={9} /> recorded
-                    </Pill>
-                  ) : item.status === 'upcoming' && i === 0 ? (
-                    <Btn
-                      variant="primary"
-                      size="sm"
-                      // intentional fixed color: icon must read dark on the always-bright neon button
-                      icon={<Lucide name="mic" size={12} color="#0E0F12" />}
-                      onClick={() => setActive('meetings')}
-                    >
-                      record
-                    </Btn>
-                  ) : (
-                    <Btn
-                      variant="ghost"
-                      size="sm"
-                      icon={<Lucide name="more-horizontal" size={12} />}
-                      onClick={() => stub(3)}
-                    />
-                  )
-                }
+            {agenda.data && agenda.data.length > 0 && (
+              <AgendaList
+                items={agenda.data}
+                onRecord={() => setActive('meetings')}
+                onOpenCalendar={() => setActive('meetings')}
               />
-            ))}
+            )}
           </Panel>
 
           {/* Live activity feed */}
@@ -272,9 +248,6 @@ export function TodayScreen() {
             )}
           </Panel>
         </div>
-
-        {/* 12-week activity heatmap */}
-        <ActivityHeatmapTile />
 
         {/* Connector pulse strip */}
         <Panel
@@ -443,7 +416,7 @@ function AgendaItemRow({ time, dur, title, people, status, cta }: AgendaItemRowP
   const recorded = status === 'recorded';
   return (
     <div
-      className={`grid grid-cols-[52px_1fr_auto] items-center gap-[14px] rounded-r6 px-2 py-[10px] ${
+      className={`grid grid-cols-[52px_1fr_auto] items-center gap-3 rounded-r6 px-2 py-[6px] ${
         recorded ? 'opacity-70' : 'opacity-100'
       }`}
     >
@@ -468,7 +441,76 @@ function AgendaItemRow({ time, dur, title, people, status, cta }: AgendaItemRowP
   );
 }
 
-const ACTIVITY_INITIAL_LIMIT = 10;
+const AGENDA_INITIAL_LIMIT = 6;
+
+interface AgendaListProps {
+  items: AgendaItem[];
+  onRecord: () => void;
+  onOpenCalendar: () => void;
+}
+
+function AgendaList({ items, onRecord, onOpenCalendar }: AgendaListProps) {
+  // Window the day around "now": one finished event for context, then what's
+  // still ahead — a full day of 13+ events shouldn't tower over the fold.
+  const firstUpcoming = items.findIndex((e) => e.status === 'upcoming');
+  const anchor = firstUpcoming === -1 ? items.length : firstUpcoming;
+  const start = Math.max(
+    0,
+    Math.min(anchor - 1, items.length - AGENDA_INITIAL_LIMIT),
+  );
+  const visible = items.slice(start, start + AGENDA_INITIAL_LIMIT);
+  const hiddenCount = items.length - visible.length;
+  const recordId = visible.find((e) => e.status === 'upcoming')?.id;
+  return (
+    <>
+      {visible.map((item) => (
+        <AgendaItemRow
+          key={item.id}
+          time={item.time}
+          dur={item.duration}
+          title={item.title}
+          people={item.with}
+          status={item.status}
+          cta={
+            item.status === 'recorded' ? (
+              <Pill tone="moss">
+                <Lucide name="check" size={9} /> recorded
+              </Pill>
+            ) : item.id === recordId ? (
+              <Btn
+                variant="primary"
+                size="sm"
+                // intentional fixed color: icon must read dark on the always-bright neon button
+                icon={<Lucide name="mic" size={12} color="#0E0F12" />}
+                onClick={onRecord}
+              >
+                record
+              </Btn>
+            ) : (
+              <Btn
+                variant="ghost"
+                size="sm"
+                icon={<Lucide name="more-horizontal" size={12} />}
+                onClick={() => stub(3)}
+              />
+            )
+          }
+        />
+      ))}
+      {hiddenCount > 0 && (
+        <button
+          type="button"
+          onClick={onOpenCalendar}
+          className="mt-1 w-full rounded-sm px-[6px] py-2 text-center font-mono text-10 text-ink-2 hover:bg-paper"
+        >
+          view {hiddenCount} more in calendar
+        </button>
+      )}
+    </>
+  );
+}
+
+const ACTIVITY_INITIAL_LIMIT = 7;
 
 function ActivityList({ items }: { items: ActivityRow[] }) {
   const [expanded, setExpanded] = useState(false);
