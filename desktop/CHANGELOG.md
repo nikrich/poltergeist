@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.0.0](https://github.com/nikrich/poltergeist/compare/v0.9.0...v1.0.0) (2026-07-09)
+
+
+### Features
+
+* **chat:** Project folders — group conversations under projects ([1f1e886](https://github.com/nikrich/poltergeist/commit/1f1e8867b21f4f1b96ac800c135b464e4189b397))
+* **chat:** Project-grouped sidebar with filing dropdown ([32a5747](https://github.com/nikrich/poltergeist/commit/32a57479eade85653731c814d3f58fcde7fbf7da))
+* **today:** Full-width 52-week activity bar above a squashed agenda ([93c91ca](https://github.com/nikrich/poltergeist/commit/93c91ca29b3ce91a7a11eb084d7b2464799a147e))
+* **today:** Full-width 52-week activity bar above a squashed agenda ([5b524de](https://github.com/nikrich/poltergeist/commit/5b524deec5ede082774cf37450d50dae62cdba87))
+
+
+### Bug Fixes
+
+* **plugins:** Cache-bust the renderer import so plugin updates apply without an app restart ([2a7d47a](https://github.com/nikrich/poltergeist/commit/2a7d47a6b0b51c6337eae74b0678a094ae3e7e5c))
+* **plugins:** Renderer cache-bust — plugin updates apply without app restart ([aee5ed6](https://github.com/nikrich/poltergeist/commit/aee5ed6499cda8b2ebf034032f677e6438442616))
+* Quit fully on ⌘Q + pluralize "thing" in Today greeting ([#71](https://github.com/nikrich/poltergeist/issues/71)) ([39c1fbc](https://github.com/nikrich/poltergeist/commit/39c1fbc21bde44f0061b8f98368070efd2afcddd))
+* **tests:** ConnectorAuthFlow mocks via per-field request cast — unblocks v0.9.0 build ([8a36870](https://github.com/nikrich/poltergeist/commit/8a36870b71a2a9e18e539c6555c87aa2b72db4b5))
+
+
+### Chores
+
+* Kick off the 1.0.0 release ([94e7d83](https://github.com/nikrich/poltergeist/commit/94e7d836e4903af10844b616097e708c3308931d))
+
 ## [0.9.0](https://github.com/nikrich/poltergeist/compare/v0.8.0...v0.9.0) (2026-07-08)
 
 
