@@ -77,6 +77,7 @@ def create() -> dict:
             "created_at": now,
             "updated_at": now,
             "claude_session_id": None,
+            "project": None,
             "messages": [],
         }
         _write(conv)
@@ -113,20 +114,32 @@ def list_all() -> list[dict]:
                 "created_at": conv["created_at"],
                 "updated_at": conv["updated_at"],
                 "message_count": len(conv.get("messages", [])),
+                "project": conv.get("project"),
             }
         )
     out.sort(key=lambda c: c["updated_at"], reverse=True)
     return out
 
 
-def rename(conv_id: str, title: str) -> dict | None:
+_UNSET = object()
+
+
+def update(conv_id: str, *, title=_UNSET, project=_UNSET) -> dict | None:
+    """Partial update: only passed fields change. project=None unfiles."""
     conv = get(conv_id)
     if conv is None:
         return None
-    conv["title"] = title.strip()[:TITLE_MAX_LEN]
+    if title is not _UNSET:
+        conv["title"] = str(title).strip()[:TITLE_MAX_LEN]
+    if project is not _UNSET:
+        conv["project"] = project
     conv["updated_at"] = time.time()
     _write(conv)
     return conv
+
+
+def rename(conv_id: str, title: str) -> dict | None:
+    return update(conv_id, title=title)
 
 
 def delete(conv_id: str) -> bool:
