@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/nikrich/poltergeist/compare/v1.0.0...v1.0.1) (2026-07-09)
+
+
+### Bug Fixes
+
+* fix(chat): raise per-turn budget cap to $10 for MCP-heavy turns (#86)
+
 ## [1.0.0](https://github.com/nikrich/poltergeist/compare/v0.9.0...v1.0.0) (2026-07-09)
 
 
