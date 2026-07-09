@@ -1,6 +1,6 @@
 // poltergeist promo site — minimal interactivity
 // sticky nav, faq accordion, live "latest release" lookup that rewrites
-// every download CTA to point straight at the .dmg.
+// every download CTA to point straight at the visitor's platform installer.
 
 (() => {
   const nav = document.getElementById('nav');
@@ -25,20 +25,42 @@
     });
   });
 
-  // --- live release lookup -------------------------------------------------
+  // --- platform-aware download CTAs -----------------------------------------
   // The newest tag sometimes has no binaries yet (release-please cuts the
-  // tag, then the mac build job uploads the .dmg minutes later). So we walk
-  // the release list and pick the first one that actually has a .dmg
-  // attached. Everything keeps falling back to /releases/latest if anything
-  // here goes sideways (offline, rate-limited, blocked, etc.).
+  // tag, then the platform build jobs upload installers minutes apart). So we
+  // walk the release list and pick the first one that actually has an
+  // installer for the visitor's OS. Everything keeps falling back to
+  // /releases/latest if anything here goes sideways (offline, rate-limited,
+  // blocked, etc.).
   const RELEASES_URL = 'https://api.github.com/repos/nikrich/poltergeist/releases?per_page=10';
   const FALLBACK_HREF = 'https://github.com/nikrich/poltergeist/releases/latest';
 
-  const pickDmg = (releases) => {
+  const OS = (() => {
+    const p = `${navigator.platform} ${navigator.userAgent}`;
+    if (/mac/i.test(p)) return 'mac';
+    if (/win/i.test(p)) return 'windows';
+    return 'linux';
+  })();
+
+  // Matchers in preference order per OS (e.g. the NSIS installer beats the
+  // bare win zip, the AppImage beats the deb).
+  const ASSET_MATCHERS = {
+    mac: [/\.dmg$/i],
+    windows: [/\.exe$/i, /-win\.zip$/i],
+    linux: [/\.appimage$/i, /\.deb$/i],
+  };
+
+  document.querySelectorAll('[data-dl-label]').forEach(el => {
+    el.textContent = `download for ${OS}`;
+  });
+
+  const pickAsset = (releases) => {
     for (const r of releases) {
       if (r.draft || r.prerelease) continue;
-      const dmg = (r.assets || []).find(a => a.name.toLowerCase().endsWith('.dmg'));
-      if (dmg) return { tag: r.tag_name, url: dmg.browser_download_url };
+      for (const matcher of ASSET_MATCHERS[OS]) {
+        const hit = (r.assets || []).find(a => matcher.test(a.name));
+        if (hit) return { tag: r.tag_name, url: hit.browser_download_url };
+      }
     }
     return null;
   };
@@ -62,9 +84,10 @@
   fetch(RELEASES_URL, { headers: { Accept: 'application/vnd.github+json' } })
     .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
     .then(releases => {
-      const hit = pickDmg(releases);
+      const hit = pickAsset(releases);
       if (hit) applyRelease(hit);
-      // If no release has a .dmg yet, leave the fallback links alone.
+      // If no release has an installer for this OS yet, leave the fallback
+      // links alone.
     })
     .catch(() => {
       // Network/API failure – the hardcoded /releases/latest links still work.
