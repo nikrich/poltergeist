@@ -1,5 +1,5 @@
 import type { ChatStreamEvent, DocsAssistEvent, DocsAssistRequest } from './api-types';
-import type { ActivePluginInfo, PluginRecord } from './plugin-types';
+import type { ActivePluginInfo, MarketplaceListing, PluginRecord } from './plugin-types';
 
 export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE' | 'PUT';
 
@@ -122,6 +122,11 @@ export interface GbBridge {
       subdir?: string,
     ): Promise<{ ok: true } | { ok: false; error: string }>;
     uninstall(id: string): Promise<{ ok: true } | { ok: false; error: string }>;
+    marketplace: {
+      list(): Promise<MarketplaceListing[] | { ok: false; error: string }>;
+      install(id: string): Promise<{ ok: true } | { ok: false; error: string }>;
+      update(id: string): Promise<{ ok: true } | { ok: false; error: string }>;
+    };
     onChanged(cb: (active: ActivePluginInfo[]) => void): () => void;
   };
   plugin(id: string): {
