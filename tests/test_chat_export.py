@@ -119,3 +119,38 @@ def test_llm_failure_writes_nothing(env, monkeypatch):
         chat_export.export_conversation(conv["id"])
     inbox = env / "00-inbox/raw/manual"
     assert list(inbox.glob("*.md")) == []
+
+
+def test_export_routes_to_conversation_project_when_filed(env, monkeypatch):
+    from ghostbrain.api.repo import projects
+
+    project = projects.create_project("personal", "Site Rebuild")
+    conv = _conv_with_messages()
+    chat_store.update(conv["id"], project=f"personal/{project['slug']}")
+
+    monkeypatch.setattr(chat_export.llm, "run", lambda *a, **kw: FakeLLMResult())
+    auto_router_called = []
+    monkeypatch.setattr(
+        chat_export, "route_existing_jot", lambda jot_id: auto_router_called.append(jot_id)
+    )
+
+    res = chat_export.export_conversation(conv["id"])
+    assert auto_router_called == []  # no auto-routing — the conversation is filed
+    assert res["routingStatus"] == "routed"
+    assert res["context"] == "personal"
+    assert res["project"] == project["slug"]
+    assert f"projects/{project['slug']}" in res["path"]
+
+
+def test_export_without_project_still_auto_routes(env, monkeypatch):
+    conv = _conv_with_messages()
+    monkeypatch.setattr(chat_export.llm, "run", lambda *a, **kw: FakeLLMResult())
+    seen = []
+    monkeypatch.setattr(
+        chat_export,
+        "route_existing_jot",
+        lambda jot_id: (seen.append(jot_id), {"routingStatus": "routed", "context": "x", "project": None, "path": "p"})[1],
+    )
+    res = chat_export.export_conversation(conv["id"])
+    assert seen  # auto-router used
+    assert res["routingStatus"] == "routed"
