@@ -11,12 +11,13 @@ from ghostbrain.api.models.chat import (
     ChatMessageRequest,
     Conversation,
     ConversationSummary,
-    RenameRequest,
+    UpdateConversationRequest,
 )
 from ghostbrain.api.repo import chat as repo_chat
 from ghostbrain.api.repo import chat_attachments
 from ghostbrain.api.repo import chat_export as repo_chat_export
 from ghostbrain.api.repo import chat_store
+from ghostbrain.api.repo import projects as projects_repo
 from ghostbrain.llm.client import LLMError
 
 router = APIRouter(prefix="/v1/chat", tags=["chat"])
@@ -43,8 +44,22 @@ def get_conversation(conv_id: str) -> dict:
 
 
 @router.patch("/{conv_id}", response_model=Conversation)
-def rename_conversation(conv_id: str, payload: RenameRequest) -> dict:
-    conv = chat_store.rename(conv_id, payload.title)
+def update_conversation(conv_id: str, payload: UpdateConversationRequest) -> dict:
+    kwargs: dict = {}
+    if "title" in payload.model_fields_set:
+        kwargs["title"] = payload.title
+    if "project" in payload.model_fields_set:
+        if payload.project is not None:
+            context, _, slug = payload.project.partition("/")
+            known = (
+                projects_repo.get_project(context, slug) if context and slug else None
+            )
+            if known is None:
+                raise HTTPException(
+                    status_code=422, detail=f"unknown project: {payload.project}"
+                )
+        kwargs["project"] = payload.project
+    conv = chat_store.update(conv_id, **kwargs)
     if conv is None:
         raise HTTPException(status_code=404, detail="conversation not found")
     return conv
