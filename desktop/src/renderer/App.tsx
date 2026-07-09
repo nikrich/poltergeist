@@ -23,6 +23,7 @@ import { SettingsScreen } from './screens/settings';
 import { JotsScreen } from './screens/jots';
 import { OnboardingScreen } from './screens/onboarding';
 import { PluginsScreen, useActivePlugins } from './screens/plugins';
+import { MarketplaceScreen } from './screens/marketplace';
 import { PluginHost } from './components/PluginHost';
 import { PanelError } from './components/PanelError';
 
@@ -138,6 +139,7 @@ export default function App() {
           {active === 'settings' && <SettingsScreen />}
           {active === 'jots' && <JotsScreen />}
           {active === 'plugins' && <PluginsScreen />}
+          {active === 'marketplace' && <MarketplaceScreen />}
           {active === 'onboarding' && <OnboardingScreen />}
           {active.startsWith('plugin:') && (
             <PluginRoute id={active.slice('plugin:'.length)} />
