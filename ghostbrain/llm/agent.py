@@ -133,8 +133,11 @@ def parse_stream_line(line: str) -> list[dict]:
 DEFAULT_CHAT_MODEL = "sonnet"
 CHAT_TIMEOUT_S = 300
 # Chat turns can chain several MCP calls (each poltergeist_ask is itself an
-# LLM call sidecar-side) — give more headroom than the worker's $0.50.
-CHAT_BUDGET_USD = 1.00
+# LLM call sidecar-side), and user MCP servers with large toolsets (mempalace:
+# ~35 schemas) inflate every turn — a $1 cap died on a single tool call there.
+# Billing runs through the user's `claude` subscription, so this cap is only a
+# runaway-loop guard, not a cost control: keep it high.
+CHAT_BUDGET_USD = 10.00
 
 ALLOWED_TOOLS = ",".join(TOOL_SUMMARIES)
 
