@@ -50,3 +50,29 @@ export interface ActivePluginInfo {
   hasRenderer: boolean;
   rendererEntry: string | null;
 }
+
+// Public marketplace registry — schema owned by market.getpoltergeist.com,
+// not this repo. Tolerant of unknown extra fields (zod strips by default).
+export const marketplaceEntrySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  version: z.string(),
+  description: z.string().optional(),
+  icon: z.string().optional(),
+  author: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  repo: z.string(),
+  subdir: z.string().optional(),
+  ref: z.string().optional(),
+  download: z.string().optional(),
+});
+
+export type MarketplaceEntry = z.infer<typeof marketplaceEntrySchema>;
+
+export const registrySchema = z.object({
+  apiVersion: z.literal(1),
+  generatedAt: z.string(),
+  plugins: z.array(marketplaceEntrySchema),
+});
+
+export type MarketplaceRegistry = z.infer<typeof registrySchema>;
