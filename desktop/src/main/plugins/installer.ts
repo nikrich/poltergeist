@@ -45,23 +45,60 @@ export async function installFromFolder(src: string, pluginsRoot: string): Promi
   return copyIn(src, pluginsRoot);
 }
 
+async function cloneToTmp(
+  url: string,
+  subdir: string | undefined,
+): Promise<{ tmp: string; src: string }> {
+  if (!URL_ALLOW.test(url)) {
+    throw new Error('url must start with https://, git@, or file://');
+  }
+  const tmp = await mkdtemp(join(tmpdir(), 'gb-plugin-clone-'));
+  await execFileP('git', ['clone', '--depth', '1', '--single-branch', url, tmp], {
+    timeout: 120_000,
+  });
+  const src = subdir ? join(tmp, subdir) : tmp;
+  const s = await stat(src).catch(() => null);
+  if (!s?.isDirectory()) throw new Error(`subdirectory not found in repo: ${subdir}`);
+  return { tmp, src };
+}
+
 export async function installFromGit(
   url: string,
   subdir: string | undefined,
   pluginsRoot: string,
 ): Promise<PluginRecord> {
-  if (!URL_ALLOW.test(url)) {
-    throw new Error('url must start with https://, git@, or file://');
-  }
-  const tmp = await mkdtemp(join(tmpdir(), 'gb-plugin-clone-'));
+  const { tmp, src } = await cloneToTmp(url, subdir);
   try {
-    await execFileP('git', ['clone', '--depth', '1', '--single-branch', url, tmp], {
-      timeout: 120_000,
-    });
-    const src = subdir ? join(tmp, subdir) : tmp;
-    const s = await stat(src).catch(() => null);
-    if (!s?.isDirectory()) throw new Error(`subdirectory not found in repo: ${subdir}`);
     return await copyIn(src, pluginsRoot);
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+}
+
+// Update = re-fetch over an existing install. Unlike copyIn, it *requires*
+// the destination to exist and replaces it, preserving the store's enabled
+// flag and per-plugin data (no store.setEnabled/forget calls here).
+export async function updateFromGit(
+  url: string,
+  subdir: string | undefined,
+  expectedId: string,
+  pluginsRoot: string,
+): Promise<PluginRecord> {
+  const { tmp, src } = await cloneToTmp(url, subdir);
+  try {
+    const manifest = await readManifest(src);
+    if (manifest.id !== expectedId) {
+      throw new Error(
+        `update fetched a different plugin id: expected "${expectedId}", got "${manifest.id}"`,
+      );
+    }
+    const dest = join(pluginsRoot, expectedId);
+    await rm(dest, { recursive: true, force: true });
+    await cp(src, dest, {
+      recursive: true,
+      filter: (p) => !p.split('/').includes('.git'),
+    });
+    return { id: manifest.id, dir: dest, manifest, state: 'enabled' };
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }
