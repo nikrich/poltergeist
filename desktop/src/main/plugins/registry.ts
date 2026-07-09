@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { RegistryEntry } from '../../shared/plugin-types';
 
 // Marketplace registry client. Lives in the main process because the
 // renderer CSP (src/renderer/index.html, connect-src 'self' plugin:) blocks
@@ -20,7 +21,14 @@ export const registryEntrySchema = z.object({
   description: z.string().optional(),
 });
 
-export type RegistryEntry = z.infer<typeof registryEntrySchema>;
+// RegistryEntry is defined in shared/ (see plugin-types.ts); re-exported here so
+// `import { RegistryEntry } from './registry'` keeps working. The schema's
+// inferred shape must stay assignable to it — this line fails to compile if the
+// two drift apart.
+const _schemaMatchesType: RegistryEntry = {} as z.infer<typeof registryEntrySchema>;
+void _schemaMatchesType;
+
+export type { RegistryEntry };
 
 const DEFAULT_BASE_URL = 'https://api.github.com/repos/nikrich/poltergeist-plugins/contents/plugins';
 

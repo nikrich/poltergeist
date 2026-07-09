@@ -31,6 +31,21 @@ export const manifestSchema = z.object({
 
 export type PluginManifest = z.infer<typeof manifestSchema>;
 
+// A marketplace registry entry. Defined here (not in main/plugins/registry.ts)
+// so the renderer/preload can reference it without crossing into main/ — the
+// tsconfig project boundary only allows main → shared, not the reverse. The
+// registry client's zod schema is validated against this shape.
+export interface RegistryEntry {
+  id: string;
+  repo: string;
+  subdir?: string;
+  ref?: string;
+  author?: string;
+  tags?: string[];
+  name?: string;
+  description?: string;
+}
+
 export type PluginRuntimeState = 'enabled' | 'disabled' | 'errored' | 'invalid';
 
 export interface PluginRecord {
