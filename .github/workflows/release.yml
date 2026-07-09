@@ -141,6 +141,12 @@ jobs:
           # at PyInstaller analysis time for the hidden-imports list to resolve.
           pip install -e ".[api,semantic]"
           pip install pyinstaller==6.11.1
+          # torch >= 2.9 wants setuptools>=77, which pip satisfies with 82+ —
+          # where pkg_resources was REMOVED. PyInstaller 6.11.1 still injects
+          # its pkg_resources bootstrap hook, so the frozen sidecar dies at
+          # launch ("No module named 'pkg_resources'"; broke v1.0.0/v1.0.1).
+          # 81.0.0 is the last version that ships pkg_resources.
+          pip install "setuptools<82"
 
       - name: Build Python sidecar
         run: |
@@ -220,6 +226,9 @@ jobs:
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -e ".[api,semantic]"
           pip install pyinstaller==6.11.1
+          # Last setuptools that ships pkg_resources, which PyInstaller
+          # 6.11.1's bootstrap hook needs (see the mac step for the story).
+          pip install "setuptools<82"
 
       - name: Build Python sidecar
         run: |
@@ -290,6 +299,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[api,semantic]"
           pip install pyinstaller==6.11.1
+          # Last setuptools that ships pkg_resources, which PyInstaller
+          # 6.11.1's bootstrap hook needs (see the mac step for the story).
+          pip install "setuptools<82"
 
       - name: Build Python sidecar
         shell: bash
