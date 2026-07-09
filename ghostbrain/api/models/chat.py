@@ -29,6 +29,7 @@ class ConversationSummary(BaseModel):
     created_at: float
     updated_at: float
     message_count: int
+    project: str | None = None
 
 
 class Conversation(BaseModel):
@@ -37,6 +38,7 @@ class Conversation(BaseModel):
     created_at: float
     updated_at: float
     claude_session_id: str | None = None
+    project: str | None = None
     messages: list[ChatMessage] = []
 
 
@@ -51,8 +53,21 @@ class ChatMessageRequest(BaseModel):
         return self
 
 
-class RenameRequest(BaseModel):
-    title: str = Field(..., min_length=1, max_length=200)
+class UpdateConversationRequest(BaseModel):
+    """Partial update: fields absent from the payload stay untouched.
+
+    ``project`` is a ``context/slug`` registry key; explicit null unfiles.
+    ``model_fields_set`` distinguishes omitted from null at the route.
+    """
+
+    title: str | None = Field(None, min_length=1, max_length=200)
+    project: str | None = Field(None, max_length=200)
+
+    @model_validator(mode="after")
+    def _something_to_update(self) -> "UpdateConversationRequest":
+        if not self.model_fields_set:
+            raise ValueError("nothing to update — pass title and/or project")
+        return self
 
 
 class AttachmentFile(BaseModel):

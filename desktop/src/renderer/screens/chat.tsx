@@ -12,7 +12,9 @@ import {
   useConversations,
   useConversation,
   useCreateConversation,
+  useProjects,
   useRenameConversation,
+  useUpdateConversation,
   useDeleteConversation,
 } from '../lib/api/hooks';
 import { exportConversationToJot } from '../lib/chat-export';
@@ -163,6 +165,27 @@ interface ConversationListProps {
   onSelect: (id: string | null) => void;
 }
 
+const UNFILED = '__unfiled__';
+
+/** Group conversations by project key: unfiled first, then project groups by
+ *  most-recent activity. Rows keep their incoming (newest-first) order. */
+function groupConversations(conversations: ConversationSummary[]) {
+  const groups = new Map<string, ConversationSummary[]>();
+  for (const c of conversations) {
+    const key = c.project ?? UNFILED;
+    const list = groups.get(key) ?? [];
+    list.push(c);
+    groups.set(key, list);
+  }
+  const keys = [...groups.keys()].sort((a, b) => {
+    if (a === UNFILED) return -1;
+    if (b === UNFILED) return 1;
+    const newest = (k: string) => Math.max(...groups.get(k)!.map((c) => c.updated_at));
+    return newest(b) - newest(a);
+  });
+  return keys.map((key) => ({ key, conversations: groups.get(key)! }));
+}
+
 function ConversationList({
   conversations,
   isLoading,
@@ -170,11 +193,22 @@ function ConversationList({
   onSelect,
 }: ConversationListProps) {
   const create = useCreateConversation();
+  const projects = useProjects({ includeArchived: true });
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const newChat = () => {
     create.mutate(undefined, {
       onSuccess: (conv) => onSelect(conv.id),
     });
+  };
+
+  const groups = groupConversations(conversations);
+  const projectLabel = (key: string) => {
+    if (key === UNFILED) return 'unfiled';
+    const [context, slug] = key.split('/');
+    const p = projects.data?.find((x) => x.context === context && x.slug === slug);
+    if (!p) return key;
+    return p.archived ? `${p.name} (archived)` : p.name;
   };
 
   return (
@@ -199,17 +233,38 @@ function ConversationList({
             no conversations yet
           </div>
         )}
-        {conversations.map((c) => (
-          <ConversationRow
-            key={c.id}
-            conversation={c}
-            active={c.id === activeId}
-            onSelect={() => onSelect(c.id)}
-            onDeleted={() => {
-              if (c.id === activeId) onSelect(null);
-            }}
-          />
-        ))}
+        {groups.map(({ key, conversations: convs }) => {
+          const label = projectLabel(key);
+          const isCollapsed = collapsed[key] ?? false;
+          return (
+            <div key={key} data-testid="chat-group" data-group={key} className="mb-1">
+              <button
+                type="button"
+                aria-label={`${isCollapsed ? 'expand' : 'collapse'} ${label}`}
+                onClick={() => setCollapsed((c) => ({ ...c, [key]: !isCollapsed }))}
+                className="flex w-full items-center gap-1 px-2 pb-1 pt-2 text-left font-mono text-10 uppercase tracking-[0.1em] text-ink-3 transition-colors hover:text-ink-1"
+              >
+                <Lucide name={isCollapsed ? 'chevron-right' : 'chevron-down'} size={10} />
+                <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+                  {label}
+                </span>
+                <span>{convs.length}</span>
+              </button>
+              {!isCollapsed &&
+                convs.map((c) => (
+                  <ConversationRow
+                    key={c.id}
+                    conversation={c}
+                    active={c.id === activeId}
+                    onSelect={() => onSelect(c.id)}
+                    onDeleted={() => {
+                      if (c.id === activeId) onSelect(null);
+                    }}
+                  />
+                ))}
+            </div>
+          );
+        })}
       </div>
     </aside>
   );
@@ -295,6 +350,7 @@ function ConversationRow({
       <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
         {conversation.title}
       </span>
+      <FileMenu conversation={conversation} />
       <button
         type="button"
         onClick={remove}
@@ -305,6 +361,64 @@ function ConversationRow({
         <Lucide name="trash-2" size={12} />
       </button>
     </div>
+  );
+}
+
+/** Hover folder icon → menu of projects to file the conversation under. */
+function FileMenu({ conversation }: { conversation: ConversationSummary }) {
+  const update = useUpdateConversation();
+  const projects = useProjects();
+  const [open, setOpen] = useState(false);
+
+  const file = (project: string | null) => {
+    setOpen(false);
+    if (project === (conversation.project ?? null)) return;
+    update.mutate(
+      { id: conversation.id, project },
+      { onError: (e) => toast.error(e.message) },
+    );
+  };
+
+  return (
+    <span className="relative flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        aria-label={`file ${conversation.title}`}
+        disabled={update.isPending}
+        onClick={() => setOpen((o) => !o)}
+        className="flex h-[18px] w-[18px] items-center justify-center rounded-xs text-ink-3 opacity-0 transition-opacity hover:text-ink-0 group-hover:opacity-100 disabled:opacity-50"
+      >
+        <Lucide name="folder" size={12} />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-[22px] z-20 max-h-[240px] w-[180px] overflow-y-auto rounded-r6 border border-hairline-2 bg-vellum py-1 shadow-lg"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => file(null)}
+            className="block w-full px-3 py-[6px] text-left text-12 text-ink-1 hover:bg-fog hover:text-ink-0"
+          >
+            unfiled
+          </button>
+          {(projects.data ?? [])
+            .filter((p) => !p.archived)
+            .map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                role="menuitem"
+                onClick={() => file(`${p.context}/${p.slug}`)}
+                className="block w-full px-3 py-[6px] text-left text-12 text-ink-1 hover:bg-fog hover:text-ink-0"
+              >
+                {p.name}
+              </button>
+            ))}
+        </div>
+      )}
+    </span>
   );
 }
 

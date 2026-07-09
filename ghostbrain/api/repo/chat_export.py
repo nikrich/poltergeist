@@ -9,7 +9,7 @@ import logging
 import threading
 
 from ghostbrain.api.repo import chat_store
-from ghostbrain.api.repo.notes_manual import route_existing_jot, write_inbox_jot
+from ghostbrain.api.repo.notes_manual import move_jot, route_existing_jot, write_inbox_jot
 from ghostbrain.llm import client as llm
 
 log = logging.getLogger("ghostbrain.chat.export")
@@ -91,6 +91,27 @@ def export_conversation(conv_id: str) -> dict:
                 "chat_title": conv["title"],
             },
         )
+        # A conversation filed under a project routes there directly — the
+        # auto-router only decides for unfiled conversations.
+        if conv.get("project"):
+            context, _, slug = conv["project"].partition("/")
+            moved = move_jot(
+                jot["id"],
+                to_context=context,
+                to_project=slug or None,
+                confidence=1.0,
+                method="chat-project",
+                reasoning="conversation is filed under this project",
+            )
+            return {
+                "jot_id": jot["id"],
+                "path": moved["path"],
+                "routingStatus": "routed",
+                "context": moved["context"],
+                "project": moved["project"],
+                "title": conv["title"],
+            }
+
         routed = route_existing_jot(jot["id"])
         return {
             "jot_id": jot["id"],

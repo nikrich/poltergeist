@@ -246,6 +246,8 @@ export interface ConversationSummary {
   created_at: number;
   updated_at: number;
   message_count: number;
+  /** context/slug key from the project registry, or null when unfiled. */
+  project: string | null;
 }
 
 export interface Conversation {
@@ -254,6 +256,7 @@ export interface Conversation {
   created_at: number;
   updated_at: number;
   claude_session_id: string | null;
+  project: string | null;
   messages: ChatMessage[];
 }
 

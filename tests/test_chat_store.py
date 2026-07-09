@@ -121,3 +121,41 @@ def test_create_makes_fresh_conversation_once_previous_has_messages(chats: Path)
     b = chat_store.create()
     assert b["id"] != a["id"]
     assert len(list(chats.glob("*.json"))) == 2
+
+
+def test_project_field_round_trips(chats: Path):
+    conv = chat_store.create()
+    assert conv["project"] is None
+    updated = chat_store.update(conv["id"], project="personal/site")
+    assert updated["project"] == "personal/site"
+    assert chat_store.get(conv["id"])["project"] == "personal/site"
+
+
+def test_update_partial_semantics(chats: Path):
+    conv = chat_store.create()
+    chat_store.update(conv["id"], project="personal/site")
+    chat_store.update(conv["id"], title="renamed")  # project untouched
+    got = chat_store.get(conv["id"])
+    assert got["title"] == "renamed"
+    assert got["project"] == "personal/site"
+    chat_store.update(conv["id"], project=None)  # explicit clear
+    assert chat_store.get(conv["id"])["project"] is None
+
+
+def test_update_missing_conversation_returns_none(chats: Path):
+    assert chat_store.update("nope", title="x") is None
+
+
+def test_list_summaries_carry_project(chats: Path):
+    conv = chat_store.create()
+    chat_store.update(conv["id"], project="work/api")
+    assert chat_store.list_all()[0]["project"] == "work/api"
+
+
+def test_legacy_file_without_project_reads_null(chats: Path):
+    conv = chat_store.create()
+    raw = json.loads((chats / f"{conv['id']}.json").read_text())
+    del raw["project"]
+    (chats / f"{conv['id']}.json").write_text(json.dumps(raw))
+    assert chat_store.get(conv["id"]).get("project") is None
+    assert chat_store.list_all()[0]["project"] is None
