@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -18,6 +19,8 @@ from ghostbrain.paths import chats_dir
 log = logging.getLogger("ghostbrain.chat.store")
 
 TITLE_MAX_LEN = 60
+
+_create_lock = threading.Lock()
 
 
 def _conv_path(conv_id: str) -> Path:
@@ -38,18 +41,46 @@ def derive_title(text: str) -> str:
     return collapsed[:TITLE_MAX_LEN] or "new chat"
 
 
+def _newest_empty() -> dict | None:
+    d = chats_dir()
+    if not d.exists():
+        return None
+    best: dict | None = None
+    for p in d.glob("*.json"):
+        try:
+            conv = json.loads(p.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        if conv.get("messages"):
+            continue
+        if best is None or conv.get("created_at", 0) > best.get("created_at", 0):
+            best = conv
+    return best
+
+
 def create() -> dict:
-    now = time.time()
-    conv = {
-        "id": uuid.uuid4().hex,
-        "title": "new chat",
-        "created_at": now,
-        "updated_at": now,
-        "claude_session_id": None,
-        "messages": [],
-    }
-    _write(conv)
-    return conv
+    """Return an empty conversation — reusing one that already exists.
+
+    "new chat" clicks can arrive several times before the UI disables the
+    button (isPending flips a render later), and abandoned empties otherwise
+    pile up in the sidebar forever. Idempotent create fixes both: as long as
+    an unused conversation exists, that's the one you get.
+    """
+    with _create_lock:
+        existing = _newest_empty()
+        if existing is not None:
+            return existing
+        now = time.time()
+        conv = {
+            "id": uuid.uuid4().hex,
+            "title": "new chat",
+            "created_at": now,
+            "updated_at": now,
+            "claude_session_id": None,
+            "messages": [],
+        }
+        _write(conv)
+        return conv
 
 
 def get(conv_id: str) -> dict | None:
