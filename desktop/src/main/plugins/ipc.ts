@@ -1,5 +1,7 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron';
-import { installFromFolder, installFromGit, uninstall } from './installer';
+import { installFromFolder, installFromGit, updateFromGit, uninstall } from './installer';
+import { fetchRegistry, searchEntries } from './registry';
+import { makeMarketplaceHandlers } from './marketplace';
 import * as store from './store';
 import type { PluginLoader } from './loader';
 
@@ -120,6 +122,41 @@ export function installPluginsIpc(opts: {
     } catch (e) {
       return err(e);
     }
+  });
+
+  const marketplace = makeMarketplaceHandlers({
+    fetchRegistry: () => fetchRegistry({ fetch: globalThis.fetch }),
+    searchEntries,
+    installFromGit,
+    updateFromGit,
+    pluginsRoot,
+  });
+
+  ipcMain.handle('gb:plugins:marketplace:list', () => marketplace.list());
+
+  ipcMain.handle('gb:plugins:marketplace:search', (_e, query: unknown) => {
+    if (typeof query !== 'string') return [];
+    return marketplace.search(query);
+  });
+
+  ipcMain.handle('gb:plugins:marketplace:install', async (_e, id: unknown) => {
+    if (typeof id !== 'string') return { ok: false, error: 'invalid arguments' };
+    const res = await marketplace.install(id);
+    if (res.ok) {
+      await loader.reloadAll();
+      broadcastChanged();
+    }
+    return res;
+  });
+
+  ipcMain.handle('gb:plugins:update', async (_e, id: unknown) => {
+    if (typeof id !== 'string') return { ok: false, error: 'invalid arguments' };
+    const res = await marketplace.update(id);
+    if (res.ok) {
+      await loader.reloadAll();
+      broadcastChanged();
+    }
+    return res;
   });
 
   ipcMain.handle('gb:plugins:data:get', (_e, id: unknown, key: unknown) => {

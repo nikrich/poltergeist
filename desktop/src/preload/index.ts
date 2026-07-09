@@ -70,6 +70,10 @@ const bridge: GbBridge = {
     installFromFolder: () => ipcRenderer.invoke('gb:plugins:installFromFolder'),
     installFromGit: (url, subdir) => ipcRenderer.invoke('gb:plugins:installFromGit', url, subdir),
     uninstall: (id) => ipcRenderer.invoke('gb:plugins:uninstall', id),
+    marketplaceList: () => ipcRenderer.invoke('gb:plugins:marketplace:list'),
+    marketplaceSearch: (query) => ipcRenderer.invoke('gb:plugins:marketplace:search', query),
+    installFromRegistry: (id) => ipcRenderer.invoke('gb:plugins:marketplace:install', id),
+    update: (id) => ipcRenderer.invoke('gb:plugins:update', id),
     onChanged: (cb) => {
       const handler = (_e: Electron.IpcRendererEvent, active: unknown) =>
         cb(active as Parameters<typeof cb>[0]);

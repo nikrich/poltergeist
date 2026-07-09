@@ -87,6 +87,10 @@ const stubBridge: GbBridge = {
     installFromFolder: async () => ({ ok: true }),
     installFromGit: async () => ({ ok: true }),
     uninstall: async () => ({ ok: true }),
+    marketplaceList: async () => [],
+    marketplaceSearch: async () => [],
+    installFromRegistry: async () => ({ ok: true }),
+    update: async () => ({ ok: true }),
     onChanged: () => () => {},
   },
   plugin: () => ({
