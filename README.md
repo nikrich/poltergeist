@@ -12,101 +12,54 @@
 </p>
 
 <p align="center">
+  <a href="https://getpoltergeist.com"><b>getpoltergeist.com</b></a> ·
+  <a href="https://github.com/nikrich/poltergeist/releases/latest"><b>Download</b></a> ·
+  <a href="#quick-start"><b>Quick start</b></a> ·
+  <a href="#documentation"><b>Docs</b></a>
+</p>
+
+<p align="center">
+  <img width="1510" height="864" alt="poltergeist desktop" src="https://github.com/user-attachments/assets/28bd797b-9491-44be-9326-0bd5684eaa02" />
+</p>
+
+<p align="center">
   <img alt="Poltergeist — a 40-second tour" src="media/poltergeist-demo.gif" width="900">
 </p>
 
-<p align="center"><sub>A 40-second tour — today's digest, asking the archive, the capture inbox, live connectors, and quick jots.<br><a href="media/poltergeist-demo.mp4">Watch the higher-quality MP4 →</a></sub></p>
+<p align="center"><sub>A 40-second tour — today's digest, asking the archive, the capture inbox, live connectors, and quick jots.<br><a href="media/poltergeist-demo.webm">Watch the higher-quality video →</a></sub></p>
 
-Poltergeist quietly haunts every app you use — Claude Code & Desktop,
-GitHub, Jira, Confluence, Slack, Gmail, Teams, Calendar — pulls every
-passing thought into your Obsidian vault, classifies and summarizes it
-with an LLM, and serves it back as a daily digest.
+Poltergeist is a **local-first memory layer for your work life**. It quietly haunts every app you use — Claude Code & Desktop, GitHub, Jira, Confluence, Slack, Gmail, Microsoft 365, your calendar — pulls every passing thought into a plain-markdown Obsidian vault on your machine, classifies and summarizes it with an LLM, and serves it back as a daily digest you can actually act on.
 
-> **A note on naming.** The CLI, Python package, and vault directory still
-> use the legacy `ghostbrain` namespace (e.g. `ghostbrain-worker`,
-> `~/ghostbrain/vault/`). The product itself is Poltergeist.
+No manual capture. No SaaS holding your context hostage. Just markdown, on your disk, forever.
 
-> **Status: alpha.** Connectors available today: Claude Code, GitHub, Jira,
-> Confluence, Google + macOS Calendar, Gmail, Slack, Joplin, and Microsoft 365
-> (Outlook mail, Teams chat, Teams meeting transcripts), plus daily/weekly
-> digests and profile auto-update. The meeting recorder and richer metrics are
-> the main work still in progress. The system is designed to be incrementally
-> adopted — wire up only the connectors you want.
+## Why Poltergeist
 
-## Quick start
+Most "second brain" tools fail in one of two ways: they're **manual**, so you stop feeding them, or they're **SaaS**, so your most sensitive professional context lives on someone else's servers. Poltergeist is built to avoid both:
 
-Get a connector flowing in ~5 minutes. Full per-connector prerequisites are in [Setup](#setup) below; for an agent-guided walkthrough of any connector, use the **`onboarding-poltergeist`** skill in `.claude/skills/`.
+- **Zero-effort capture.** Connectors watch the apps you already use and file everything automatically. You never "save a note" again.
+- **Local-first and private.** Your vault is plain markdown files on your own disk. Nothing leaves your machine unless you push it somewhere. Credentials are stored `0600` in local state, never in the vault or source.
+- **Your existing Claude subscription powers it.** LLM calls run through the `claude` CLI, so a Claude subscription is all you need — no separate API key or metered billing (the metered API is supported if you prefer it).
+- **Open format, no lock-in.** The vault is a standard Obsidian vault. Every note is readable with `cat`. Walk away any time and keep everything.
+- **Extensible.** A small connector pattern for new sources, and a plugin system for extending the desktop app.
 
-```bash
-# 1. Install
-git clone <repo-url> ghost-brain && cd ghost-brain
-python3.11 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
+## What it does
 
-# 2. Bootstrap the vault (idempotent) — creates ~/ghostbrain/vault/
-ghostbrain-bootstrap
-export VAULT_PATH="$HOME/ghostbrain/vault"
-```
+| | |
+|---|---|
+| **Connectors** | Claude Code, GitHub, Jira, Confluence, Slack, Gmail, Google + macOS Calendar, Joplin, Microsoft 365 (Outlook mail, Teams chat, Teams meeting transcripts) |
+| **Daily digest** | Every morning: what happened yesterday, what's on today, across every context |
+| **Weekly digest** | What's drifting, what's recurring, who needs unblocking — patterns no single day shows |
+| **Ask the archive** | RAG-backed Q&A over your entire history, with citations, from the desktop app or any MCP client |
+| **Profile engine** | Learns how you work from your sessions and keeps per-project `CLAUDE.md` files up to date |
+| **Desktop app** | Digest reader, archive search, capture inbox, quick jots, connector health, built-in scheduler |
+| **Plugins** | Extend the desktop app with third-party plugins; install from folder, git, or the marketplace |
 
-Then connect a source. **Every connector is the same shape:** create a credential → authenticate → add its block to `<vault>/90-meta/routing.yaml` → fetch. GitHub is the quickest first one (it just reuses your `gh` login):
-
-```bash
-gh auth login                                   # if not already logged in
-# add to <vault>/90-meta/routing.yaml:
-#   github:
-#     orgs: { your-org: personal }
-ghostbrain-github-fetch --dry-run               # preview — queues nothing
-ghostbrain-github-fetch                         # queue events
-ghostbrain-worker                               # turn queued events into vault notes
-```
-
-| Connector | Authenticate | Create first |
-|---|---|---|
-| GitHub | uses `gh` | `gh auth login` |
-| Gmail | `ghostbrain-gmail-auth <email>` | Google Desktop OAuth client JSON |
-| Calendar (Google) | `ghostbrain-calendar-auth google <email>` | same Google OAuth client |
-| Slack | `ghostbrain-slack-token-add <slug> <xoxp>` | Slack app + user token (`xoxp-…`) |
-| Jira / Confluence | env `ATLASSIAN_EMAIL` + `ATLASSIAN_TOKEN` | Atlassian API token |
-| Joplin | token in `routing.yaml` | Joplin Web Clipper token |
-| Microsoft (Outlook / Teams) | `ghostbrain-microsoft-auth` | Entra app (client id + tenant id) |
-| Claude Code | SessionEnd hook | — |
-
-> **The desktop app's "connect" buttons are placeholders** — connectors are wired up from the CLI + `routing.yaml`, as above. Detailed prerequisites, OAuth scopes, and per-connector config live in [Setup](#setup) and the connector sections further down.
-
-## Query from Claude Code / Desktop (MCP)
-
-Poltergeist ships an MCP server so Claude Code & Desktop can query your vault
-mid-task — ask it questions, search it, read notes.
-
-```bash
-pip install -e ".[mcp]"     # adds the ghostbrain-mcp entrypoint
-```
-
-Add to your `.mcp.json` (project scope) or `~/.claude.json` (user scope):
-
-```json
-{ "mcpServers": { "poltergeist": { "command": "ghostbrain-mcp" } } }
-```
-
-The server forwards to the running desktop-app sidecar (it must be open). Tools:
-`poltergeist_ask` (RAG answer + citations), `poltergeist_search` (ranked hits),
-`poltergeist_get_note` (full note by path). The `poltergeist-recall` skill in
-`.claude/skills/` automates the wiring and tells Claude when to use it.
-
-> Writing notes from Claude (`poltergeist_capture`) is a planned follow-on once
-> Poltergeist Jots lands.
-
-## Why
-
-Most "second brain" tools are either manual (you stop adding things) or
-SaaS (your private context lives on someone else's servers). Poltergeist is
-local-first, file-based, uses your existing Claude subscription for LLM calls,
-and adds new sources via a small connector pattern.
+> **Status: alpha.** All connectors above are live today. The meeting recorder and richer metrics are the main work in progress. Poltergeist is designed to be adopted incrementally — wire up only the connectors you want.
 
 ## How it works
 
 ```
-Sources (Claude Code, GitHub, Jira, …)
+Sources (Claude Code, GitHub, Jira, Slack, Gmail, …)
         │  connectors normalize to a standard event shape
         ▼
 Filesystem queue: <vault>/90-meta/queue/pending/
@@ -121,692 +74,127 @@ Obsidian vault: 20-contexts/<ctx>/<source>/, 80-profile/, 60-dashboards/
 Daily digest at <vault>/10-daily/<date>.md
 ```
 
-See [SPEC §2](./spec/SPEC.md#section-2--system-overview) for the full picture.
+Everything in the pipeline is inspectable: events are JSON files, notes are markdown, and every routing decision is written to a JSONL audit log. See [SPEC §2](./spec/SPEC.md#section-2--system-overview) for the full architecture.
 
-## Tech stack
+**Under the hood:** Python 3.11+, an in-app asyncio scheduler (no broker, no Docker), a filesystem queue, and Obsidian as the storage layer. Cross-platform — connectors, worker, digests, and the desktop app run on macOS, Linux, and Windows ([per-OS notes](./docs/install/)). The meeting recorder is macOS-only for now.
 
-- **Python 3.11+** for connectors, worker, processing pipeline.
-- **Anthropic Claude** via the `claude` CLI subprocess. The default backend uses
-  your Claude Max subscription, so no `ANTHROPIC_API_KEY` is required. See
-  [SPEC §12.1](./spec/SPEC.md#121-llm-backend-and-costs) if you'd rather use the
-  metered API.
-- **Obsidian** as the vault, with the Dataview, Templater, Periodic Notes, and
-  Local REST API plugins.
-- **In-app asyncio scheduler** for orchestration (macOS launchd remains supported as a legacy path). No broker, no Docker.
-- **Filesystem queue** for events.
+## Quick start
 
-Cross-platform: connectors, worker, daily digest, and desktop app run on macOS, Linux, and Windows. The meeting recorder (Phase 13) is macOS-only for now — see `docs/install/{linux,windows}.md` for what's supported on each OS.
+Get your first connector flowing in about five minutes.
 
-## Setup
+> **A note on command names.** CLI binaries and the Python package use the `ghostbrain-` prefix — Poltergeist's original codename. A rename is on the roadmap; until then, the commands below are correct as written.
 
-### 1. Clone and install
+### 1. Install
 
 ```bash
-git clone <fork-or-upstream-url> ghost-brain
-cd ghost-brain
-python3.11 -m venv .venv
-source .venv/bin/activate
+git clone https://github.com/nikrich/poltergeist.git && cd poltergeist
+python3.11 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-### 2. Make sure Claude Code is logged in
+### 2. Verify Claude Code is logged in
 
-Confirm the CLI is on PATH and you have an active session:
+LLM calls run as `claude -p "<prompt>" --output-format json`, inheriting your existing Claude login:
 
 ```bash
 claude --version
 claude     # interactive — quit out once you see the prompt
 ```
 
-LLM calls run as `claude -p "<prompt>" --output-format json`. To use the
-metered Anthropic API instead, see [SPEC §12.1](./spec/SPEC.md#121-llm-backend-and-costs).
-
-### 3. Choose a vault location (optional)
-
-Default is `~/ghostbrain/vault/`. Override with:
+### 3. Bootstrap the vault
 
 ```bash
-export VAULT_PATH="$HOME/some/other/path"
+ghostbrain-bootstrap                          # idempotent — creates ~/ghostbrain/vault/
+export VAULT_PATH="$HOME/ghostbrain/vault"    # or point it anywhere you like
 ```
 
-### 4. Bootstrap the vault
+Open the vault in Obsidian and install the community plugins it relies on: **Dataview, Templater, Periodic Notes, Local REST API**.
+
+### 4. Connect a source
+
+Every connector is the same shape: create a credential → authenticate → add its block to `<vault>/90-meta/routing.yaml` → fetch. GitHub is the quickest first one — it reuses your `gh` login:
 
 ```bash
-ghostbrain-bootstrap
+gh auth login                                   # if not already logged in
+# add to <vault>/90-meta/routing.yaml:
+#   github:
+#     orgs: { your-org: personal }
+ghostbrain-github-fetch --dry-run               # preview — queues nothing
+ghostbrain-github-fetch                         # queue events
+ghostbrain-worker                               # turn queued events into vault notes
 ```
 
-Creates the directory tree from [SPEC §3.1](./spec/SPEC.md#section-3--vault-structure)
-and seed files for `routing.yaml`, `config.yaml`, and prompt stubs. Idempotent.
+| Connector | Authenticate | You'll need |
+|---|---|---|
+| GitHub | uses `gh` | `gh auth login` |
+| Gmail | `ghostbrain-gmail-auth <email>` | Google Desktop OAuth client JSON |
+| Calendar (Google) | `ghostbrain-calendar-auth google <email>` | same Google OAuth client |
+| Slack | `ghostbrain-slack-token-add <slug> <xoxp>` | Slack app + user token (`xoxp-…`) |
+| Jira / Confluence | env `ATLASSIAN_EMAIL` + `ATLASSIAN_TOKEN` | Atlassian API token |
+| Joplin | token in `routing.yaml` | Joplin Web Clipper token |
+| Microsoft (Outlook / Teams) | `ghostbrain-microsoft-auth` | Entra app (client id + tenant id) |
+| Claude Code | SessionEnd hook | — |
 
-### 5. Install Obsidian plugins (manual)
+Full per-connector walkthroughs — OAuth scopes, routing rules, scheduling, caveats — live in **[docs/connectors.md](./docs/connectors.md)**. For an agent-guided setup of any connector, use the `onboarding-poltergeist` skill in `.claude/skills/`.
 
-Open the vault in Obsidian, then **Settings → Community plugins**:
+> Connectors are wired up from the CLI + `routing.yaml` for now — the desktop app's "connect" buttons are placeholders.
 
-- Dataview
-- Templater
-- Periodic Notes
-- Local REST API
+### 5. Keep it running
 
-These have to come from the in-app browser; they aren't installable from the CLI.
+The desktop app's sidecar runs all connectors and the worker on an asyncio scheduler — no launchd, systemd, or Task Scheduler required. Enable it in **Settings → Scheduler**, or set `GHOSTBRAIN_SCHEDULER_ENABLED=1` before launching `ghostbrain-worker`. Prefer OS-native scheduling? Templates for [launchd](./docs/install/macos-launchd.md), [systemd](./docs/install/linux.md), and [Task Scheduler](./docs/install/windows.md) are included.
 
-### 6. Configure routing
+## Query your vault from Claude (MCP)
 
-Edit `<vault>/90-meta/routing.yaml` to map your sources (GitHub orgs, Jira
-sites, Claude Code project paths, etc.) to context names. Every entry is
-marked `TODO` after a fresh bootstrap.
-
-The four default contexts are placeholders for the typical split:
-**work / employer**, **personal company / consulting**, **side product**,
-and **personal life**. They're currently hard-coded as
-`sanlam / codeship / reducedrecipes / personal` (the original author's
-contexts). Renaming them requires editing `ghostbrain/bootstrap.py:CONTEXTS`
-and any references in your local profile content; full configurability is
-[Phase 14](./spec/SPEC.md#phase-14--open-source-packaging-final) work.
-
-### 7. Run the worker
-
-**Foreground (development):**
+Poltergeist ships an MCP server so Claude Code & Desktop can query your vault mid-task — ask it questions, search it, read notes:
 
 ```bash
-ghostbrain-worker
+pip install -e ".[mcp]"     # adds the ghostbrain-mcp entrypoint
 ```
 
-**Always-on (recommended): the in-app scheduler**
-
-The desktop app's Python sidecar can run all connectors and the worker as an
-asyncio scheduler — no launchd, systemd, or Task Scheduler required. Enable it
-in **Settings → Scheduler** inside the desktop app, or set
-`GHOSTBRAIN_SCHEDULER_ENABLED=1` before launching `ghostbrain-worker`.
-
-Per-OS notes:
-- **macOS:** see `docs/install/macos-launchd.md` if you prefer the legacy launchd path. Recommended only if you're not running the desktop app.
-- **Linux:** see `docs/install/linux.md` for a systemd user-unit template.
-- **Windows:** see `docs/install/windows.md` for a Task Scheduler template.
-
-## Profile and CLAUDE.md generation
-
-The profile lives in `<vault>/80-profile/`. Hand-write:
-
-- `working-style.md` — how you work, decision style, communication preferences.
-- `preferences.md` — tools, languages, what you don't want.
-- `current-projects.md` — active work, **with H2 headings per context**. The
-  generator filters this file to the heading matching the project's context.
-- Per-context profile in `<vault>/20-contexts/<ctx>/_profile.md`.
-
-Routing of project paths to contexts is in `routing.yaml` under
-`claude_code.project_paths` (longest-prefix match wins).
-
-Regenerate per-project `CLAUDE.md`:
-
-```bash
-# One project:
-ghostbrain-claude-md /path/to/your/project
-
-# Every project under configured roots (default: ~/code, ~/development):
-ghostbrain-claude-md --all
-```
-
-To schedule a nightly regen, install `com.ghostbrain.claudemd.plist` (the
-sed snippet above handles both plists in one pass) — runs daily at 02:00.
-
-## Capturing Claude Code sessions (Phase 3)
-
-The system reads finished Claude Code sessions via a `SessionEnd` hook and
-processes them through the worker pipeline:
-
-```
-SessionEnd hook → queue → worker → router → note generator → (extractor)
-```
-
-**Wire up the hook** by adding this entry to `~/.claude/settings.json`:
+Add to your `.mcp.json` (project scope) or `~/.claude.json` (user scope):
 
 ```json
-"hooks": {
-  "SessionEnd": [{
-    "matcher": "*",
-    "hooks": [{
-      "type": "command",
-      "command": "/path/to/ghost-brain/orchestration/hooks/session-end.sh",
-      "shell": "bash",
-      "async": true
-    }]
-  }]
-}
+{ "mcpServers": { "poltergeist": { "command": "ghostbrain-mcp" } } }
 ```
 
-The hook reads the standard SessionEnd payload from stdin
-(`session_id`, `transcript_path`, `cwd`, `reason`) and drops a normalized
-event into the queue. The worker picks it up within ~5 seconds.
-
-**Routing is path-first.** If the project's path matches a rule in
-`<vault>/90-meta/routing.yaml:claude_code.project_paths`, the event is
-routed instantly with confidence 1.0 — no LLM call. Only paths without a
-rule fall through to the LLM router.
-
-**Default mode is `review_only`.** Every event lands in
-`<vault>/00-inbox/raw/claude-code/` (always), but nothing is written under
-`20-contexts/<ctx>/` until you flip `worker.routing_mode` to `live` in
-`config.yaml`. The audit log captures every routing decision so you can
-spot-check accuracy before going live. SPEC §9 Phase 3 recommends 2 weeks
-in review-only mode.
-
-**Extractor.** In `live` mode, every Claude session also goes through the
-LLM extractor, which writes specs/decisions/code/prompts/unresolved items
-under `20-contexts/<ctx>/claude/artifacts/<type>/`.
-
-## GitHub connector (Phase 4)
-
-Polls GitHub for PRs you authored, PRs requesting your review, and issues
-assigned to you — filtered to orgs in `<vault>/90-meta/routing.yaml` under
-`github.orgs`. Auth piggybacks on `gh auth login` so no token is needed.
-
-Edit `<vault>/90-meta/routing.yaml` to map your orgs to contexts:
-
-```yaml
-github:
-  orgs:
-    YourOrg: codeship
-    YourEmployer: work
-    YourSideProject: side
-```
-
-Owners not in the map fall through to the LLM router (and likely
-`needs_review`).
-
-Run manually:
-
-```bash
-ghostbrain-github-fetch                # queue events for the worker
-ghostbrain-github-fetch --dry-run      # preview without enqueueing
-```
-
-PR notes land at `<vault>/20-contexts/<ctx>/github/prs/<owner>-<repo>-<number>.md`.
-Issues at `.../github/issues/`.
-
-Schedule via launchd (every 2 hours):
-
-```bash
-launchctl load ~/Library/LaunchAgents/com.ghostbrain.github.plist
-```
-
-## Daily digest (Phase 5)
-
-Once a day at 06:30 (when the launchd timer is loaded), the worker generates
-a digest of yesterday's activity at `<vault>/10-daily/<date>.md`. Per-context
-digests at `<vault>/10-daily/by-context/<ctx>-<date>.md` are emitted only
-when a context had >= 5 events or >= 2 artifacts that day.
-
-Run it manually:
-
-```bash
-ghostbrain-digest                     # for today
-ghostbrain-digest --date 2026-05-08   # for any specific date
-```
-
-The digest reads:
-- Yesterday's audit log (`90-meta/audit/<date>.jsonl`).
-- Frontmatter of every routed/inbox note from yesterday.
-
-It writes a markdown file with frontmatter + a Sonnet-generated body
-following the prompt in `<vault>/90-meta/prompts/digest.md`. Tone and
-structure are tunable by editing that file.
-
-Schedule it via launchd (after templating the plist with your paths):
-
-```bash
-launchctl load ~/Library/LaunchAgents/com.ghostbrain.digest.plist
-```
-
-## Jira + Confluence (Phase 7)
-
-Connectors for Atlassian Cloud, polled separately:
-
-- **Jira** — every 4 hours. Fetches tickets where you're assignee,
-  reporter, or watcher, updated within the lookback window. JQL: see
-  `ghostbrain/connectors/jira/__init__.py`.
-- **Confluence** — daily at 06:00 (just before the digest at 06:30 so
-  the day's edits show up). Fetches pages updated in monitored spaces.
-
-Auth via Atlassian API tokens, read from your `.env` (never in source
-or vault):
-
-```
-ATLASSIAN_EMAIL=your.email@example.com
-ATLASSIAN_TOKEN_<SITE>=<api token from id.atlassian.com>
-```
-
-`<SITE>` is the site slug uppercased — e.g. `yourco.atlassian.net` →
-`ATLASSIAN_TOKEN_SFT`. A single shared `ATLASSIAN_TOKEN` works as a
-fallback if you only have one site.
-
-Configure sites + spaces in `<vault>/90-meta/routing.yaml`:
-
-```yaml
-jira:
-  sites:
-    yourco.atlassian.net: sanlam      # site → context
-confluence:
-  sites:
-    yourco.atlassian.net: sanlam
-  spaces:
-    DOCS: sanlam                    # space key → context
-    PROJ: sanlam
-```
-
-Find space keys in any Confluence page URL: `.../wiki/spaces/<KEY>/...`.
-
-Run manually:
-
-```bash
-ghostbrain-jira-fetch [--dry-run]
-ghostbrain-confluence-fetch [--dry-run]
-```
-
-Schedule via launchd:
-
-```bash
-launchctl load ~/Library/LaunchAgents/com.ghostbrain.jira.plist
-launchctl load ~/Library/LaunchAgents/com.ghostbrain.confluence.plist
-```
-
-Notes land at `<vault>/20-contexts/<ctx>/jira/tickets/<KEY>.md` and
-`<vault>/20-contexts/<ctx>/confluence/<title>-<id>.md`.
-
-**Heads up on body content.** Ticket descriptions and Confluence page
-bodies are stored verbatim. If your Atlassian tickets/pages contain PII
-or sensitive data, the vault has it too. Vault is local-only by default;
-think before pushing it to a git remote.
-
-## Calendar (Phase 11)
-
-Polls your Google Calendar(s) hourly. Today's events appear in the
-morning digest's `## Today` section.
-
-### One-time setup
-
-1. Create a Google Cloud project at <https://console.cloud.google.com/projectcreate>
-   (name: ghostbrain). Enable the **Google Calendar API**.
-2. Configure the **OAuth consent screen** as External, fill basic
-   metadata, add yourself as a test user.
-3. Create an **OAuth client ID** (type: "Desktop app"). Download the
-   JSON to `~/.ghostbrain/state/google_oauth_client.json` and
-   `chmod 600`.
-4. Configure your accounts in `<vault>/90-meta/routing.yaml`:
-   ```yaml
-   calendar:
-     google:
-       accounts:
-         you@gmail.com: personal
-         you@workspace.com: work
-   ```
-5. Run the consent flow once per account:
-   ```bash
-   ghostbrain-calendar-auth google you@gmail.com
-   ghostbrain-calendar-auth google you@workspace.com
-   ```
-   Each opens a browser; refresh tokens land at
-   `~/.ghostbrain/state/google_calendar.<slug>.token`.
-
-### Run
-
-```bash
-ghostbrain-calendar-fetch [--dry-run]
-```
-
-Or schedule via launchd:
-
-```bash
-launchctl load ~/Library/LaunchAgents/com.ghostbrain.calendar.plist
-```
-
-Polls every hour. Events land at
-`<vault>/20-contexts/<ctx>/calendar/<file>.md`. The daily digest's
-`## Today` section reads them by `start` frontmatter.
-
-### Caveat: refresh-token expiry
-
-Google External-app + Test mode expires refresh tokens after ~7 days.
-For long-term use either:
-- Publish your OAuth consent screen (button on the consent screen page).
-  Calendar.readonly scope may not require formal verification for
-  single-user personal apps.
-- Re-run `ghostbrain-calendar-auth google <email>` weekly.
-
-## Gmail connector (Phase 9)
-
-Polls one or more Gmail accounts. Surfaces threads that are either
-unread within the last 24h or carry a monitored label. Events route via
-sender domain (strongest signal) or label prefix; everything else falls
-through to the LLM router.
-
-### One-time setup
-
-Reuses the same OAuth client you set up for the calendar connector. If
-you skipped that, do steps 1–3 from the calendar setup first (Google
-Cloud project + OAuth consent screen + Desktop OAuth client at
-`~/.ghostbrain/state/google_oauth_client.json`). Then enable the
-**Gmail API** in the same project.
-
-1. Configure accounts and routing in `<vault>/90-meta/routing.yaml`:
-   ```yaml
-   gmail:
-     accounts:
-       you@gmail.com:
-         monitored_labels: ["work/important", "codeship/internal"]
-         unread_lookback_hours: 24
-     sender_domains:
-       company.example.com: sanlam
-       a consultancy: codeship
-     label_prefixes:
-       "sanlam/": sanlam
-       "codeship/": codeship
-   ```
-2. Run consent once per account:
-   ```bash
-   ghostbrain-gmail-auth you@gmail.com
-   ```
-   Refresh token lands at `~/.ghostbrain/state/gmail.<slug>.token`.
-
-### Run
-
-```bash
-ghostbrain-gmail-fetch [--dry-run]
-```
-
-Threads land in `<vault>/00-inbox/raw/gmail/` and route to
-`<vault>/20-contexts/<ctx>/gmail/`.
-
-### Filtering philosophy
-
-Gmail is noisy, so the connector deliberately doesn't pull "all mail":
-- Domain-routed mail (e.g., `@company.example.com`) lands no matter what.
-- Labeled mail (e.g., `work/important`) lands no matter what.
-- Everything else only shows up while it's still **unread** within the
-  configured lookback window — once you've read a newsletter, it stops
-  appearing in future fetches.
-
-If something important keeps slipping through, add a sender_domain or
-label rule rather than widening the unread filter.
-
-## Slack connector (Phase 9)
-
-Polls one or more Slack workspaces for `@`-mentions of the
-authenticated user over the last 24h. Only mentions — no raw channel
-volume. Each mention routes via workspace slug (e.g., `work → sanlam`)
-without an LLM call.
-
-### One-time setup per workspace
-
-1. Create a Slack app: `https://api.slack.com/apps` → **Create New App**
-   → **From scratch** → name `ghostbrain`, pick the workspace.
-2. **OAuth & Permissions** → add **User Token Scopes**:
-   - `search:read`
-   - `users:read`
-   - `team:read`
-   - `channels:history`
-   - `groups:history`
-   - `im:history`
-   - `mpim:history`
-3. **Install to Workspace** → approve. Copy the **User OAuth Token**
-   (starts with `xoxp-`).
-4. Save the token:
-   ```bash
-   ghostbrain-slack-token-add <slug> xoxp-...your-token...
-   ```
-   The slug is whatever you'll use in `routing.yaml`. The CLI verifies
-   the token by calling `auth.test` and writes it 0600 to
-   `~/.ghostbrain/state/slack.<slug>.token`.
-5. Configure the workspace in `<vault>/90-meta/routing.yaml`:
-   ```yaml
-   slack:
-     workspaces:
-       work-workspace:
-         context: sanlam
-         lookback_hours: 24
-         mentions_only: true
-       codeship:
-         context: codeship
-   ```
-
-Repeat for each workspace.
-
-### Run
-
-```bash
-ghostbrain-slack-fetch [--dry-run]
-```
-
-Mentions land in `<vault>/00-inbox/raw/slack/` and route to
-`<vault>/20-contexts/<ctx>/slack/`. Each note's frontmatter carries
-`workspace_slug`, `channel_name`, `user_name`, `permalink`, `is_dm`,
-`thread_ts` — Dataview-friendly.
-
-### Filtering philosophy
-
-Mentions-only is the default because it's already a high-signal filter
-the user maintains in Slack itself. If you want to widen — say, ingest
-every message in a specific channel — that's an `--include-channels`
-flag the connector doesn't have yet. Open an issue if you need it.
-
-### Caveat: admin-restricted workspaces
-
-Slack workspaces with **Information Barriers** (common on enterprise
-plans) can silently filter user-token API responses — granting the
-scopes you ask for, then returning empty results when you call them.
-Symptoms:
-
-- `auth.test` succeeds and reports the right team.
-- `conversations.list` for `private_channel` returns `ok: true` with
-  `channels: []` even though you're a member of dozens.
-- `search.messages` returns `ok: true` with `total: 0` for every query.
-- `users.conversations` shows `general` + `random` only, even though
-  you actively chat in many private channels.
-
-This is a tenant-side policy and there's no way around it from the API.
-Options: file an admin ticket, use a different workspace, or accept
-that the connector will produce nothing useful for that workspace.
-
-The connector code itself is correct — it'll work the day it's pointed
-at a workspace where API access isn't policy-restricted.
-
-## Weekly digest (Phase 13)
-
-Where the daily digest answers "what happened yesterday", the weekly
-answers "what's drifting, what's recurring, who needs unblocking" —
-strategic patterns that don't show up in any single day.
-
-Aggregates the past 7 days of:
-- Daily digest summaries
-- Transcript-derived artifacts (decisions, action items, unresolved
-  questions, specs)
-- Stale PRs/tickets and check-in suggestions
-- Per-context + per-source event volumes
-
-Renders a compact week-in-review with wikilinks (clickable in
-Obsidian) under `<vault>/10-daily/weekly/YYYY-Www.md`. Sections it
-produces (skipped silently when empty): At a glance, Decisions made,
-Action items still open, Risks not moving, Recurring themes, People
-to follow up with, Quiet this week, System health.
-
-### Run
-
-```bash
-ghostbrain-weekly-digest [--week-end 2026-05-10]
-```
-
-By default it summarises the most recently completed week (week
-ending on the most recent Sunday). Pass `--week-end YYYY-MM-DD` for
-a specific Sunday.
-
-### Schedule
-
-Run weekly via launchd or cron. A reasonable default is Sunday
-evening so the digest is waiting for you Monday morning.
-
-## Profile auto-update (Phase 6)
-
-Each Claude Code session, after extraction, calls the profile-updater LLM
-with the session digest + your current profile. It proposes diffs as
-JSON lines under `<vault>/80-profile/_proposed/<date>.jsonl`. Nothing
-changes the profile yet.
-
-A weekly job (`ghostbrain-profile-apply`, scheduled Sunday 22:00) groups
-the past 7 days of proposals by `(field, operation, normalized after-text)`:
-
-- **3+ corroborating proposals on `current-projects`** → auto-applied as
-  bullets under the right context heading. Audit logs each.
-- **Stable layer** (`working-style`, `preferences`) → never auto-applies.
-  All proposals land in `<vault>/80-profile/_review.md` for you to apply
-  by hand.
-- **1-2 proposals on Current** → discarded. Coincidences shouldn't change
-  your profile.
-- **Contradictions of existing facts** → `_review.md`.
-
-A monthly job (`ghostbrain-profile-decay`, scheduled day-1 22:00):
-
-- Items in Current not reinforced in 60 days → archived to `_archive.md`.
-  Hand-edited items (no audit history) are left alone.
-- Items stable for 30+ days → proposed for the Stable layer in
-  `_pending_stable.md`. You promote by hand.
-
-To enable both:
-
-```bash
-launchctl load ~/Library/LaunchAgents/com.ghostbrain.profile-weekly.plist
-launchctl load ~/Library/LaunchAgents/com.ghostbrain.profile-monthly.plist
-```
-
-Manual triggers (any time):
-
-```bash
-ghostbrain-profile-apply [--date 2026-05-08]
-ghostbrain-profile-decay [--date 2026-05-08]
-```
-
-## LLM client
-
-`ghostbrain.llm.client.run()` shells out to `claude -p` so calls inherit your
-Max OAuth login. To keep cost (and Max-quota consumption) low it strips the
-default Claude Code system prompt with `--system-prompt` and pins a tiny
-auto-generated one. Models are configurable in `config.yaml`:
-
-```yaml
-llm:
-  router_model: haiku       # cheap routing fallback
-  extractor_model: sonnet   # extraction wants nuance
-  digest_model: sonnet      # Phase 5
-```
-
-A `--max-budget-usd` cap is set on each call as belt-and-suspenders.
-
-## Verifying the install
-
-```bash
-ghostbrain-bootstrap
-
-# Drop a synthetic event:
-cat > "$VAULT_PATH/90-meta/queue/pending/manual-test.json" <<'EOF'
-{
-  "id": "manual-test-1",
-  "source": "manual",
-  "type": "note",
-  "timestamp": "2026-05-07T10:00:00Z",
-  "title": "Verification",
-  "body": "hi"
-}
-EOF
-
-# Run the worker:
-ghostbrain-worker
-```
-
-In another terminal you should see the file move within ~5 seconds:
-
-```bash
-ls "$VAULT_PATH/90-meta/queue/done/"
-tail -f "$VAULT_PATH/90-meta/audit/"*.jsonl
-```
-
-The audit log should contain an `event_processed` line with
-`status: "success"`.
-
-## Tests
-
-```bash
-pytest
-```
+The server forwards to the running desktop-app sidecar (it must be open). Tools: `poltergeist_ask` (RAG answer + citations), `poltergeist_search` (ranked hits), `poltergeist_get_note` (full note by path). The `poltergeist-recall` skill in `.claude/skills/` automates the wiring and tells Claude when to use it.
+
+## Privacy & data ownership
+
+- **Everything is local.** The vault, the queue, the audit log, and all credentials live on your machine. There is no Poltergeist cloud and no telemetry.
+- **Verbatim content stays verbatim.** Connectors store ticket descriptions, emails, and messages as-is. If your sources contain sensitive data, so does your vault — it's local-only by default; think before pushing it to a remote.
+- **Every decision is auditable.** The worker writes each routing and processing decision to `90-meta/audit/<date>.jsonl`, and new connectors default to review-only mode so you can spot-check accuracy before going live.
+- **Budget-capped LLM calls.** Every call carries a `--max-budget-usd` cap, and models per task (routing, extraction, digest) are configurable in `config.yaml`.
+
+## Documentation
+
+| Guide | Covers |
+|---|---|
+| [Connector setup](./docs/connectors.md) | Per-connector auth, routing, scheduling, and caveats |
+| [Operations](./docs/operations.md) | Daily/weekly digests, profile auto-update, `CLAUDE.md` generation, LLM config, install verification |
+| [Install notes](./docs/install/) | macOS launchd, Linux systemd, Windows Task Scheduler |
+| [SPEC.md](./spec/SPEC.md) | The full system specification — architecture, vault structure, build phases |
 
 ## Repo layout
 
 ```
-ghost-brain/
-├── spec/SPEC.md                        # source of truth — read first
-├── pyproject.toml
-├── ghostbrain/                         # Python package
-│   ├── paths.py                        # vault/queue/audit/state path resolution
-│   ├── bootstrap.py                    # vault tree creator (idempotent)
-│   ├── connectors/
-│   │   ├── _base.py                    # base Connector class
-│   │   └── claude_code/parser.py       # session JSONL → digest
-│   ├── llm/client.py                   # `claude -p` subprocess wrapper
-│   ├── profile/
-│   │   ├── claude_md.py                # per-project CLAUDE.md generator
-│   │   ├── diff.py                     # per-session diff proposer
-│   │   ├── apply.py                    # weekly applier
-│   │   └── decay.py                    # monthly decay + promotion
-│   └── worker/
-│       ├── main.py                     # run loop
-│       ├── pipeline.py                 # parse → route → note → extract
-│       ├── router.py                   # path-first then LLM
-│       ├── note_generator.py           # frontmatter + body writer
-│       ├── extractor.py                # LLM artifact extraction
-│       ├── digest.py                   # daily digest generator
-│       └── audit.py                    # JSONL audit log writer
-├── orchestration/
-│   ├── hooks/session-end.sh            # Claude Code SessionEnd hook
-│   └── launchd/                        # launchd plists (templated)
+poltergeist/
+├── spec/SPEC.md              # source of truth — read first
+├── ghostbrain/               # Python package (connectors, worker, LLM client, MCP server)
+├── desktop/                  # Electron desktop app + Python sidecar
+├── plugins/                  # bundled desktop-app plugins
+├── orchestration/            # SessionEnd hook + launchd templates
+├── docs/                     # setup + operations guides
+├── website/                  # getpoltergeist.com
 └── tests/
 ```
 
-See [SPEC §11](./spec/SPEC.md#section-11--repository-structure) for the planned
-full layout.
-
-## Adding a connector
-
-A connector is a class that subclasses `ghostbrain.connectors._base.Connector`
-and implements `fetch()`, `normalize()`, and `health_check()`. Five steps to
-add e.g. a Linear connector:
-
-1. Create `ghostbrain/connectors/linear/`.
-2. Implement `LinearConnector(Connector)`.
-3. Register it (registry lands in Phase 4).
-4. Add routing rules in `<vault>/90-meta/routing.yaml`.
-5. Add a launchd schedule entry in `orchestration/launchd/`.
-
-Prompts live in `<vault>/90-meta/prompts/` — edit them directly to tune
-classification, extraction, or digest tone.
-
-See [SPEC §4](./spec/SPEC.md#section-4--connector-architecture) and
-[§4.4](./spec/SPEC.md#44-adding-a-new-connector).
-
-## For coding agents working on this repo
-
-If you're a Claude Code (or other coding-agent) session working on this
-codebase:
-
-1. Read [spec/SPEC.md](./spec/SPEC.md) end-to-end.
-2. Determine the current phase from `git log --oneline` — each completed
-   phase ends in a `feat: phase N <name>` commit.
-3. Work on the next phase only. Each has explicit acceptance criteria in
-   [§9](./spec/SPEC.md#section-9--build-sequence-phased) — don't skip ahead.
-4. Commit at the end of each phase with the phase name in the message.
-
 ## Contributing
 
-The project is alpha and the surface area will change between phases. Issues
-and PRs are welcome — please open an issue first to discuss substantive
-changes. New connectors and prompt improvements are particularly useful.
+Poltergeist is alpha and the surface area will change between phases. Issues and PRs are welcome — please open an issue first to discuss substantive changes. New connectors and prompt improvements are particularly useful; the connector pattern is documented in [docs/connectors.md](./docs/connectors.md#adding-a-new-connector).
+
+If you're a coding agent working on this repo: read [spec/SPEC.md](./spec/SPEC.md) end-to-end, determine the current phase from `git log --oneline`, work on the next phase only ([acceptance criteria in §9](./spec/SPEC.md#section-9--build-sequence-phased)), and commit each phase with its name in the message.
 
 ## License
 
-MIT (planned, not yet applied to source files).
+[MIT](./LICENSE)

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ghostbrain"
 version = "0.1.0"
-description = "Personal second-brain automation for Obsidian"
+description = "Poltergeist — a local-first memory layer for your work life, built on Obsidian"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
