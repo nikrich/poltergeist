@@ -76,3 +76,9 @@ export const registrySchema = z.object({
 });
 
 export type MarketplaceRegistry = z.infer<typeof registrySchema>;
+
+export interface MarketplaceListing extends MarketplaceEntry {
+  installed: boolean;
+  installedVersion: string | null;
+  updateAvailable: boolean;
+}
