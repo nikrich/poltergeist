@@ -31,7 +31,8 @@ def test_get_missing_returns_none(chats: Path):
 
 def test_list_skips_corrupt_and_sorts_newest_first(chats: Path):
     a = chat_store.create()
-    b = chat_store.create()
+    chat_store.append_user_message(chat_store.get(a["id"]), "first message")
+    b = chat_store.create()  # a has messages now, so this is a fresh conversation
     chat_store.append_user_message(chat_store.get(b["id"]), "later message")
     chats.joinpath("garbage.json").write_text("{not json")
     items = chat_store.list_all()
@@ -102,3 +103,21 @@ def test_append_user_message_omits_empty_attachments(chats):
     conv = chat_store.create()
     chat_store.append_user_message(conv, "plain")
     assert "attachments" not in chat_store.get(conv["id"])["messages"][-1]
+
+
+def test_create_reuses_existing_empty_conversation(chats: Path):
+    # Rapid multi-clicks on "new chat" fire several POSTs before the button
+    # disables — create() must be idempotent while an empty conversation exists.
+    a = chat_store.create()
+    b = chat_store.create()
+    c = chat_store.create()
+    assert a["id"] == b["id"] == c["id"]
+    assert len(list(chats.glob("*.json"))) == 1
+
+
+def test_create_makes_fresh_conversation_once_previous_has_messages(chats: Path):
+    a = chat_store.create()
+    chat_store.append_user_message(chat_store.get(a["id"]), "hello")
+    b = chat_store.create()
+    assert b["id"] != a["id"]
+    assert len(list(chats.glob("*.json"))) == 2

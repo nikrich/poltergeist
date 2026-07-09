@@ -110,6 +110,9 @@ def test_suspended_busy_generator_does_not_block_other_conversations(
 
     monkeypatch.setattr(repo_chat.agent, "run_chat_turn", happy_turn)
     conv_a = chat_store.create()
+    # create() is idempotent while an empty conversation exists — give conv_a
+    # a message so conv_b is genuinely a second conversation.
+    chat_store.append_user_message(chat_store.get(conv_a["id"]), "seed")
     conv_b = chat_store.create()
 
     # Hold the busy guard for conv_a mid-stream.
