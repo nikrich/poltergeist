@@ -71,7 +71,12 @@ export function PluginHost({ plugin }: { plugin: ActivePluginInfo }) {
       theme: themeVars(),
     };
 
-    import(/* @vite-ignore */ `plugin://${plugin.id}/${plugin.rendererEntry}`)
+    // Cache-bust per mount: the browser's module map caches dynamic imports by
+    // URL for the page's lifetime, so a reinstalled/reloaded plugin would keep
+    // serving its OLD renderer until an app restart. The plugin:// protocol
+    // handler ignores the query string; re-evaluating the module on mount is
+    // safe by contract (mount/unmount own all state).
+    import(/* @vite-ignore */ `plugin://${plugin.id}/${plugin.rendererEntry}?v=${Date.now()}`)
       .then((mod: PluginModule) => {
         if (cancelled) return;
         if (typeof mod.mount !== 'function') {
