@@ -11,11 +11,40 @@ interface Props {
   /** Primary action slot — a button, pill, or a group of controls. */
   action?: React.ReactNode;
   error?: string;
+  /** When set, clicking the card body (not the action slot) opens a detail view. */
+  onSelect?: () => void;
 }
 
-export function PluginCard({ icon, name, version, author, description, meta, action, error }: Props) {
+export function PluginCard({
+  icon,
+  name,
+  version,
+  author,
+  description,
+  meta,
+  action,
+  error,
+  onSelect,
+}: Props) {
   return (
-    <div className="flex flex-col gap-2 rounded-r10 border border-hairline bg-vellum p-3">
+    <div
+      className={`flex flex-col gap-2 rounded-r10 border border-hairline bg-vellum p-3 ${
+        onSelect ? 'cursor-pointer hover:border-hairline-2' : ''
+      }`}
+      role={onSelect ? 'button' : undefined}
+      tabIndex={onSelect ? 0 : undefined}
+      onClick={onSelect}
+      onKeyDown={
+        onSelect
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onSelect();
+              }
+            }
+          : undefined
+      }
+    >
       <div className="flex items-start gap-3">
         <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-r6 border border-hairline bg-paper">
           <Lucide name={icon ?? 'puzzle'} size={16} color="var(--ink-1)" />
@@ -31,7 +60,14 @@ export function PluginCard({ icon, name, version, author, description, meta, act
       </div>
       {description && <p className="m-0 text-11 leading-[1.4] text-ink-2">{description}</p>}
       {error && <div className="text-11 text-oxblood">{error}</div>}
-      {action && <div className="mt-1 flex items-center justify-between gap-2">{action}</div>}
+      {action && (
+        <div
+          className="mt-1 flex items-center justify-between gap-2"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {action}
+        </div>
+      )}
     </div>
   );
 }
