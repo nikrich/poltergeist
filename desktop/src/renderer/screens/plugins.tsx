@@ -5,6 +5,9 @@ import { Toggle } from '../components/Toggle';
 import { Lucide } from '../components/Lucide';
 import { Eyebrow } from '../components/Eyebrow';
 import { PluginCard } from '../components/PluginCard';
+import { SkeletonRows } from '../components/SkeletonRows';
+import { PanelEmpty } from '../components/PanelEmpty';
+import { PanelError } from '../components/PanelError';
 import { toast } from '../stores/toast';
 import type { ActivePluginInfo, MarketplaceListing, PluginRecord } from '../../shared/plugin-types';
 
@@ -45,6 +48,7 @@ export function PluginsScreen() {
   const [gitSubdir, setGitSubdir] = useState('');
   const [busy, setBusy] = useState(false);
   const [listings, setListings] = useState<MarketplaceListing[] | null>(null);
+  const [marketplaceError, setMarketplaceError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<Tab>('installed');
   const installedRef = useRef<HTMLElement | null>(null);
@@ -58,8 +62,9 @@ export function PluginsScreen() {
     const res = await window.gb.plugins.marketplace.list();
     if (Array.isArray(res)) {
       setListings(res);
+      setMarketplaceError(null);
     } else {
-      toast.error(res.error);
+      setMarketplaceError(res.error);
       setListings([]);
     }
   }, []);
@@ -140,11 +145,11 @@ export function PluginsScreen() {
         </div>
 
         {records === null ? (
-          <div className="p-3 text-12 text-ink-2">…</div>
-        ) : records.length === 0 ? (
-          <div className="p-3 text-12 text-ink-2">
-            nothing haunting this app yet — install a plugin below.
+          <div data-testid="installed-skeleton">
+            <SkeletonRows count={3} />
           </div>
+        ) : records.length === 0 ? (
+          <PanelEmpty icon="ghost" message="nothing haunting this app yet — install a plugin below." />
         ) : (
           <div data-testid="installed-grid" className={GRID}>
             {records.map((r) => (
@@ -245,11 +250,17 @@ export function PluginsScreen() {
           onChange={(e) => setSearch(e.target.value)}
         />
         {listings === null ? (
-          <div className="p-3 text-12 text-ink-2">…</div>
-        ) : filteredListings && filteredListings.length === 0 ? (
-          <div className="p-3 text-12 text-ink-2">
-            {listings.length === 0 ? 'no plugins in the marketplace yet.' : 'no matches.'}
+          <div data-testid="discover-skeleton">
+            <SkeletonRows count={4} />
           </div>
+        ) : marketplaceError ? (
+          <PanelError message={marketplaceError} onRetry={() => void refreshMarketplace()} />
+        ) : filteredListings && filteredListings.length === 0 ? (
+          listings.length === 0 ? (
+            <PanelEmpty icon="store" message="no plugins in the marketplace yet." />
+          ) : (
+            <div className="p-3 text-12 text-ink-2">no matches.</div>
+          )
         ) : (
           <div data-testid="discover-grid" className={GRID}>
             {filteredListings?.map((l) => (
