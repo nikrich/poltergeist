@@ -5,6 +5,7 @@ import { Toggle } from '../components/Toggle';
 import { Lucide } from '../components/Lucide';
 import { Eyebrow } from '../components/Eyebrow';
 import { PluginCard } from '../components/PluginCard';
+import { PluginDetail } from '../components/PluginDetail';
 import { SkeletonRows } from '../components/SkeletonRows';
 import { PanelEmpty } from '../components/PanelEmpty';
 import { PanelError } from '../components/PanelError';
@@ -38,6 +39,12 @@ const stateTone: Record<PluginRecord['state'], 'moss' | 'fog' | 'oxblood'> = {
 
 type Tab = 'installed' | 'discover';
 
+/** At least one of record/listing is set — the other is filled in by cross-referencing id. */
+interface DetailTarget {
+  record: PluginRecord | null;
+  listing: MarketplaceListing | null;
+}
+
 const GRID = 'grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3';
 
 const TRUST_NOTICE = 'plugins run with full access to your machine. install only code you trust.';
@@ -51,6 +58,7 @@ export function PluginsScreen() {
   const [marketplaceError, setMarketplaceError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<Tab>('installed');
+  const [detail, setDetail] = useState<DetailTarget | null>(null);
   const installedRef = useRef<HTMLElement | null>(null);
   const discoverRef = useRef<HTMLElement | null>(null);
 
@@ -101,6 +109,16 @@ export function PluginsScreen() {
       }
     },
     [refresh, refreshMarketplace],
+  );
+
+  const openInstalledDetail = useCallback(
+    (r: PluginRecord) => setDetail({ record: r, listing: listings?.find((l) => l.id === r.id) ?? null }),
+    [listings],
+  );
+
+  const openDiscoverDetail = useCallback(
+    (l: MarketplaceListing) => setDetail({ record: records?.find((r) => r.id === l.id) ?? null, listing: l }),
+    [records],
   );
 
   const filteredListings = useMemo(() => {
@@ -161,6 +179,7 @@ export function PluginsScreen() {
                 description={r.manifest?.description}
                 error={r.error}
                 meta={<Pill tone={stateTone[r.state]}>{r.state}</Pill>}
+                onSelect={() => openInstalledDetail(r)}
                 action={
                   <>
                     {r.manifest && (
@@ -272,6 +291,7 @@ export function PluginsScreen() {
                 author={l.author}
                 description={l.description}
                 meta={l.updateAvailable && <Pill tone="neon">update available</Pill>}
+                onSelect={() => openDiscoverDetail(l)}
                 action={
                   !l.installed ? (
                     <Btn
@@ -300,6 +320,59 @@ export function PluginsScreen() {
           </div>
         )}
       </section>
+
+      {detail &&
+        (() => {
+          const { record, listing } = detail;
+          const id = listing?.id ?? record?.id ?? '';
+          const installed = !!record || !!listing?.installed;
+          const updateAvailable = listing?.updateAvailable ?? false;
+          return (
+            <PluginDetail
+              name={listing?.name ?? record?.manifest?.name ?? record?.id ?? ''}
+              icon={listing?.icon ?? record?.manifest?.icon}
+              version={listing?.version ?? record?.manifest?.version}
+              author={listing?.author}
+              description={listing?.description ?? record?.manifest?.description}
+              tags={listing?.tags}
+              repo={listing?.repo}
+              installed={installed}
+              installedVersion={listing?.installedVersion ?? record?.manifest?.version ?? null}
+              updateAvailable={updateAvailable}
+              enabled={record?.state === 'enabled'}
+              busy={busy}
+              onClose={() => setDetail(null)}
+              onInstall={
+                listing && !installed
+                  ? () => void runMarketplace(() => window.gb.plugins.marketplace.install(id))
+                  : undefined
+              }
+              onUpdate={
+                listing && installed && updateAvailable
+                  ? () => void runMarketplace(() => window.gb.plugins.marketplace.update(id))
+                  : undefined
+              }
+              onToggleEnabled={
+                record?.manifest
+                  ? (next) => void run(() => window.gb.plugins.setEnabled(id, next))
+                  : undefined
+              }
+              onUninstall={
+                record
+                  ? () => {
+                      if (
+                        window.confirm(
+                          `Uninstall "${record.manifest?.name ?? record.id}"? Its settings/data are kept.`,
+                        )
+                      ) {
+                        void run(() => window.gb.plugins.uninstall(id));
+                      }
+                    }
+                  : undefined
+              }
+            />
+          );
+        })()}
     </div>
   );
 }
