@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Panel } from '../components/Panel';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Btn } from '../components/Btn';
 import { Pill } from '../components/Pill';
 import { Toggle } from '../components/Toggle';
 import { Lucide } from '../components/Lucide';
+import { Eyebrow } from '../components/Eyebrow';
+import { PluginCard } from '../components/PluginCard';
 import { toast } from '../stores/toast';
 import type { ActivePluginInfo, MarketplaceListing, PluginRecord } from '../../shared/plugin-types';
 
@@ -32,6 +33,12 @@ const stateTone: Record<PluginRecord['state'], 'moss' | 'fog' | 'oxblood'> = {
   invalid: 'oxblood',
 };
 
+type Tab = 'installed' | 'discover';
+
+const GRID = 'grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3';
+
+const TRUST_NOTICE = 'plugins run with full access to your machine. install only code you trust.';
+
 export function PluginsScreen() {
   const [records, setRecords] = useState<PluginRecord[] | null>(null);
   const [gitUrl, setGitUrl] = useState('');
@@ -39,6 +46,9 @@ export function PluginsScreen() {
   const [busy, setBusy] = useState(false);
   const [listings, setListings] = useState<MarketplaceListing[] | null>(null);
   const [search, setSearch] = useState('');
+  const [activeTab, setActiveTab] = useState<Tab>('installed');
+  const installedRef = useRef<HTMLElement | null>(null);
+  const discoverRef = useRef<HTMLElement | null>(null);
 
   const refresh = useCallback(async () => {
     setRecords(await window.gb.plugins.list());
@@ -100,17 +110,35 @@ export function PluginsScreen() {
     );
   }, [listings, search]);
 
+  const scrollTo = (tab: Tab) => {
+    setActiveTab(tab);
+    const el = tab === 'installed' ? installedRef.current : discoverRef.current;
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   return (
-    <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-5">
-      <Panel
-        title="installed plugins"
-        subtitle={records ? `${records.length}` : undefined}
-        action={
+    <div className="flex flex-1 flex-col gap-5 overflow-y-auto p-5">
+      <div className="flex items-center gap-[6px]">
+        <TabButton active={activeTab === 'installed'} onClick={() => scrollTo('installed')}>
+          installed{records ? ` · ${records.length}` : ''}
+        </TabButton>
+        <TabButton active={activeTab === 'discover'} onClick={() => scrollTo('discover')}>
+          discover{listings ? ` · ${listings.length}` : ''}
+        </TabButton>
+      </div>
+
+      <section
+        ref={installedRef}
+        data-testid="installed-section"
+        className="flex flex-col gap-3 rounded-r10 border border-hairline bg-vellum p-4"
+      >
+        <div className="flex items-center justify-between">
+          <Eyebrow>installed</Eyebrow>
           <Btn variant="ghost" size="sm" disabled={busy} onClick={() => void run(() => window.gb.plugins.reload())}>
             reload
           </Btn>
-        }
-      >
+        </div>
+
         {records === null ? (
           <div className="p-3 text-12 text-ink-2">…</div>
         ) : records.length === 0 ? (
@@ -118,111 +146,104 @@ export function PluginsScreen() {
             nothing haunting this app yet — install a plugin below.
           </div>
         ) : (
-          records.map((r) => (
-            <div
-              key={r.id}
-              className="flex items-center gap-3 rounded-r6 border border-hairline bg-paper px-3 py-2"
-            >
-              <Lucide name={r.manifest?.icon ?? 'puzzle'} size={15} color="var(--ink-1)" />
-              <div className="min-w-0 flex-1 leading-tight">
-                <div className="flex items-baseline gap-2">
-                  <span className="text-13 font-medium text-ink-0">
-                    {r.manifest?.name ?? r.id}
-                  </span>
-                  <span className="font-mono text-10 text-ink-2">
-                    {r.manifest?.version ?? '—'}
-                  </span>
-                  <Pill tone={stateTone[r.state]}>{r.state}</Pill>
-                </div>
-                {r.manifest?.description && (
-                  <div className="truncate text-11 text-ink-2">{r.manifest.description}</div>
-                )}
-                {r.error && <div className="text-11 text-oxblood">{r.error}</div>}
-              </div>
-              {r.manifest && (
-                <Toggle
-                  on={r.state === 'enabled'}
-                  disabled={busy}
-                  onChange={(next) => void run(() => window.gb.plugins.setEnabled(r.id, next))}
-                />
-              )}
-              <Btn
-                variant="danger"
-                size="sm"
-                disabled={busy}
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      `Uninstall "${r.manifest?.name ?? r.id}"? Its settings/data are kept.`,
-                    )
-                  ) {
-                    void run(() => window.gb.plugins.uninstall(r.id));
-                  }
-                }}
-              >
-                uninstall
-              </Btn>
-            </div>
-          ))
+          <div data-testid="installed-grid" className={GRID}>
+            {records.map((r) => (
+              <PluginCard
+                key={r.id}
+                icon={r.manifest?.icon}
+                name={r.manifest?.name ?? r.id}
+                version={r.manifest?.version}
+                description={r.manifest?.description}
+                error={r.error}
+                meta={<Pill tone={stateTone[r.state]}>{r.state}</Pill>}
+                action={
+                  <>
+                    {r.manifest && (
+                      <Toggle
+                        on={r.state === 'enabled'}
+                        disabled={busy}
+                        onChange={(next) => void run(() => window.gb.plugins.setEnabled(r.id, next))}
+                      />
+                    )}
+                    <Btn
+                      variant="danger"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            `Uninstall "${r.manifest?.name ?? r.id}"? Its settings/data are kept.`,
+                          )
+                        ) {
+                          void run(() => window.gb.plugins.uninstall(r.id));
+                        }
+                      }}
+                    >
+                      uninstall
+                    </Btn>
+                  </>
+                }
+              />
+            ))}
+          </div>
         )}
-      </Panel>
 
-      <Panel title="install" subtitle="trusted code only">
-        <p className="m-0 px-1 text-11 text-ink-2">
-          plugins run with full access to your machine. install only code you trust.
-        </p>
-        <div className="flex items-center gap-2 px-1 py-2">
-          <Btn
-            variant="secondary"
-            size="sm"
-            disabled={busy}
-            icon={<Lucide name="folder-open" size={13} color="var(--ink-1)" />}
-            onClick={() => void run(() => window.gb.plugins.installFromFolder())}
-          >
-            install from folder
-          </Btn>
+        <div className="flex flex-col gap-2 rounded-r6 border border-dashed border-hairline-2 p-3">
+          <Eyebrow>install</Eyebrow>
+          <p className="m-0 text-11 text-ink-2">{TRUST_NOTICE}</p>
+          <div className="flex items-center gap-2">
+            <Btn
+              variant="secondary"
+              size="sm"
+              disabled={busy}
+              icon={<Lucide name="folder-open" size={13} color="var(--ink-1)" />}
+              onClick={() => void run(() => window.gb.plugins.installFromFolder())}
+            >
+              install from folder
+            </Btn>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              className="flex-1 rounded-r6 border border-hairline-2 bg-paper px-2 py-[6px] text-12 text-ink-0 outline-none placeholder:text-ink-2"
+              placeholder="https://github.com/you/plugin-repo"
+              value={gitUrl}
+              onChange={(e) => setGitUrl(e.target.value)}
+            />
+            <input
+              className="w-[180px] rounded-r6 border border-hairline-2 bg-paper px-2 py-[6px] text-12 text-ink-0 outline-none placeholder:text-ink-2"
+              placeholder="subdirectory (optional)"
+              value={gitSubdir}
+              onChange={(e) => setGitSubdir(e.target.value)}
+            />
+            <Btn
+              variant="secondary"
+              size="sm"
+              disabled={busy || !gitUrl}
+              onClick={() =>
+                void run(() => window.gb.plugins.installFromGit(gitUrl, gitSubdir || undefined))
+              }
+            >
+              install from git
+            </Btn>
+          </div>
         </div>
-        <div className="flex items-center gap-2 px-1">
-          <input
-            className="flex-1 rounded-r6 border border-hairline-2 bg-paper px-2 py-[6px] text-12 text-ink-0 outline-none placeholder:text-ink-2"
-            placeholder="https://github.com/you/plugin-repo"
-            value={gitUrl}
-            onChange={(e) => setGitUrl(e.target.value)}
-          />
-          <input
-            className="w-[180px] rounded-r6 border border-hairline-2 bg-paper px-2 py-[6px] text-12 text-ink-0 outline-none placeholder:text-ink-2"
-            placeholder="subdirectory (optional)"
-            value={gitSubdir}
-            onChange={(e) => setGitSubdir(e.target.value)}
-          />
-          <Btn
-            variant="secondary"
-            size="sm"
-            disabled={busy || !gitUrl}
-            onClick={() =>
-              void run(() => window.gb.plugins.installFromGit(gitUrl, gitSubdir || undefined))
-            }
-          >
-            install from git
-          </Btn>
-        </div>
-      </Panel>
+      </section>
 
-      <Panel
-        title="marketplace"
-        subtitle={listings ? `${listings.length}` : undefined}
+      <section
+        ref={discoverRef}
+        data-testid="discover-section"
+        className="flex flex-col gap-3 rounded-r10 border border-hairline bg-vellum p-4"
       >
-        <p className="m-0 px-1 text-11 text-ink-2">
-          plugins run with full access to your machine. install only code you trust.
-        </p>
-        <div className="px-1 py-2">
-          <input
-            className="w-full rounded-r6 border border-hairline-2 bg-paper px-2 py-[6px] text-12 text-ink-0 outline-none placeholder:text-ink-2"
-            placeholder="search plugins"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+        <div className="flex items-center justify-between">
+          <Eyebrow>discover</Eyebrow>
         </div>
+        <p className="m-0 text-11 text-ink-2">{TRUST_NOTICE}</p>
+        <input
+          className="w-full rounded-r6 border border-hairline-2 bg-paper px-2 py-[6px] text-12 text-ink-0 outline-none placeholder:text-ink-2"
+          placeholder="search plugins"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
         {listings === null ? (
           <div className="p-3 text-12 text-ink-2">…</div>
         ) : filteredListings && filteredListings.length === 0 ? (
@@ -230,54 +251,66 @@ export function PluginsScreen() {
             {listings.length === 0 ? 'no plugins in the marketplace yet.' : 'no matches.'}
           </div>
         ) : (
-          filteredListings?.map((l) => (
-            <div
-              key={l.id}
-              className="flex items-center gap-3 rounded-r6 border border-hairline bg-paper px-3 py-2"
-            >
-              <Lucide name={l.icon ?? 'puzzle'} size={15} color="var(--ink-1)" />
-              <div className="min-w-0 flex-1 leading-tight">
-                <div className="flex items-baseline gap-2">
-                  <span className="text-13 font-medium text-ink-0">{l.name}</span>
-                  <span className="font-mono text-10 text-ink-2">{l.version}</span>
-                  {l.updateAvailable && <Pill tone="neon">update available</Pill>}
-                </div>
-                {l.description && (
-                  <div className="truncate text-11 text-ink-2">{l.description}</div>
-                )}
-                {(l.author || l.tags?.length) && (
-                  <div className="truncate text-10 text-ink-2">
-                    {l.author && <span>{l.author}</span>}
-                    {l.author && l.tags?.length ? ' · ' : ''}
-                    {l.tags?.join(', ')}
-                  </div>
-                )}
-              </div>
-              {!l.installed ? (
-                <Btn
-                  variant="secondary"
-                  size="sm"
-                  disabled={busy}
-                  onClick={() => void runMarketplace(() => window.gb.plugins.marketplace.install(l.id))}
-                >
-                  install
-                </Btn>
-              ) : l.updateAvailable ? (
-                <Btn
-                  variant="secondary"
-                  size="sm"
-                  disabled={busy}
-                  onClick={() => void runMarketplace(() => window.gb.plugins.marketplace.update(l.id))}
-                >
-                  update
-                </Btn>
-              ) : (
-                <Pill tone="fog">installed</Pill>
-              )}
-            </div>
-          ))
+          <div data-testid="discover-grid" className={GRID}>
+            {filteredListings?.map((l) => (
+              <PluginCard
+                key={l.id}
+                icon={l.icon}
+                name={l.name}
+                version={l.version}
+                author={l.author}
+                description={l.description}
+                meta={l.updateAvailable && <Pill tone="neon">update available</Pill>}
+                action={
+                  !l.installed ? (
+                    <Btn
+                      variant="secondary"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => void runMarketplace(() => window.gb.plugins.marketplace.install(l.id))}
+                    >
+                      install
+                    </Btn>
+                  ) : l.updateAvailable ? (
+                    <Btn
+                      variant="secondary"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => void runMarketplace(() => window.gb.plugins.marketplace.update(l.id))}
+                    >
+                      update
+                    </Btn>
+                  ) : (
+                    <Pill tone="fog">installed</Pill>
+                  )
+                }
+              />
+            ))}
+          </div>
         )}
-      </Panel>
+      </section>
     </div>
+  );
+}
+
+interface TabButtonProps {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}
+
+function TabButton({ active, onClick, children }: TabButtonProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`cursor-pointer rounded-sm border px-[10px] py-1 font-mono text-11 lowercase ${
+        active
+          ? 'border-neon/30 bg-neon/15 text-neon-ink'
+          : 'border-hairline-2 bg-transparent text-ink-1'
+      }`}
+    >
+      {children}
+    </button>
   );
 }
