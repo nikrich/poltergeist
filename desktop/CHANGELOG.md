@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.1.0](https://github.com/nikrich/poltergeist/compare/v1.0.1...v1.1.0) (2026-07-10)
+
+
+### Features
+
+* **plugins:** Add loading/empty/error states to Installed and Discover ([a98b1fa](https://github.com/nikrich/poltergeist/commit/a98b1faa221578209fc426643b4cd067e4fb7caa))
+* **plugins:** Add marketplace panel — search, install, update ([a0ddf5b](https://github.com/nikrich/poltergeist/commit/a0ddf5b18cde7048997c6fc67afa6fdbcc5f8a7c))
+* **plugins:** Add marketplace registry + entry zod schemas ([8aa18d7](https://github.com/nikrich/poltergeist/commit/8aa18d79086c569e58d39e904dd4e8dd22929715))
+* **plugins:** Add marketplace registry client, version-diff, and repo-url helpers ([689a0da](https://github.com/nikrich/poltergeist/commit/689a0da7df0983a517209672f2c7e0ec867e576b))
+* **plugins:** Add plugin detail view with contextual install/update/uninstall actions ([a3ff551](https://github.com/nikrich/poltergeist/commit/a3ff5511db346cd1edf0153794a737a9369176bc))
+* **plugins:** Add pure marketplace orchestrator (list/install/update) ([0069d2d](https://github.com/nikrich/poltergeist/commit/0069d2d2e95d94d07d75934823739d59efcfa5b0))
+* **plugins:** Add reusable PluginCard component ([36c1b18](https://github.com/nikrich/poltergeist/commit/36c1b1800b10c99f65d36127fe6766faec4f68d8))
+* **plugins:** Add updateFromGit for in-place plugin updates ([e56f01f](https://github.com/nikrich/poltergeist/commit/e56f01fca4fef5c0ccdf64719167d31d718b16b7))
+* **plugins:** Add updateFromGit for in-place plugin updates ([849747d](https://github.com/nikrich/poltergeist/commit/849747d6f1a31d9d546ee0e8302279eff31b4124))
+* **plugins:** Expose window.gb.plugins.marketplace bridge ([20b28c2](https://github.com/nikrich/poltergeist/commit/20b28c23553cf45adf9c3ead3902d8eb42f78be7))
+* **plugins:** Register gb:plugins:marketplace:* IPC channels ([a55df1b](https://github.com/nikrich/poltergeist/commit/a55df1b3211e96cc5b95cf266ef0279f6996f8fc))
+* **plugins:** Reshape Plugins screen into tabbed installed/discover card grid ([ff4591c](https://github.com/nikrich/poltergeist/commit/ff4591cd6ce6770e7f60da21a9dc42f54470f70e))
+
 ## [1.0.1](https://github.com/nikrich/poltergeist/compare/v1.0.0...v1.0.1) (2026-07-09)
 
 
