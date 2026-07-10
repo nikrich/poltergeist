@@ -57,6 +57,7 @@ export function PluginsScreen() {
   const [listings, setListings] = useState<MarketplaceListing[] | null>(null);
   const [marketplaceError, setMarketplaceError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [activeTag, setActiveTag] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('installed');
   const [detail, setDetail] = useState<DetailTarget | null>(null);
   const installedRef = useRef<HTMLElement | null>(null);
@@ -121,17 +122,26 @@ export function PluginsScreen() {
     [records],
   );
 
+  const availableTags = useMemo(() => {
+    if (!listings) return [];
+    const tags = new Set<string>();
+    for (const l of listings) for (const t of l.tags ?? []) tags.add(t);
+    return [...tags].sort();
+  }, [listings]);
+
   const filteredListings = useMemo(() => {
     if (!listings) return listings;
     const q = search.trim().toLowerCase();
-    if (!q) return listings;
-    return listings.filter(
-      (l) =>
+    return listings.filter((l) => {
+      const matchesSearch =
+        !q ||
         l.name.toLowerCase().includes(q) ||
         l.description?.toLowerCase().includes(q) ||
-        l.tags?.some((t) => t.toLowerCase().includes(q)),
-    );
-  }, [listings, search]);
+        l.tags?.some((t) => t.toLowerCase().includes(q));
+      const matchesTag = !activeTag || l.tags?.includes(activeTag);
+      return matchesSearch && matchesTag;
+    });
+  }, [listings, search, activeTag]);
 
   const scrollTo = (tab: Tab) => {
     setActiveTab(tab);
@@ -268,6 +278,22 @@ export function PluginsScreen() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+        {availableTags.length > 0 && (
+          <div className="flex flex-wrap items-center gap-[6px]" data-testid="tag-filter">
+            <TagChip active={activeTag === null} onClick={() => setActiveTag(null)}>
+              all
+            </TagChip>
+            {availableTags.map((tag) => (
+              <TagChip
+                key={tag}
+                active={activeTag === tag}
+                onClick={() => setActiveTag((prev) => (prev === tag ? null : tag))}
+              >
+                {tag}
+              </TagChip>
+            ))}
+          </div>
+        )}
         {listings === null ? (
           <div data-testid="discover-skeleton">
             <SkeletonRows count={4} />
@@ -389,6 +415,30 @@ function TabButton({ active, onClick, children }: TabButtonProps) {
       type="button"
       onClick={onClick}
       className={`cursor-pointer rounded-sm border px-[10px] py-1 font-mono text-11 lowercase ${
+        active
+          ? 'border-neon/30 bg-neon/15 text-neon-ink'
+          : 'border-hairline-2 bg-transparent text-ink-1'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+interface TagChipProps {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}
+
+/** Selectable filter chip — same visual language as Pill, but clickable. */
+function TagChip({ active, onClick, children }: TagChipProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`inline-flex cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-sm border px-[7px] py-[2px] font-mono text-10 font-medium lowercase ${
         active
           ? 'border-neon/30 bg-neon/15 text-neon-ink'
           : 'border-hairline-2 bg-transparent text-ink-1'
