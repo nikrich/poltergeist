@@ -16,6 +16,9 @@ const execFileP = promisify(execFile);
 // this is a desktop app installing code the user already trusts.
 const URL_ALLOW = /^(https:\/\/|git@|file:\/\/)/;
 
+// fs.cp hands the filter native paths — backslash-separated on Windows.
+const notGitDir = (p: string) => !p.split(/[\\/]/).includes('.git');
+
 async function readManifest(dir: string) {
   const raw = await readFile(join(dir, 'manifest.json'), 'utf-8');
   const parsed = manifestSchema.safeParse(JSON.parse(raw));
@@ -33,7 +36,7 @@ async function copyIn(src: string, pluginsRoot: string): Promise<PluginRecord> {
   }
   await cp(src, dest, {
     recursive: true,
-    filter: (p) => !p.split('/').includes('.git'),
+    filter: notGitDir,
   });
   store.setEnabled(manifest.id, true);
   return { id: manifest.id, dir: dest, manifest, state: 'enabled' };
@@ -96,7 +99,7 @@ export async function updateFromGit(
     await rm(dest, { recursive: true, force: true });
     await cp(src, dest, {
       recursive: true,
-      filter: (p) => !p.split('/').includes('.git'),
+      filter: notGitDir,
     });
     return { id: manifest.id, dir: dest, manifest, state: 'enabled' };
   } finally {
