@@ -277,6 +277,10 @@ def is_running(pid: int) -> bool:
         return False
     except PermissionError:
         return True
+    except OSError:
+        # Windows: os.kill(pid, 0) raises WinError 87 (invalid parameter) for
+        # a PID that doesn't exist, not ProcessLookupError.
+        return False
     # The PID exists, but a zombie (exited, not yet reaped) also answers
     # kill(pid, 0). Treat zombies as not running so a dead ffmpeg whose parent
     # never wait()ed it can't wedge stop()/status() on a corpse forever.

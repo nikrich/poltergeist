@@ -1,6 +1,7 @@
 # tests/test_mcp_runtime.py
 import os
 import stat
+import sys
 
 import pytest
 
@@ -32,6 +33,9 @@ def test_write_then_load_round_trips():
     assert d["version"] == "1.0.0"
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Windows has no POSIX permission bits"
+)
 def test_descriptor_file_is_chmod_600():
     runtime.write_descriptor(
         port=1, token="t", pid=os.getpid(), version="1.0.0", started_at="x"
