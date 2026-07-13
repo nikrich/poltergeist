@@ -12,12 +12,48 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 from typing import IO
 
 
+def _try_lock_exclusive(fh: IO) -> bool:
+    """Non-blocking exclusive lock on an open file. True if acquired."""
+    if sys.platform == "win32":
+        import msvcrt
+
+        try:
+            # Lock the first byte of the file. Region locks may extend past
+            # EOF on Windows, so this works on the just-truncated empty file.
+            fh.seek(0)
+            msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+            return True
+        except OSError:
+            return False
+    else:
+        import fcntl
+
+        try:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True
+        except OSError:
+            return False
+
+
+def _unlock(fh: IO) -> None:
+    if sys.platform == "win32":
+        import msvcrt
+
+        fh.seek(0)
+        msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl
+
+        fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+
+
 def acquire_singleton_lock(name: str) -> IO | None:
-    """Best-effort single-instance guard via flock.
+    """Best-effort single-instance guard via an OS file lock.
 
     Two ``ghostbrain.api`` instances (the bundled app sidecar + a stray
     ``python -m ghostbrain.api``) both booting the scheduler/recorder race on
@@ -25,20 +61,26 @@ def acquire_singleton_lock(name: str) -> IO | None:
     stop a recording it doesn't own. Callers acquire this before starting the
     scheduler and skip it if the lock is already held.
 
+    Uses flock on POSIX and msvcrt region locking on Windows (fcntl does not
+    exist there — importing it unconditionally killed the packaged sidecar on
+    boot).
+
     Returns the open, locked file object (keep a reference for the process
     lifetime — the OS releases the lock when it closes or the process dies) or
     ``None`` if another live process already holds it.
     """
-    import fcntl
-
     from ghostbrain.recorder.state import state_dir
 
     lock_path = state_dir() / f"{name}.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    fh = open(lock_path, "w")
     try:
-        fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        # "a" not "w": on Windows the holder's region lock makes the truncate
+        # implied by "w" fail with PermissionError before we ever get to the
+        # lock attempt.
+        fh = open(lock_path, "a+")
     except OSError:
+        return None
+    if not _try_lock_exclusive(fh):
         fh.close()
         return None
     try:
@@ -55,9 +97,7 @@ def release_singleton_lock(fh: IO | None) -> None:
     if fh is None:
         return
     try:
-        import fcntl
-
-        fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+        _unlock(fh)
     except (OSError, ValueError):
         pass
     try:
