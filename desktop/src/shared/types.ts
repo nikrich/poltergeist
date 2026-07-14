@@ -144,6 +144,13 @@ export interface GbBridge {
       ): Promise<{ ok: true; data: unknown } | { ok: false; error: string; status?: number }>;
     };
   };
+  updates: {
+    download(): Promise<{ ok: true } | { ok: false; error: string }>;
+    install(): Promise<void>;
+    onAvailable(cb: (p: { version: string; canSelfUpdate: boolean }) => void): () => void;
+    onProgress(cb: (p: { percent: number }) => void): () => void;
+    onDownloaded(cb: (p: { version: string }) => void): () => void;
+  };
   on(channel: 'nav:settings', listener: () => void): () => void;
   on(channel: 'sidecar:ready', listener: () => void): () => void;
   on(

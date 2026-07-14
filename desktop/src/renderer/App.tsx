@@ -9,6 +9,7 @@ import { WindowChrome } from './components/WindowChrome';
 import { Sidebar } from './components/Sidebar';
 import { StatusBar } from './components/StatusBar';
 import { Toaster } from './components/Toaster';
+import { UpdateBanner } from './components/UpdateBanner';
 import { NoteView } from './components/NoteView';
 import { SidecarSetup } from './components/SidecarSetup';
 import { TodayScreen } from './screens/today';
@@ -124,6 +125,7 @@ export default function App() {
 
   return (
     <WindowChrome>
+      <UpdateBanner />
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         <Sidebar />
         <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
