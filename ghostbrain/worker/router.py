@@ -22,6 +22,7 @@ from typing import Any
 
 import yaml
 
+from ghostbrain import routing_config
 from ghostbrain.api.repo import projects as projects_repo
 from ghostbrain.llm import client as llm
 from ghostbrain.paths import vault_path
@@ -36,10 +37,9 @@ ROUTER_JSON_SCHEMA: dict[str, Any] = {
     "properties": {
         "context": {
             "type": "string",
-            "enum": [
-                "sanlam", "codeship", "reducedrecipes", "personal",
-                "needs_review",
-            ],
+            # Placeholder — build_router_schema() replaces this with the live
+            # destination list.
+            "enum": ["needs_review"],
         },
         "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
         "reasoning": {"type": "string", "maxLength": 400},
@@ -79,7 +79,7 @@ def parse_destination(value: str) -> tuple[str, str | None]:
     if "/" not in value:
         return value, None
     context, slug = value.split("/", 1)
-    if context not in projects_repo.KNOWN_CONTEXTS:
+    if context not in routing_config.contexts():
         return "needs_review", None
     if projects_repo.get_project(context, slug, active_only=True) is None:
         return context, None
@@ -275,7 +275,13 @@ def _org_from_repo(repo: str | None) -> str | None:
 
 def _route_via_llm(event: dict, excerpt: str, config: dict) -> RoutingDecision:
     prompt_template = _read_prompt("router.md")
-    prompt = prompt_template.replace("{{content}}", excerpt)
+    # New seeds carry {{contexts}}; on legacy prompts (no placeholder) this
+    # replace is a no-op and any hardcoded list baked into the prompt stays.
+    prompt = (
+        prompt_template
+        .replace("{{contexts}}", ", ".join(routing_config.contexts()))
+        .replace("{{content}}", excerpt)
+    )
 
     project_lines = projects_repo.project_prompt_lines()
     if project_lines:
