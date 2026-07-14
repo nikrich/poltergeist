@@ -62,6 +62,25 @@ const bridge: GbBridge = {
       return () => ipcRenderer.removeListener('gb:jot:save-failed', handler as Parameters<typeof ipcRenderer.on>[1]);
     },
   },
+  updates: {
+    download: () => ipcRenderer.invoke('gb:updates:download'),
+    install: () => ipcRenderer.invoke('gb:updates:install'),
+    onAvailable: (cb: (p: { version: string; canSelfUpdate: boolean }) => void) => {
+      const handler = (_: unknown, payload: { version: string; canSelfUpdate: boolean }) => cb(payload);
+      ipcRenderer.on('gb:updates:available', handler as Parameters<typeof ipcRenderer.on>[1]);
+      return () => ipcRenderer.removeListener('gb:updates:available', handler as Parameters<typeof ipcRenderer.on>[1]);
+    },
+    onProgress: (cb: (p: { percent: number }) => void) => {
+      const handler = (_: unknown, payload: { percent: number }) => cb(payload);
+      ipcRenderer.on('gb:updates:progress', handler as Parameters<typeof ipcRenderer.on>[1]);
+      return () => ipcRenderer.removeListener('gb:updates:progress', handler as Parameters<typeof ipcRenderer.on>[1]);
+    },
+    onDownloaded: (cb: (p: { version: string }) => void) => {
+      const handler = (_: unknown, payload: { version: string }) => cb(payload);
+      ipcRenderer.on('gb:updates:downloaded', handler as Parameters<typeof ipcRenderer.on>[1]);
+      return () => ipcRenderer.removeListener('gb:updates:downloaded', handler as Parameters<typeof ipcRenderer.on>[1]);
+    },
+  },
   plugins: {
     list: () => ipcRenderer.invoke('gb:plugins:list'),
     active: () => ipcRenderer.invoke('gb:plugins:active'),
