@@ -1417,3 +1417,94 @@ shows the subcommand list, and `... bootstrap` exits 0. Finally launch the app W
 git add README.md docs/install/macos-launchd.md docs/install/windows.md docs/install/linux.md
 git commit -m "docs: one-click install — self-contained app, bundled CLI"
 ```
+
+---
+
+## Drift Addendum (2026-07-14, worktree based on origin/main)
+
+The plan above was drafted against the `feat/plugin-system` tree. The execution
+worktree is based on `origin/main`, where the chat-project-folders feature has
+landed. These amendments override the corresponding task text; everything not
+mentioned stands.
+
+### Task 3 (router) — REPLACED
+
+Main already builds the router enum dynamically: `router.py:65
+build_router_schema()` deep-copies `ROUTER_JSON_SCHEMA` and sets the enum to
+`projects_repo.active_destinations() + ["needs_review"]`, where destinations are
+contexts plus active `context/slug` projects. The context list now lives in
+`ghostbrain/api/repo/projects.py:18 KNOWN_CONTEXTS`. Amended task:
+
+1. In `ghostbrain/api/repo/projects.py`: delete the `KNOWN_CONTEXTS` constant;
+   add `from ghostbrain import routing_config`; replace its two internal uses
+   (`get_project`'s context validation ~line 76, `active_destinations()` ~line
+   124) with `routing_config.contexts()`.
+2. In `ghostbrain/worker/router.py`: replace `projects_repo.KNOWN_CONTEXTS` in
+   `parse_destination` (~line 82) with `routing_config.contexts()`; in the
+   `ROUTER_JSON_SCHEMA` constant replace the hardcoded four-name enum with
+   `"enum": ["needs_review"]` and add the comment
+   `# Placeholder — build_router_schema() replaces this with the live destination list.`
+   `build_router_schema()` itself needs no change. Keep the `{{contexts}}`
+   prompt injection from the original Task 3 text in `_route_via_llm` (~line
+   290): inject `", ".join(routing_config.contexts())`.
+3. Tests (same TDD flow): assert `build_router_schema()`'s enum equals
+   configured contexts + `["needs_review"]` when the vault's routing.yaml
+   configures `["alpha", "beta"]` and no projects registry exists; keep the
+   prompt-injection test from the original task, but capture the schema passed
+   to `llm.run` and assert it came from `build_router_schema()` (enum matches
+   configured contexts + needs_review). Drop the planned new
+   `router_json_schema(contexts)` function entirely.
+4. `route_note`'s optional `req.project` validation in notes.py (Task 4) is
+   pre-existing behavior — leave it untouched.
+
+### New Task 5b: remaining production references (dispatch after Task 5)
+
+- `ghostbrain/api/repo/answer.py:39` (`PROMPT_TEMPLATE`): replace the sentence
+  `The user is a software engineer working across four contexts: sanlam (day-job/employer), codeship (consulting + product), reducedrecipes (side project), and personal projects.`
+  with `The user is a software engineer working across these contexts: {contexts}.`
+  and pass `contexts=", ".join(routing_config.contexts())` at the single
+  `PROMPT_TEMPLATE.format(...)` call site. Test: format the template via the
+  existing call path with a configured vault and assert the configured names
+  appear in the prompt.
+- `ghostbrain/profile/apply.py:152`: build the default current-projects.md body
+  as `"# Current projects\n\n" + "".join(f"## {c}\n\n" for c in routing_config.contexts())`.
+  The `personal` fallback in `_pick_context` stays (the guard test does not
+  cover "personal"). Update the module docstring's context enumeration to
+  neutral wording. Test: with contexts `["alpha"]` and no existing file, the
+  created doc has `## alpha` and no legacy headings.
+- `ghostbrain/semantic/regions.py`: delete the four legacy entries from
+  `_BASE` (keep `"poltergeist"` — product accent, not a context); legacy
+  contexts then flow through the existing hash→ramp path like any other
+  context. Cosmetic color change for existing vaults, accepted. Update
+  `ghostbrain/semantic/tests/test_regions.py` if it pins legacy colors.
+- Neutralize remaining docstring/comment/example mentions (use `acme` /
+  `your-context` / `example.com` wording): `ghostbrain/api/models/search.py:13`,
+  `ghostbrain/connectors/gmail/connector.py:312`,
+  `ghostbrain/connectors/joplin/__init__.py:12`,
+  `ghostbrain/connectors/slack/connector.py:9`,
+  `ghostbrain/metrics/inverse_search.py:23-24`,
+  `ghostbrain/llm/agent.py:156` (generic wikilink example),
+  `ghostbrain/worker/router.py:198-199,230` comments.
+- Commit: `refactor: remaining context references derive from routing_config`
+
+### Task 6 (guard test) — amended scope
+
+Package-internal test suites (`ghostbrain/api/tests/`, `ghostbrain/semantic/tests/`)
+legitimately use legacy names as fixtures. Amend the scan loop's skip condition to:
+
+```python
+        if f in ALLOWED or "__pycache__" in f.parts or "tests" in f.parts:
+            continue
+```
+
+### Task 2 note
+
+`bootstrap.py` on main has ~17 legacy-name mentions (a superset of the table in
+Task 2 step 3d — e.g. projects-related seeds). The 3d grep loop is authoritative:
+repeat until zero matches; the Task 6 guard enforces it.
+
+### Environment note
+
+The worktree venv is `.venv/` in the worktree root; run Python tests as
+`.venv/bin/python -m pytest ...` from the worktree root. Full suite = `pytest`
+default testpaths (`tests/` + `ghostbrain/api/tests/`).
