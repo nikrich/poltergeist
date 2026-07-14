@@ -7,13 +7,13 @@ Run via ``python -m ghostbrain.bootstrap`` or ``ghostbrain-bootstrap``.
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
+from ghostbrain import routing_config
 from ghostbrain.paths import vault_path
 
 log = logging.getLogger("ghostbrain.bootstrap")
-
-CONTEXTS: tuple[str, ...] = ("sanlam", "codeship", "reducedrecipes", "personal")
 
 # Top-level directories under vault/.
 TOP_LEVEL_DIRS: tuple[str, ...] = (
@@ -79,7 +79,7 @@ RESPOND WITH JSON ONLY. NO PROSE. NO MARKDOWN FENCES. NO PREAMBLE.
 
 You are a routing classifier for a personal knowledge system.
 
-Available contexts: sanlam, codeship, reducedrecipes, personal — see
+Available contexts: {{contexts}} — see
 `routing.yaml` and `20-contexts/<ctx>/_profile.md` for what each covers.
 
 Decide which context the content below belongs to. Be conservative — if
@@ -89,7 +89,7 @@ Your entire response must be a single JSON object exactly matching:
 
 `{"context": "...", "confidence": 0.0, "reasoning": "...", "secondary_contexts": []}`
 
-`context` ∈ `{sanlam, codeship, reducedrecipes, personal, needs_review}`.
+`context` must be one of the available contexts above, or `needs_review`.
 `confidence` ∈ [0, 1]. Return `needs_review` when confidence < 0.7.
 
 Content to classify:
@@ -182,11 +182,7 @@ Your entire response must be a single JSON object exactly matching:
 You are gating which emails enter a personal knowledge system for a
 software engineer working across these contexts:
 
-- **sanlam** — the user's primary employer / day-job work.
-- **codeship** — consulting and product work for clients.
-- **reducedrecipes** — a personal side-project app/site.
-- **personal** — personal projects, hobby code, and real-life logistics
-  that need follow-up.
+__CONTEXT_BULLETS__
 
 Mark `relevant: true` ONLY when the thread is plausibly worth surfacing
 in a daily digest of work + life follow-ups.
@@ -606,18 +602,23 @@ SORT ingestedAt DESC
 # Files written verbatim if missing. Keyed by relative path under vault/.
 SEED_FILES: dict[str, str] = {
     "90-meta/routing.yaml": """\
-# Routing rules — maps source signals to one of: sanlam, codeship, reducedrecipes, personal.
+# Routing rules — maps source signals to one of the contexts listed below.
 # Filled in over later phases. TODO markers indicate values to provide
 # when the relevant connector lands.
 
 version: 1
 
+# The vault's contexts (workspaces). Single source of truth — the router,
+# digests, and notes API all derive their list from here.
+contexts:
+__CONTEXTS_YAML__
+
 # GitHub orgs → context. Phase 4.
 github:
   orgs:
-    # TODO: "your-org": sanlam
-    # TODO: "your-org": codeship
-    # TODO: "reducedrecipes": reducedrecipes
+    # TODO: "your-org": your-context
+    # TODO: "your-other-org": your-context
+    # TODO: "your-side-project-org": another-context
     {}
 
 # Jira sites → context. Used by the router for path-first routing of
@@ -635,7 +636,7 @@ confluence:
     # TODO: "your-site.atlassian.net": your-context
     {}
   spaces:
-    # TODO: e.g. "PROJ": sanlam
+    # TODO: e.g. "PROJ": your-context
     {}
 
 # Slack workspaces → context. The connector polls each workspace for
@@ -648,11 +649,11 @@ slack:
   workspaces:
     # Example:
     #   your-workspace:
-    #     context: sanlam
+    #     context: your-context
     #     lookback_hours: 24
     #     mentions_only: true
-    #   codeship:
-    #     context: codeship
+    #   another-workspace:
+    #     context: another-context
     {}
 
 # Gmail accounts + routing. The connector polls each account in
@@ -678,10 +679,10 @@ gmail:
   # denylist still applies.
   relevance_gate: true
   label_prefixes:
-    # "work/": sanlam
+    # "work/": your-context
     {}
   sender_domains:
-    # "company.example.com": sanlam
+    # "company.example.com": your-context
     {}
 
 # Joplin notebooks → context. The connector polls the Joplin Data API
@@ -697,9 +698,8 @@ joplin:
   # host: "http://localhost:41184"  # uncomment if you moved the port
   notebooks:
     # Example:
-    #   Work: sanlam
-    #   Codeship: codeship
-    #   Personal: personal
+    #   Work: your-context
+    #   Personal: another-context
     {}
 
 # Calendar accounts → context. One block per provider.
@@ -716,10 +716,9 @@ claude_code:
   project_paths:
     # TODO: adjust these to your actual development tree.
     # Examples:
-    # "~/development/work-monorepo": sanlam
-    # "~/development/work-repo": sanlam
-    # "~/development/consulting": codeship
-    # "~/development/reducedrecipes": reducedrecipes
+    # "~/development/work-monorepo": your-context
+    # "~/development/another-repo": your-context
+    # "~/development/side-project": another-context
     {}
 
 # Fallback when no rule matches. Worker sends low-confidence events to review queue.
@@ -791,7 +790,7 @@ inverse_search:
   #     - initials
   expected_contexts: {}
   # Example:
-  #   your-handle: [sanlam, codeship, personal]
+  #   your-handle: [your-context, another-context]
   lookback_days: 7
 
 # Autonomous meeting recorder (Phase 12). Watches Apple Calendar, records
@@ -830,8 +829,8 @@ Files:
 - `working-style.md` — how decisions get made, communication style.
 - `preferences.md` — tools, languages, formatting, what NOT to do.
 - `current-projects.md` — active work, organized by H2 sections per context
-  (`## sanlam`, `## codeship`, `## reducedrecipes`, `## personal`). The
-  generator filters this to the matching context for each project.
+  (one `## <context>` heading per configured context). The generator filters
+  this to the matching context for each project.
 - `_recent.md` — short-lived layer maintained by the daily worker (Phase 6).
 - `_proposed/YYYY-MM-DD.jsonl` — auto-detected diffs awaiting review.
 
@@ -871,23 +870,60 @@ files are managed by ghostbrain.
 
 <!-- Use H2 headings to separate per-context sections. The generator filters
 this file to the H2 matching the project's context. Keep section names
-exactly: sanlam / codeship / reducedrecipes / personal. -->
+exactly matching your configured contexts. -->
 
-## sanlam
-- TODO: active Sanlam initiatives.
-
-## codeship
-- TODO: active Codeship clients/products.
-
-## reducedrecipes
-- TODO: ReducedRecipes priorities.
-
-## personal
-- TODO: hobby projects, life threads worth context.
+__CONTEXT_SECTIONS__
 """,
     "80-profile/_recent.md": "<!-- Auto-managed by ghostbrain (Phase 6). Do not hand-edit. -->\n",
     "60-dashboards/all.md": _ALL_DASHBOARD,
 }
+
+
+def _resolve_contexts(root: Path) -> tuple[str, ...]:
+    """Context list for this bootstrap run.
+
+    Existing vault (routing.yaml present) → configured list, or the legacy
+    fallback via routing_config. Fresh vault → neutral defaults.
+    """
+    if (root / "90-meta" / "routing.yaml").exists():
+        return routing_config.contexts(root=root)
+    return routing_config.DEFAULT_CONTEXTS
+
+
+def _render_seed(body: str, contexts: tuple[str, ...]) -> str:
+    """Substitute context markers in seed templates."""
+    return (
+        body.replace("__CONTEXTS_CSV__", ", ".join(contexts))
+        .replace("__CONTEXTS_YAML__", "\n".join(f"  - {c}" for c in contexts))
+        .replace(
+            "__CONTEXT_BULLETS__",
+            "\n".join(f"- **{c}** — TODO: describe this context." for c in contexts),
+        )
+        .replace(
+            "__CONTEXT_SECTIONS__",
+            "\n\n".join(f"## {c}\n- TODO: what belongs to this context." for c in contexts),
+        )
+    )
+
+
+def _ensure_contexts_key(root: Path, contexts: tuple[str, ...]) -> None:
+    """Append a `contexts:` block to an existing routing.yaml lacking one.
+
+    Append-only on purpose: rewriting via yaml.dump would destroy the user's
+    comments. A top-level key at EOF is valid YAML.
+    """
+    f = root / "90-meta" / "routing.yaml"
+    if not f.exists():
+        return
+    body = f.read_text(encoding="utf-8")
+    if re.search(r"(?m)^contexts\s*:", body):
+        return
+    block = (
+        "\n# The vault's contexts (workspaces). Single source of truth — the\n"
+        "# router, digests, and notes API all derive their list from here.\n"
+        "contexts:\n" + "\n".join(f"  - {c}" for c in contexts) + "\n"
+    )
+    f.write_text(body + block, encoding="utf-8")
 
 
 def bootstrap(root: Path | None = None) -> Path:
@@ -896,12 +932,13 @@ def bootstrap(root: Path | None = None) -> Path:
     Returns the resolved vault root.
     """
     root = (root or vault_path()).expanduser().resolve()
+    contexts = _resolve_contexts(root)
     root.mkdir(parents=True, exist_ok=True)
 
     for rel in TOP_LEVEL_DIRS:
         (root / rel).mkdir(parents=True, exist_ok=True)
 
-    for ctx in CONTEXTS:
+    for ctx in contexts:
         ctx_root = root / "20-contexts" / ctx
         ctx_root.mkdir(parents=True, exist_ok=True)
         for sub in CONTEXT_SUBDIRS:
@@ -917,7 +954,9 @@ def bootstrap(root: Path | None = None) -> Path:
     (root / "10-daily" / "by-context").mkdir(parents=True, exist_ok=True)
 
     for rel, body in SEED_FILES.items():
-        _write_if_absent(root / rel, body)
+        _write_if_absent(root / rel, _render_seed(body, contexts))
+
+    _ensure_contexts_key(root, contexts)
 
     log.info("Vault ready at %s", root)
     return root

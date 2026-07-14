@@ -110,6 +110,7 @@ def test_generate_claude_md_writes_full_profile(vault: Path, tmp_path: Path) -> 
     (vault / "80-profile" / "current-projects.md").write_text(
         "# Current projects\n\n## sanlam\n- Ascp\n\n## codeship\n- Hive\n"
     )
+    (vault / "20-contexts" / "codeship").mkdir(parents=True, exist_ok=True)
     (vault / "20-contexts" / "codeship" / "_profile.md").write_text(
         "# Codeship profile\nShip CLI is canonical.\n"
     )

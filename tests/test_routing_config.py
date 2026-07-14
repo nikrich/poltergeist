@@ -28,6 +28,9 @@ def test_missing_key_falls_back_to_legacy(vault):
 
 
 def test_missing_file_falls_back_to_legacy(vault):
+    # bootstrap() (run by the `vault` fixture) seeds routing.yaml; remove it
+    # to genuinely simulate a vault with no routing.yaml at all.
+    (vault / "90-meta" / "routing.yaml").unlink()
     assert routing_config.contexts() == routing_config.LEGACY_CONTEXTS
 
 
