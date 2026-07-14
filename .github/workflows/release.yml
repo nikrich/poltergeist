@@ -175,13 +175,11 @@ jobs:
       - name: Upload assets to release
         run: |
           shopt -s nullglob
-          # latest-mac.yml is only emitted when electron-builder.yml has
-          # `publish: github` enabled — we set it to null, so don't list it
-          # here (gh release upload errors on missing literal paths).
           gh release upload "$RELEASE_TAG" \
             desktop/dist/*.dmg \
             desktop/dist/*.zip \
             desktop/dist/*.blockmap \
+            desktop/dist/latest*.yml \
             --clobber
 
   build-linux:
@@ -260,6 +258,8 @@ jobs:
           gh release upload "$RELEASE_TAG" \
             desktop/dist/*.AppImage \
             desktop/dist/*.deb \
+            desktop/dist/*.blockmap \
+            desktop/dist/latest*.yml \
             --clobber
 
   build-win:
@@ -335,4 +335,6 @@ jobs:
           gh release upload "$RELEASE_TAG" \
             desktop/dist/*.exe \
             desktop/dist/*.zip \
+            desktop/dist/*.blockmap \
+            desktop/dist/latest*.yml \
             --clobber

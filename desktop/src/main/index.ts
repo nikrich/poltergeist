@@ -18,6 +18,7 @@ import {
   type MeetingNotifierController,
 } from './meeting-notifier';
 import { installJotOverlay } from './jot-overlay';
+import { installUpdater } from './updater';
 import { installClipboardBridge } from './clipboard';
 import {
   registerGbAssetScheme,
@@ -260,6 +261,8 @@ app.whenReady().then(async () => {
   if (!DEMO) {
     meetingNotifier = installMeetingNotifier({ sidecar });
   }
+
+  installUpdater();
 
   const hotkey = settings.getAll().hotkeys?.jotOverlay ?? 'Alt+J';
   installJotOverlay({
