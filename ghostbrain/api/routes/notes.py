@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from fastapi import Path as PathParam
 from fastapi.responses import Response
 
+from ghostbrain import routing_config
 from ghostbrain.api.models.note import (
     CreateNoteRequest,
     ExtractPhotoRequest,
@@ -32,11 +33,14 @@ from ghostbrain.api.repo.notes_manual import (
     write_inbox_jot,
 )
 
-# Known contexts must match the router's enum — keep this list in sync with
-# ROUTER_JSON_SCHEMA in ghostbrain/worker/router.py. "needs_review" is
-# intentionally excluded: it is a fallback state, not a valid user-selectable
-# destination for manual re-routes.
-_KNOWN_CONTEXTS = {"sanlam", "codeship", "reducedrecipes", "personal"}
+
+def _known_contexts() -> set[str]:
+    """Valid targets for manual re-routes.
+
+    "needs_review" is intentionally excluded: it is a fallback state, not a
+    user-selectable destination.
+    """
+    return set(routing_config.contexts())
 
 router = APIRouter(prefix="/v1/notes", tags=["notes"])
 
@@ -191,10 +195,11 @@ def route_note(
     jot_id: str = PathParam(..., min_length=8, max_length=128),
 ) -> dict:
     """Manually re-route a jot to a known context, optionally into a project."""
-    if req.context not in _KNOWN_CONTEXTS:
+    valid = _known_contexts()
+    if req.context not in valid:
         raise HTTPException(
             status_code=400,
-            detail=f"unknown context: {req.context!r}; valid: {sorted(_KNOWN_CONTEXTS)}",
+            detail=f"unknown context: {req.context!r}; valid: {sorted(valid)}",
         )
     if req.project is not None:
         from ghostbrain.api.repo import projects as projects_repo
