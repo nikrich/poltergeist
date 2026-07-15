@@ -41,7 +41,7 @@ export function buildUserPrompt(p) {
     '## Output',
     'Return ONLY a JSON object matching the provided schema:',
     '{briefingMarkdown, memoryMarkdown, openLoops, decisions}.',
-    'briefingMarkdown: the weekly briefing — sections: Themes, Open loops',
+    'briefingMarkdown: the briefing — sections: Themes, Open loops',
     '(summary of notable ones), Decisions, Contradictions, Blind spots.',
     'memoryMarkdown: your rewritten rolling memory — active themes,',
     'watch-list, condensed history. decisions: ONLY decisions newly seen',
