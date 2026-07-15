@@ -4,11 +4,7 @@ from __future__ import annotations
 import hashlib
 
 _BASE = {
-    "poltergeist": "#6EE7A8",
-    "sanlam": "#38BDF8",
-    "personal": "#A78BFA",
-    "reducedrecipes": "#FBBF24",
-    "codeship": "#F472B6",
+    "poltergeist": "#6EE7A8",  # product accent, not a context
 }
 
 # Extended ramp for unknown contexts: even lightness, varied hue.

@@ -1,0 +1,77 @@
+"""routing_config.contexts(): the single source of truth for the context list.
+
+routing.yaml's `contexts:` key drives the router enum, notes-API validation,
+digests, and metrics. Missing/invalid values fall back to the legacy four so
+pre-existing vaults keep working untouched.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+
+from ghostbrain import routing_config
+
+
+def _write_routing(vault: Path, body: str) -> None:
+    f = vault / "90-meta" / "routing.yaml"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(body, encoding="utf-8")
+
+
+def test_configured_contexts_are_returned_in_order(vault):
+    _write_routing(vault, "version: 1\ncontexts:\n  - alpha\n  - beta\n")
+    assert routing_config.contexts() == ("alpha", "beta")
+
+
+def test_missing_key_falls_back_to_default_without_legacy_folder(vault):
+    _write_routing(vault, "version: 1\n")
+    assert routing_config.contexts() == routing_config.DEFAULT_CONTEXTS
+
+
+def test_missing_file_falls_back_to_legacy(vault):
+    # bootstrap() (run by the `vault` fixture) seeds routing.yaml; remove it
+    # to genuinely simulate a vault with no routing.yaml at all. This case is
+    # unconditional legacy fallback regardless of 20-contexts/ contents —
+    # bootstrap decides fresh-vs-existing separately.
+    (vault / "90-meta" / "routing.yaml").unlink()
+    assert routing_config.contexts() == routing_config.LEGACY_CONTEXTS
+
+
+def test_empty_list_falls_back_to_default_without_legacy_folder(vault):
+    _write_routing(vault, "contexts: []\n")
+    assert routing_config.contexts() == routing_config.DEFAULT_CONTEXTS
+
+
+def test_non_list_falls_back_to_default_without_legacy_folder(vault):
+    _write_routing(vault, "contexts: banana\n")
+    assert routing_config.contexts() == routing_config.DEFAULT_CONTEXTS
+
+
+def test_non_string_entries_fall_back_to_default_without_legacy_folder(vault):
+    _write_routing(vault, "contexts:\n  - alpha\n  - 42\n")
+    assert routing_config.contexts() == routing_config.DEFAULT_CONTEXTS
+
+
+def test_invalid_value_falls_back_to_legacy_when_legacy_folder_present(vault):
+    (vault / "20-contexts" / "sanlam").mkdir(parents=True, exist_ok=True)
+    _write_routing(vault, "contexts: []\n")
+    assert routing_config.contexts() == routing_config.LEGACY_CONTEXTS
+
+
+def test_invalid_value_falls_back_to_default_when_no_legacy_folder(vault):
+    _write_routing(vault, "contexts: []\n")
+    assert routing_config.contexts() == routing_config.DEFAULT_CONTEXTS
+
+
+def test_entries_are_stripped(vault):
+    _write_routing(vault, 'contexts:\n  - " alpha "\n  - beta\n')
+    assert routing_config.contexts() == ("alpha", "beta")
+
+
+def test_explicit_root_overrides_vault_path(vault, tmp_path):
+    other = tmp_path / "other-vault"
+    _write_routing(other, "contexts:\n  - solo\n")
+    assert routing_config.contexts(root=other) == ("solo",)
+
+
+def test_default_contexts_are_neutral():
+    assert routing_config.DEFAULT_CONTEXTS == ("personal", "work")

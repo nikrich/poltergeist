@@ -28,6 +28,7 @@ from typing import Any, Iterable
 import frontmatter
 import yaml
 
+from ghostbrain import routing_config
 from ghostbrain.llm import client as llm
 from ghostbrain.paths import audit_dir, vault_path
 from ghostbrain.worker.audit import audit_log
@@ -37,10 +38,6 @@ from ghostbrain.worker.digest import (
 )
 
 log = logging.getLogger("ghostbrain.worker.weekly_digest")
-
-KNOWN_CONTEXTS: tuple[str, ...] = (
-    "sanlam", "codeship", "reducedrecipes", "personal", "needs_review",
-)
 
 # Threshold below which a context is flagged as "quiet" — fewer than
 # this many events across the entire week.
@@ -264,11 +261,9 @@ def _audit_totals(
 
 
 def _quiet_contexts(activity_by_context: dict[str, int]) -> list[str]:
-    """Known contexts with fewer than QUIET_THRESHOLD events all week."""
+    """Configured contexts with fewer than QUIET_THRESHOLD events all week."""
     out: list[str] = []
-    for ctx in KNOWN_CONTEXTS:
-        if ctx in ("needs_review",):
-            continue
+    for ctx in routing_config.contexts():
         if activity_by_context.get(ctx, 0) < QUIET_THRESHOLD:
             out.append(ctx)
     return out
@@ -402,7 +397,7 @@ def render_weekly_input_for_prompt(d: WeeklyDigestInput) -> str:
 def _ordered_contexts(activity: dict[str, int]) -> list[str]:
     seen = set(activity.keys())
     out: list[str] = []
-    for ctx in KNOWN_CONTEXTS:
+    for ctx in (*routing_config.contexts(), "needs_review"):
         if ctx in seen:
             out.append(ctx)
             seen.discard(ctx)

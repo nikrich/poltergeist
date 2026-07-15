@@ -309,7 +309,7 @@ def _parse_accounts(config: dict) -> Iterable[GmailAccountConfig]:
 
         accounts:
           jannik811@gmail.com:
-            monitored_labels: ["sanlam/policies", "codeship"]
+            monitored_labels: ["acme/policies", "your-context"]
             unread_lookback_hours: 24
           # ...
 

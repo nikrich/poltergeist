@@ -55,6 +55,9 @@ export interface GbBridge {
     openPath(path: string): Promise<{ ok: true } | { ok: false; error: string }>;
     openExternal(url: string): Promise<{ ok: true } | { ok: false; error: string }>;
   };
+  cli: {
+    install(): Promise<{ path: string; onPath: boolean }>;
+  };
   platform: NodeJS.Platform;
   api: {
     request<T = unknown>(

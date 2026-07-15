@@ -28,15 +28,13 @@ from typing import Iterable
 
 import frontmatter
 
+from ghostbrain import routing_config
 from ghostbrain.paths import audit_dir, vault_path
 
 log = logging.getLogger("ghostbrain.metrics.anticipation")
 
 DEFAULT_LOOKBACK_DAYS = 30
 DEFAULT_ACTIVITY_FLOOR = 3   # context must avg ≥3 events on this weekday
-KNOWN_CONTEXTS: tuple[str, ...] = (
-    "sanlam", "codeship", "reducedrecipes", "personal",
-)
 
 
 @dataclasses.dataclass
@@ -63,12 +61,14 @@ def detect_anticipations(
     today = today or _local_today()
     weekday_name = today.strftime("%A")
 
+    known = routing_config.contexts()
+
     # For each (weekday, context) collect daily counts over the lookback.
     by_weekday_ctx: dict[tuple[int, str], list[int]] = defaultdict(list)
     cur = today - timedelta(days=lookback_days)
     while cur < today:
         per_ctx = _events_per_context_for_day(cur)
-        for ctx in KNOWN_CONTEXTS:
+        for ctx in known:
             by_weekday_ctx[(cur.weekday(), ctx)].append(per_ctx.get(ctx, 0))
         cur += timedelta(days=1)
 
@@ -76,7 +76,7 @@ def detect_anticipations(
     today_calendar = _calendar_events_per_context_for_day(today)
 
     out: list[Anticipation] = []
-    for ctx in KNOWN_CONTEXTS:
+    for ctx in known:
         counts = by_weekday_ctx.get((today.weekday(), ctx), [])
         if not counts:
             continue

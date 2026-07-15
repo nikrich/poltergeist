@@ -94,6 +94,11 @@ def test_render_input_for_prompt_groups_by_context(vault: Path) -> None:
         CapturedNote, DigestInput, render_input_for_prompt,
     )
 
+    # Configure the contexts this fixture uses, in canonical order.
+    (vault / "90-meta" / "routing.yaml").write_text(
+        "contexts:\n  - sanlam\n  - codeship\n", encoding="utf-8"
+    )
+
     notes = [
         CapturedNote(title="A", context="codeship", source="claude-code",
                      artifact_count=2, note_path=None, ingested_at=None,
@@ -113,7 +118,7 @@ def test_render_input_for_prompt_groups_by_context(vault: Path) -> None:
     rendered = render_input_for_prompt(d)
     assert "Context: sanlam" in rendered  # known contexts in canonical order
     assert "Context: codeship" in rendered
-    # sanlam comes before codeship per KNOWN_CONTEXTS ordering
+    # sanlam comes before codeship per the configured context ordering
     assert rendered.index("Context: sanlam") < rendered.index("Context: codeship")
     assert "2 artifact(s)" in rendered  # codeship had 2
     assert "processed: 2" in rendered

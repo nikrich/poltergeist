@@ -27,6 +27,36 @@ def _write_proposed(vault: Path, day: date, proposals: list[dict]) -> None:
             f.write(json.dumps(p) + "\n")
 
 
+def _configure_contexts(vault: Path, ctxs: list[str]) -> None:
+    f = vault / "90-meta" / "routing.yaml"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text("contexts:\n" + "\n".join(f"  - {c}" for c in ctxs))
+
+
+def test_default_current_projects_doc_uses_configured_contexts(vault: Path) -> None:
+    """When current-projects.md doesn't exist yet, the applier's own default
+    body (not bootstrap's) must derive its H2 sections from routing_config,
+    not the legacy hardcoded four."""
+    from ghostbrain.profile.apply import apply_weekly
+
+    _configure_contexts(vault, ["alpha"])
+    target = vault / "80-profile" / "current-projects.md"
+    target.unlink()  # bootstrap seeds one; delete to exercise apply.py's own default
+
+    parent = str(vault / "20-contexts" / "alpha" / "p.md")
+    _write_proposed(vault, date(2026, 5, 5), [
+        _proposal("current-projects", "Ship the thing", parent_path=parent)
+        for _ in range(3)
+    ])
+
+    apply_weekly(target_date=date(2026, 5, 7))
+
+    cp = target.read_text()
+    assert "## alpha" in cp
+    for legacy in ("sanlam", "codeship", "reducedrecipes"):
+        assert f"## {legacy}" not in cp
+
+
 def test_three_corroborating_adds_apply_to_current_projects(vault: Path) -> None:
     from ghostbrain.profile.apply import apply_weekly
 

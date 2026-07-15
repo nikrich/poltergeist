@@ -11,11 +11,11 @@ import logging
 import time
 from pathlib import Path
 
+from ghostbrain import routing_config
 from ghostbrain.paths import vault_path
 
 log = logging.getLogger("ghostbrain.projects")
 
-KNOWN_CONTEXTS = ("sanlam", "codeship", "reducedrecipes", "personal")
 REGISTRY_REL = "90-meta/projects.json"
 PROJECT_DIR_TEMPLATE = "20-contexts/{context}/projects/{slug}"
 
@@ -73,7 +73,7 @@ def create_project(context: str, name: str, description: str = "") -> dict:
     # projects → notes_manual → router → projects (Task 3 wires router to projects)
     from ghostbrain.api.repo.notes_manual import make_slug  # noqa: PLC0415
 
-    if context not in KNOWN_CONTEXTS:
+    if context not in routing_config.contexts():
         raise UnknownContext(context)
     slug = make_slug(name)
     if not slug:
@@ -121,7 +121,7 @@ def update_project(
 
 def active_destinations() -> list[str]:
     """Routing destinations: bare contexts + 'context/slug' for active projects."""
-    dests = list(KNOWN_CONTEXTS)
+    dests = list(routing_config.contexts())
     dests.extend(p["id"] for p in list_projects())
     return dests
 

@@ -395,7 +395,35 @@ function BackgroundSettings() {
           </span>
         }
       />
+      {window.gb.platform === 'darwin' && <CliShimRow />}
     </div>
+  );
+}
+
+function CliShimRow() {
+  const [status, setStatus] = useState<string | null>(null);
+  const onInstall = async () => {
+    try {
+      const res = await window.gb.cli.install();
+      setStatus(
+        res.onPath
+          ? `installed at ${res.path}`
+          : `installed at ${res.path} — add its folder to your PATH`,
+      );
+    } catch {
+      setStatus('install failed — check folder permissions');
+    }
+  };
+  return (
+    <SettingRow
+      label="command line tool"
+      sub={status ?? "installs a `poltergeist` command for connector setup (runs the bundled backend CLI)."}
+      control={
+        <Btn variant="secondary" size="sm" onClick={() => void onInstall()}>
+          install
+        </Btn>
+      }
+    />
   );
 }
 

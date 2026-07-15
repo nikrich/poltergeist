@@ -1,4 +1,5 @@
 import { app, BrowserWindow, globalShortcut, ipcMain, session, shell } from 'electron';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import * as settings from './settings';
 import { pickVaultFolder } from './dialogs';
@@ -20,6 +21,7 @@ import {
 import { installJotOverlay } from './jot-overlay';
 import { installUpdater } from './updater';
 import { installClipboardBridge } from './clipboard';
+import { installCliShim } from './cli-shim';
 import {
   registerGbAssetScheme,
   registerAssetProtocol,
@@ -232,6 +234,17 @@ ipcMain.handle('gb:shell:openExternal', async (_e, url: unknown) => {
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
+});
+
+ipcMain.handle('gb:cli:install', () => {
+  if (process.platform !== 'darwin') {
+    throw new Error('CLI shim install is only supported on macOS');
+  }
+  const binaryPath = join(process.resourcesPath, 'sidecar', 'ghostbrain-api', 'ghostbrain-api');
+  if (!existsSync(binaryPath)) {
+    throw new Error('bundled backend not found — dev build?');
+  }
+  return installCliShim({ binaryPath });
 });
 
 app.whenReady().then(async () => {

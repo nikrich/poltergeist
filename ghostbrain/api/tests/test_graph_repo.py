@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from ghostbrain.api.repo.graph import build_graph
+from ghostbrain.semantic.regions import _RAMP
 
 
 def _note(vault: Path, rel: str, body: str = "", **meta) -> None:
@@ -28,7 +29,9 @@ def test_build_graph_nodes_edges_regions(tmp_vault: Path, monkeypatch, tmp_path)
                for e in edges)
     regions = {r["id"]: r for r in graph["regions"]}
     assert regions["sanlam"]["count"] == 2
-    assert regions["sanlam"]["color"] == "#38BDF8"
+    # "sanlam" is no longer a base-palette entry; it now flows through the
+    # hash->ramp path like any other context (see ghostbrain/semantic/regions.py).
+    assert regions["sanlam"]["color"] in _RAMP
 
 
 def test_build_graph_empty_vault(tmp_vault: Path, monkeypatch, tmp_path):

@@ -59,6 +59,28 @@ from typing import IO  # noqa: E402
 log = logging.getLogger("ghostbrain.api.main")
 
 
+def ensure_vault() -> None:
+    """First-run bootstrap: create the vault if it doesn't exist yet.
+
+    Failure is logged, never raised — the Electron parent auto-respawns the
+    sidecar on exit, so raising here would crash-loop; a degraded-but-up API
+    surfaces the problem in the app instead.
+    """
+    try:
+        from ghostbrain.paths import vault_path
+
+        marker = vault_path() / "90-meta" / "routing.yaml"
+        if marker.exists():
+            return
+
+        import ghostbrain.bootstrap as bootstrap_mod
+
+        root = bootstrap_mod.bootstrap()
+        log.info("first run: bootstrapped vault at %s", root)
+    except Exception:  # noqa: BLE001 — see docstring
+        log.exception("vault bootstrap failed — continuing so the API can surface it")
+
+
 def _pick_port() -> int:
     """Bind a transient socket to an OS-assigned port, then close. Race-y but
     fine for the local-only sidecar; uvicorn re-binds the same port immediately."""
@@ -120,22 +142,87 @@ def _publish_descriptor(port: int, token: str) -> IO | None:
     return lock
 
 
+# The packaged build ships ONE executable, so it doubles as the whole
+# ghostbrain CLI. Keys mirror [project.scripts] in pyproject.toml minus the
+# "ghostbrain-" prefix; values are "module:function". Kept in lockstep by
+# tests/test_api_main_dispatch.py::test_subcommands_exactly_mirror_pyproject_scripts.
+# All imports stay lazy: `ghostbrain-api mcp` serves the Poltergeist MCP stdio
+# server (how chat gets vault tools without a second, ML-heavy PyInstaller
+# bundle — see ghostbrain.llm.agent.find_mcp_binary) and must not pay for the
+# API stack (see module docstring of the test file).
+SUBCOMMANDS: dict[str, str] = {
+    "bootstrap": "ghostbrain.bootstrap:main",
+    "worker": "ghostbrain.worker.main:main",
+    "claude-md": "ghostbrain.profile.claude_md:main",
+    "digest": "ghostbrain.worker.digest:main",
+    "weekly-digest": "ghostbrain.worker.weekly_digest:main",
+    "github-fetch": "ghostbrain.connectors.github.__main__:main",
+    "jira-fetch": "ghostbrain.connectors.jira.__main__:main",
+    "confluence-fetch": "ghostbrain.connectors.confluence.__main__:main",
+    "profile-apply": "ghostbrain.profile.apply:main",
+    "profile-decay": "ghostbrain.profile.decay:main",
+    "calendar-fetch": "ghostbrain.connectors.calendar.__main__:main",
+    "calendar-auth": "ghostbrain.connectors.calendar.auth_cli:main",
+    "gmail-fetch": "ghostbrain.connectors.gmail.__main__:main",
+    "gmail-auth": "ghostbrain.connectors.gmail.auth_cli:main",
+    "slack-fetch": "ghostbrain.connectors.slack.__main__:main",
+    "slack-token-add": "ghostbrain.connectors.slack.token_cli:main",
+    "joplin-fetch": "ghostbrain.connectors.joplin.__main__:main",
+    "microsoft-auth": "ghostbrain.connectors.microsoft.graph.auth_cli:main",
+    "outlook-mail-fetch": "ghostbrain.connectors.microsoft.outlook_mail.__main__:main",
+    "teams-chat-fetch": "ghostbrain.connectors.microsoft.teams_chat.__main__:main",
+    "teams-meetings-fetch": "ghostbrain.connectors.microsoft.teams_meetings.__main__:main",
+    "transcribe": "ghostbrain.recorder.main:main",
+    "recorder": "ghostbrain.recorder.daemon_cli:main",
+    "recorder-recover": "ghostbrain.recorder.recover_cli:main",
+    "metrics": "ghostbrain.metrics.main:main",
+    "semantic-refresh": "ghostbrain.semantic.main:main",
+    "mcp": "ghostbrain.mcp.__main__:main",
+}
+
+
+def _dispatch(name: str, rest: list[str]) -> int:
+    import importlib
+
+    mod_name, func_name = SUBCOMMANDS[name].split(":")
+    mod = importlib.import_module(mod_name)
+    # Entry-point mains read sys.argv themselves; present the same argv they
+    # would see as a pip-installed console script. Restore afterwards so
+    # in-process callers (tests) don't leak the mutation — the target main()
+    # reads argv during the call, so real CLI behavior is unchanged.
+    saved_argv = sys.argv
+    sys.argv = [f"ghostbrain-{name}", *rest]
+    try:
+        rc = getattr(mod, func_name)()
+    finally:
+        sys.argv = saved_argv
+    # bool is an int subclass; a truthy non-exit-code return still means success.
+    return rc if isinstance(rc, int) and not isinstance(rc, bool) else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
-    # The packaged build ships one executable. When invoked as `ghostbrain-api
-    # mcp` it serves the Poltergeist MCP stdio server instead of the HTTP sidecar
-    # — this is how chat gets vault tools without a second, ML-heavy PyInstaller
-    # bundle (see ghostbrain.llm.agent.find_mcp_binary).
-    if argv and argv[0] == "mcp":
-        from ghostbrain.mcp.__main__ import main as mcp_main
-
-        mcp_main()
+    if argv and argv[0] in SUBCOMMANDS:
+        return _dispatch(argv[0], argv[1:])
+    if argv and argv[0] in ("help", "--help", "-h"):
+        print(
+            "usage: ghostbrain-api [subcommand] [args...]\n\n"
+            "With no subcommand, serves the Poltergeist HTTP sidecar API.\n"
+            "Subcommands:\n  " + "\n  ".join(sorted(SUBCOMMANDS))
+        )
         return 0
-
+    if argv:
+        print(
+            f"unknown subcommand: {argv[0]!r}\n"
+            f"available: {', '.join(sorted(SUBCOMMANDS))}",
+            file=sys.stderr,
+        )
+        return 2
     return _run_api_server()
 
 
 def _run_api_server() -> int:
+    ensure_vault()
     # Import the app stack lazily, AFTER the `mcp` dispatch above. The frozen
     # `ghostbrain-api mcp` subprocess must not pay for — or crash/stall on — the
     # full route tree (uvicorn + every route + their transitive deps) before its

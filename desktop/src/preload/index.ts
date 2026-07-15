@@ -13,6 +13,9 @@ const bridge: GbBridge = {
     openPath: (path: string) => ipcRenderer.invoke('gb:shell:openPath', path),
     openExternal: (url: string) => ipcRenderer.invoke('gb:shell:openExternal', url),
   },
+  cli: {
+    install: () => ipcRenderer.invoke('gb:cli:install'),
+  },
   platform: process.platform,
   api: {
     request: (method, path, body) =>

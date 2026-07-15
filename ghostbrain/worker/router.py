@@ -22,6 +22,7 @@ from typing import Any
 
 import yaml
 
+from ghostbrain import routing_config
 from ghostbrain.api.repo import projects as projects_repo
 from ghostbrain.llm import client as llm
 from ghostbrain.paths import vault_path
@@ -36,10 +37,9 @@ ROUTER_JSON_SCHEMA: dict[str, Any] = {
     "properties": {
         "context": {
             "type": "string",
-            "enum": [
-                "sanlam", "codeship", "reducedrecipes", "personal",
-                "needs_review",
-            ],
+            # Placeholder — build_router_schema() replaces this with the live
+            # destination list.
+            "enum": ["needs_review"],
         },
         "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
         "reasoning": {"type": "string", "maxLength": 400},
@@ -73,13 +73,13 @@ def build_router_schema() -> dict:
 
 
 def parse_destination(value: str) -> tuple[str, str | None]:
-    """'codeship/poltergeist' → ('codeship', 'poltergeist'); bare context
+    """'acme/some-project' → ('acme', 'some-project'); bare context
     passes through. Unknown/archived project degrades to context-only;
     unknown context degrades to needs_review."""
     if "/" not in value:
         return value, None
     context, slug = value.split("/", 1)
-    if context not in projects_repo.KNOWN_CONTEXTS:
+    if context not in routing_config.contexts():
         return "needs_review", None
     if projects_repo.get_project(context, slug, active_only=True) is None:
         return context, None
@@ -195,8 +195,8 @@ def _fast_route(event: dict, routing: dict) -> RoutingDecision | None:
 
     if source == "gmail":
         # Sender domain has the strongest signal: an email from
-        # @sanlam.co.za is sanlam regardless of label noise. Fall back to
-        # label prefixes (e.g. "sanlam/policies") and exact label match.
+        # @acme.example.com is acme regardless of label noise. Fall back to
+        # label prefixes (e.g. "acme/policies") and exact label match.
         from_domain = (metadata.get("from_domain") or "").lower()
         if from_domain:
             domains = (routing.get("gmail") or {}).get("sender_domains", {}) or {}
@@ -226,8 +226,9 @@ def _fast_route(event: dict, routing: dict) -> RoutingDecision | None:
                     )
 
     if source == "slack":
-        # Workspace slug is the strongest signal — every message in
-        # workspace `sft` is sanlam, regardless of channel or sender.
+        # Workspace slug is the strongest signal — every message in a
+        # configured workspace routes straight to its mapped context,
+        # regardless of channel or sender.
         slug = (metadata.get("workspace_slug") or "").lower()
         if slug:
             workspaces = (routing.get("slack") or {}).get("workspaces", {}) or {}
@@ -275,7 +276,13 @@ def _org_from_repo(repo: str | None) -> str | None:
 
 def _route_via_llm(event: dict, excerpt: str, config: dict) -> RoutingDecision:
     prompt_template = _read_prompt("router.md")
-    prompt = prompt_template.replace("{{content}}", excerpt)
+    # New seeds carry {{contexts}}; on legacy prompts (no placeholder) this
+    # replace is a no-op and any hardcoded list baked into the prompt stays.
+    prompt = (
+        prompt_template
+        .replace("{{contexts}}", ", ".join(routing_config.contexts()))
+        .replace("{{content}}", excerpt)
+    )
 
     project_lines = projects_repo.project_prompt_lines()
     if project_lines:

@@ -1,6 +1,7 @@
 """Project registry CRUD. No DELETE — archive only (notes reference projects)."""
 from fastapi import APIRouter, HTTPException, Query
 
+from ghostbrain import routing_config
 from ghostbrain.api.models.project import (
     CreateProjectRequest,
     Project,
@@ -23,7 +24,7 @@ def create_project(payload: CreateProjectRequest) -> dict:
     except repo.UnknownContext:
         raise HTTPException(
             status_code=422,
-            detail=f"unknown context: {payload.context!r}; valid: {sorted(repo.KNOWN_CONTEXTS)}",
+            detail=f"unknown context: {payload.context!r}; valid: {sorted(routing_config.contexts())}",
         )
     except repo.ProjectExists as e:
         raise HTTPException(status_code=409, detail=f"project already exists: {e}")

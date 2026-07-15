@@ -11,8 +11,8 @@ proposals by ``(field, operation, normalized after-text)``, and acts:
 - Contradictions of existing Stable values → ``_review.md`` too.
 - 1-2 proposals on Current → discard with audit.
 
-The current-projects.md format uses H2 headings per context (sanlam,
-codeship, reducedrecipes, personal). The applier appends new bullets
+The current-projects.md format uses H2 headings per configured context
+(see ``routing_config.contexts()``). The applier appends new bullets
 under the heading that matches the proposal's most-frequent context
 across its corroborating set, falling back to "personal" if unknown.
 """
@@ -29,6 +29,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+from ghostbrain import routing_config
 from ghostbrain.paths import vault_path
 from ghostbrain.worker.audit import audit_log
 
@@ -149,7 +150,8 @@ def _apply_current_projects(additions: list[tuple[str, list[dict]]]) -> None:
     """
     target = vault_path() / "80-profile" / "current-projects.md"
     body = target.read_text(encoding="utf-8") if target.exists() else (
-        "# Current projects\n\n## sanlam\n\n## codeship\n\n## reducedrecipes\n\n## personal\n"
+        "# Current projects\n\n"
+        + "".join(f"## {c}\n\n" for c in routing_config.contexts())
     )
 
     for after, group in additions:

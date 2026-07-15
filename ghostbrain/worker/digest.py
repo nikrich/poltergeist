@@ -21,6 +21,7 @@ from typing import Any, Iterable
 import frontmatter
 import yaml
 
+from ghostbrain import routing_config
 from ghostbrain.llm import client as llm
 from ghostbrain.paths import audit_dir, vault_path
 from ghostbrain.worker.audit import audit_log
@@ -30,11 +31,6 @@ log = logging.getLogger("ghostbrain.worker.digest")
 # Per-context digest emitted only above one of these thresholds (SPEC §8.3).
 PER_CONTEXT_MIN_EVENTS = 5
 PER_CONTEXT_MIN_ARTIFACTS = 2
-
-# Match the contexts the bootstrap creates. Used to sort sections deterministically.
-KNOWN_CONTEXTS: tuple[str, ...] = (
-    "sanlam", "codeship", "reducedrecipes", "personal", "needs_review",
-)
 
 
 @dataclasses.dataclass
@@ -853,10 +849,10 @@ def _title_from_body(body: str) -> str:
 
 
 def _ordered_contexts(by_context: dict[str, list]) -> list[str]:
-    """Stable ordering: known contexts first, then anything else alphabetically."""
+    """Stable ordering: configured contexts first, then anything else alphabetically."""
     seen = set(by_context.keys())
     out: list[str] = []
-    for ctx in KNOWN_CONTEXTS:
+    for ctx in (*routing_config.contexts(), "needs_review"):
         if ctx in seen:
             out.append(ctx)
             seen.discard(ctx)

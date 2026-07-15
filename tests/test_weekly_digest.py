@@ -16,6 +16,14 @@ def _write(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
+def _configure(vault: Path, ctxs: list[str]) -> None:
+    """Point the vault's configured context list at the contexts these
+    fixtures use (bootstrap seeds neutral defaults that don't include them)."""
+    f = vault / "90-meta" / "routing.yaml"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text("contexts:\n" + "\n".join(f"  - {c}" for c in ctxs))
+
+
 def _frontmatter_doc(meta: dict, body: str = "") -> str:
     return f"---\n{yaml.safe_dump(meta, sort_keys=False).rstrip()}\n---\n\n{body}\n"
 
@@ -98,8 +106,9 @@ def test_extract_glance_section() -> None:
     assert "Sanlam" not in _extract_glance_section(body)
 
 
-def test_quiet_contexts_excludes_needs_review() -> None:
+def test_quiet_contexts_excludes_needs_review(vault: Path) -> None:
     from ghostbrain.worker.weekly_digest import _quiet_contexts
+    _configure(vault, ["sanlam", "codeship", "personal"])
     activity = {"sanlam": 50, "codeship": 1, "personal": 0, "needs_review": 0}
     quiet = _quiet_contexts(activity)
     assert "codeship" in quiet
@@ -192,6 +201,7 @@ def test_build_weekly_input_audit_totals(vault: Path) -> None:
 def test_build_weekly_input_marks_quiet_contexts(vault: Path) -> None:
     from ghostbrain.worker.weekly_digest import build_weekly_input
 
+    _configure(vault, ["sanlam", "codeship", "reducedrecipes", "personal"])
     week_end = date(2026, 5, 10)
     _write_audit(vault, date(2026, 5, 5), [
         {"event_type": "event_processed", "status": "success",
