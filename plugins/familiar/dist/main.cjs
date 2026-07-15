@@ -28,13 +28,22 @@ var import_node_path = require("node:path");
 
 // src/lib/schedule.js
 var DAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
-function lastScheduledSlot(config2, now) {
+function lastScheduledSlotDaily(config2, now) {
+  const d = new Date(now);
+  d.setHours(config2.hour, 0, 0, 0);
+  if (d > now) d.setDate(d.getDate() - 1);
+  return d;
+}
+function lastScheduledSlotWeekly(config2, now) {
   const target = DAYS.indexOf(config2.day);
   const d = new Date(now);
   d.setHours(config2.hour, 0, 0, 0);
   d.setDate(d.getDate() - (d.getDay() - target + 7) % 7);
   if (d > now) d.setDate(d.getDate() - 7);
   return d;
+}
+function lastScheduledSlot(config2, now) {
+  return config2.cadence === "daily" ? lastScheduledSlotDaily(config2, now) : lastScheduledSlotWeekly(config2, now);
 }
 function isRunDue(config2, state, now = /* @__PURE__ */ new Date()) {
   const s = state ?? {};
@@ -52,7 +61,7 @@ function inFailureCooldown(state, now, cooldownMs = 4 * 36e5) {
 }
 function nextRunAt(config2, now = /* @__PURE__ */ new Date()) {
   const next = new Date(lastScheduledSlot(config2, now));
-  next.setDate(next.getDate() + 7);
+  next.setDate(next.getDate() + (config2.cadence === "daily" ? 1 : 7));
   return next;
 }
 
