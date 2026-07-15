@@ -1,7 +1,12 @@
 # macOS launchd setup (legacy)
 
-> Use this only if you're running the worker without the desktop app. The
-> desktop app's built-in scheduler replaces all of this.
+> The desktop app is self-contained — it auto-bootstraps the vault on first
+> launch and bundles the whole CLI as `ghostbrain-api <subcommand>` (no
+> Python install needed). This page covers the headless/pip setup only: use
+> it if you're running the worker without the desktop app, where
+> `ghostbrain-api <subcommand>` is replaced by the pip-installed
+> `ghostbrain-<subcommand>` scripts. The desktop app's built-in scheduler
+> replaces all of this.
 
 The plists in `orchestration/launchd/` are templates with two placeholders:
 `__REPO_ROOT__` (your local clone path) and `__VAULT_PATH__` (your vault).

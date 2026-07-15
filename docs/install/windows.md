@@ -1,5 +1,12 @@
 # Installing Poltergeist on Windows
 
+> The desktop app is self-contained — it auto-bootstraps the vault on first
+> launch and bundles the whole CLI as `ghostbrain-api <subcommand>` (no
+> Python install needed). This page covers the headless/pip setup only:
+> everything below is for running Poltergeist from source instead of the
+> packaged app, where `ghostbrain-api <subcommand>` is replaced by the
+> pip-installed `ghostbrain-<subcommand>` scripts.
+
 This guide walks you through a working installation of Poltergeist on Windows. The desktop app with the built-in scheduler is the recommended path; `ghostbrain-worker` can also run under Task Scheduler if you prefer.
 
 ## Prerequisites

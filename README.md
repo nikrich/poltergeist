@@ -78,15 +78,22 @@ Everything in the pipeline is inspectable: events are JSON files, notes are mark
 
 Get your first connector flowing in about five minutes.
 
-> **A note on command names.** CLI binaries and the Python package use the `ghostbrain-` prefix — Poltergeist's original codename. A rename is on the roadmap; until then, the commands below are correct as written.
+> **A note on command names.** CLI binaries and the Python package use the `ghostbrain-` prefix — Poltergeist's original codename. A rename is on the roadmap; until then, the commands below are correct as written. The packaged desktop app bundles every one of them into a single `ghostbrain-api <subcommand>` binary; a source/pip install gets them as separate `ghostbrain-<subcommand>` scripts instead.
 
 ### 1. Install
 
-```bash
-git clone https://github.com/nikrich/poltergeist.git && cd poltergeist
-python3.11 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-```
+Grab the installer for your OS from [GitHub Releases](https://github.com/nikrich/ghost-brain/releases)
+(macOS `.dmg`, Windows `Setup.exe`, Linux `.AppImage`/`.deb`). The app is
+self-contained: on first launch it creates the vault at `~/ghostbrain/vault/`
+and everything except LLM features works immediately. LLM features (chat,
+digests) additionally need the [Claude Code CLI](https://claude.com/claude-code)
+installed and logged in.
+
+Connector setup (gmail, slack, github, …) uses the bundled CLI — no Python
+install needed. On macOS, Settings → background → "command line tool" installs
+a `poltergeist` command; elsewhere invoke the bundled binary directly
+(e.g. `<install dir>/resources/sidecar/ghostbrain-api/ghostbrain-api gmail-auth you@example.com`).
+The developer setup (`pip install -e .`) is only for working on Poltergeist itself — see [Contributing](#contributing).
 
 ### 2. Verify Claude Code is logged in
 
@@ -99,36 +106,42 @@ claude     # interactive — quit out once you see the prompt
 
 ### 3. Bootstrap the vault
 
+The desktop app does this automatically on first launch. Running from a source/pip install instead? Bootstrap manually:
+
 ```bash
 ghostbrain-bootstrap                          # idempotent — creates ~/ghostbrain/vault/
 export VAULT_PATH="$HOME/ghostbrain/vault"    # or point it anywhere you like
 ```
 
-Open the vault in Obsidian and install the community plugins it relies on: **Dataview, Templater, Periodic Notes, Local REST API**.
+Either way, open the vault in Obsidian and install the community plugins it relies on: **Dataview, Templater, Periodic Notes, Local REST API**.
 
 ### 4. Connect a source
 
 Every connector is the same shape: create a credential → authenticate → add its block to `<vault>/90-meta/routing.yaml` → fetch. GitHub is the quickest first one — it reuses your `gh` login:
 
 ```bash
-gh auth login                                   # if not already logged in
+gh auth login                                       # if not already logged in
 # add to <vault>/90-meta/routing.yaml:
 #   github:
 #     orgs: { your-org: personal }
-ghostbrain-github-fetch --dry-run               # preview — queues nothing
-ghostbrain-github-fetch                         # queue events
-ghostbrain-worker                               # turn queued events into vault notes
+ghostbrain-api github-fetch --dry-run               # preview — queues nothing
+ghostbrain-api github-fetch                         # queue events
+ghostbrain-api worker                               # turn queued events into vault notes
 ```
+
+(Source/pip install: drop the `ghostbrain-api` prefix, e.g. `ghostbrain-github-fetch`, `ghostbrain-worker`.)
+
+Commands below are subcommands — prefix with `ghostbrain-api ` (app) or `ghostbrain-` (source/pip install):
 
 | Connector | Authenticate | You'll need |
 |---|---|---|
 | GitHub | uses `gh` | `gh auth login` |
-| Gmail | `ghostbrain-gmail-auth <email>` | Google Desktop OAuth client JSON |
-| Calendar (Google) | `ghostbrain-calendar-auth google <email>` | same Google OAuth client |
-| Slack | `ghostbrain-slack-token-add <slug> <xoxp>` | Slack app + user token (`xoxp-…`) |
+| Gmail | `gmail-auth <email>` | Google Desktop OAuth client JSON |
+| Calendar (Google) | `calendar-auth google <email>` | same Google OAuth client |
+| Slack | `slack-token-add <slug> <xoxp>` | Slack app + user token (`xoxp-…`) |
 | Jira / Confluence | env `ATLASSIAN_EMAIL` + `ATLASSIAN_TOKEN` | Atlassian API token |
 | Joplin | token in `routing.yaml` | Joplin Web Clipper token |
-| Microsoft (Outlook / Teams) | `ghostbrain-microsoft-auth` | Entra app (client id + tenant id) |
+| Microsoft (Outlook / Teams) | `microsoft-auth` | Entra app (client id + tenant id) |
 | Claude Code | SessionEnd hook | — |
 
 Full per-connector walkthroughs — OAuth scopes, routing rules, scheduling, caveats — live in **[docs/connectors.md](./docs/connectors.md)**. For an agent-guided setup of any connector, use the `onboarding-poltergeist` skill in `.claude/skills/`.
@@ -146,6 +159,8 @@ Poltergeist ships an MCP server so Claude Code & Desktop can query your vault mi
 ```bash
 pip install -e ".[mcp]"     # adds the ghostbrain-mcp entrypoint
 ```
+
+(Using the packaged app instead? Point `.mcp.json` at the bundled binary's `mcp` subcommand — `<install dir>/resources/sidecar/ghostbrain-api/ghostbrain-api mcp` — no pip install needed.)
 
 Add to your `.mcp.json` (project scope) or `~/.claude.json` (user scope):
 
@@ -188,6 +203,18 @@ poltergeist/
 ## Contributing
 
 Poltergeist is alpha and the surface area will change between phases. Issues and PRs are welcome — please open an issue first to discuss substantive changes. New connectors and prompt improvements are particularly useful; the connector pattern is documented in [docs/connectors.md](./docs/connectors.md#adding-a-new-connector).
+
+### Developer setup
+
+Working on Poltergeist itself (not just using it)? Set up the repo from source:
+
+```bash
+git clone https://github.com/nikrich/poltergeist.git && cd poltergeist
+python3.11 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+This gives you the full `ghostbrain-*` CLI, the test suite, and the desktop app's Python sidecar in dev mode. Run the suites with `pytest tests/ -q` and `cd desktop && npm test`.
 
 If you're a coding agent working on this repo: read [spec/SPEC.md](./spec/SPEC.md) end-to-end, determine the current phase from `git log --oneline`, work on the next phase only ([acceptance criteria in §9](./spec/SPEC.md#section-9--build-sequence-phased)), and commit each phase with its name in the message.
 
