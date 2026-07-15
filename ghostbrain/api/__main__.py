@@ -142,18 +142,76 @@ def _publish_descriptor(port: int, token: str) -> IO | None:
     return lock
 
 
+# The packaged build ships ONE executable, so it doubles as the whole
+# ghostbrain CLI. Keys mirror [project.scripts] in pyproject.toml minus the
+# "ghostbrain-" prefix; values are "module:function". Kept in lockstep by
+# tests/test_api_main_dispatch.py::test_subcommands_exactly_mirror_pyproject_scripts.
+# All imports stay lazy: `ghostbrain-api mcp` serves the Poltergeist MCP stdio
+# server (how chat gets vault tools without a second, ML-heavy PyInstaller
+# bundle — see ghostbrain.llm.agent.find_mcp_binary) and must not pay for the
+# API stack (see module docstring of the test file).
+SUBCOMMANDS: dict[str, str] = {
+    "bootstrap": "ghostbrain.bootstrap:main",
+    "worker": "ghostbrain.worker.main:main",
+    "claude-md": "ghostbrain.profile.claude_md:main",
+    "digest": "ghostbrain.worker.digest:main",
+    "weekly-digest": "ghostbrain.worker.weekly_digest:main",
+    "github-fetch": "ghostbrain.connectors.github.__main__:main",
+    "jira-fetch": "ghostbrain.connectors.jira.__main__:main",
+    "confluence-fetch": "ghostbrain.connectors.confluence.__main__:main",
+    "profile-apply": "ghostbrain.profile.apply:main",
+    "profile-decay": "ghostbrain.profile.decay:main",
+    "calendar-fetch": "ghostbrain.connectors.calendar.__main__:main",
+    "calendar-auth": "ghostbrain.connectors.calendar.auth_cli:main",
+    "gmail-fetch": "ghostbrain.connectors.gmail.__main__:main",
+    "gmail-auth": "ghostbrain.connectors.gmail.auth_cli:main",
+    "slack-fetch": "ghostbrain.connectors.slack.__main__:main",
+    "slack-token-add": "ghostbrain.connectors.slack.token_cli:main",
+    "joplin-fetch": "ghostbrain.connectors.joplin.__main__:main",
+    "microsoft-auth": "ghostbrain.connectors.microsoft.graph.auth_cli:main",
+    "outlook-mail-fetch": "ghostbrain.connectors.microsoft.outlook_mail.__main__:main",
+    "teams-chat-fetch": "ghostbrain.connectors.microsoft.teams_chat.__main__:main",
+    "teams-meetings-fetch": "ghostbrain.connectors.microsoft.teams_meetings.__main__:main",
+    "transcribe": "ghostbrain.recorder.main:main",
+    "recorder": "ghostbrain.recorder.daemon_cli:main",
+    "recorder-recover": "ghostbrain.recorder.recover_cli:main",
+    "metrics": "ghostbrain.metrics.main:main",
+    "semantic-refresh": "ghostbrain.semantic.main:main",
+    "mcp": "ghostbrain.mcp.__main__:main",
+}
+
+
+def _dispatch(name: str, rest: list[str]) -> int:
+    import importlib
+
+    mod_name, func_name = SUBCOMMANDS[name].split(":")
+    mod = importlib.import_module(mod_name)
+    # Entry-point mains read sys.argv themselves; present the same argv they
+    # would see as a pip-installed console script.
+    sys.argv = [f"ghostbrain-{name}", *rest]
+    rc = getattr(mod, func_name)()
+    # bool is an int subclass; a truthy non-exit-code return still means success.
+    return rc if isinstance(rc, int) and not isinstance(rc, bool) else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
-    # The packaged build ships one executable. When invoked as `ghostbrain-api
-    # mcp` it serves the Poltergeist MCP stdio server instead of the HTTP sidecar
-    # — this is how chat gets vault tools without a second, ML-heavy PyInstaller
-    # bundle (see ghostbrain.llm.agent.find_mcp_binary).
-    if argv and argv[0] == "mcp":
-        from ghostbrain.mcp.__main__ import main as mcp_main
-
-        mcp_main()
+    if argv and argv[0] in SUBCOMMANDS:
+        return _dispatch(argv[0], argv[1:])
+    if argv and argv[0] in ("help", "--help", "-h"):
+        print(
+            "usage: ghostbrain-api [subcommand] [args...]\n\n"
+            "With no subcommand, serves the Poltergeist HTTP sidecar API.\n"
+            "Subcommands:\n  " + "\n  ".join(sorted(SUBCOMMANDS))
+        )
         return 0
-
+    if argv:
+        print(
+            f"unknown subcommand: {argv[0]!r}\n"
+            f"available: {', '.join(sorted(SUBCOMMANDS))}",
+            file=sys.stderr,
+        )
+        return 2
     return _run_api_server()
 
 

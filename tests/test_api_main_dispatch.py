@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from pathlib import Path
 
 import ghostbrain.mcp.__main__ as mcp_main_mod
 import ghostbrain.api.__main__ as api_main_mod
@@ -111,3 +112,45 @@ def test_ensure_vault_swallows_vault_path_errors(monkeypatch):
     # patching the module attribute is what its `from ... import` sees.
     monkeypatch.setattr(paths_mod, "vault_path", boom)
     ensure_vault()  # must not raise — sidecar would crash-loop otherwise
+
+
+def test_subcommands_exactly_mirror_pyproject_scripts():
+    import tomllib
+
+    from ghostbrain.api.__main__ import SUBCOMMANDS
+
+    pyproject = tomllib.loads(
+        (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text()
+    )
+    scripts: dict[str, str] = pyproject["project"]["scripts"]
+    expected = {
+        name.removeprefix("ghostbrain-"): target for name, target in scripts.items()
+    }
+    assert SUBCOMMANDS == expected
+
+
+def test_dispatch_shifts_argv_and_returns_zero(monkeypatch):
+    import ghostbrain.bootstrap as bootstrap_mod
+
+    seen: dict = {}
+
+    def fake_main() -> None:
+        seen["argv"] = list(sys.argv)
+
+    monkeypatch.setattr(bootstrap_mod, "main", fake_main)
+    old_argv = list(sys.argv)
+    try:
+        rc = main(["bootstrap", "--verbose"])
+    finally:
+        sys.argv = old_argv
+
+    assert rc == 0
+    assert seen["argv"] == ["ghostbrain-bootstrap", "--verbose"]
+
+
+def test_unknown_subcommand_exits_2_and_lists_available(capsys):
+    rc = main(["frobnicate"])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "frobnicate" in err
+    assert "bootstrap" in err  # the available list is printed
