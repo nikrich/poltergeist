@@ -73,7 +73,7 @@ def build_router_schema() -> dict:
 
 
 def parse_destination(value: str) -> tuple[str, str | None]:
-    """'codeship/poltergeist' → ('codeship', 'poltergeist'); bare context
+    """'acme/some-project' → ('acme', 'some-project'); bare context
     passes through. Unknown/archived project degrades to context-only;
     unknown context degrades to needs_review."""
     if "/" not in value:
@@ -195,8 +195,8 @@ def _fast_route(event: dict, routing: dict) -> RoutingDecision | None:
 
     if source == "gmail":
         # Sender domain has the strongest signal: an email from
-        # @sanlam.co.za is sanlam regardless of label noise. Fall back to
-        # label prefixes (e.g. "sanlam/policies") and exact label match.
+        # @acme.example.com is acme regardless of label noise. Fall back to
+        # label prefixes (e.g. "acme/policies") and exact label match.
         from_domain = (metadata.get("from_domain") or "").lower()
         if from_domain:
             domains = (routing.get("gmail") or {}).get("sender_domains", {}) or {}
@@ -226,8 +226,9 @@ def _fast_route(event: dict, routing: dict) -> RoutingDecision | None:
                     )
 
     if source == "slack":
-        # Workspace slug is the strongest signal — every message in
-        # workspace `sft` is sanlam, regardless of channel or sender.
+        # Workspace slug is the strongest signal — every message in a
+        # configured workspace routes straight to its mapped context,
+        # regardless of channel or sender.
         slug = (metadata.get("workspace_slug") or "").lower()
         if slug:
             workspaces = (routing.get("slack") or {}).get("workspaces", {}) or {}

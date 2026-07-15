@@ -10,7 +10,7 @@ class SearchRequest(BaseModel):
 
 
 class SearchHit(BaseModel):
-    path: str  # vault-relative, e.g. "20-contexts/sanlam/jira/tickets/ABC-1.md"
+    path: str  # vault-relative, e.g. "20-contexts/acme/jira/tickets/ABC-1.md"
     title: str
     snippet: str
     score: float  # cosine similarity, [-1, 1]

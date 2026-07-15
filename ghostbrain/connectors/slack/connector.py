@@ -5,8 +5,8 @@ Mentions-only by design (per SPEC §9 — only mentions, not raw channel
 volume). Each mention surfaces as a single event with the message text,
 permalink, channel name, and the mentioning user resolved to a display
 name. The user's existing ``slack.workspaces`` block in ``routing.yaml``
-maps workspace slug → context, so a mention from the SFT workspace
-routes straight to ``sanlam`` without an LLM call.
+maps workspace slug → context, so a mention from a configured workspace
+routes straight to its context (e.g. ``acme``) without an LLM call.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ HISTORY_PAGE_LIMIT = 200
 
 @dataclasses.dataclass
 class SlackWorkspaceConfig:
-    slug: str               # routing key (e.g. "sft", "codeship")
+    slug: str               # routing key (e.g. "acme", "your-context")
     context: str            # vault context this workspace routes to
     lookback_hours: int = DEFAULT_LOOKBACK_HOURS
     # Fetch strategy:

@@ -19,6 +19,7 @@ from pathlib import Path
 
 import frontmatter
 
+from ghostbrain import routing_config
 from ghostbrain.api.repo.search import search as semantic_search
 from ghostbrain.llm.client import LLMError, LLMTimeout, run as llm_run
 from ghostbrain.paths import vault_path
@@ -36,7 +37,7 @@ PER_NOTE_CHAR_CAP = 16000
 TRANSCRIPT_CHAR_CAP = 48000
 DEFAULT_MODEL = "sonnet"
 PROMPT_TEMPLATE = """You are answering a question using ONLY the user's own vault notes below.
-The user is a software engineer working across four contexts: sanlam (day-job/employer), codeship (consulting + product), reducedrecipes (side project), and personal projects.
+The user is a software engineer working across these contexts: {contexts}.
 
 Question: {question}
 
@@ -133,7 +134,11 @@ def _answer(q: str, limit: int) -> dict:
             "error": None,
         }
 
-    prompt = PROMPT_TEMPLATE.format(question=q.strip(), sources=sources_block)
+    prompt = PROMPT_TEMPLATE.format(
+        question=q.strip(),
+        sources=sources_block,
+        contexts=", ".join(routing_config.contexts()),
+    )
     try:
         result = llm_run(prompt, model=DEFAULT_MODEL)
     except LLMTimeout as e:

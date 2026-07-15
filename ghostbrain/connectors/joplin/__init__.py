@@ -9,7 +9,7 @@ Configure under `joplin:` in `vault/90-meta/routing.yaml`:
       token: "abcdef..."         # required
       host: "http://localhost:41184"   # optional, default shown
       notebooks:                  # optional notebook -> context map
-        Sanlam: sanlam
+        Acme: acme
         Personal: personal
 
 Empty `notebooks` map = ingest every notebook (router falls back to LLM /

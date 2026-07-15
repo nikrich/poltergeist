@@ -153,7 +153,7 @@ cited answer when the question is broad. When the question is time-anchored \
 ("today", "yesterday", "this week"), pass poltergeist_search's days parameter \
 (today → days=1, this week → days=7) so old but similar notes don't win.
 2. Cite vault notes as Obsidian wikilinks containing the vault-relative path \
-exactly as the tools return it, e.g. [[20-contexts/sanlam/decision-x]] or \
+exactly as the tools return it, e.g. [[20-contexts/acme/decision-x]] or \
 [[10-daily/2026-06-09|yesterday's daily]]. The app renders these as clickable \
 links — never invent paths.
 3. If the vault doesn't cover something, say so plainly. Do NOT invent facts \

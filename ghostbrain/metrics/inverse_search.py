@@ -20,8 +20,8 @@ Configured via ``vault/90-meta/config.yaml:inverse_search``::
       # Contexts where each name is "expected" (so cross-context surfacings
       # surface as `unexpected`). Defaults to all when not specified.
       expected_contexts:
-        jannik811: ["sanlam", "codeship", "personal"]
-        julia: ["sanlam"]
+        jannik811: ["acme", "your-context", "personal"]
+        julia: ["acme"]
 
 Output is a list of ``UnexpectedReference`` for the weekly digest.
 """
