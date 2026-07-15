@@ -20,7 +20,8 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 var main_exports = {};
 __export(main_exports, {
   activate: () => activate,
-  deactivate: () => deactivate
+  deactivate: () => deactivate,
+  validateConfigPartial: () => validateConfigPartial
 });
 module.exports = __toCommonJS(main_exports);
 var import_node_fs = require("node:fs");
@@ -465,7 +466,11 @@ var STALE_RUN_MS = 30 * 60 * 1e3;
 var DEFAULT_CONFIG = { cadence: "weekly", day: "monday", hour: 7, model: "sonnet", budgetChars: 15e4 };
 var VALID_DAYS = /* @__PURE__ */ new Set(["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]);
 var VALID_MODELS = /* @__PURE__ */ new Set(["haiku", "sonnet", "opus"]);
+var VALID_CADENCES = /* @__PURE__ */ new Set(["daily", "weekly"]);
 function validateConfigPartial(partial) {
+  if ("cadence" in partial && !VALID_CADENCES.has(partial.cadence)) {
+    throw new Error(`config.cadence must be one of ${[...VALID_CADENCES].join(", ")}; got ${JSON.stringify(partial.cadence)}`);
+  }
   if ("day" in partial && !VALID_DAYS.has(partial.day)) {
     throw new Error(`config.day must be one of ${[...VALID_DAYS].join(", ")}; got ${JSON.stringify(partial.day)}`);
   }
@@ -580,5 +585,6 @@ function deactivate() {
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   activate,
-  deactivate
+  deactivate,
+  validateConfigPartial
 });
