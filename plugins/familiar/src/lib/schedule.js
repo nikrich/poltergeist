@@ -1,12 +1,23 @@
 const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
-export function lastScheduledSlot(config, now) {
+function lastScheduledSlotDaily(config, now) {
+  const d = new Date(now);
+  d.setHours(config.hour, 0, 0, 0);
+  if (d > now) d.setDate(d.getDate() - 1);
+  return d;
+}
+
+function lastScheduledSlotWeekly(config, now) {
   const target = DAYS.indexOf(config.day);
   const d = new Date(now);
   d.setHours(config.hour, 0, 0, 0);
   d.setDate(d.getDate() - ((d.getDay() - target + 7) % 7));
   if (d > now) d.setDate(d.getDate() - 7);
   return d;
+}
+
+export function lastScheduledSlot(config, now) {
+  return config.cadence === 'daily' ? lastScheduledSlotDaily(config, now) : lastScheduledSlotWeekly(config, now);
 }
 
 export function isRunDue(config, state, now = new Date()) {
@@ -31,6 +42,6 @@ export function inFailureCooldown(state, now, cooldownMs = 4 * 3600_000) {
 
 export function nextRunAt(config, now = new Date()) {
   const next = new Date(lastScheduledSlot(config, now));
-  next.setDate(next.getDate() + 7);
+  next.setDate(next.getDate() + (config.cadence === 'daily' ? 1 : 7));
   return next;
 }
