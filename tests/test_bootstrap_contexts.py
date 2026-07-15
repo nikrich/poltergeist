@@ -56,8 +56,10 @@ def test_existing_vault_without_key_gets_contexts_appended(vault):
     after = routing_file.read_text()
     assert "# user comment to preserve" in after
     routing = yaml.safe_load(after)
-    # Key absent → legacy fallback list is what gets recorded.
-    assert routing["contexts"] == list(routing_config.LEGACY_CONTEXTS)
+    # Key absent, and this vault has no 20-contexts/sanlam (it was bootstrapped
+    # fresh with DEFAULT_CONTEXTS) → the non-legacy fallback is what gets
+    # recorded, not the hardcoded legacy four.
+    assert routing["contexts"] == list(routing_config.DEFAULT_CONTEXTS)
 
 
 def test_existing_vault_with_key_is_untouched(vault):

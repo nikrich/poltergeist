@@ -18,7 +18,7 @@ def test_configured_context_is_accepted_needs_review_is_not(vault):
     assert notes_mod._known_contexts() == {"alpha", "beta"}
 
 
-def test_route_note_rejects_unconfigured_context(vault, monkeypatch):
+def test_route_note_rejects_unconfigured_context(vault):
     _configure(vault, ["alpha"])
     req = notes_mod.RouteNoteRequest(context="sanlam")
     with pytest.raises(HTTPException) as exc:

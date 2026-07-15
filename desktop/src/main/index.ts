@@ -1,4 +1,5 @@
 import { app, BrowserWindow, globalShortcut, ipcMain, session, shell } from 'electron';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import * as settings from './settings';
 import { pickVaultFolder } from './dialogs';
@@ -235,11 +236,16 @@ ipcMain.handle('gb:shell:openExternal', async (_e, url: unknown) => {
   }
 });
 
-ipcMain.handle('gb:cli:install', () =>
-  installCliShim({
-    binaryPath: join(process.resourcesPath, 'sidecar', 'ghostbrain-api', 'ghostbrain-api'),
-  }),
-);
+ipcMain.handle('gb:cli:install', () => {
+  if (process.platform !== 'darwin') {
+    throw new Error('CLI shim install is only supported on macOS');
+  }
+  const binaryPath = join(process.resourcesPath, 'sidecar', 'ghostbrain-api', 'ghostbrain-api');
+  if (!existsSync(binaryPath)) {
+    throw new Error('bundled backend not found — dev build?');
+  }
+  return installCliShim({ binaryPath });
+});
 
 app.whenReady().then(async () => {
   registerAssetProtocol(vaultRoot);

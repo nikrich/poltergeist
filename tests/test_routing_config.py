@@ -22,31 +22,44 @@ def test_configured_contexts_are_returned_in_order(vault):
     assert routing_config.contexts() == ("alpha", "beta")
 
 
-def test_missing_key_falls_back_to_legacy(vault):
+def test_missing_key_falls_back_to_default_without_legacy_folder(vault):
     _write_routing(vault, "version: 1\n")
-    assert routing_config.contexts() == routing_config.LEGACY_CONTEXTS
+    assert routing_config.contexts() == routing_config.DEFAULT_CONTEXTS
 
 
 def test_missing_file_falls_back_to_legacy(vault):
     # bootstrap() (run by the `vault` fixture) seeds routing.yaml; remove it
-    # to genuinely simulate a vault with no routing.yaml at all.
+    # to genuinely simulate a vault with no routing.yaml at all. This case is
+    # unconditional legacy fallback regardless of 20-contexts/ contents —
+    # bootstrap decides fresh-vs-existing separately.
     (vault / "90-meta" / "routing.yaml").unlink()
     assert routing_config.contexts() == routing_config.LEGACY_CONTEXTS
 
 
-def test_empty_list_falls_back_to_legacy(vault):
+def test_empty_list_falls_back_to_default_without_legacy_folder(vault):
+    _write_routing(vault, "contexts: []\n")
+    assert routing_config.contexts() == routing_config.DEFAULT_CONTEXTS
+
+
+def test_non_list_falls_back_to_default_without_legacy_folder(vault):
+    _write_routing(vault, "contexts: banana\n")
+    assert routing_config.contexts() == routing_config.DEFAULT_CONTEXTS
+
+
+def test_non_string_entries_fall_back_to_default_without_legacy_folder(vault):
+    _write_routing(vault, "contexts:\n  - alpha\n  - 42\n")
+    assert routing_config.contexts() == routing_config.DEFAULT_CONTEXTS
+
+
+def test_invalid_value_falls_back_to_legacy_when_legacy_folder_present(vault):
+    (vault / "20-contexts" / "sanlam").mkdir(parents=True, exist_ok=True)
     _write_routing(vault, "contexts: []\n")
     assert routing_config.contexts() == routing_config.LEGACY_CONTEXTS
 
 
-def test_non_list_falls_back_to_legacy(vault):
-    _write_routing(vault, "contexts: banana\n")
-    assert routing_config.contexts() == routing_config.LEGACY_CONTEXTS
-
-
-def test_non_string_entries_fall_back_to_legacy(vault):
-    _write_routing(vault, "contexts:\n  - alpha\n  - 42\n")
-    assert routing_config.contexts() == routing_config.LEGACY_CONTEXTS
+def test_invalid_value_falls_back_to_default_when_no_legacy_folder(vault):
+    _write_routing(vault, "contexts: []\n")
+    assert routing_config.contexts() == routing_config.DEFAULT_CONTEXTS
 
 
 def test_entries_are_stripped(vault):

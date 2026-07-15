@@ -116,6 +116,8 @@ export VAULT_PATH="$HOME/ghostbrain/vault"    # or point it anywhere you like
 
 Either way, open the vault in Obsidian and install the community plugins it relies on: **Dataview, Templater, Periodic Notes, Local REST API**.
 
+If you edit `contexts:` in `routing.yaml` on a pre-existing vault, also update (or delete, to re-seed via `ghostbrain-api bootstrap`) `90-meta/prompts/router.md` so the routing prompt names your contexts. Running `ghostbrain-api bootstrap` once on an existing vault persists the in-effect context list into `routing.yaml` and stops the fallback warning.
+
 ### 4. Connect a source
 
 Every connector is the same shape: create a credential → authenticate → add its block to `<vault>/90-meta/routing.yaml` → fetch. GitHub is the quickest first one — it reuses your `gh` login:

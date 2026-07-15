@@ -30,20 +30,34 @@ _warned = False
 
 
 def contexts(root: Path | None = None) -> tuple[str, ...]:
-    """Configured context list from routing.yaml, or the legacy fallback.
+    """Configured context list from routing.yaml, or a fallback.
+
+    Two distinct fallback cases:
+
+    - routing.yaml is missing entirely (pre-bootstrap): fall back to
+      ``LEGACY_CONTEXTS`` unconditionally. Bootstrap decides fresh-vs-existing
+      separately (see ``bootstrap._resolve_contexts``); this function doesn't
+      need to guess.
+    - routing.yaml exists but its ``contexts:`` value is missing/invalid:
+      fall back to ``LEGACY_CONTEXTS`` only when the vault actually looks
+      legacy (``20-contexts/sanlam`` exists), otherwise ``DEFAULT_CONTEXTS``.
+      This avoids reintroducing sanlam/codeship/reducedrecipes into vaults
+      that never had them.
 
     ``needs_review`` is never part of this list: callers that want it (the
     router enum, digest ordering) append it themselves.
     """
     global _warned
-    f = (root or vault_path()) / "90-meta" / "routing.yaml"
+    r = root or vault_path()
+    f = r / "90-meta" / "routing.yaml"
     raw: dict = {}
+    file_missing = False
     try:
         loaded = yaml.safe_load(f.read_text(encoding="utf-8"))
         if isinstance(loaded, dict):
             raw = loaded
     except FileNotFoundError:
-        pass
+        file_missing = True
     except Exception as e:  # noqa: BLE001 — malformed YAML must not kill callers
         log.warning("could not read %s: %s", f, e)
 
@@ -55,12 +69,25 @@ def contexts(root: Path | None = None) -> tuple[str, ...]:
     ):
         return tuple(c.strip() for c in value)
 
+    if file_missing:
+        fallback = LEGACY_CONTEXTS
+        reason = "no routing.yaml"
+    elif (r / "20-contexts" / "sanlam").exists():
+        fallback = LEGACY_CONTEXTS
+        reason = "no valid `contexts:` list, but 20-contexts/sanlam exists"
+    else:
+        fallback = DEFAULT_CONTEXTS
+        reason = "no valid `contexts:` list, and vault doesn't look legacy"
+
     if not _warned:
+        label = "legacy" if fallback is LEGACY_CONTEXTS else "default"
         log.warning(
-            "no valid `contexts:` list in %s — falling back to legacy contexts %s. "
+            "%s in %s — falling back to %s contexts %s. "
             "Add a `contexts:` key (or run ghostbrain-bootstrap) to configure.",
+            reason,
             f,
-            LEGACY_CONTEXTS,
+            label,
+            fallback,
         )
         _warned = True
-    return LEGACY_CONTEXTS
+    return fallback
