@@ -82,7 +82,7 @@ Get your first connector flowing in about five minutes.
 
 ### 1. Install
 
-Grab the installer for your OS from [GitHub Releases](https://github.com/nikrich/ghost-brain/releases)
+Grab the installer for your OS from [GitHub Releases](https://github.com/nikrich/poltergeist/releases)
 (macOS `.dmg`, Windows `Setup.exe`, Linux `.AppImage`/`.deb`). The app is
 self-contained: on first launch it creates the vault at `~/ghostbrain/vault/`
 and everything except LLM features works immediately. LLM features (chat,
@@ -92,7 +92,8 @@ installed and logged in.
 Connector setup (gmail, slack, github, …) uses the bundled CLI — no Python
 install needed. On macOS, Settings → background → "command line tool" installs
 a `poltergeist` command; elsewhere invoke the bundled binary directly
-(e.g. `<install dir>/resources/sidecar/ghostbrain-api/ghostbrain-api gmail-auth you@example.com`).
+(e.g. `<install dir>/resources/sidecar/ghostbrain-api/ghostbrain-api gmail-auth you@example.com`;
+on Windows the binary is `ghostbrain-api.exe`).
 The developer setup (`pip install -e .`) is only for working on Poltergeist itself — see [Contributing](#contributing).
 
 ### 2. Verify Claude Code is logged in
