@@ -9,6 +9,14 @@ from pathlib import Path
 import yaml
 
 
+def _configure(vault: Path, ctxs: list[str]) -> None:
+    """Point the vault's configured context list at the contexts these
+    fixtures use (bootstrap seeds neutral defaults that don't include them)."""
+    f = vault / "90-meta" / "routing.yaml"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text("contexts:\n" + "\n".join(f"  - {c}" for c in ctxs))
+
+
 def _write_audit(vault: Path, day: date, ctx_counts: dict[str, int]) -> None:
     f = vault / "90-meta" / "audit" / f"{day.isoformat()}.jsonl"
     f.parent.mkdir(parents=True, exist_ok=True)
@@ -49,6 +57,7 @@ def test_no_history_returns_empty(vault: Path) -> None:
 def test_flags_context_with_history_but_no_today_activity(vault: Path) -> None:
     from ghostbrain.metrics.anticipation import detect_anticipations
 
+    _configure(vault, ["sanlam", "codeship", "reducedrecipes", "personal"])
     today = date(2026, 5, 8)  # Friday
     # Build 4 prior Fridays with sanlam=10 each → median 10 ≥ floor.
     for weeks_back in range(1, 5):
@@ -64,6 +73,7 @@ def test_flags_context_with_history_but_no_today_activity(vault: Path) -> None:
 def test_does_not_flag_when_context_active_today(vault: Path) -> None:
     from ghostbrain.metrics.anticipation import detect_anticipations
 
+    _configure(vault, ["sanlam", "codeship", "reducedrecipes", "personal"])
     today = date(2026, 5, 8)
     for weeks_back in range(1, 5):
         prior = today - timedelta(weeks=weeks_back)
@@ -79,6 +89,7 @@ def test_does_not_flag_when_context_active_today(vault: Path) -> None:
 def test_does_not_flag_when_calendar_has_event_today(vault: Path) -> None:
     from ghostbrain.metrics.anticipation import detect_anticipations
 
+    _configure(vault, ["sanlam", "codeship", "reducedrecipes", "personal"])
     today = date(2026, 5, 8)
     for weeks_back in range(1, 5):
         prior = today - timedelta(weeks=weeks_back)
@@ -98,6 +109,7 @@ def test_below_activity_floor_not_flagged(vault: Path) -> None:
     """Contexts that only barely show on this weekday shouldn't flag."""
     from ghostbrain.metrics.anticipation import detect_anticipations
 
+    _configure(vault, ["sanlam", "codeship", "reducedrecipes", "personal"])
     today = date(2026, 5, 8)
     # 1 event on each prior Friday → median 1 < default floor 3.
     for weeks_back in range(1, 5):
@@ -110,6 +122,7 @@ def test_below_activity_floor_not_flagged(vault: Path) -> None:
 def test_only_known_contexts_evaluated(vault: Path) -> None:
     from ghostbrain.metrics.anticipation import detect_anticipations
 
+    _configure(vault, ["sanlam", "codeship", "reducedrecipes", "personal"])
     today = date(2026, 5, 8)
     for weeks_back in range(1, 5):
         prior = today - timedelta(weeks=weeks_back)
