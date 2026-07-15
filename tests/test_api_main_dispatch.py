@@ -98,3 +98,16 @@ def test_ensure_vault_swallows_bootstrap_errors(vault_empty, monkeypatch):
 
     monkeypatch.setattr(bootstrap_mod, "bootstrap", boom)
     ensure_vault()  # must not raise — sidecar would crash-loop otherwise
+
+
+def test_ensure_vault_swallows_vault_path_errors(monkeypatch):
+    import ghostbrain.paths as paths_mod
+    from ghostbrain.api.__main__ import ensure_vault
+
+    def boom() -> None:
+        raise RuntimeError("boom")
+
+    # ensure_vault imports vault_path lazily from ghostbrain.paths, so
+    # patching the module attribute is what its `from ... import` sees.
+    monkeypatch.setattr(paths_mod, "vault_path", boom)
+    ensure_vault()  # must not raise — sidecar would crash-loop otherwise

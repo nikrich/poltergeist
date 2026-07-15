@@ -66,12 +66,13 @@ def ensure_vault() -> None:
     sidecar on exit, so raising here would crash-loop; a degraded-but-up API
     surfaces the problem in the app instead.
     """
-    from ghostbrain.paths import vault_path
-
-    marker = vault_path() / "90-meta" / "routing.yaml"
-    if marker.exists():
-        return
     try:
+        from ghostbrain.paths import vault_path
+
+        marker = vault_path() / "90-meta" / "routing.yaml"
+        if marker.exists():
+            return
+
         import ghostbrain.bootstrap as bootstrap_mod
 
         root = bootstrap_mod.bootstrap()
