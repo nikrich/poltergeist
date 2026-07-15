@@ -63,18 +63,16 @@ hiddenimports += ['frontmatter', 'yaml', 'markdownify', 'dotenv', 'jinja2', 'req
 # backports.tarfile dynamically, which PyInstaller's analyzer misses.
 hiddenimports += ['backports', 'backports.tarfile']
 
-# Scheduler picks up runner shims and the worker/recorder modules dynamically.
-# Pull each in so PyInstaller's static analyzer doesn't skip them.
-hiddenimports += collect_submodules('ghostbrain.connectors')
-hiddenimports += collect_submodules('ghostbrain.worker')
-hiddenimports += collect_submodules('ghostbrain.recorder')
-hiddenimports += collect_submodules('ghostbrain.profile')
+# The frozen binary is the whole product: HTTP sidecar, MCP server, first-run
+# bootstrap, and every ghostbrain-* CLI via the subcommand multiplexer in
+# ghostbrain.api.__main__. Collect the entire package so no runtime-dispatched
+# module (bootstrap, metrics, semantic, future additions) is silently missing.
+hiddenimports += collect_submodules('ghostbrain')
 
 # The `ghostbrain-api mcp` subcommand serves the Poltergeist MCP stdio server in
 # packaged builds (see ghostbrain.api.__main__ / ghostbrain.llm.agent). Its tree
 # and the FastMCP library are only reached through that runtime branch, so pull
 # them in explicitly — otherwise frozen chat has no vault tools.
-hiddenimports += collect_submodules('ghostbrain.mcp')
 # collect_all (not just collect_submodules) so any data files ship too, AND
 # copy_metadata because mcp/server/fastmcp/__init__.py runs
 # `version("mcp")` at import time — without the .dist-info the import dies with
