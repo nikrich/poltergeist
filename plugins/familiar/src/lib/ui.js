@@ -15,3 +15,11 @@ export function statusLine(status) {
   if (status.nextRunAt) parts.push(`Next run ${new Date(status.nextRunAt).toLocaleString()}`);
   return parts.join(' · ') || 'No runs yet';
 }
+
+export function scheduleFields(cadence) {
+  return { showDay: cadence !== 'daily' };
+}
+
+export function briefingSubtitle(cadence) {
+  return `${cadence === 'daily' ? 'daily' : 'weekly'} briefing · your chief of staff`;
+}
