@@ -9,8 +9,12 @@ const STALE_RUN_MS = 30 * 60 * 1000;
 const DEFAULT_CONFIG = { cadence: 'weekly', day: 'monday', hour: 7, model: 'sonnet', budgetChars: 150000 };
 const VALID_DAYS = new Set(['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']);
 const VALID_MODELS = new Set(['haiku', 'sonnet', 'opus']);
+const VALID_CADENCES = new Set(['daily', 'weekly']);
 
-function validateConfigPartial(partial) {
+export function validateConfigPartial(partial) {
+  if ('cadence' in partial && !VALID_CADENCES.has(partial.cadence)) {
+    throw new Error(`config.cadence must be one of ${[...VALID_CADENCES].join(', ')}; got ${JSON.stringify(partial.cadence)}`);
+  }
   if ('day' in partial && !VALID_DAYS.has(partial.day)) {
     throw new Error(`config.day must be one of ${[...VALID_DAYS].join(', ')}; got ${JSON.stringify(partial.day)}`);
   }

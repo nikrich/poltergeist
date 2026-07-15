@@ -19,6 +19,7 @@ import { TopBar } from '../../../desktop/src/renderer/components/TopBar';
 
 import { parseOpenLoops, renderOpenLoops, parseDecisions } from './lib/trackers.js';
 import { splitBriefingSections, ageDays, sectionIcon, historyFromRuns } from './lib/briefing.js';
+import { scheduleFields, briefingSubtitle } from './lib/ui.js';
 
 // LLM/connector-derived content is untrusted: markdown renders, raw HTML does not.
 marked.use({ renderer: { html: () => '' } });
@@ -443,6 +444,7 @@ function Field({ label, hint, children }) {
 }
 
 function SettingsForm({ config, onSave }) {
+  const [cadence, setCadence] = useState(config.cadence);
   const [day, setDay] = useState(config.day);
   const [hour, setHour] = useState(config.hour);
   const [model, setModel] = useState(config.model);
@@ -450,10 +452,12 @@ function SettingsForm({ config, onSave }) {
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState(null);
 
+  const { showDay } = scheduleFields(cadence);
+
   const save = async () => {
     setErr(null);
     try {
-      await onSave({ day, hour: Number(hour), model, budgetChars: Number(budget) });
+      await onSave({ cadence, day, hour: Number(hour), model, budgetChars: Number(budget) });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
@@ -465,11 +469,18 @@ function SettingsForm({ config, onSave }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <Panel title="schedule" subtitle="WHEN FAMILIAR RUNS">
         <div style={{ marginTop: -14 }}>
-          <Field label="Day" hint="Which day the weekly briefing lands">
-            <select value={day} onChange={(e) => setDay(e.target.value)} style={selStyle}>
-              {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((d) => <option key={d} value={d}>{d}</option>)}
+          <Field label="Cadence" hint="How often the briefing runs">
+            <select value={cadence} onChange={(e) => setCadence(e.target.value)} style={selStyle}>
+              {['weekly', 'daily'].map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </Field>
+          {showDay && (
+            <Field label="Day" hint="Which day the briefing lands">
+              <select value={day} onChange={(e) => setDay(e.target.value)} style={selStyle}>
+                {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </Field>
+          )}
           <Field label="Hour" hint="Local time, 24-hour">
             <select value={hour} onChange={(e) => setHour(e.target.value)} style={selStyle}>
               {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>)}
@@ -594,7 +605,7 @@ function App({ api }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%', background: 'var(--bg-paper)' }}>
-      <TopBar title="Familiar" subtitle="weekly briefing · your chief of staff" right={<SectionNav active={section} onChange={setSection} />} />
+      <TopBar title="Familiar" subtitle={briefingSubtitle(status?.config?.cadence)} right={<SectionNav active={section} onChange={setSection} />} />
       <RunStatusBar status={status} lastRun={lastRun} onRun={run} />
 
       <div style={{ padding: 20, maxWidth: 1120, width: '100%', margin: '0 auto' }}>

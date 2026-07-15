@@ -38425,6 +38425,14 @@ function historyFromRuns(runs) {
   }));
 }
 
+// src/lib/ui.js
+function scheduleFields(cadence) {
+  return { showDay: cadence !== "daily" };
+}
+function briefingSubtitle(cadence) {
+  return `${cadence === "daily" ? "daily" : "weekly"} briefing \xB7 your chief of staff`;
+}
+
 // src/renderer.jsx
 var import_jsx_runtime11 = __toESM(require_jsx_runtime(), 1);
 marked.use({ renderer: { html: () => "" } });
@@ -38845,16 +38853,18 @@ function Field({ label, hint, children }) {
   ] });
 }
 function SettingsForm({ config, onSave }) {
+  const [cadence, setCadence] = (0, import_react4.useState)(config.cadence);
   const [day, setDay] = (0, import_react4.useState)(config.day);
   const [hour, setHour] = (0, import_react4.useState)(config.hour);
   const [model, setModel] = (0, import_react4.useState)(config.model);
   const [budget, setBudget] = (0, import_react4.useState)(config.budgetChars);
   const [saved, setSaved] = (0, import_react4.useState)(false);
   const [err, setErr] = (0, import_react4.useState)(null);
+  const { showDay } = scheduleFields(cadence);
   const save = async () => {
     setErr(null);
     try {
-      await onSave({ day, hour: Number(hour), model, budgetChars: Number(budget) });
+      await onSave({ cadence, day, hour: Number(hour), model, budgetChars: Number(budget) });
       setSaved(true);
       setTimeout(() => setSaved(false), 2e3);
     } catch (e) {
@@ -38863,7 +38873,8 @@ function SettingsForm({ config, onSave }) {
   };
   return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { style: { display: "flex", flexDirection: "column", gap: 12 }, children: [
     /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Panel, { title: "schedule", subtitle: "WHEN FAMILIAR RUNS", children: /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { style: { marginTop: -14 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Field, { label: "Day", hint: "Which day the weekly briefing lands", children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("select", { value: day, onChange: (e) => setDay(e.target.value), style: selStyle, children: ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].map((d) => /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("option", { value: d, children: d }, d)) }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Field, { label: "Cadence", hint: "How often the briefing runs", children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("select", { value: cadence, onChange: (e) => setCadence(e.target.value), style: selStyle, children: ["weekly", "daily"].map((c) => /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("option", { value: c, children: c }, c)) }) }),
+      showDay && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Field, { label: "Day", hint: "Which day the briefing lands", children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("select", { value: day, onChange: (e) => setDay(e.target.value), style: selStyle, children: ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].map((d) => /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("option", { value: d, children: d }, d)) }) }),
       /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Field, { label: "Hour", hint: "Local time, 24-hour", children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("select", { value: hour, onChange: (e) => setHour(e.target.value), style: selStyle, children: Array.from({ length: 24 }, (_, h) => /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("option", { value: h, children: [
         String(h).padStart(2, "0"),
         ":00"
@@ -38978,7 +38989,7 @@ function App({ api }) {
   const jumpSection = (i) => sectionRefs.current[i]?.scrollIntoView({ behavior: "smooth", block: "start" });
   const briefingSections = (0, import_react4.useMemo)(() => doc ? splitBriefingSections(doc.body).sections : [], [doc]);
   return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { style: { display: "flex", flexDirection: "column", minHeight: "100%", background: "var(--bg-paper)" }, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(TopBar, { title: "Familiar", subtitle: "weekly briefing \xB7 your chief of staff", right: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(SectionNav, { active: section, onChange: setSection }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(TopBar, { title: "Familiar", subtitle: briefingSubtitle(status?.config?.cadence), right: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(SectionNav, { active: section, onChange: setSection }) }),
     /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(RunStatusBar, { status, lastRun, onRun: run }),
     /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { style: { padding: 20, maxWidth: 1120, width: "100%", margin: "0 auto" }, children: [
       loadErr && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { style: { marginBottom: 14 }, children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(PanelError, { message: loadErr, onRetry: () => void refreshAll() }) }),

@@ -20,7 +20,8 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 var main_exports = {};
 __export(main_exports, {
   activate: () => activate,
-  deactivate: () => deactivate
+  deactivate: () => deactivate,
+  validateConfigPartial: () => validateConfigPartial
 });
 module.exports = __toCommonJS(main_exports);
 var import_node_fs = require("node:fs");
@@ -28,13 +29,22 @@ var import_node_path = require("node:path");
 
 // src/lib/schedule.js
 var DAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
-function lastScheduledSlot(config2, now) {
+function lastScheduledSlotDaily(config2, now) {
+  const d = new Date(now);
+  d.setHours(config2.hour, 0, 0, 0);
+  if (d > now) d.setDate(d.getDate() - 1);
+  return d;
+}
+function lastScheduledSlotWeekly(config2, now) {
   const target = DAYS.indexOf(config2.day);
   const d = new Date(now);
   d.setHours(config2.hour, 0, 0, 0);
   d.setDate(d.getDate() - (d.getDay() - target + 7) % 7);
   if (d > now) d.setDate(d.getDate() - 7);
   return d;
+}
+function lastScheduledSlot(config2, now) {
+  return config2.cadence === "daily" ? lastScheduledSlotDaily(config2, now) : lastScheduledSlotWeekly(config2, now);
 }
 function isRunDue(config2, state, now = /* @__PURE__ */ new Date()) {
   const s = state ?? {};
@@ -52,7 +62,7 @@ function inFailureCooldown(state, now, cooldownMs = 4 * 36e5) {
 }
 function nextRunAt(config2, now = /* @__PURE__ */ new Date()) {
   const next = new Date(lastScheduledSlot(config2, now));
-  next.setDate(next.getDate() + 7);
+  next.setDate(next.getDate() + (config2.cadence === "daily" ? 1 : 7));
   return next;
 }
 
@@ -136,7 +146,7 @@ function buildUserPrompt(p) {
     "## Output",
     "Return ONLY a JSON object matching the provided schema:",
     "{briefingMarkdown, memoryMarkdown, openLoops, decisions}.",
-    "briefingMarkdown: the weekly briefing \u2014 sections: Themes, Open loops",
+    "briefingMarkdown: the briefing \u2014 sections: Themes, Open loops",
     "(summary of notable ones), Decisions, Contradictions, Blind spots.",
     "memoryMarkdown: your rewritten rolling memory \u2014 active themes,",
     "watch-list, condensed history. decisions: ONLY decisions newly seen",
@@ -465,7 +475,11 @@ var STALE_RUN_MS = 30 * 60 * 1e3;
 var DEFAULT_CONFIG = { cadence: "weekly", day: "monday", hour: 7, model: "sonnet", budgetChars: 15e4 };
 var VALID_DAYS = /* @__PURE__ */ new Set(["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]);
 var VALID_MODELS = /* @__PURE__ */ new Set(["haiku", "sonnet", "opus"]);
+var VALID_CADENCES = /* @__PURE__ */ new Set(["daily", "weekly"]);
 function validateConfigPartial(partial) {
+  if ("cadence" in partial && !VALID_CADENCES.has(partial.cadence)) {
+    throw new Error(`config.cadence must be one of ${[...VALID_CADENCES].join(", ")}; got ${JSON.stringify(partial.cadence)}`);
+  }
   if ("day" in partial && !VALID_DAYS.has(partial.day)) {
     throw new Error(`config.day must be one of ${[...VALID_DAYS].join(", ")}; got ${JSON.stringify(partial.day)}`);
   }
@@ -580,5 +594,6 @@ function deactivate() {
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   activate,
-  deactivate
+  deactivate,
+  validateConfigPartial
 });
