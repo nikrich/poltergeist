@@ -59,6 +59,27 @@ from typing import IO  # noqa: E402
 log = logging.getLogger("ghostbrain.api.main")
 
 
+def ensure_vault() -> None:
+    """First-run bootstrap: create the vault if it doesn't exist yet.
+
+    Failure is logged, never raised — the Electron parent auto-respawns the
+    sidecar on exit, so raising here would crash-loop; a degraded-but-up API
+    surfaces the problem in the app instead.
+    """
+    from ghostbrain.paths import vault_path
+
+    marker = vault_path() / "90-meta" / "routing.yaml"
+    if marker.exists():
+        return
+    try:
+        import ghostbrain.bootstrap as bootstrap_mod
+
+        root = bootstrap_mod.bootstrap()
+        log.info("first run: bootstrapped vault at %s", root)
+    except Exception:  # noqa: BLE001 — see docstring
+        log.exception("vault bootstrap failed — continuing so the API can surface it")
+
+
 def _pick_port() -> int:
     """Bind a transient socket to an OS-assigned port, then close. Race-y but
     fine for the local-only sidecar; uvicorn re-binds the same port immediately."""
@@ -136,6 +157,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _run_api_server() -> int:
+    ensure_vault()
     # Import the app stack lazily, AFTER the `mcp` dispatch above. The frozen
     # `ghostbrain-api mcp` subprocess must not pay for — or crash/stall on — the
     # full route tree (uvicorn + every route + their transitive deps) before its

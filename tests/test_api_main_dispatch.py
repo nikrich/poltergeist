@@ -65,3 +65,36 @@ def test_entrypoint_import_does_not_eagerly_import_api_app():
     )
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert r.returncode == 0, f"stdout={r.stdout!r} stderr={r.stderr!r}"
+
+
+def test_ensure_vault_bootstraps_when_missing(vault_empty):
+    from ghostbrain.api.__main__ import ensure_vault
+
+    assert not (vault_empty / "90-meta" / "routing.yaml").exists()
+    ensure_vault()
+    assert (vault_empty / "90-meta" / "routing.yaml").exists()
+
+
+def test_ensure_vault_is_noop_when_vault_exists(vault_empty):
+    from ghostbrain.api.__main__ import ensure_vault
+
+    marker = vault_empty / "90-meta" / "routing.yaml"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text("sentinel: true\n", encoding="utf-8")
+
+    ensure_vault()
+
+    assert marker.read_text() == "sentinel: true\n"
+    # No other bootstrap artifacts were created.
+    assert not (vault_empty / "20-contexts").exists()
+
+
+def test_ensure_vault_swallows_bootstrap_errors(vault_empty, monkeypatch):
+    import ghostbrain.bootstrap as bootstrap_mod
+    from ghostbrain.api.__main__ import ensure_vault
+
+    def boom() -> None:
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(bootstrap_mod, "bootstrap", boom)
+    ensure_vault()  # must not raise — sidecar would crash-loop otherwise
