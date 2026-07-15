@@ -20,6 +20,7 @@ import {
 import { installJotOverlay } from './jot-overlay';
 import { installUpdater } from './updater';
 import { installClipboardBridge } from './clipboard';
+import { installCliShim } from './cli-shim';
 import {
   registerGbAssetScheme,
   registerAssetProtocol,
@@ -233,6 +234,12 @@ ipcMain.handle('gb:shell:openExternal', async (_e, url: unknown) => {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 });
+
+ipcMain.handle('gb:cli:install', () =>
+  installCliShim({
+    binaryPath: join(process.resourcesPath, 'sidecar', 'ghostbrain-api', 'ghostbrain-api'),
+  }),
+);
 
 app.whenReady().then(async () => {
   registerAssetProtocol(vaultRoot);

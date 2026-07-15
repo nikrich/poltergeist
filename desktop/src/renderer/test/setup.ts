@@ -54,6 +54,9 @@ const stubBridge: GbBridge = {
     openPath: async () => ({ ok: true }),
     openExternal: async () => ({ ok: true }),
   },
+  cli: {
+    install: async () => ({ path: '/usr/local/bin/poltergeist', onPath: true }),
+  },
   platform: 'darwin',
   api: { request: (async () => ({ ok: true, data: null })) as GbBridge['api']['request'] },
   sidecar: { retry: async () => ({ ok: true }) },
