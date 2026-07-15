@@ -141,6 +141,9 @@ def test_dispatch_shifts_argv_and_returns_zero(monkeypatch):
     old_argv = list(sys.argv)
     try:
         rc = main(["bootstrap", "--verbose"])
+        # _dispatch must restore sys.argv itself — in-process callers (this
+        # test suite) must not leak the mutation to subsequent tests.
+        assert sys.argv == old_argv
     finally:
         sys.argv = old_argv
 

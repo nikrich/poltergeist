@@ -187,9 +187,15 @@ def _dispatch(name: str, rest: list[str]) -> int:
     mod_name, func_name = SUBCOMMANDS[name].split(":")
     mod = importlib.import_module(mod_name)
     # Entry-point mains read sys.argv themselves; present the same argv they
-    # would see as a pip-installed console script.
+    # would see as a pip-installed console script. Restore afterwards so
+    # in-process callers (tests) don't leak the mutation — the target main()
+    # reads argv during the call, so real CLI behavior is unchanged.
+    saved_argv = sys.argv
     sys.argv = [f"ghostbrain-{name}", *rest]
-    rc = getattr(mod, func_name)()
+    try:
+        rc = getattr(mod, func_name)()
+    finally:
+        sys.argv = saved_argv
     # bool is an int subclass; a truthy non-exit-code return still means success.
     return rc if isinstance(rc, int) and not isinstance(rc, bool) else 0
 
