@@ -5,7 +5,10 @@ import { describe, expect, it } from 'vitest';
 
 import { installCliShim } from '../cli-shim';
 
-describe('installCliShim', () => {
+// The CLI shim is a darwin-only feature (the gb:cli:install handler gates on
+// process.platform). These tests exercise POSIX semantics Windows doesn't
+// have: ':'-delimited PATH, and directory write permission via chmod 0444.
+describe.skipIf(process.platform === 'win32')('installCliShim', () => {
   it('writes an executable wrapper into the first writable candidate', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'shim-'));
     const result = await installCliShim({
