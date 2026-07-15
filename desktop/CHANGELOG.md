@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.2.0](https://github.com/nikrich/poltergeist/compare/v1.1.0...v1.2.0) (2026-07-15)
+
+
+### Features
+
+* feat(desktop): install poltergeist CLI shim from settings (macOS)
+* feat: ghostbrain-api multiplexes every ghostbrain-* CLI subcommand
+* feat: sidecar bootstraps the vault on first run
+* feat: digests and anticipation iterate configured contexts
+* feat: add daily cadence support to familiar plugin scheduler (OUIJA-34) (#104)
+* feat: notes re-route validation uses configured contexts
+* feat: router enum + prompt derive contexts from routing.yaml
+* feat: bootstrap seeds contexts from routing.yaml config, neutral defaults
+* feat: routing_config.contexts() — context list as vault config
+* feat: auto-update banner and button (REQ-POLT-1) (#103)
+
+### Bug Fixes
+
+* fix: final-review hardening — invalid-config fallback, cli-shim guards, docs
+* fix: restore sys.argv after CLI subcommand dispatch
+* fix: ensure_vault never raises, even on vault_path failure
+* fix(api): boot the sidecar on Windows — fcntl does not exist there (#102)
+* fix(plugins): exclude .git from installs on Windows (#101)
+
 ## [1.1.0](https://github.com/nikrich/poltergeist/compare/v1.0.1...v1.1.0) (2026-07-10)
 
 
