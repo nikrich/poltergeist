@@ -450,3 +450,125 @@ def test_router_falls_through_when_workspace_unknown() -> None:
     }
     routing = {"slack": {"workspaces": {"sft": {"context": "sanlam"}}}}
     assert _fast_route(event, routing) is None
+
+
+# ---------------------------------------------------------------------------
+# Full-pull DM / group-DM inclusion
+# ---------------------------------------------------------------------------
+
+
+def _full_pull_connector(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    ws_cfg: dict,
+):
+    """Full-mode connector against a fake client whose workspace has one
+    public channel (in the allowlist), one DM, and one group DM."""
+    from ghostbrain.connectors.slack import auth as auth_mod
+    import importlib
+    monkeypatch.setenv("GHOSTBRAIN_STATE_DIR", str(tmp_path))
+    importlib.reload(auth_mod)
+    auth_mod.save_token("acme", "xoxp-test")
+    from ghostbrain.connectors.slack import connector as conn_mod
+    importlib.reload(conn_mod)
+
+    fake = MagicMock()
+    fake.auth_test.return_value = {
+        "user_id": "U-me", "team_id": "T1", "team": "Acme",
+    }
+    fake.users_conversations.return_value = {
+        "channels": [
+            {"id": "C1", "name": "engineering"},
+            {"id": "D1", "is_im": True, "user": "U-alice"},
+            {"id": "G1", "name": "mpdm-alice--bob--me-1", "is_mpim": True},
+        ],
+        "response_metadata": {"next_cursor": ""},
+    }
+
+    def history(**kwargs):
+        msgs = {
+            "C1": [{"ts": "1785000000.000100", "user": "U-alice",
+                    "text": "channel message"}],
+            "D1": [{"ts": "1785000001.000100", "user": "U-alice",
+                    "text": "dm for your eyes"}],
+            "G1": [{"ts": "1785000002.000100", "user": "U-bob",
+                    "text": "<@U-me> group dm ping"}],
+        }
+        return {"messages": msgs[kwargs["channel"]], "has_more": False}
+
+    fake.conversations_history.side_effect = history
+
+    c = conn_mod.SlackConnector(
+        config={"workspaces": {"acme": {
+            "context": "work", "mode": "full", "llm_filter": False,
+            **ws_cfg,
+        }}},
+        queue_dir=tmp_path / "q", state_dir=tmp_path / "s",
+        client_factory=lambda token: fake,
+    )
+    return c
+
+
+def test_full_pull_allowlist_drops_dms_by_default(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    c = _full_pull_connector(
+        monkeypatch, tmp_path, {"allowed_channels": ["engineering"]},
+    )
+    events = c.fetch(datetime.now(timezone.utc))
+    texts = [e["body"] for e in events]
+    assert any("channel message" in t for t in texts)
+    assert not any("dm for your eyes" in t for t in texts)
+    assert not any("group dm ping" in t for t in texts)
+
+
+def test_full_pull_include_dms_pulls_ims_past_allowlist(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    c = _full_pull_connector(
+        monkeypatch, tmp_path,
+        {"allowed_channels": ["engineering"], "include_dms": True},
+    )
+    events = c.fetch(datetime.now(timezone.utc))
+    texts = [e["body"] for e in events]
+    assert any("dm for your eyes" in t for t in texts)
+    # group DMs stay excluded unless their own flag is set
+    assert not any("group dm ping" in t for t in texts)
+
+
+def test_full_pull_include_group_dms_pulls_mpims_past_allowlist(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    c = _full_pull_connector(
+        monkeypatch, tmp_path,
+        {"allowed_channels": ["engineering"], "include_group_dms": True},
+    )
+    events = c.fetch(datetime.now(timezone.utc))
+    texts = [e["body"] for e in events]
+    assert any("group dm ping" in t for t in texts)
+    assert not any("dm for your eyes" in t for t in texts)
+
+
+def test_full_pull_dms_only_does_not_fall_back_to_mentions(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """include_dms with no allowlist is a valid bounded config (only im
+    conversations get history calls) — it must not trip the
+    no-allowlist mentions fallback."""
+    c = _full_pull_connector(monkeypatch, tmp_path, {"include_dms": True})
+    events = c.fetch(datetime.now(timezone.utc))
+    texts = [e["body"] for e in events]
+    assert any("dm for your eyes" in t for t in texts)
+    assert not any("channel message" in t for t in texts)
+    fake = c._client_factory("x")
+    fake.search_messages.assert_not_called()
+
+
+def test_parse_workspaces_reads_dm_flags() -> None:
+    from ghostbrain.connectors.slack.connector import _parse_workspaces
+    (ws,) = _parse_workspaces({"workspaces": {"acme": {
+        "context": "work", "mode": "full",
+        "include_dms": True, "include_group_dms": True,
+    }}})
+    assert ws.include_dms is True
+    assert ws.include_group_dms is True

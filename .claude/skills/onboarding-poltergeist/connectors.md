@@ -65,6 +65,10 @@ slack:
       context: <ctx>
       lookback_hours: 24
       mentions_only: true
+      # full-pull mode instead: mode: full + allowed_channels: [...]
+      # DMs/group DMs have no allowlistable name, so they need explicit flags:
+      # include_dms: true         # 1:1 DMs (always kept, no LLM gate)
+      # include_group_dms: true   # mpdm group chats (LLM-gated like channels)
 ```
 **Verify:** `ghostbrain-slack-fetch --dry-run`.
 
