@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.0](https://github.com/nikrich/poltergeist/compare/v1.2.0...v1.3.0) (2026-07-26)
+
+
+### Bug Fixes
+
+* fix(desktop): real timeoutMs ceiling for plugin api.fetch + feat(slack): DM/group-DM ingestion (#106)
+* fix: skip POSIX-only cli-shim tests on Windows
+
 ## [1.2.0](https://github.com/nikrich/poltergeist/compare/v1.1.0...v1.2.0) (2026-07-15)
 
 
