@@ -48,6 +48,11 @@ class SlackWorkspaceConfig:
     allowed_channels: tuple[str, ...] = ()
     denied_channels: tuple[str, ...] = ()     # name match (case-insensitive)
     llm_filter: bool = True                   # run LLM gate on non-always-keep msgs
+    # DMs (im) and group DMs (mpim) have no allowlistable name (DMs are
+    # nameless; group DMs get generated ``mpdm-…`` names), so an allowlist
+    # silently excludes them. These flags exempt them from the name filter.
+    include_dms: bool = False                 # pull 1:1 DMs (always-keep, no LLM gate)
+    include_group_dms: bool = False           # pull mpims (ambient → LLM gate)
 
     # Back-compat shim. Old yaml used ``mentions_only: true``; that's now
     # ``mode: mentions`` and the old key still works for the user who
@@ -97,7 +102,8 @@ class SlackConnector(Connector):
         for ws in self.workspaces:
             try:
                 effective_mode = ws.mode
-                if effective_mode == "full" and not ws.allowed_channels:
+                dm_only = ws.include_dms or ws.include_group_dms
+                if effective_mode == "full" and not ws.allowed_channels and not dm_only:
                     # Refuse silent failure on large workspaces. full-pull
                     # without an allowlist would iterate every channel and
                     # exhaust Slack's Tier 3 rate limit, with the
@@ -232,9 +238,20 @@ class SlackConnector(Connector):
             chan_name = (chan.get("name") or "").lower()
             if not chan_id:
                 continue
-            if allowed:
+            if chan.get("is_im"):
+                if not ws.include_dms:
+                    continue
+            elif chan.get("is_mpim"):
+                if not ws.include_group_dms:
+                    continue
+            elif allowed:
                 if chan_name not in allowed:
                     continue
+            elif ws.include_dms or ws.include_group_dms:
+                # DM-only pull: without an allowlist, named channels stay
+                # opt-in — iterating them all is the rate-limit footgun the
+                # mentions fallback exists to prevent.
+                continue
             elif chan_name and chan_name in denied:
                 continue
 
@@ -602,6 +619,8 @@ def _parse_workspaces(config: dict) -> Iterable[SlackWorkspaceConfig]:
             allowed_channels=allowed,
             denied_channels=denied,
             llm_filter=bool(cfg.get("llm_filter", True)),
+            include_dms=bool(cfg.get("include_dms", False)),
+            include_group_dms=bool(cfg.get("include_group_dms", False)),
         )
 
 
