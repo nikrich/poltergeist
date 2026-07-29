@@ -16,6 +16,13 @@ function withConnectors(
 ) {
   return async (method: string, path: string, body?: unknown) => {
     if (path === '/v1/connectors') return { ok: true, status: 200, data: connectors };
+    if (path === '/v1/vault/contexts') {
+      return {
+        ok: true,
+        status: 200,
+        data: { contexts: ['sanlam', 'codeship', 'reducedrecipes', 'personal'] },
+      };
+    }
     return impl(method, path, body);
   };
 }

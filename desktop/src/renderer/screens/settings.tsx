@@ -8,6 +8,7 @@ import { Ghost } from '../components/Ghost';
 import { McpServersPanel } from '../components/McpServersPanel';
 import { useSettings } from '../stores/settings';
 import {
+  useContexts,
   useCreateProject,
   useProjects,
   useRecorderSettings,
@@ -269,6 +270,13 @@ function MeetingSettings() {
   const recorderQuery = useRecorderSettings();
   const updateRecorder = useUpdateRecorderSettings();
   const recorder = recorderQuery.data;
+  const contexts = useContexts().data?.contexts ?? [];
+  // Keep the stored value selectable even if routing.yaml no longer lists it.
+  const manualContext = recorder?.manual_context ?? '';
+  const contextOptions =
+    manualContext && !contexts.includes(manualContext)
+      ? [manualContext, ...contexts]
+      : contexts;
 
   const setEnabled = (v: boolean) =>
     void updateRecorder.mutateAsync({ enabled: v }).catch((e) =>
@@ -299,14 +307,15 @@ function MeetingSettings() {
         control={
           <select
             className={selectClass}
-            value={recorder?.manual_context ?? 'personal'}
-            disabled={!recorder}
+            value={manualContext}
+            disabled={!recorder || contextOptions.length === 0}
             onChange={(e) => setManualContext(e.target.value)}
           >
-            <option value="personal">personal</option>
-            <option value="sanlam">sanlam</option>
-            <option value="codeship">codeship</option>
-            <option value="reducedrecipes">reducedrecipes</option>
+            {contextOptions.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
           </select>
         }
       />
@@ -492,19 +501,20 @@ function AboutSettings() {
   );
 }
 
-const PROJECT_CONTEXTS = ['sanlam', 'codeship', 'reducedrecipes', 'personal'];
-
 export function ProjectsSettings() {
   const projects = useProjects({ includeArchived: true });
   const createProject = useCreateProject();
   const updateProject = useUpdateProject();
-  const [ctx, setCtx] = useState(PROJECT_CONTEXTS[0] ?? 'sanlam');
+  const projectContexts = useContexts().data?.contexts ?? [];
+  const [pickedCtx, setPickedCtx] = useState<string | null>(null);
+  const ctx = pickedCtx ?? projectContexts[0] ?? '';
+  const setCtx = setPickedCtx;
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
 
   const submit = () => {
     const trimmed = name.trim();
-    if (!trimmed || createProject.isPending) return;
+    if (!trimmed || !ctx || createProject.isPending) return;
     createProject.mutate(
       { context: ctx, name: trimmed, description: description.trim() },
       {
@@ -517,7 +527,15 @@ export function ProjectsSettings() {
     );
   };
 
-  const byContext = PROJECT_CONTEXTS.map((c) => ({
+  // Group under configured contexts first, then any contexts that only
+  // exist on already-created projects (e.g. removed from routing.yaml).
+  const groupContexts = [
+    ...projectContexts,
+    ...[...new Set((projects.data ?? []).map((p) => p.context))].filter(
+      (c) => !projectContexts.includes(c),
+    ),
+  ];
+  const byContext = groupContexts.map((c) => ({
     context: c,
     items: (projects.data ?? []).filter((p) => p.context === c),
   })).filter((g) => g.items.length > 0);
@@ -536,7 +554,7 @@ export function ProjectsSettings() {
             onChange={(e) => setCtx(e.target.value)}
             className="rounded-sm border border-hairline-2 bg-paper px-2 py-[6px] text-12 text-ink-0"
           >
-            {PROJECT_CONTEXTS.map((c) => (
+            {projectContexts.map((c) => (
               <option key={c} value={c}>
                 {c}
               </option>

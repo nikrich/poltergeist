@@ -26,7 +26,10 @@ vi.mock('../lib/api/client', () => ({
 }));
 
 function renderSection() {
-  vi.mocked(client.get).mockResolvedValue(projects as never);
+  vi.mocked(client.get).mockImplementation(((path: string) =>
+    path === '/v1/vault/contexts'
+      ? Promise.resolve({ contexts: ['sanlam', 'codeship', 'reducedrecipes', 'personal'] })
+      : Promise.resolve(projects)) as never);
   vi.mocked(client.post).mockResolvedValue(projects[0] as never);
   vi.mocked(client.patch).mockResolvedValue(projects[0] as never);
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -60,5 +63,22 @@ describe('ProjectsSettings', () => {
         description: '',
       }),
     );
+  });
+
+  it('offers the vault-configured contexts, not a hardcoded list', async () => {
+    vi.mocked(client.get).mockImplementation(((path: string) =>
+      path === '/v1/vault/contexts'
+        ? Promise.resolve({ contexts: ['work', 'home'] })
+        : Promise.resolve([])) as never);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <ProjectsSettings />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(screen.getByRole('option', { name: 'work' })).toBeTruthy());
+    expect(screen.getByRole('option', { name: 'home' })).toBeTruthy();
+    expect(screen.queryByRole('option', { name: 'sanlam' })).toBeNull();
+    expect(screen.queryByRole('option', { name: 'reducedrecipes' })).toBeNull();
   });
 });

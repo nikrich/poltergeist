@@ -11,6 +11,7 @@ import { DocsAssistPanel } from '../components/DocsAssistPanel';
 import {
   useAutoRouteJot,
   useConnectors,
+  useContexts,
   useCreateJot,
   useDeleteJot,
   useExtractPhoto,
@@ -24,9 +25,8 @@ import { toast } from '../stores/toast';
 import { useNoteView } from '../stores/note-view';
 import { useDocsAssist } from '../stores/docs-assist';
 
-const KNOWN_CONTEXTS = ['sanlam', 'codeship', 'reducedrecipes', 'personal'];
-
 export function JotsScreen() {
+  const knownContexts = useContexts().data?.contexts ?? [];
   const [q, setQ] = useState('');
   const openNote = useNoteView((s) => s.open);
   const list = useJots({ q: q || undefined });
@@ -376,7 +376,7 @@ export function JotsScreen() {
                     <option value="" disabled>
                       re-route…
                     </option>
-                    {KNOWN_CONTEXTS.map((c) => (
+                    {knownContexts.map((c) => (
                       <optgroup key={c} label={c}>
                         <option value={c}>{c}</option>
                         {(Array.isArray(projects.data) ? projects.data : [])
