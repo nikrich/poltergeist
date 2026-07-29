@@ -9,6 +9,10 @@ export interface VaultStats {
   indexedCount: number;
 }
 
+export interface VaultContexts {
+  contexts: string[];
+}
+
 export type ConnectorState = 'on' | 'off' | 'err';
 
 export interface Connector {

@@ -35,6 +35,7 @@ import type {
   UpdateProjectRequest,
   UpdateRecorderSettings,
   VaultGraph,
+  VaultContexts,
   VaultStats,
   McpServersResponse,
   McpServerWrite,
@@ -47,6 +48,14 @@ export function useVaultStats() {
     queryFn: () => get<VaultStats>('/v1/vault/stats'),
     staleTime: 30_000,
     refetchInterval: 30_000,
+  });
+}
+
+export function useContexts() {
+  return useQuery({
+    queryKey: ['vault', 'contexts'],
+    queryFn: () => get<VaultContexts>('/v1/vault/contexts'),
+    staleTime: 60_000,
   });
 }
 
