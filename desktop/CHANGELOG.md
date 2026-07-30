@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.2](https://github.com/nikrich/poltergeist/compare/v1.3.1...v1.3.2) (2026-07-30)
+
+
+### Bug Fixes
+
+* fix(sidecar): pin mcp<2 and smoke-test the frozen binary in release builds (#109)
+
 ## [1.3.1](https://github.com/nikrich/poltergeist/compare/v1.3.0...v1.3.1) (2026-07-29)
 
 
