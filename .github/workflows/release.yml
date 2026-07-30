@@ -157,6 +157,9 @@ jobs:
           # shellcheck disable=SC2012  # ls is fine here, the dir is ours
           ls -la desktop/resources/sidecar/ghostbrain-api | head -20
 
+      - name: Smoke-test frozen sidecar (server + mcp)
+        run: python scripts/smoke-sidecar.py desktop/resources/sidecar/ghostbrain-api/ghostbrain-api
+
       - name: Install desktop deps
         working-directory: desktop
         run: npm ci
@@ -237,6 +240,9 @@ jobs:
           # shellcheck disable=SC2012  # ls is fine here, the dir is ours
           ls -la desktop/resources/sidecar/ghostbrain-api | head -20
 
+      - name: Smoke-test frozen sidecar (server + mcp)
+        run: python scripts/smoke-sidecar.py desktop/resources/sidecar/ghostbrain-api/ghostbrain-api
+
       - name: Install desktop deps
         working-directory: desktop
         run: npm ci
@@ -312,6 +318,10 @@ jobs:
             --noconfirm
           # shellcheck disable=SC2012  # ls is fine here, the dir is ours
           ls -la desktop/resources/sidecar/ghostbrain-api | head -20
+
+      - name: Smoke-test frozen sidecar (server + mcp)
+        shell: bash
+        run: python scripts/smoke-sidecar.py desktop/resources/sidecar/ghostbrain-api/ghostbrain-api.exe
 
       - name: Install desktop deps
         working-directory: desktop
