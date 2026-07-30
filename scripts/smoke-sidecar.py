@@ -28,6 +28,12 @@ def _env(tmp: Path) -> dict[str, str]:
     env = dict(os.environ)
     env["GHOSTBRAIN_STATE_DIR"] = str(tmp / "state")
     env["VAULT_PATH"] = str(tmp / "vault")
+    # The sidecar writes ~/ghostbrain/run/sidecar.json regardless of
+    # GHOSTBRAIN_STATE_DIR. Point HOME at the sandbox too, or a local smoke
+    # run clobbers the real app's port/token pointer and every MCP client
+    # starts failing with "Poltergeist isn't running".
+    env["HOME"] = str(tmp)
+    env["USERPROFILE"] = str(tmp)  # Windows equivalent
     return env
 
 
