@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Weekly profile-diff applier. Runs Sunday 22:00 local time per SPEC §10.2.
+
+  This file is a TEMPLATE. Replace placeholders before loading:
+    __REPO_ROOT__   absolute path to your local clone of ghost-brain
+    __VAULT_PATH__  absolute path to your vault (default ~/ghostbrain/vault)
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ghostbrain.profile-weekly</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__REPO_ROOT__/.venv/bin/python</string>
+        <string>-m</string>
+        <string>ghostbrain.profile.apply</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__REPO_ROOT__</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <!-- Sunday 22:00 — weekday 0 = Sunday in launchd. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>0</integer>
+        <key>Hour</key>
+        <integer>22</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>__REPO_ROOT__/logs/profile-weekly.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>__REPO_ROOT__/logs/profile-weekly.err</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>VAULT_PATH</key>
+        <string>__VAULT_PATH__</string>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

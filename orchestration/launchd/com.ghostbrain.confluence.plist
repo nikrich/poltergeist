@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Confluence fetcher. Runs daily at 06:00 per SPEC §10.2.
+
+  TEMPLATE — replace placeholders before loading.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ghostbrain.confluence</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__REPO_ROOT__/.venv/bin/python</string>
+        <string>-m</string>
+        <string>ghostbrain.connectors.confluence</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__REPO_ROOT__</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <!-- Daily at 06:00 — earlier than the digest (06:30) so digest sees it. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>6</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>__REPO_ROOT__/logs/confluence.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>__REPO_ROOT__/logs/confluence.err</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>VAULT_PATH</key>
+        <string>__VAULT_PATH__</string>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

@@ -1,0 +1,8 @@
+{
+  "id": "hello",
+  "name": "Hello",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "icon": "ghost",
+  "entry": { "main": "dist/main.cjs", "renderer": "dist/renderer.mjs" }
+}

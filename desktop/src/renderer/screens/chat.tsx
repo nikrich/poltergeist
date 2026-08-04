@@ -1,0 +1,831 @@
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+
+import { Btn } from '../components/Btn';
+import { Lucide } from '../components/Lucide';
+import { Eyebrow } from '../components/Eyebrow';
+import { TopBar } from '../components/TopBar';
+import { MarkdownBody } from '../components/MarkdownBody';
+import { SkeletonRows } from '../components/SkeletonRows';
+import { PanelError } from '../components/PanelError';
+import {
+  useConversations,
+  useConversation,
+  useCreateConversation,
+  useProjects,
+  useRenameConversation,
+  useUpdateConversation,
+  useDeleteConversation,
+} from '../lib/api/hooks';
+import { exportConversationToJot } from '../lib/chat-export';
+import { toast } from '../stores/toast';
+import { uploadAttachments, isAccepted, maxBytesFor, MAX_FILES } from '../lib/chat-attachments';
+import { useChat } from '../stores/chat';
+import type { StreamState, TurnError } from '../stores/chat';
+import type {
+  ChatAttachment,
+  ChatMessage,
+  ChatToolUse,
+  ConversationSummary,
+} from '../../shared/api-types';
+
+export function ChatScreen() {
+  const qc = useQueryClient();
+  const activeId = useChat((s) => s.activeId);
+  const setActive = useChat((s) => s.setActive);
+  const streams = useChat((s) => s.streams);
+  const errors = useChat((s) => s.errors);
+  const beginStream = useChat((s) => s.beginStream);
+  const applyEvent = useChat((s) => s.applyEvent);
+  const endStream = useChat((s) => s.endStream);
+
+  const conversations = useConversations();
+  const conversation = useConversation(activeId);
+  const isExporting = useChat((s) => (activeId ? !!s.exporting[activeId] : false));
+
+  const stream = activeId ? streams[activeId] : undefined;
+  const error = activeId ? errors[activeId] : undefined;
+
+  // Subscribe to streaming events relayed from the main process. One listener
+  // for all conversations — the payload carries its own convId.
+  useEffect(() => {
+    return window.gb.on('chat:event', ({ convId, event }) => {
+      applyEvent(convId, event);
+      if (event.type === 'done' || event.type === 'error') {
+        // Known cosmetic flicker: on done the optimistic bubble clears before
+        // the ['chat'] prefix-invalidation refetch lands (sub-100ms locally) —
+        // accepted for v1.
+        qc.invalidateQueries({ queryKey: ['chat'] });
+      }
+    });
+  }, [applyEvent, qc]);
+
+  // Auto-select the most recent conversation on mount when nothing is active.
+  // The list comes back newest-first from the sidecar, so the head is freshest.
+  useEffect(() => {
+    if (activeId !== null) return;
+    const first = conversations.data?.[0];
+    if (first) setActive(first.id);
+  }, [activeId, conversations.data, setActive]);
+
+  const sendMessage = (
+    text: string,
+    files: File[] = [],
+    preUploaded?: ChatAttachment[],
+  ) => {
+    if (!activeId) return;
+    void (async () => {
+      let attachments: ChatAttachment[] = preUploaded ?? [];
+      if (!preUploaded && files.length > 0) {
+        try {
+          attachments = await uploadAttachments(activeId, files);
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : 'attachment upload failed');
+          return;
+        }
+      }
+      beginStream(activeId, text, attachments);
+      const paths = attachments.map((a) => a.path);
+      void window.gb.chat.send(activeId, text, paths).then((res) => {
+        if (!res.ok) {
+          applyEvent(activeId, { type: 'error', message: res.error });
+        }
+        // Finalizer: covers user-stop / relay teardown where no terminal event
+        // arrives. No-op when done/error already cleared the stream. Same
+        // cosmetic flicker window as the done|error path above applies here.
+        endStream(activeId);
+        qc.invalidateQueries({ queryKey: ['chat'] });
+      });
+    })();
+  };
+
+  return (
+    <div className="flex flex-1 overflow-hidden bg-paper">
+      <ConversationList
+        conversations={conversations.data ?? []}
+        isLoading={conversations.isLoading}
+        activeId={activeId}
+        onSelect={setActive}
+      />
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <TopBar
+          title="chat"
+          subtitle={conversation.data?.title ?? 'with poltergeist'}
+          right={
+            <div className="flex gap-2">
+              <Btn
+                variant="ghost"
+                size="sm"
+                icon={<Lucide name="file-output" size={13} />}
+                disabled={
+                  activeId === null ||
+                  isExporting ||
+                  (conversation.data?.messages ?? []).every((m) => m.role !== 'assistant')
+                }
+                onClick={() => {
+                  if (!activeId) return;
+                  void exportConversationToJot(activeId);
+                }}
+              >
+                {isExporting ? 'exporting…' : 'export to jots'}
+              </Btn>
+            </div>
+          }
+        />
+
+        {activeId === null ? (
+          <NoConversation />
+        ) : (
+          <>
+            <Thread
+              conversation={conversation}
+              stream={stream}
+              error={error}
+              onStop={() => window.gb.chat.stop(activeId)}
+              onRetry={(err) => sendMessage(err.userText, [], err.attachments)}
+            />
+            <Composer
+              disabled={!!stream}
+              onSend={sendMessage}
+            />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Conversation list ──────────────────────────────────────────────────────
+
+interface ConversationListProps {
+  conversations: ConversationSummary[];
+  isLoading: boolean;
+  activeId: string | null;
+  onSelect: (id: string | null) => void;
+}
+
+const UNFILED = '__unfiled__';
+
+/** Group conversations by project key: unfiled first, then project groups by
+ *  most-recent activity. Rows keep their incoming (newest-first) order. */
+function groupConversations(conversations: ConversationSummary[]) {
+  const groups = new Map<string, ConversationSummary[]>();
+  for (const c of conversations) {
+    const key = c.project ?? UNFILED;
+    const list = groups.get(key) ?? [];
+    list.push(c);
+    groups.set(key, list);
+  }
+  const keys = [...groups.keys()].sort((a, b) => {
+    if (a === UNFILED) return -1;
+    if (b === UNFILED) return 1;
+    const newest = (k: string) => Math.max(...groups.get(k)!.map((c) => c.updated_at));
+    return newest(b) - newest(a);
+  });
+  return keys.map((key) => ({ key, conversations: groups.get(key)! }));
+}
+
+function ConversationList({
+  conversations,
+  isLoading,
+  activeId,
+  onSelect,
+}: ConversationListProps) {
+  const create = useCreateConversation();
+  const projects = useProjects({ includeArchived: true });
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+  const newChat = () => {
+    create.mutate(undefined, {
+      onSuccess: (conv) => onSelect(conv.id),
+    });
+  };
+
+  const groups = groupConversations(conversations);
+  const projectLabel = (key: string) => {
+    if (key === UNFILED) return 'unfiled';
+    const [context, slug] = key.split('/');
+    const p = projects.data?.find((x) => x.context === context && x.slug === slug);
+    if (!p) return key;
+    return p.archived ? `${p.name} (archived)` : p.name;
+  };
+
+  return (
+    <aside className="flex w-[240px] flex-shrink-0 flex-col border-r border-hairline bg-vellum">
+      <div className="flex items-center justify-between px-[14px] pb-2 pt-[14px]">
+        <Eyebrow>conversations</Eyebrow>
+        <button
+          type="button"
+          onClick={newChat}
+          aria-label="new chat"
+          disabled={create.isPending}
+          className="flex h-[22px] w-[22px] items-center justify-center rounded-sm text-ink-2 transition-colors hover:bg-fog hover:text-ink-0 disabled:opacity-50"
+        >
+          <Lucide name="plus" size={14} />
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-2 pb-3">
+        {isLoading && <SkeletonRows count={4} />}
+        {!isLoading && conversations.length === 0 && (
+          <div className="px-3 py-6 text-center font-mono text-10 text-ink-3">
+            no conversations yet
+          </div>
+        )}
+        {groups.map(({ key, conversations: convs }) => {
+          const label = projectLabel(key);
+          const isCollapsed = collapsed[key] ?? false;
+          return (
+            <div key={key} data-testid="chat-group" data-group={key} className="mb-1">
+              <button
+                type="button"
+                aria-label={`${isCollapsed ? 'expand' : 'collapse'} ${label}`}
+                onClick={() => setCollapsed((c) => ({ ...c, [key]: !isCollapsed }))}
+                className="flex w-full items-center gap-1 px-2 pb-1 pt-2 text-left font-mono text-10 uppercase tracking-[0.1em] text-ink-3 transition-colors hover:text-ink-1"
+              >
+                <Lucide name={isCollapsed ? 'chevron-right' : 'chevron-down'} size={10} />
+                <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+                  {label}
+                </span>
+                <span>{convs.length}</span>
+              </button>
+              {!isCollapsed &&
+                convs.map((c) => (
+                  <ConversationRow
+                    key={c.id}
+                    conversation={c}
+                    active={c.id === activeId}
+                    onSelect={() => onSelect(c.id)}
+                    onDeleted={() => {
+                      if (c.id === activeId) onSelect(null);
+                    }}
+                  />
+                ))}
+            </div>
+          );
+        })}
+      </div>
+    </aside>
+  );
+}
+
+interface ConversationRowProps {
+  conversation: ConversationSummary;
+  active: boolean;
+  onSelect: () => void;
+  onDeleted: () => void;
+}
+
+function ConversationRow({
+  conversation,
+  active,
+  onSelect,
+  onDeleted,
+}: ConversationRowProps) {
+  const rename = useRenameConversation();
+  const del = useDeleteConversation();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(conversation.title);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) inputRef.current?.select();
+  }, [editing]);
+
+  const commit = () => {
+    const next = draft.trim();
+    if (next && next !== conversation.title) {
+      rename.mutate({ id: conversation.id, title: next });
+    }
+    setEditing(false);
+  };
+
+  const remove = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    del.mutate(conversation.id, { onSuccess: onDeleted });
+  };
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commit();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            setDraft(conversation.title);
+            setEditing(false);
+          }
+        }}
+        className="w-full rounded-r6 border border-hairline-2 bg-paper px-[10px] py-[7px] text-13 text-ink-0 focus:outline-none"
+      />
+    );
+  }
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onSelect}
+      onDoubleClick={() => {
+        setDraft(conversation.title);
+        setEditing(true);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
+      className={`group flex w-full cursor-pointer items-center gap-2 rounded-r6 px-[10px] py-[7px] text-left text-13 transition-colors duration-[120ms] ${
+        active ? 'bg-neon/12 font-medium text-ink-0' : 'font-normal text-ink-1 hover:bg-fog'
+      }`}
+    >
+      <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+        {conversation.title}
+      </span>
+      <FileMenu conversation={conversation} />
+      <button
+        type="button"
+        onClick={remove}
+        aria-label="delete conversation"
+        disabled={del.isPending}
+        className="flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-xs text-ink-3 opacity-0 transition-opacity hover:text-oxblood group-hover:opacity-100 disabled:opacity-50"
+      >
+        <Lucide name="trash-2" size={12} />
+      </button>
+    </div>
+  );
+}
+
+/** Hover folder icon → menu of projects to file the conversation under. */
+function FileMenu({ conversation }: { conversation: ConversationSummary }) {
+  const update = useUpdateConversation();
+  const projects = useProjects();
+  const [open, setOpen] = useState(false);
+
+  const file = (project: string | null) => {
+    setOpen(false);
+    if (project === (conversation.project ?? null)) return;
+    update.mutate(
+      { id: conversation.id, project },
+      { onError: (e) => toast.error(e.message) },
+    );
+  };
+
+  return (
+    <span className="relative flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        aria-label={`file ${conversation.title}`}
+        disabled={update.isPending}
+        onClick={() => setOpen((o) => !o)}
+        className="flex h-[18px] w-[18px] items-center justify-center rounded-xs text-ink-3 opacity-0 transition-opacity hover:text-ink-0 group-hover:opacity-100 disabled:opacity-50"
+      >
+        <Lucide name="folder" size={12} />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-[22px] z-20 max-h-[240px] w-[180px] overflow-y-auto rounded-r6 border border-hairline-2 bg-vellum py-1 shadow-lg"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => file(null)}
+            className="block w-full px-3 py-[6px] text-left text-12 text-ink-1 hover:bg-fog hover:text-ink-0"
+          >
+            unfiled
+          </button>
+          {(projects.data ?? [])
+            .filter((p) => !p.archived)
+            .map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                role="menuitem"
+                onClick={() => file(`${p.context}/${p.slug}`)}
+                className="block w-full px-3 py-[6px] text-left text-12 text-ink-1 hover:bg-fog hover:text-ink-0"
+              >
+                {p.name}
+              </button>
+            ))}
+        </div>
+      )}
+    </span>
+  );
+}
+
+// ── Thread ─────────────────────────────────────────────────────────────────
+
+interface ThreadProps {
+  conversation: ReturnType<typeof useConversation>;
+  stream: StreamState | undefined;
+  error: TurnError | undefined;
+  onStop: () => void;
+  /** Re-sends the failed turn's user text (and its already-uploaded
+   *  attachments, so grounding isn't lost) through the normal send path —
+   *  beginStream clears the error. Standard resend semantics: the user
+   *  message appears again in the transcript. */
+  onRetry: (error: TurnError) => void;
+}
+
+function Thread({ conversation, stream, error, onStop, onRetry }: ThreadProps) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const messages = conversation.data?.messages ?? [];
+
+  // Auto-scroll to the newest content as messages land and the stream grows.
+  useLayoutEffect(() => {
+    bottomRef.current?.scrollIntoView?.({ block: 'end' });
+  }, [messages.length, stream?.text, stream?.tools.length, error]);
+
+  const empty =
+    !conversation.isLoading &&
+    !conversation.isError &&
+    messages.length === 0 &&
+    !stream &&
+    !error;
+
+  return (
+    <div className="flex-1 overflow-y-auto">
+      <div className="mx-auto flex max-w-[760px] flex-col gap-5 px-6 py-6">
+        {conversation.isLoading && <SkeletonRows count={3} height={48} />}
+
+        {conversation.isError && (
+          <PanelError
+            message={
+              conversation.error instanceof Error
+                ? conversation.error.message
+                : 'failed to load conversation'
+            }
+            onRetry={() => conversation.refetch()}
+          />
+        )}
+
+        {empty && <EmptyThreadHint />}
+
+        {messages.map((m, i) => (
+          <Message key={i} message={m} />
+        ))}
+
+        {stream && <StreamingTurn stream={stream} onStop={onStop} />}
+
+        {error && (
+          <div className="flex items-center gap-3 rounded-md border border-oxblood/30 bg-oxblood/10 p-3 text-12 text-oxblood">
+            <span className="min-w-0 flex-1">{error.message}</span>
+            <Btn
+              variant="ghost"
+              size="sm"
+              icon={<Lucide name="rotate-ccw" size={12} />}
+              onClick={() => onRetry(error)}
+            >
+              retry
+            </Btn>
+          </div>
+        )}
+
+        <div ref={bottomRef} />
+      </div>
+    </div>
+  );
+}
+
+function AttachmentChips({ attachments }: { attachments: ChatAttachment[] }) {
+  if (attachments.length === 0) return null;
+  return (
+    <div className="mb-1 flex flex-wrap justify-end gap-[6px]">
+      {attachments.map((a) => (
+        <span
+          key={a.path}
+          className="inline-flex items-center gap-1 rounded-xs bg-fog px-2 py-[2px] font-mono text-10 text-ink-2"
+          title={a.path}
+        >
+          <Lucide name="paperclip" size={9} color="var(--ink-3)" />
+          {a.title}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+const GENERATED_DOC_RE = /20-contexts\/generated-docs\/[^\s\]]+\.html/g;
+
+function generatedDocPaths(text: string): string[] {
+  return [...new Set(text.match(GENERATED_DOC_RE) ?? [])];
+}
+
+function OpenDocButtons({ paths }: { paths: string[] }) {
+  if (paths.length === 0) return null;
+  const open = (p: string) => {
+    void window.gb.docs.openGenerated(p).then((res) => {
+      if (!res.ok) toast.error(res.error);
+    });
+  };
+  return (
+    <div className="flex flex-wrap gap-2">
+      {paths.map((p) => (
+        <Btn
+          key={p}
+          variant="ghost"
+          size="sm"
+          icon={<Lucide name="file-text" size={12} />}
+          onClick={() => open(p)}
+        >
+          open as pdf
+        </Btn>
+      ))}
+    </div>
+  );
+}
+
+function Message({ message }: { message: ChatMessage }) {
+  if (message.role === 'user') {
+    return (
+      <div className="flex flex-col items-end">
+        <AttachmentChips attachments={message.attachments ?? []} />
+        <div className="max-w-[80%] whitespace-pre-wrap rounded-r10 border border-hairline bg-vellum px-[14px] py-[10px] text-14 leading-[1.5] text-ink-0">
+          {message.text}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      {message.tools && message.tools.length > 0 && (
+        <ToolChips tools={message.tools} />
+      )}
+      <MarkdownBody className="text-14 leading-[1.65] text-ink-0">
+        {message.text}
+      </MarkdownBody>
+      <OpenDocButtons paths={generatedDocPaths(message.text)} />
+      {message.interrupted && (
+        <div className="font-mono text-10 text-ink-3">⏱ turn was interrupted</div>
+      )}
+    </div>
+  );
+}
+
+function StreamingTurn({ stream, onStop }: { stream: StreamState; onStop: () => void }) {
+  return (
+    <>
+      <div className="flex flex-col items-end">
+        <AttachmentChips attachments={stream.attachments} />
+        <div className="max-w-[80%] whitespace-pre-wrap rounded-r10 border border-hairline bg-vellum px-[14px] py-[10px] text-14 leading-[1.5] text-ink-0">
+          {stream.userText}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        {stream.tools.length > 0 && <ToolChips tools={stream.tools} />}
+        {stream.text ? (
+          <>
+            <MarkdownBody className="text-14 leading-[1.65] text-ink-0">
+              {stream.text}
+            </MarkdownBody>
+            <OpenDocButtons paths={generatedDocPaths(stream.text)} />
+          </>
+        ) : (
+          <div className="flex items-center gap-2 text-12 text-ink-2">
+            <Lucide name="sparkles" size={13} color="var(--neon)" />
+            poltergeist is thinking…
+          </div>
+        )}
+        <div>
+          <Btn
+            variant="danger"
+            size="sm"
+            icon={<Lucide name="square" size={10} />}
+            onClick={onStop}
+          >
+            stop
+          </Btn>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function ToolChips({ tools }: { tools: ChatToolUse[] }) {
+  return (
+    <div className="flex flex-wrap gap-[6px]">
+      {tools.map((t, i) => (
+        <span
+          key={i}
+          className="inline-flex items-center gap-1 rounded-xs bg-fog px-2 py-[2px] font-mono text-10 text-ink-2"
+        >
+          <Lucide name="wrench" size={9} color="var(--ink-3)" />
+          {t.summary}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function EmptyThreadHint() {
+  return (
+    <div className="flex flex-col items-center gap-2 py-16 text-center text-12 text-ink-3">
+      <Lucide name="sparkles" size={16} color="var(--ink-3)" />
+      <span className="max-w-[40ch]">
+        chat with poltergeist about your vault. it remembers this conversation
+        and can search your notes as you go.
+      </span>
+    </div>
+  );
+}
+
+function NoConversation() {
+  const create = useCreateConversation();
+  const setActive = useChat((s) => s.setActive);
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
+      <Lucide name="message-circle" size={22} color="var(--ink-3)" />
+      <div className="max-w-[36ch] text-13 text-ink-2">
+        no conversation selected. start a new one to chat with poltergeist.
+      </div>
+      <Btn
+        variant="primary"
+        size="md"
+        icon={<Lucide name="plus" size={14} color="#0E0F12" />}
+        disabled={create.isPending}
+        onClick={() =>
+          create.mutate(undefined, { onSuccess: (conv) => setActive(conv.id) })
+        }
+      >
+        new chat
+      </Btn>
+    </div>
+  );
+}
+
+// ── Composer ───────────────────────────────────────────────────────────────
+
+function Composer({
+  disabled,
+  onSend,
+}: {
+  disabled: boolean;
+  onSend: (text: string, files: File[]) => void;
+}) {
+  const [text, setText] = useState('');
+  const [files, setFiles] = useState<File[]>([]);
+  const [dragging, setDragging] = useState(false);
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Grow the textarea up to ~5 rows, then scroll internally. Keep overflow
+  // hidden below the cap — otherwise a phantom scrollbar gutter renders at
+  // one line.
+  const autosize = () => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 132)}px`;
+    el.style.overflowY = el.scrollHeight > 132 ? 'auto' : 'hidden';
+  };
+
+  const addFiles = (incoming: File[]) => {
+    const accepted: File[] = [];
+    for (const f of incoming) {
+      if (!isAccepted(f)) {
+        toast.error(`${f.name}: unsupported file type`);
+        continue;
+      }
+      const cap = maxBytesFor(f);
+      if (f.size > cap) {
+        toast.error(`${f.name}: too large (max ${Math.round(cap / 1_000_000)} MB)`);
+        continue;
+      }
+      accepted.push(f);
+    }
+    setFiles((prev) => {
+      const next = [...prev, ...accepted];
+      if (next.length > MAX_FILES) {
+        toast.error(`at most ${MAX_FILES} files per message`);
+        return next.slice(0, MAX_FILES);
+      }
+      return next;
+    });
+  };
+
+  const removeFile = (idx: number) =>
+    setFiles((prev) => prev.filter((_, i) => i !== idx));
+
+  const submit = () => {
+    const trimmed = text.trim();
+    if ((!trimmed && files.length === 0) || disabled) return;
+    onSend(trimmed, files);
+    setText('');
+    setFiles([]);
+    requestAnimationFrame(autosize);
+  };
+
+  return (
+    <div
+      className="flex-shrink-0 border-t border-hairline bg-paper px-6 py-4"
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragging(false);
+        addFiles(Array.from(e.dataTransfer.files));
+      }}
+    >
+      <div className="mx-auto max-w-[760px]">
+        {files.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-[6px]">
+            {files.map((f, i) => (
+              <span
+                key={`${f.name}-${i}`}
+                className="inline-flex items-center gap-1 rounded-xs bg-fog px-2 py-[3px] font-mono text-10 text-ink-2"
+              >
+                <Lucide name="paperclip" size={9} color="var(--ink-3)" />
+                {f.name}
+                <button
+                  type="button"
+                  aria-label={`remove ${f.name}`}
+                  onClick={() => removeFile(i)}
+                  className="ml-1 text-ink-3 hover:text-oxblood"
+                >
+                  <Lucide name="x" size={9} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* AskPanel-style chrome: one bordered container, borderless textarea
+            inside, compact send button embedded — no double borders or rings. */}
+        <div
+          className={`flex items-end gap-2 rounded-r10 border bg-vellum py-[6px] pl-[14px] pr-[6px] transition-colors duration-[120ms] ${
+            dragging ? 'border-neon' : 'border-hairline-2 focus-within:border-ink-3'
+          }`}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              addFiles(Array.from(e.target.files ?? []));
+              e.target.value = '';
+            }}
+          />
+          <button
+            type="button"
+            aria-label="attach files"
+            disabled={disabled}
+            onClick={() => fileInputRef.current?.click()}
+            className="mb-[1px] flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-r6 text-ink-3 hover:bg-fog hover:text-ink-1 disabled:opacity-40"
+          >
+            <Lucide name="paperclip" size={15} />
+          </button>
+          <textarea
+            ref={ref}
+            value={text}
+            rows={1}
+            disabled={disabled}
+            placeholder={
+              disabled ? 'poltergeist is responding…' : 'message poltergeist…'
+            }
+            onChange={(e) => {
+              setText(e.target.value);
+              autosize();
+            }}
+            onPaste={(e) => {
+              const pasted = Array.from(e.clipboardData.files);
+              if (pasted.length > 0) {
+                e.preventDefault();
+                addFiles(pasted);
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                submit();
+              }
+            }}
+            className="flex-1 resize-none overflow-y-hidden border-none bg-transparent py-[7px] text-14 leading-[1.5] text-ink-0 placeholder:text-ink-3 focus:outline-none disabled:opacity-60"
+          />
+          <button
+            type="button"
+            aria-label="send"
+            disabled={disabled || (text.trim().length === 0 && files.length === 0)}
+            onClick={submit}
+            className="mb-[1px] flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-r6 bg-neon transition-all duration-[120ms] hover:bg-neon-dark disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Lucide name="arrow-up" size={15} color="#0E0F12" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

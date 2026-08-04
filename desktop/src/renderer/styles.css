@@ -1,0 +1,290 @@
+/* Hoisted to the very top: CSS @import rules must precede every other
+   statement. Lives here (rather than in colors_and_type.css) because the
+   tokens file is itself @imported below, and its inlined @import would
+   land after tailwindcss's emitted rules and trigger a build error. */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import 'tailwindcss';
+
+/* Bring in the design-system tokens that pre-existed the React port.
+   colors_and_type.css owns CSS variables; @theme below promotes them
+   to Tailwind utilities. */
+@import '../../colors_and_type.css';
+
+@font-face {
+  font-family: 'Google Sans Flex';
+  src: url('/fonts/GoogleSansFlex-VariableFont_GRAD_ROND_opsz_slnt_wdth_wght.ttf')
+    format('truetype-variations');
+  font-weight: 100 1000;
+  font-style: oblique -15deg 0deg;
+  font-display: swap;
+}
+
+/* `inline` is critical: it tells Tailwind to emit utilities that reference
+   the inner var() directly (e.g. `.bg-paper { background-color: var(--bg-paper) }`)
+   rather than defining `--color-paper` on :root with the inner var() pre-resolved.
+   Without inline, theme switching breaks because the runtime override on
+   [data-theme='light'] for --bg-paper never reaches the already-computed
+   --color-paper that descendants inherit. */
+@theme inline {
+  /* colors */
+  --color-paper: var(--bg-paper);
+  --color-vellum: var(--bg-vellum);
+  --color-fog: var(--bg-fog);
+  --color-ink-0: var(--ink-0);
+  --color-ink-1: var(--ink-1);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-neon: var(--neon);
+  --color-neon-dark: var(--neon-dark);
+  --color-neon-mist: var(--neon-mist);
+  --color-neon-ink: var(--neon-ink);
+  --color-oxblood: var(--oxblood);
+  --color-oxblood-dark: var(--oxblood-dark);
+  --color-oxblood-mist: var(--oxblood-mist);
+  --color-moss: var(--moss);
+  --color-moss-mist: var(--moss-mist);
+
+  /* pill foregrounds — tonally-shifted accents, see colors_and_type.css */
+  --color-pill-moss-fg: var(--pill-moss-fg);
+  --color-pill-oxblood-fg: var(--pill-oxblood-fg);
+  --color-pill-water-fg: var(--pill-water-fg);
+
+  /* hairlines (semi-transparent dividers) */
+  --color-hairline: var(--hairline);
+  --color-hairline-2: var(--hairline-2);
+  --color-hairline-3: var(--hairline-3);
+
+  /* fonts */
+  --font-display: 'Google Sans Flex', ui-sans-serif, system-ui, sans-serif;
+  --font-body: 'Google Sans Flex', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* font sizes — design uses these specific values */
+  --text-9: 9px;
+  --text-10: 10px;
+  --text-11: 11px;
+  --text-12: 12px;
+  --text-13: 13px;
+  --text-14: 14px;
+  --text-16: 16px;
+  --text-18: 18px;
+  --text-20: 20px;
+  --text-22: 22px;
+  --text-26: 26px;
+  --text-28: 28px;
+  --text-32: 32px;
+  --text-38: 38px;
+  --text-72: 72px;
+
+  /* tracking (letter-spacing) */
+  --tracking-tightest: -0.035em;
+  --tracking-tighter: -0.03em;
+  --tracking-tight-x: -0.025em;
+  --tracking-tight-xx: -0.02em;
+  --tracking-eyebrow: 0.12em;
+  --tracking-eyebrow-loose: 0.14em;
+
+  /* radii */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-r6: 6px;
+  --radius-md: 8px;
+  --radius-r10: 10px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+
+  /* shadows */
+  --shadow-card: 0 2px 4px rgba(0, 0, 0, 0.3), 0 12px 24px rgba(0, 0, 0, 0.45);
+  --shadow-float: 0 16px 40px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.4);
+  --shadow-glow-neon: 0 0 0 1px rgba(197, 255, 61, 0.35), 0 0 24px rgba(197, 255, 61, 0.25);
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-body);
+  /* intentional fixed color: pre-paint body bg, slightly darker than --bg-paper
+     so the BrowserWindow flash on first paint blends into the dark theme */
+  background: #06070a;
+  color: var(--ink-0);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+body[data-theme='light'] {
+  /* intentional fixed color: pre-paint body bg for light theme, slightly cooler
+     than --bg-paper to avoid a stark white flash before React mounts */
+  background: #d8dbe0;
+}
+
+@keyframes gb-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 107, 90, 0.6);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(255, 107, 90, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 107, 90, 0);
+  }
+}
+@keyframes gb-wave {
+  from {
+    transform: scaleY(0.4);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+@keyframes gb-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+@keyframes gb-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes gb-float {
+  0%,
+  100% {
+    transform: translateY(-2px);
+  }
+  50% {
+    transform: translateY(2px);
+  }
+}
+
+.gb-floating {
+  animation: gb-float 4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.gb-noise {
+  position: relative;
+  isolation: isolate;
+}
+.gb-noise::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.04;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--hairline-2);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--hairline-3);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+
+/* density: compact tightens vertical rhythm across key surfaces */
+[data-density='compact'] .gb-topbar { height: 48px; }
+[data-density='compact'] .gb-statusbar { height: 22px; }
+[data-density='compact'] .gb-navrow { padding-top: 4px; padding-bottom: 4px; }
+[data-density='compact'] .gb-sidenav { padding-top: 6px; padding-bottom: 6px; }
+[data-density='compact'] .gb-setting-row { padding-top: 10px; padding-bottom: 10px; }
+[data-density='compact'] .gb-panel-header { padding-top: 8px; padding-bottom: 8px; padding-left: 12px; padding-right: 12px; }
+[data-density='compact'] .gb-panel-body { padding: 8px; }
+
+/* in-app markdown rendering used by NoteView */
+.gb-prose { font-family: var(--font-display, inherit); }
+.gb-prose h1,
+.gb-prose h2,
+.gb-prose h3,
+.gb-prose h4 {
+  color: var(--ink-0);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 1.4em 0 0.5em;
+  line-height: 1.25;
+}
+.gb-prose h1 { font-size: 22px; margin-top: 0; }
+.gb-prose h2 { font-size: 18px; }
+.gb-prose h3 { font-size: 15px; }
+.gb-prose h4 { font-size: 13px; color: var(--ink-1); }
+.gb-prose p { margin: 0 0 0.9em; color: var(--ink-0); }
+.gb-prose ul,
+.gb-prose ol { margin: 0 0 0.9em 1.2em; padding: 0; }
+/* Tailwind preflight sets `list-style: none` on ul/ol — restore markers. */
+.gb-prose ul { list-style: disc outside; }
+.gb-prose ol { list-style: decimal outside; }
+.gb-prose li::marker { color: var(--ink-2); }
+/* TipTap task lists carry their own checkboxes — no bullets. */
+.gb-prose ul[data-type='taskList'] { list-style: none; margin-left: 0.2em; }
+.gb-prose ul[data-type='taskList'] li { display: flex; gap: 6px; }
+.gb-prose li { margin: 0.2em 0; }
+.gb-prose code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  background: var(--vellum);
+  border: 1px solid var(--hairline);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 12px;
+  color: var(--ink-0);
+}
+.gb-prose pre {
+  background: var(--vellum);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  margin: 0 0 1em;
+}
+.gb-prose pre code { background: transparent; border: 0; padding: 0; font-size: 12px; }
+.gb-prose blockquote {
+  border-left: 2px solid var(--neon);
+  margin: 0 0 1em;
+  padding: 0.2em 1em;
+  color: var(--ink-1);
+  font-style: italic;
+}
+.gb-prose hr { border: 0; border-top: 1px solid var(--hairline); margin: 1.5em 0; }
+.gb-prose a { color: var(--neon-ink); text-decoration: underline; text-underline-offset: 2px; }
+.gb-extract-callout {
+  border-left: 2px solid var(--neon);
+  background: var(--neon-mist);
+  border-radius: 0 6px 6px 0;
+  padding: 7px 12px;
+  margin: 8px 0;
+}
+.gb-extract-callout > p:first-child { color: var(--neon); font-weight: 600; }
+.gb-prose table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0 0 1em;
+  font-size: 12px;
+}
+.gb-prose th,
+.gb-prose td { border: 1px solid var(--hairline); padding: 6px 10px; text-align: left; }
+.gb-prose th { background: var(--vellum); font-weight: 600; color: var(--ink-0); }
+.gb-prose em { color: var(--ink-1); }
+.gb-prose strong { color: var(--ink-0); }
+.gb-jot-img { max-width: 100%; border-radius: 8px; border: 1px solid var(--hairline-2); margin: 6px 0; }

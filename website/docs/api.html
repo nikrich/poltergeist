@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>api &amp; cli — poltergeist docs</title>
+  <meta name="description" content="Local HTTP API on loopback plus the poltergeist command-line interface for scripting and automation.">
+  <link rel="icon" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+
+<nav class="nav" id="nav">
+  <div class="nav__inner">
+    <a href="../" class="nav__brand" aria-label="poltergeist home">
+      <svg viewBox="0 0 100 110" width="26" height="29" aria-hidden="true">
+        <path d="M 50 6 C 24 6, 10 24, 10 50 L 10 94 Q 17 102, 24 95 Q 31 88, 38 95 Q 44 102, 50 95 Q 56 88, 62 95 Q 69 102, 76 95 Q 83 88, 90 94 L 90 50 C 90 24, 76 6, 50 6 Z" fill="#C5FF3D"/>
+        <circle cx="38" cy="48" r="3.2" fill="#0E0F12"/>
+        <circle cx="62" cy="48" r="3.2" fill="#0E0F12"/>
+        <line x1="38" y1="48" x2="62" y2="48" stroke="#0E0F12" stroke-width="1.2" stroke-opacity="0.5"/>
+      </svg>
+      <span class="nav__wordmark">poltergeist</span>
+    </a>
+    <div class="nav__links">
+      <a href="../#how">how it works</a>
+      <a href="../#connectors">connectors</a>
+      <a href="../#pricing">pricing</a>
+      <a href="./" style="color: var(--ink-0);">docs</a>
+    </div>
+    <div class="nav__cta">
+      <a class="btn btn--ghost btn--small nav__github" href="https://github.com/nikrich/poltergeist" target="_blank" rel="noopener noreferrer" aria-label="github">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+      </a>
+      <a class="btn btn--primary btn--small" href="https://github.com/nikrich/poltergeist/releases/latest" target="_blank" rel="noopener noreferrer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        download
+      </a>
+    </div>
+  </div>
+</nav>
+
+<div class="docs">
+  <aside class="sidebar">
+    <div class="sidebar__group">
+      <div class="sidebar__head">getting started</div>
+      <ul class="sidebar__list">
+        <li><a class="sidebar__link" href="./">overview</a></li>
+        <li><a class="sidebar__link" href="quickstart.html">quickstart</a></li>
+      </ul>
+    </div>
+    <div class="sidebar__group">
+      <div class="sidebar__head">guides</div>
+      <ul class="sidebar__list">
+        <li><a class="sidebar__link" href="connectors.html">connectors</a></li>
+        <li><a class="sidebar__link" href="query.html">query syntax</a></li>
+        <li><a class="sidebar__link" href="vault.html">vault structure</a></li>
+      </ul>
+    </div>
+    <div class="sidebar__group">
+      <div class="sidebar__head">reference</div>
+      <ul class="sidebar__list">
+        <li><a class="sidebar__link sidebar__link--active" href="api.html">api &amp; cli</a></li>
+        <li><a class="sidebar__link" href="self-host.html">self-host</a></li>
+        <li><a class="sidebar__link" href="privacy.html">privacy &amp; security</a></li>
+      </ul>
+    </div>
+  </aside>
+
+  <article class="article">
+    <div class="article__crumb">
+      <a href="../">poltergeist</a><span class="sep">/</span><a href="./">docs</a><span class="sep">/</span><span>api &amp; cli</span>
+    </div>
+
+    <h1>api &amp; cli</h1>
+    <p class="article__lede">
+      poltergeist runs a small http server on loopback so the plugin (and any
+      scripts you write) can talk to the indexer. the same operations are
+      exposed through the <code>poltergeist</code> command-line tool. nothing here
+      is exposed to the network — there's no auth because there's no listening
+      socket beyond <code>127.0.0.1</code>.
+    </p>
+
+    <h2 id="http">http api</h2>
+
+    <p>default base: <code>http://127.0.0.1:7349</code>. port is configurable via <code>POLTERGEIST_PORT</code>. content type is <code>application/json</code> everywhere.</p>
+
+    <div class="callout callout--note">
+      <span class="callout__label">note</span>
+      <p>the server only binds to <code>127.0.0.1</code> and refuses to start on any other interface. there is no <code>--bind 0.0.0.0</code> flag. if you need a remote api, run poltergeist through an ssh tunnel.</p>
+    </div>
+
+    <h3 id="search">GET /v1/search</h3>
+    <p>lexical + semantic search. returns ranked results without synthesis.</p>
+    <pre><code><span class="c-fn">GET</span> /v1/search?q=q3+launch&amp;from=marie&amp;limit=10
+
+<span class="c-com"># →</span>
+{
+  <span class="c-key">"hits"</span>: [
+    {
+      <span class="c-key">"id"</span>: <span class="c-str">"slack/T01/C0X/p1714145600.000"</span>,
+      <span class="c-key">"source"</span>: <span class="c-str">"slack"</span>,
+      <span class="c-key">"title"</span>: <span class="c-str">"#launch · marie"</span>,
+      <span class="c-key">"snippet"</span>: <span class="c-str">"locking the date. team agreed: jun 11."</span>,
+      <span class="c-key">"occurred_at"</span>: <span class="c-str">"2026-04-26T15:23:11Z"</span>,
+      <span class="c-key">"vault_path"</span>: <span class="c-str">"threads/launch/2026-04-26.md"</span>,
+      <span class="c-key">"score"</span>: 0.84
+    }
+  ],
+  <span class="c-key">"took_ms"</span>: 142
+}</code></pre>
+
+    <p>parameters:</p>
+    <table>
+      <thead><tr><th>name</th><th>notes</th></tr></thead>
+      <tbody>
+        <tr><td>q</td><td>required. the query text. operators allowed.</td></tr>
+        <tr><td>from</td><td>shortcut for <code>?q=...+from:name</code>.</td></tr>
+        <tr><td>source</td><td>restrict to one connector.</td></tr>
+        <tr><td>before, after</td><td>iso date or relative shortcut (e.g. <code>1w</code>).</td></tr>
+        <tr><td>limit</td><td>default 20, max 200.</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="ask">POST /v1/ask</h3>
+    <p>synthesised answer with citations. equivalent to a <code>!</code>-prefixed query in the sidebar.</p>
+    <pre><code><span class="c-fn">POST</span> /v1/ask
+<span class="c-key">Content-Type:</span> application/json
+
+{
+  <span class="c-key">"query"</span>: <span class="c-str">"what did we decide about pricing in march"</span>,
+  <span class="c-key">"limit"</span>: 5
+}
+
+<span class="c-com"># streamed response (sse)</span>
+event: token
+data: {"text": "On 2026-03-14, "}
+
+event: citation
+data: {"n": 1, "id": "slack/.../p1710...", "vault_path": "threads/pricing/..."}
+
+event: done
+data: {"took_ms": 1820}</code></pre>
+
+    <h3 id="items">GET /v1/items/:id</h3>
+    <p>fetch the canonical record for one item, including the rendered markdown.</p>
+
+    <h3 id="connectors-http">GET /v1/connectors</h3>
+    <p>list connectors with status, last cursor, and per-source counts.</p>
+
+    <h3 id="reindex">POST /v1/reindex</h3>
+    <p>kick a manual reindex. body accepts <code>{ "source": "slack" }</code> to scope; omitting reindexes everything. returns a job id you can poll at <code>/v1/jobs/:id</code>.</p>
+
+    <h2 id="cli">cli reference</h2>
+    <p>installed as <code>poltergeist</code> in your <code>$PATH</code> on macos and linux; <code>poltergeist.exe</code> on windows. all commands accept <code>--json</code> for machine-readable output.</p>
+
+    <table>
+      <thead><tr><th>command</th><th>does</th></tr></thead>
+      <tbody>
+        <tr><td>poltergeist status</td><td>connectors, queue depth, vault size, indexer health.</td></tr>
+        <tr><td>poltergeist search "&lt;q&gt;"</td><td>same as <code>/v1/search</code>.</td></tr>
+        <tr><td>poltergeist ask "&lt;q&gt;"</td><td>same as <code>/v1/ask</code>, prints synthesised answer to stdout.</td></tr>
+        <tr><td>poltergeist connector list</td><td>list connectors, last sync, item counts.</td></tr>
+        <tr><td>poltergeist connector disconnect &lt;name&gt;</td><td>remove token; keep notes.</td></tr>
+        <tr><td>poltergeist connector purge &lt;name&gt; [--dry-run]</td><td>remove token + every note written by that connector.</td></tr>
+        <tr><td>poltergeist reindex [--source=&lt;name&gt;]</td><td>force a re-scan.</td></tr>
+        <tr><td>poltergeist doctor</td><td>run health checks. prints a single <code>ok</code> or a list of issues.</td></tr>
+        <tr><td>poltergeist logs [--follow]</td><td>tail the indexer log.</td></tr>
+        <tr><td>poltergeist export &lt;path&gt;</td><td>tar.gz the vault + <code>.poltergeist/</code> for backup.</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="examples">examples</h3>
+    <pre><code><span class="c-com"># quick sanity check after install</span>
+<span class="c-fn">poltergeist</span> doctor
+
+<span class="c-com"># pipe into jq</span>
+<span class="c-fn">poltergeist</span> search <span class="c-str">"deploy"</span> <span class="c-flag">--source=</span>slack <span class="c-flag">--limit=</span>50 <span class="c-flag">--json</span> \
+  | jq <span class="c-str">'.hits[] | {date: .occurred_at, who: .author, title: .title}'</span>
+
+<span class="c-com"># nightly backup to time machine drive</span>
+<span class="c-fn">poltergeist</span> export /Volumes/Backup/poltergeist-$(<span class="c-fn">date</span> +%F).tar.gz</code></pre>
+
+    <h2 id="hooks">hooks &amp; scheduled queries</h2>
+    <p>hooks let you run a shell command whenever something happens in poltergeist. configure them in <code>vault/.poltergeist/hooks.yaml</code>:</p>
+
+    <pre><code><span class="c-key">hooks:</span>
+  <span class="c-com"># every monday 09:00 local, run a saved query and append to inbox</span>
+  - <span class="c-key">on:</span> schedule
+    <span class="c-key">at:</span> <span class="c-str">"0 9 * * mon"</span>
+    <span class="c-key">run:</span> poltergeist ask <span class="c-str">"what did i miss last week"</span> &gt;&gt; inbox/monday.md
+
+  <span class="c-com"># whenever a github review is captured from eli, ping me</span>
+  - <span class="c-key">on:</span> item.captured
+    <span class="c-key">when:</span> <span class="c-str">"source == 'github' and type == 'review' and author == 'eli'"</span>
+    <span class="c-key">run:</span> osascript -e <span class="c-str">'display notification "eli reviewed your pr"'</span>
+
+  <span class="c-com"># at the end of every calendar meeting, summarise</span>
+  - <span class="c-key">on:</span> meeting.ended
+    <span class="c-key">run:</span> poltergeist ask <span class="c-str">"summarise {meeting.title}"</span> &gt; meetings/{meeting.slug}.md</code></pre>
+
+    <p>available events: <code>item.captured</code>, <code>connector.connected</code>, <code>connector.disconnected</code>, <code>meeting.ended</code>, <code>query.run</code>, plus the cron-style <code>schedule</code>.</p>
+
+    <div class="callout callout--tip">
+      <span class="callout__label">tip</span>
+      <p>placeholders (<code>{meeting.title}</code>, <code>{item.author}</code>, etc.) are shell-escaped automatically — you don't need to quote them.</p>
+    </div>
+
+    <h2 id="webhooks">outgoing webhooks</h2>
+    <p>poltergeist can post a json payload to a url on the same events. set them up under <strong>settings → poltergeist → webhooks</strong>. the payload signature is in the <code>x-poltergeist-signature</code> header (hmac-sha256 over the body, key from settings).</p>
+
+    <div class="page-nav">
+      <a class="page-nav__link" href="vault.html">
+        <div class="page-nav__dir">← previous</div>
+        <div class="page-nav__title">vault structure</div>
+      </a>
+      <a class="page-nav__link page-nav__link--next" href="self-host.html">
+        <div class="page-nav__dir">next →</div>
+        <div class="page-nav__title">self-host</div>
+      </a>
+    </div>
+  </article>
+
+  <aside class="toc">
+    <div class="toc__head">on this page</div>
+    <ul class="toc__list">
+      <li><a href="#http">http api</a></li>
+      <li><a href="#search" class="indent">/v1/search</a></li>
+      <li><a href="#ask" class="indent">/v1/ask</a></li>
+      <li><a href="#items" class="indent">/v1/items/:id</a></li>
+      <li><a href="#reindex" class="indent">/v1/reindex</a></li>
+      <li><a href="#cli">cli reference</a></li>
+      <li><a href="#examples" class="indent">examples</a></li>
+      <li><a href="#hooks">hooks</a></li>
+      <li><a href="#webhooks">webhooks</a></li>
+    </ul>
+  </aside>
+</div>
+
+<script src="../script.js"></script>
+</body>
+</html>

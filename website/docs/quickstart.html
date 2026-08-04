@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>quickstart — poltergeist docs</title>
+  <meta name="description" content="Install poltergeist, connect your first app, run your first query — in five minutes.">
+  <link rel="icon" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+
+<nav class="nav" id="nav">
+  <div class="nav__inner">
+    <a href="../" class="nav__brand" aria-label="poltergeist home">
+      <svg viewBox="0 0 100 110" width="26" height="29" aria-hidden="true">
+        <path d="M 50 6 C 24 6, 10 24, 10 50 L 10 94 Q 17 102, 24 95 Q 31 88, 38 95 Q 44 102, 50 95 Q 56 88, 62 95 Q 69 102, 76 95 Q 83 88, 90 94 L 90 50 C 90 24, 76 6, 50 6 Z" fill="#C5FF3D"/>
+        <circle cx="38" cy="48" r="3.2" fill="#0E0F12"/>
+        <circle cx="62" cy="48" r="3.2" fill="#0E0F12"/>
+        <line x1="38" y1="48" x2="62" y2="48" stroke="#0E0F12" stroke-width="1.2" stroke-opacity="0.5"/>
+      </svg>
+      <span class="nav__wordmark">poltergeist</span>
+    </a>
+    <div class="nav__links">
+      <a href="../#how">how it works</a>
+      <a href="../#connectors">connectors</a>
+      <a href="../#pricing">pricing</a>
+      <a href="./" style="color: var(--ink-0);">docs</a>
+    </div>
+    <div class="nav__cta">
+      <a class="btn btn--ghost btn--small nav__github" href="https://github.com/nikrich/poltergeist" target="_blank" rel="noopener noreferrer" aria-label="github">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+      </a>
+      <a class="btn btn--primary btn--small" href="https://github.com/nikrich/poltergeist/releases/latest" target="_blank" rel="noopener noreferrer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        download
+      </a>
+    </div>
+  </div>
+</nav>
+
+<div class="docs">
+  <aside class="sidebar">
+    <div class="sidebar__group">
+      <div class="sidebar__head">getting started</div>
+      <ul class="sidebar__list">
+        <li><a class="sidebar__link" href="./">overview</a></li>
+        <li><a class="sidebar__link sidebar__link--active" href="quickstart.html">quickstart</a></li>
+      </ul>
+    </div>
+    <div class="sidebar__group">
+      <div class="sidebar__head">guides</div>
+      <ul class="sidebar__list">
+        <li><a class="sidebar__link" href="connectors.html">connectors</a></li>
+        <li><a class="sidebar__link" href="query.html">query syntax</a></li>
+        <li><a class="sidebar__link" href="vault.html">vault structure</a></li>
+      </ul>
+    </div>
+    <div class="sidebar__group">
+      <div class="sidebar__head">reference</div>
+      <ul class="sidebar__list">
+        <li><a class="sidebar__link" href="api.html">api &amp; cli</a></li>
+        <li><a class="sidebar__link" href="self-host.html">self-host</a></li>
+        <li><a class="sidebar__link" href="privacy.html">privacy &amp; security</a></li>
+      </ul>
+    </div>
+  </aside>
+
+  <article class="article">
+    <div class="article__crumb">
+      <a href="../">poltergeist</a><span class="sep">/</span><a href="./">docs</a><span class="sep">/</span><span>quickstart</span>
+    </div>
+
+    <h1>quickstart</h1>
+    <p class="article__lede">
+      get from zero to a working poltergeist in five minutes. you'll need
+      obsidian, the plugin, and one app to connect — gmail is the easiest first
+      target. by the end you'll have your first markdown note written by the
+      ghost.
+    </p>
+
+    <h2 id="prerequisites">prerequisites</h2>
+    <ul>
+      <li><strong>obsidian 1.5 or newer</strong> — free at <a href="https://obsidian.md" target="_blank" rel="noopener noreferrer">obsidian.md</a>.</li>
+      <li><strong>a vault</strong> — either a fresh one or an existing one you don't mind poltergeist writing into.</li>
+      <li><strong>macos 12+ on apple silicon</strong> for now. windows and linux builds are in flight — track them on the <a href="https://github.com/nikrich/poltergeist/releases" target="_blank" rel="noopener noreferrer">releases page</a>.</li>
+      <li><strong>about 200 mb of free disk</strong> — the indexer is small but the local model is ~1.8 gb on first run.</li>
+    </ul>
+
+    <h2 id="install">1. install the plugin</h2>
+    <p>download the latest release from <a href="https://github.com/nikrich/poltergeist/releases/latest" target="_blank" rel="noopener noreferrer">github</a> and pick the right archive for your os. unzip it and drop the <code>poltergeist</code> folder into your vault's plugins directory:</p>
+
+    <pre><code><span class="c-com"># macos / linux</span>
+&lt;your-vault&gt;/.obsidian/plugins/poltergeist/
+
+<span class="c-com"># windows</span>
+&lt;your-vault&gt;\.obsidian\plugins\poltergeist\</code></pre>
+
+    <p>open obsidian → <strong>settings → community plugins</strong>, enable <em>poltergeist</em>, and the ghost icon appears in the left ribbon. clicking it opens the poltergeist sidebar.</p>
+
+    <div class="callout callout--note">
+      <span class="callout__label">note</span>
+      <p>the first time you enable the plugin it downloads the local extraction model (~1.8 gb). this happens once and is cached in <code>~/.poltergeist/</code>. afterwards the indexer runs entirely offline.</p>
+    </div>
+
+    <h2 id="connect">2. connect your first app</h2>
+    <p>in the poltergeist sidebar, click <strong>connect an app</strong> and pick <em>gmail</em>. obsidian opens your default browser, sends you through google's standard oauth screen, and bounces back to obsidian when you approve. the token lands in your os keychain — never in the vault, never on disk in plaintext.</p>
+
+    <p>once authorised you'll see a small status line:</p>
+
+    <pre><code>gmail · <span class="c-key">connected</span> · backfilling 41,200 threads · 14% (~3 min)</code></pre>
+
+    <p>the first backfill walks the full mailbox; subsequent fetches are incremental. you can keep working — poltergeist is rate-limited and pauses on battery.</p>
+
+    <div class="callout callout--tip">
+      <span class="callout__label">tip</span>
+      <p>connect <em>before</em> you go to lunch. the model runs over messages as they arrive, so the longer it has been running by your first query, the more it has indexed.</p>
+    </div>
+
+    <h2 id="query">3. ask your first question</h2>
+    <p>once the initial backfill is past about 1%, you can start querying. open the command palette (<kbd>cmd</kbd>+<kbd>p</kbd> / <kbd>ctrl</kbd>+<kbd>p</kbd>) and run <strong>poltergeist: ask the archive</strong>, or hit the keyboard shortcut <kbd>cmd</kbd>+<kbd>shift</kbd>+<kbd>g</kbd>.</p>
+
+    <p>type something a person might actually say:</p>
+
+    <pre><code><span class="c-key">?</span> what did marie say about the q3 launch?</code></pre>
+
+    <p>you'll get a ranked list of matches from your connected sources. clicking any result either opens the rendered note in your vault or jumps to the source app — your choice in <strong>settings → poltergeist → click behaviour</strong>.</p>
+
+    <h2 id="pipe">4. pipe a result into a note</h2>
+    <p>at the bottom of any query result, <strong>pipe to note</strong> dumps the matches into <code>vault/inbox/&lt;today&gt;.md</code> as a clean markdown summary:</p>
+
+    <pre><code><span class="c-com">---
+created: 2026-05-08
+query: "what did marie say about the q3 launch?"
+sources: [gmail, slack, notion]
+---</span>
+
+## summary
+marie locked the q3 launch for jun 11; copy was identified as the main risk
+in <span class="c-flag">[[notion/q3-launch-plan-v3]]</span>.
+
+## sources
+- <span class="c-flag">[[gmail/re-q3-launch-marketing-scope]]</span> · apr 24
+- <span class="c-flag">[[slack/launch/2026-04-26]]</span> · apr 26
+- <span class="c-flag">[[notion/q3-launch-plan-v3]]</span> · apr 28</code></pre>
+
+    <p>obsidian's normal backlink and graph machinery picks it up from there — you'll see the new note appear in the canvas and any wiki-links pointed at it.</p>
+
+    <h2 id="next">5. where to go next</h2>
+    <ul>
+      <li><a href="connectors.html">connect more apps</a> — slack, notion, linear, github, calendar, drive.</li>
+      <li><a href="query.html">query syntax</a> — narrow with <code>from:</code>, <code>after:</code>, <code>in:</code>, and pipe operators.</li>
+      <li><a href="vault.html">vault layout</a> — how poltergeist organises folders and frontmatter.</li>
+      <li><a href="privacy.html">privacy &amp; security</a> — what stays on your machine and what doesn't.</li>
+    </ul>
+
+    <div class="page-nav">
+      <a class="page-nav__link" href="./">
+        <div class="page-nav__dir">← previous</div>
+        <div class="page-nav__title">overview</div>
+      </a>
+      <a class="page-nav__link page-nav__link--next" href="connectors.html">
+        <div class="page-nav__dir">next →</div>
+        <div class="page-nav__title">connectors</div>
+      </a>
+    </div>
+  </article>
+
+  <aside class="toc">
+    <div class="toc__head">on this page</div>
+    <ul class="toc__list">
+      <li><a href="#prerequisites">prerequisites</a></li>
+      <li><a href="#install">1. install</a></li>
+      <li><a href="#connect">2. connect an app</a></li>
+      <li><a href="#query">3. first query</a></li>
+      <li><a href="#pipe">4. pipe to note</a></li>
+      <li><a href="#next">5. next steps</a></li>
+    </ul>
+  </aside>
+</div>
+
+<script src="../script.js"></script>
+</body>
+</html>

@@ -1,0 +1,85 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+
+import * as client from '../lib/api/client';
+import { ProjectsSettings } from '../screens/settings';
+import type { Project } from '../../shared/api-types';
+
+const projects: Project[] = [
+  {
+    id: 'consulting/poltergeist',
+    context: 'consulting',
+    slug: 'poltergeist',
+    name: 'Poltergeist',
+    description: 'second brain',
+    archived: false,
+    created_at: 1,
+  },
+];
+
+vi.mock('../lib/api/client', () => ({
+  get: vi.fn(),
+  post: vi.fn(),
+  patch: vi.fn(),
+  del: vi.fn(),
+}));
+
+function renderSection() {
+  vi.mocked(client.get).mockImplementation(((path: string) =>
+    path === '/v1/vault/contexts'
+      ? Promise.resolve({ contexts: ['work', 'consulting', 'side-project', 'personal'] })
+      : Promise.resolve(projects)) as never);
+  vi.mocked(client.post).mockResolvedValue(projects[0] as never);
+  vi.mocked(client.patch).mockResolvedValue(projects[0] as never);
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={qc}>
+      <ProjectsSettings />
+    </QueryClientProvider>,
+  );
+}
+
+describe('ProjectsSettings', () => {
+  it('lists projects grouped under their context', async () => {
+    renderSection();
+    expect(await screen.findByText('Poltergeist')).toBeTruthy();
+    // Eyebrow context heading exists (may also appear in select options — use getAllByText)
+    expect(screen.getAllByText('consulting').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('second brain')).toBeTruthy();
+  });
+
+  it('creates a project from the form', async () => {
+    renderSection();
+    await screen.findByText('Poltergeist');
+    fireEvent.change(screen.getByPlaceholderText(/project name/i), {
+      target: { value: 'Hive IDE' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /add project/i }));
+    await waitFor(() =>
+      expect(vi.mocked(client.post)).toHaveBeenCalledWith('/v1/projects', {
+        context: expect.any(String),
+        name: 'Hive IDE',
+        description: '',
+      }),
+    );
+  });
+
+  it('offers the vault-configured contexts, not a hardcoded list', async () => {
+    vi.mocked(client.get).mockImplementation(((path: string) =>
+      path === '/v1/vault/contexts'
+        ? Promise.resolve({ contexts: ['work', 'home'] })
+        : Promise.resolve([])) as never);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <ProjectsSettings />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(screen.getByRole('option', { name: 'work' })).toBeTruthy());
+    expect(screen.getByRole('option', { name: 'home' })).toBeTruthy();
+    // Only the endpoint-served list renders — no baked-in defaults sneak in.
+    expect(screen.getAllByRole('option')).toHaveLength(2);
+    expect(screen.queryByRole('option', { name: 'personal' })).toBeNull();
+  });
+});

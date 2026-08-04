@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  GitHub fetcher. Polls every 2 hours per SPEC §10.2.
+
+  This file is a TEMPLATE. Before loading, replace:
+    __REPO_ROOT__   absolute path to your local clone of ghost-brain
+    __VAULT_PATH__  absolute path to your vault (default ~/ghostbrain/vault)
+
+  See com.ghostbrain.worker.plist for the sed snippet.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ghostbrain.github</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__REPO_ROOT__/.venv/bin/python</string>
+        <string>-m</string>
+        <string>ghostbrain.connectors.github</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__REPO_ROOT__</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <!-- Every 2 hours. SPEC §10.2. -->
+    <key>StartInterval</key>
+    <integer>7200</integer>
+
+    <key>StandardOutPath</key>
+    <string>__REPO_ROOT__/logs/github.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>__REPO_ROOT__/logs/github.err</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>VAULT_PATH</key>
+        <string>__VAULT_PATH__</string>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

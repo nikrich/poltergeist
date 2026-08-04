@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>connectors — poltergeist docs</title>
+  <meta name="description" content="Set up gmail, slack, notion, linear, github, calendar, and drive — auth flows, scopes, and what each connector pulls.">
+  <link rel="icon" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+
+<nav class="nav" id="nav">
+  <div class="nav__inner">
+    <a href="../" class="nav__brand" aria-label="poltergeist home">
+      <svg viewBox="0 0 100 110" width="26" height="29" aria-hidden="true">
+        <path d="M 50 6 C 24 6, 10 24, 10 50 L 10 94 Q 17 102, 24 95 Q 31 88, 38 95 Q 44 102, 50 95 Q 56 88, 62 95 Q 69 102, 76 95 Q 83 88, 90 94 L 90 50 C 90 24, 76 6, 50 6 Z" fill="#C5FF3D"/>
+        <circle cx="38" cy="48" r="3.2" fill="#0E0F12"/>
+        <circle cx="62" cy="48" r="3.2" fill="#0E0F12"/>
+        <line x1="38" y1="48" x2="62" y2="48" stroke="#0E0F12" stroke-width="1.2" stroke-opacity="0.5"/>
+      </svg>
+      <span class="nav__wordmark">poltergeist</span>
+    </a>
+    <div class="nav__links">
+      <a href="../#how">how it works</a>
+      <a href="../#connectors">connectors</a>
+      <a href="../#pricing">pricing</a>
+      <a href="./" style="color: var(--ink-0);">docs</a>
+    </div>
+    <div class="nav__cta">
+      <a class="btn btn--ghost btn--small nav__github" href="https://github.com/nikrich/poltergeist" target="_blank" rel="noopener noreferrer" aria-label="github">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+      </a>
+      <a class="btn btn--primary btn--small" href="https://github.com/nikrich/poltergeist/releases/latest" target="_blank" rel="noopener noreferrer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        download
+      </a>
+    </div>
+  </div>
+</nav>
+
+<div class="docs">
+  <aside class="sidebar">
+    <div class="sidebar__group">
+      <div class="sidebar__head">getting started</div>
+      <ul class="sidebar__list">
+        <li><a class="sidebar__link" href="./">overview</a></li>
+        <li><a class="sidebar__link" href="quickstart.html">quickstart</a></li>
+      </ul>
+    </div>
+    <div class="sidebar__group">
+      <div class="sidebar__head">guides</div>
+      <ul class="sidebar__list">
+        <li><a class="sidebar__link sidebar__link--active" href="connectors.html">connectors</a></li>
+        <li><a class="sidebar__link" href="query.html">query syntax</a></li>
+        <li><a class="sidebar__link" href="vault.html">vault structure</a></li>
+      </ul>
+    </div>
+    <div class="sidebar__group">
+      <div class="sidebar__head">reference</div>
+      <ul class="sidebar__list">
+        <li><a class="sidebar__link" href="api.html">api &amp; cli</a></li>
+        <li><a class="sidebar__link" href="self-host.html">self-host</a></li>
+        <li><a class="sidebar__link" href="privacy.html">privacy &amp; security</a></li>
+      </ul>
+    </div>
+  </aside>
+
+  <article class="article">
+    <div class="article__crumb">
+      <a href="../">poltergeist</a><span class="sep">/</span><a href="./">docs</a><span class="sep">/</span><span>connectors</span>
+    </div>
+
+    <h1>connectors</h1>
+    <p class="article__lede">
+      a connector is a small daemon that talks to one app, pulls items in batches,
+      and hands them to the local indexer. each connector runs in its own
+      sandboxed process, uses an os-keychain-stored token, and can be ripped
+      out without touching the other six.
+    </p>
+
+    <h2 id="common">things that apply to every connector</h2>
+    <ul>
+      <li><strong>tokens live in your keychain.</strong> macos keychain, windows credential manager, gnome-keyring or kwallet on linux. poltergeist never writes a token to a file in the vault.</li>
+      <li><strong>scopes are the minimum we can get away with.</strong> if a provider offers a read-only scope, we use it. you'll see the exact list on the consent screen.</li>
+      <li><strong>backfill is rate-limited.</strong> first run walks the full history. typical mailbox finishes in 5–20 minutes; large slack workspaces can take hours. you don't need to babysit it.</li>
+      <li><strong>incremental from then on.</strong> each connector keeps a cursor and polls every 60 s.</li>
+      <li><strong>disconnect deletes the token.</strong> existing notes in your vault stay (they're yours). <a href="#purge">purge</a> removes them too.</li>
+    </ul>
+
+    <h2 id="gmail">gmail</h2>
+    <p>uses google oauth via the desktop flow. scopes requested:</p>
+    <pre><code>https://www.googleapis.com/auth/gmail.readonly
+https://www.googleapis.com/auth/gmail.metadata</code></pre>
+    <p>what's pulled: every thread you can read, including ones you're cc'd or bcc'd on. attachments are indexed by filename only — bodies of attachments aren't downloaded.</p>
+    <p>setup: in the sidebar, <strong>connect → gmail</strong>. a browser opens, you pick a google account, you approve. done. tokens refresh automatically.</p>
+
+    <div class="callout callout--note">
+      <span class="callout__label">note</span>
+      <p>workspace gmail accounts may need an admin to whitelist poltergeist's oauth client. the error message will tell you what to ask for.</p>
+    </div>
+
+    <h2 id="slack">slack</h2>
+    <p>uses slack's user-token oauth (not a bot install — poltergeist reads what <em>you</em> can read).</p>
+    <p>scopes: <code>channels:history</code>, <code>groups:history</code>, <code>im:history</code>, <code>mpim:history</code>, plus the matching <code>:read</code> scopes. poltergeist can index public channels you've joined, private channels you're a member of, dms, and group dms.</p>
+    <p>setup: <strong>connect → slack</strong>, pick a workspace, approve. you can connect multiple workspaces — each appears as a separate row in the sidebar.</p>
+
+    <div class="callout callout--warn">
+      <span class="callout__label">warning</span>
+      <p>some workspaces have <em>retention policies</em> that auto-delete messages older than 90 days. poltergeist will index whatever the api returns, but it will not resurrect messages that slack has already purged.</p>
+    </div>
+
+    <h2 id="notion">notion</h2>
+    <p>uses an <em>internal integration token</em>. you'll create one once at <a href="https://notion.so/my-integrations" target="_blank" rel="noopener noreferrer">notion.so/my-integrations</a>, then share the pages or workspaces you want poltergeist to see with the integration.</p>
+    <p>what's pulled: every page, every database row, comments, and the block tree. images and file blocks are indexed by caption + filename.</p>
+    <p>setup:</p>
+    <ol>
+      <li>create the integration on notion, copy the secret.</li>
+      <li>paste it into <strong>connect → notion → token</strong>.</li>
+      <li>open the notion pages or databases you want indexed, click <strong>···</strong> → <strong>add connections</strong> → poltergeist.</li>
+    </ol>
+
+    <h2 id="linear">linear</h2>
+    <p>linear gives out personal api keys; no oauth dance.</p>
+    <ol>
+      <li>open linear → <strong>settings → api → personal api keys</strong>.</li>
+      <li>create a key labelled "poltergeist" with read scopes.</li>
+      <li>paste into <strong>connect → linear → key</strong>.</li>
+    </ol>
+    <p>what's pulled: issues you can read, projects, cycles, comments, and issue history. attachments by url and title.</p>
+
+    <h2 id="github">github</h2>
+    <p>two auth modes. pick one:</p>
+    <ul>
+      <li><strong>github app install</strong> (recommended) — installs a small read-only app on the repos you choose. revocable in github settings, scoped per-repo.</li>
+      <li><strong>personal access token</strong> — a fine-grained token with <code>repo:read</code>, <code>issues:read</code>, and <code>pull-requests:read</code>. easier in cli, slightly more privilege than necessary.</li>
+    </ul>
+    <p>what's pulled: prs, issues, comments, mentions of you, and review threads. commits are indexed by message + author, not by patch contents.</p>
+
+    <h2 id="calendar">google calendar</h2>
+    <p>google oauth, same desktop flow as gmail. scope: <code>https://www.googleapis.com/auth/calendar.readonly</code>.</p>
+    <p>what's pulled: every event in your primary calendar plus any calendar you've subscribed to. attendees, descriptions, response statuses, and meeting links. recurring events are stored once with a rule, not exploded.</p>
+
+    <div class="callout callout--tip">
+      <span class="callout__label">tip</span>
+      <p>calendar pairs well with gmail — poltergeist can tell you what an attendee said in email both <em>before</em> and <em>after</em> the meeting, on one screen.</p>
+    </div>
+
+    <h2 id="drive">google drive</h2>
+    <p>google oauth. scope: <code>https://www.googleapis.com/auth/drive.metadata.readonly</code> by default; you can opt-in to <code>drive.readonly</code> in settings to index document contents.</p>
+    <p>what's pulled by default: file titles, owners, sharing changes, and folder structure. with <code>drive.readonly</code> enabled, also: doc text, sheet titles + cell summaries, slide titles + speaker notes.</p>
+
+    <h2 id="purge">disconnecting &amp; purging</h2>
+    <p>two different operations:</p>
+    <table>
+      <thead><tr><th>action</th><th>what happens</th></tr></thead>
+      <tbody>
+        <tr><td>disconnect</td><td>token deleted from keychain. no further fetches. existing notes stay in the vault.</td></tr>
+        <tr><td>purge</td><td>disconnect + delete every markdown file poltergeist ever wrote for that source. files in your vault you've moved or edited are skipped — your edits are sacred.</td></tr>
+      </tbody>
+    </table>
+
+    <pre><code><span class="c-com"># from the cli</span>
+<span class="c-fn">poltergeist</span> connector disconnect slack
+<span class="c-fn">poltergeist</span> connector purge slack <span class="c-flag">--dry-run</span></code></pre>
+
+    <p>both operations are also available from the sidebar under <strong>···</strong> on the connector row.</p>
+
+    <h2 id="missing">a connector i need isn't here</h2>
+    <p>open an issue on <a href="https://github.com/nikrich/poltergeist/issues" target="_blank" rel="noopener noreferrer">github</a> with the app name and what you'd want indexed. the connector interface is small (~150 lines of typescript) — pull requests welcome.</p>
+
+    <div class="page-nav">
+      <a class="page-nav__link" href="quickstart.html">
+        <div class="page-nav__dir">← previous</div>
+        <div class="page-nav__title">quickstart</div>
+      </a>
+      <a class="page-nav__link page-nav__link--next" href="query.html">
+        <div class="page-nav__dir">next →</div>
+        <div class="page-nav__title">query syntax</div>
+      </a>
+    </div>
+  </article>
+
+  <aside class="toc">
+    <div class="toc__head">on this page</div>
+    <ul class="toc__list">
+      <li><a href="#common">common rules</a></li>
+      <li><a href="#gmail">gmail</a></li>
+      <li><a href="#slack">slack</a></li>
+      <li><a href="#notion">notion</a></li>
+      <li><a href="#linear">linear</a></li>
+      <li><a href="#github">github</a></li>
+      <li><a href="#calendar">calendar</a></li>
+      <li><a href="#drive">drive</a></li>
+      <li><a href="#purge">disconnect &amp; purge</a></li>
+      <li><a href="#missing">missing connector?</a></li>
+    </ul>
+  </aside>
+</div>
+
+<script src="../script.js"></script>
+</body>
+</html>

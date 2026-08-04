@@ -1,0 +1,431 @@
+"""Streaming agentic chat turns via the `claude` CLI.
+
+Unlike ``llm/client.py`` (request/response, used by the worker/digest paths),
+this module streams: it spawns ``claude -p --output-format stream-json`` and
+yields SSE-ready event dicts as lines arrive. Sessions persist CLI-side so
+``--resume <session_id>`` gives multi-turn memory for free.
+"""
+from __future__ import annotations
+
+import dataclasses
+import json
+import logging
+import os
+import shutil
+import signal
+import subprocess
+import sys
+import threading
+from pathlib import Path
+from typing import Callable
+
+from ghostbrain.llm import mcp_servers
+
+from ghostbrain.llm.client import _find_claude_binary
+
+log = logging.getLogger("ghostbrain.llm.agent")
+
+
+@dataclasses.dataclass
+class _RunningTurn:
+    cancelled: threading.Event
+    kill: Callable[[], None]
+
+
+_running_lock = threading.Lock()
+_running: dict[str, _RunningTurn] = {}
+
+
+def cancel_turn(key: str) -> bool:
+    """Kill the in-flight turn for ``key`` (if any). Returns True if one was
+    running. The killed run yields a terminal 'stopped' error event, which
+    persists any partial text as interrupted and releases the busy guard."""
+    with _running_lock:
+        entry = _running.get(key)
+    if entry is None:
+        return False
+    entry.cancelled.set()
+    entry.kill()
+    return True
+
+
+# tool name → (short name, human summary template over the tool input)
+TOOL_SUMMARIES: dict[str, tuple[str, str]] = {
+    "mcp__poltergeist__poltergeist_search": ("search", "searched vault: {query}"),
+    "mcp__poltergeist__poltergeist_get_note": ("get_note", "read note: {path}"),
+    "mcp__poltergeist__poltergeist_ask": ("ask", "asked the archive: {question}"),
+    "mcp__poltergeist__poltergeist_write_doc": ("write_doc", "wrote doc: {title}"),
+    # Built-in Claude Code tools (bare names, not mcp__…). Listing them here both
+    # allowlists them (ALLOWED_TOOLS is the join of these keys) and gives their
+    # chips a friendly summary. Web only — no Bash/Read/Write — so the agent can
+    # pull public info without shell/filesystem reach.
+    "WebFetch": ("web", "fetched {url}"),
+    "WebSearch": ("web", "searched the web: {query}"),
+}
+
+
+def _tool_event(block: dict) -> dict:
+    name = block.get("name", "")
+    short, template = TOOL_SUMMARIES.get(name, (name, name))
+    try:
+        summary = template.format(**(block.get("input") or {}))
+    except Exception:
+        summary = short
+    return {"type": "tool", "name": short, "summary": summary}
+
+
+def parse_stream_line(line: str) -> list[dict]:
+    """One stdout line from claude stream-json → zero or more event dicts.
+
+    Event vocabulary (shared with the renderer, see shared/api-types.ts):
+      {"type": "session", "session_id"}            — CLI session started
+      {"type": "delta", "text"}                    — streamed text token
+      {"type": "tool", "name", "summary"}          — tool call started
+      {"type": "done", "text", "session_id"}       — terminal success
+      {"type": "error", "message"}                 — terminal failure
+    """
+    line = line.strip()
+    if not line:
+        return []
+    try:
+        obj = json.loads(line)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(obj, dict):
+        return []
+    t = obj.get("type")
+
+    if t == "system" and obj.get("subtype") == "init":
+        sid = obj.get("session_id")
+        return [{"type": "session", "session_id": sid}] if sid else []
+
+    if t == "stream_event":
+        ev = obj.get("event") or {}
+        if ev.get("type") == "content_block_delta":
+            delta = ev.get("delta") or {}
+            if delta.get("type") == "text_delta" and delta.get("text"):
+                return [{"type": "delta", "text": delta["text"]}]
+        return []
+
+    if t == "assistant":
+        content = (obj.get("message") or {}).get("content") or []
+        return [
+            _tool_event(b)
+            for b in content
+            if isinstance(b, dict) and b.get("type") == "tool_use"
+        ]
+
+    if t == "result":
+        if obj.get("is_error") or obj.get("subtype") != "success":
+            msg = str(obj.get("result") or obj.get("subtype") or "unknown error")
+            return [{"type": "error", "message": msg}]
+        return [
+            {
+                "type": "done",
+                "text": str(obj.get("result") or ""),
+                "session_id": str(obj.get("session_id") or ""),
+            }
+        ]
+
+    return []
+
+
+DEFAULT_CHAT_MODEL = "sonnet"
+CHAT_TIMEOUT_S = 300
+# Chat turns can chain several MCP calls (each poltergeist_ask is itself an
+# LLM call sidecar-side), and user MCP servers with large toolsets (mempalace:
+# ~35 schemas) inflate every turn — a $1 cap died on a single tool call there.
+# Billing runs through the user's `claude` subscription, so this cap is only a
+# runaway-loop guard, not a cost control: keep it high.
+CHAT_BUDGET_USD = 10.00
+
+ALLOWED_TOOLS = ",".join(TOOL_SUMMARIES)
+
+CHAT_SYSTEM_PROMPT = """You are Poltergeist, the user's second brain. You live inside their \
+personal knowledge app and answer questions about their own work, notes, \
+meetings, and decisions using the vault tools available to you — and the web \
+(WebFetch/WebSearch) when they ask for public or external information.
+
+Rules:
+1. Use the tools to ground every answer: poltergeist_search to locate notes \
+(cheap), poltergeist_get_note to read one, poltergeist_ask for a synthesized \
+cited answer when the question is broad. When the question is time-anchored \
+("today", "yesterday", "this week"), pass poltergeist_search's days parameter \
+(today → days=1, this week → days=7) so old but similar notes don't win.
+2. Cite vault notes as Obsidian wikilinks containing the vault-relative path \
+exactly as the tools return it, e.g. [[20-contexts/acme/decision-x]] or \
+[[10-daily/2026-06-09|yesterday's daily]]. The app renders these as clickable \
+links — never invent paths.
+3. If the vault doesn't cover something, say so plainly. Do NOT invent facts \
+about the user's work.
+4. Answer in markdown. Lead with the answer; keep it concrete and specific, \
+using the user's own terminology.
+5. This is an ongoing conversation — you may rely on earlier turns without \
+re-fetching notes you already read.
+6. When the user asks you to write, draft, or create a document, produce a \
+COMPLETE, self-contained, styled HTML document (its own <style>; print-friendly \
+per-section layout when it suits the content) and call poltergeist_write_doc \
+with a short title and that HTML. Then tell the user the doc is ready and put \
+the tool's returned path on its own line as a wikilink, e.g. \
+[[20-contexts/generated-docs/….html]]. Do NOT paste the raw HTML into the chat.
+7. WebFetch and WebSearch ARE enabled and permitted for you in this session. \
+When the user asks you to fetch a URL or look something up online, just DO it \
+with WebFetch/WebSearch — never claim you lack permission and never refuse it as \
+"outside your role" (accessing the web IS part of your role here). Prefer the \
+vault tools for the user's own work; use the web for public/external facts, and \
+attribute web-sourced claims with their URL so they aren't confused with \
+vault-grounded answers."""
+
+
+def find_mcp_binary() -> list[str] | None:
+    """Return the argv that launches the Poltergeist MCP stdio server, or None.
+
+    Frozen (PyInstaller) builds re-use the bundled ``ghostbrain-api`` executable
+    via its ``mcp`` subcommand — shipping a second PyInstaller exe would duplicate
+    the whole (torch/transformers) ML bundle. ``sys.executable`` is that bundle
+    exe when frozen.
+
+    Dev builds use the ``ghostbrain-mcp`` console script next to the python
+    running the sidecar (same venv), falling back to PATH.
+    """
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "mcp"]
+    candidate = Path(sys.executable).parent / "ghostbrain-mcp"
+    if candidate.is_file():
+        return [str(candidate)]
+    found = shutil.which("ghostbrain-mcp")
+    return [found] if found else None
+
+
+def _user_server_config(server: dict) -> dict:
+    out: dict = {"command": server["command"]}
+    if server.get("args"):
+        out["args"] = list(server["args"])
+    if server.get("env"):
+        out["env"] = dict(server["env"])
+    return out
+
+
+def _user_allowed_tools(server: dict) -> list[str]:
+    tools = [t.strip() for t in server.get("tools", "").split(",") if t.strip()]
+    if not tools:
+        return [f"mcp__{server['name']}"]  # server-wide grant
+    return [f"mcp__{server['name']}__{t}" for t in tools]
+
+
+def build_chat_command(
+    binary: str,
+    prompt: str,
+    *,
+    model: str = DEFAULT_CHAT_MODEL,
+    session_id: str | None = None,
+    mcp_binary: str | list[str] | None = None,
+    system_prompt: str | None = None,
+    allowed_tools: str | None = None,
+    user_servers: list[dict] | None = None,
+) -> list[str]:
+    cmd = [
+        binary,
+        "--print",
+        "--output-format", "stream-json",
+        "--include-partial-messages",
+        "--verbose",  # required by claude for stream-json with --print
+        "--model", model,
+        "--system-prompt", system_prompt or CHAT_SYSTEM_PROMPT,
+        "--exclude-dynamic-system-prompt-sections",
+        "--max-budget-usd", f"{CHAT_BUDGET_USD:.4f}",
+    ]
+    # --strict-mcp-config + an explicit --mcp-config are UNCONDITIONAL: without
+    # them claude inherits the user's global ~/.claude.json MCP servers and
+    # runs them in --print mode with no allowlist, where every tool call hits a
+    # permission wall that has no interactive dialog to clear. Servers the user
+    # explicitly opted in (settings → mcp-servers.json) merge into the SAME
+    # pinned config and are allowlisted; the vault server is set last so a user
+    # server can never shadow it.
+    servers: dict[str, dict] = {
+        s["name"]: _user_server_config(s) for s in user_servers or []
+    }
+    grants = [
+        t
+        for s in user_servers or []
+        if s["name"] != "poltergeist"
+        for t in _user_allowed_tools(s)
+    ]
+    if mcp_binary:
+        # Accept either a bare path (dev console script) or a full argv list
+        # (frozen build: the api exe + its `mcp` subcommand).
+        argv = [mcp_binary] if isinstance(mcp_binary, str) else list(mcp_binary)
+        server: dict = {"command": argv[0]}
+        if len(argv) > 1:
+            server["args"] = argv[1:]
+        servers["poltergeist"] = server
+        grants = (allowed_tools or ALLOWED_TOOLS).split(",") + grants
+    cmd += [
+        "--mcp-config", json.dumps({"mcpServers": servers}),
+        "--strict-mcp-config",
+    ]
+    if grants:
+        cmd += ["--allowedTools", ",".join(grants)]
+    if session_id:
+        cmd += ["--resume", session_id]
+    # `--` terminates option parsing — without it a variadic flag like
+    # --allowedTools swallows the positional prompt (verified live).
+    cmd += ["--", prompt]
+    return cmd
+
+
+BINARY_MISSING_MESSAGE = (
+    "`claude` binary not found. Install Claude Code "
+    "(`npm i -g @anthropic-ai/claude-code`), or set `GHOSTBRAIN_CLAUDE_BIN` "
+    "to its absolute path."
+)
+
+MCP_BINARY_MISSING_MESSAGE = (
+    "Vault tools are unavailable: the `ghostbrain-mcp` helper couldn't be found, "
+    "so Poltergeist can't search or read your notes. This usually means the app "
+    "bundle is incomplete — try reinstalling, or check the sidecar logs."
+)
+
+
+class ResumeFailed(RuntimeError):
+    """`--resume <id>` was rejected (stale session). Caller retries fresh."""
+
+
+def run_chat_turn(
+    prompt: str,
+    *,
+    session_id: str | None = None,
+    timeout_s: int = CHAT_TIMEOUT_S,
+    binary: str | None = None,
+    mcp_binary: str | None = "auto",
+    turn_key: str | None = None,
+    system_prompt: str | None = None,
+    allowed_tools: str | None = None,
+):
+    """Yield event dicts for one agentic chat turn.
+
+    Contract: yields zero or more session/delta/tool events, then exactly one
+    terminal done/error event — EXCEPT when ``--resume`` fails before claude
+    produced anything, which raises ResumeFailed so the caller can retry the
+    turn without a session (we must not emit a terminal event in that case,
+    the retry will produce its own).
+    """
+    binary = binary or _find_claude_binary()
+    if binary is None:
+        yield {"type": "error", "message": BINARY_MISSING_MESSAGE}
+        return
+    if mcp_binary == "auto":
+        mcp_binary = find_mcp_binary()
+        # Auto-detection failed: no vault tools means no useful turn — every
+        # answer would be ungrounded. Surface a real error instead of running a
+        # toolless turn that lets the model improvise (and, worse, hallucinate a
+        # permission prompt for whatever global MCP server it stumbles onto).
+        # An explicit mcp_binary=None is a deliberate opt-out (lifecycle tests),
+        # so we only guard the auto path.
+        if mcp_binary is None:
+            yield {"type": "error", "message": MCP_BINARY_MISSING_MESSAGE}
+            return
+
+    # User MCP servers ride along only on real chat turns (mcp_binary present);
+    # explicit mcp_binary=None is the bare-run opt-out used by lifecycle tests.
+    user_servers = mcp_servers.load_enabled() if mcp_binary else None
+
+    cmd = build_chat_command(
+        binary, prompt,
+        session_id=session_id,
+        mcp_binary=mcp_binary,
+        system_prompt=system_prompt,
+        allowed_tools=allowed_tools,
+        user_servers=user_servers,
+    )
+    log.info(
+        "chat turn: resume=%s mcp=%s user_servers=%d",
+        bool(session_id), bool(mcp_binary), len(user_servers or []),
+    )
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        errors="replace",
+        env={**os.environ, "CLAUDE_CODE_NO_TELEMETRY": "1"},
+        # Own process group: claude spawns descendants (ghostbrain-mcp, tool
+        # subprocesses) that inherit the stdout pipe write-end — killing only
+        # the direct child would leave the pipe open and our read loop blocked
+        # until the orphans exit. Group-kill (below) takes them all out.
+        start_new_session=True,
+    )
+
+    def _kill_group() -> None:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except ProcessLookupError:
+            pass  # already gone
+        except Exception:  # noqa: BLE001 — never let cleanup raise past us
+            proc.kill()
+
+    timed_out = threading.Event()
+    cancelled = threading.Event()
+
+    def _kill() -> None:
+        timed_out.set()
+        _kill_group()
+
+    # Register this turn in the cancellation registry so an external caller
+    # can kill the subprocess (and unblock the read loop) while we're blocked
+    # on proc.stdout — GeneratorExit alone can't reach a running generator.
+    if turn_key is not None:
+        with _running_lock:
+            _running[turn_key] = _RunningTurn(cancelled=cancelled, kill=_kill_group)
+
+    # Watchdog instead of readline timeouts: if claude wedges with no output,
+    # a blocking readline would hang forever. The timer fires once, kills the
+    # process, and the read loop unblocks on EOF.
+    killer = threading.Timer(timeout_s, _kill)
+    killer.start()
+    saw_any = False
+    saw_terminal = False
+    try:
+        assert proc.stdout is not None
+        for raw in proc.stdout:
+            for event in parse_stream_line(raw):
+                saw_any = True
+                if event["type"] in ("done", "error"):
+                    saw_terminal = True
+                yield event
+        proc.wait()
+    finally:
+        # Covers normal exit, timeout, and client-disconnect (GeneratorExit
+        # propagates here when the SSE consumer goes away — kill claude so
+        # we don't leak a billing subprocess).
+        killer.cancel()
+        if proc.poll() is None:
+            _kill_group()
+            proc.wait()
+        if turn_key is not None:
+            with _running_lock:
+                _running.pop(turn_key, None)
+
+    if saw_terminal:
+        return
+    stderr = (proc.stderr.read() if proc.stderr else "")[:500].strip()
+    # cancelled is checked FIRST: a cancelled resumed turn that died before any
+    # output must NOT be misclassified as ResumeFailed (which would trigger a
+    # pointless retry).
+    if cancelled.is_set():
+        yield {"type": "error", "message": "stopped", "interrupted": True}
+        return
+    if timed_out.is_set():
+        yield {
+            "type": "error",
+            "message": f"poltergeist took longer than {timeout_s}s and was stopped.",
+            "interrupted": True,
+        }
+        return
+    if session_id and not saw_any and proc.returncode != 0:
+        raise ResumeFailed(stderr or "resume failed")
+    yield {
+        "type": "error",
+        "message": stderr or f"claude exited with code {proc.returncode}",
+    }

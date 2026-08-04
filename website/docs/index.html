@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>docs — poltergeist</title>
+  <meta name="description" content="poltergeist documentation — quickstart, connectors, query syntax, vault structure, api, self-hosting, privacy.">
+  <link rel="icon" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+
+<nav class="nav" id="nav">
+  <div class="nav__inner">
+    <a href="../" class="nav__brand" aria-label="poltergeist home">
+      <svg viewBox="0 0 100 110" width="26" height="29" aria-hidden="true">
+        <path d="M 50 6 C 24 6, 10 24, 10 50 L 10 94 Q 17 102, 24 95 Q 31 88, 38 95 Q 44 102, 50 95 Q 56 88, 62 95 Q 69 102, 76 95 Q 83 88, 90 94 L 90 50 C 90 24, 76 6, 50 6 Z" fill="#C5FF3D"/>
+        <circle cx="38" cy="48" r="3.2" fill="#0E0F12"/>
+        <circle cx="62" cy="48" r="3.2" fill="#0E0F12"/>
+        <line x1="38" y1="48" x2="62" y2="48" stroke="#0E0F12" stroke-width="1.2" stroke-opacity="0.5"/>
+      </svg>
+      <span class="nav__wordmark">poltergeist</span>
+    </a>
+    <div class="nav__links">
+      <a href="../#how">how it works</a>
+      <a href="../#connectors">connectors</a>
+      <a href="../#pricing">pricing</a>
+      <a href="./" style="color: var(--ink-0);">docs</a>
+    </div>
+    <div class="nav__cta">
+      <a class="btn btn--ghost btn--small nav__github" href="https://github.com/nikrich/poltergeist" target="_blank" rel="noopener noreferrer" aria-label="github">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+      </a>
+      <a class="btn btn--primary btn--small" href="https://github.com/nikrich/poltergeist/releases/latest" target="_blank" rel="noopener noreferrer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        download
+      </a>
+    </div>
+  </div>
+</nav>
+
+<div class="docs">
+  <aside class="sidebar">
+    <div class="sidebar__group">
+      <div class="sidebar__head">getting started</div>
+      <ul class="sidebar__list">
+        <li><a class="sidebar__link sidebar__link--active" href="./">overview</a></li>
+        <li><a class="sidebar__link" href="quickstart.html">quickstart</a></li>
+      </ul>
+    </div>
+    <div class="sidebar__group">
+      <div class="sidebar__head">guides</div>
+      <ul class="sidebar__list">
+        <li><a class="sidebar__link" href="connectors.html">connectors</a></li>
+        <li><a class="sidebar__link" href="query.html">query syntax</a></li>
+        <li><a class="sidebar__link" href="vault.html">vault structure</a></li>
+      </ul>
+    </div>
+    <div class="sidebar__group">
+      <div class="sidebar__head">reference</div>
+      <ul class="sidebar__list">
+        <li><a class="sidebar__link" href="api.html">api &amp; cli</a></li>
+        <li><a class="sidebar__link" href="self-host.html">self-host</a></li>
+        <li><a class="sidebar__link" href="privacy.html">privacy &amp; security</a></li>
+      </ul>
+    </div>
+  </aside>
+
+  <article class="article">
+    <div class="article__crumb">
+      <a href="../">poltergeist</a><span class="sep">/</span><span>docs</span>
+    </div>
+
+    <h1>poltergeist documentation</h1>
+    <p class="article__lede">
+      poltergeist is a local-first listener that quietly mirrors the apps you use —
+      gmail, slack, notion, linear, calendar — into a plain-markdown obsidian
+      vault, then lets you query the archive in natural language. these pages
+      cover everything from a five-minute install to running the indexer from source.
+    </p>
+
+    <h2>start here</h2>
+
+    <div class="card-grid">
+      <a class="doc-card" href="quickstart.html">
+        <div class="doc-card__head">5 min · start</div>
+        <h3 class="doc-card__title">quickstart</h3>
+        <p class="doc-card__desc">install the plugin, connect your first app, run your first query.</p>
+      </a>
+      <a class="doc-card" href="connectors.html">
+        <div class="doc-card__head">setup</div>
+        <h3 class="doc-card__title">connectors</h3>
+        <p class="doc-card__desc">per-app authentication walk-throughs, scopes, disconnect &amp; purge.</p>
+      </a>
+      <a class="doc-card" href="query.html">
+        <div class="doc-card__head">usage</div>
+        <h3 class="doc-card__title">query syntax</h3>
+        <p class="doc-card__desc">natural language plus the operators that narrow it down.</p>
+      </a>
+      <a class="doc-card" href="vault.html">
+        <div class="doc-card__head">structure</div>
+        <h3 class="doc-card__title">vault layout</h3>
+        <p class="doc-card__desc">how poltergeist writes to disk — folders, frontmatter, backlinks.</p>
+      </a>
+      <a class="doc-card" href="api.html">
+        <div class="doc-card__head">reference</div>
+        <h3 class="doc-card__title">api &amp; cli</h3>
+        <p class="doc-card__desc">loopback http endpoints and the <code>poltergeist</code> command line.</p>
+      </a>
+      <a class="doc-card" href="self-host.html">
+        <div class="doc-card__head">advanced</div>
+        <h3 class="doc-card__title">self-host</h3>
+        <p class="doc-card__desc">build the indexer from source, manage updates, handle backups.</p>
+      </a>
+      <a class="doc-card" href="privacy.html">
+        <div class="doc-card__head">policy</div>
+        <h3 class="doc-card__title">privacy &amp; security</h3>
+        <p class="doc-card__desc">where your data lives, how tokens are stored, what we never see.</p>
+      </a>
+      <a class="doc-card" href="https://github.com/nikrich/poltergeist" target="_blank" rel="noopener noreferrer">
+        <div class="doc-card__head">github →</div>
+        <h3 class="doc-card__title">source &amp; issues</h3>
+        <p class="doc-card__desc">read the code, file bugs, follow releases. mit-licensed plugin, fair-source indexer.</p>
+      </a>
+    </div>
+
+    <h2>conventions in these docs</h2>
+    <p>commands you'd run in a terminal look like <code>poltergeist status</code>. paths to files on disk look like <code>vault/people/marie chen.md</code>. anything you type into the poltergeist query bar inside obsidian is shown as a plain block of mono:</p>
+
+    <pre><code><span class="c-key">?</span> what did marie say about the q3 launch
+<span class="c-com"># or with operators</span>
+<span class="c-key">?</span> q3 launch <span class="c-flag">from:</span>marie <span class="c-flag">after:</span>2026-04-01</code></pre>
+
+    <p>callouts flag the three things worth pausing for:</p>
+
+    <div class="callout callout--note">
+      <span class="callout__label">note</span>
+      <p>information you'll want to read but won't break anything if you skim.</p>
+    </div>
+
+    <div class="callout callout--tip">
+      <span class="callout__label">tip</span>
+      <p>a non-obvious shortcut. ignore at no cost to correctness.</p>
+    </div>
+
+    <div class="callout callout--warn">
+      <span class="callout__label">warning</span>
+      <p>read this. either it'll save you a support thread or it's about something destructive.</p>
+    </div>
+
+    <h2>still missing something?</h2>
+    <p>open an issue on <a href="https://github.com/nikrich/poltergeist/issues" target="_blank" rel="noopener noreferrer">github</a> or, if it's a security concern, follow the disclosure process on the <a href="privacy.html">privacy page</a>.</p>
+
+    <div class="page-nav">
+      <span></span>
+      <a class="page-nav__link page-nav__link--next" href="quickstart.html">
+        <div class="page-nav__dir">next →</div>
+        <div class="page-nav__title">quickstart</div>
+      </a>
+    </div>
+  </article>
+
+  <aside class="toc">
+    <div class="toc__head">on this page</div>
+    <ul class="toc__list">
+      <li><a href="#start-here">start here</a></li>
+      <li><a href="#conventions">conventions</a></li>
+      <li><a href="#missing">still missing?</a></li>
+    </ul>
+  </aside>
+</div>
+
+<script src="../script.js"></script>
+</body>
+</html>

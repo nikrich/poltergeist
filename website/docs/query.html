@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>query syntax — poltergeist docs</title>
+  <meta name="description" content="Plain-english questions plus operators (from:, in:, after:, with:, mentions:) and pipe destinations.">
+  <link rel="icon" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+
+<nav class="nav" id="nav">
+  <div class="nav__inner">
+    <a href="../" class="nav__brand" aria-label="poltergeist home">
+      <svg viewBox="0 0 100 110" width="26" height="29" aria-hidden="true">
+        <path d="M 50 6 C 24 6, 10 24, 10 50 L 10 94 Q 17 102, 24 95 Q 31 88, 38 95 Q 44 102, 50 95 Q 56 88, 62 95 Q 69 102, 76 95 Q 83 88, 90 94 L 90 50 C 90 24, 76 6, 50 6 Z" fill="#C5FF3D"/>
+        <circle cx="38" cy="48" r="3.2" fill="#0E0F12"/>
+        <circle cx="62" cy="48" r="3.2" fill="#0E0F12"/>
+        <line x1="38" y1="48" x2="62" y2="48" stroke="#0E0F12" stroke-width="1.2" stroke-opacity="0.5"/>
+      </svg>
+      <span class="nav__wordmark">poltergeist</span>
+    </a>
+    <div class="nav__links">
+      <a href="../#how">how it works</a>
+      <a href="../#connectors">connectors</a>
+      <a href="../#pricing">pricing</a>
+      <a href="./" style="color: var(--ink-0);">docs</a>
+    </div>
+    <div class="nav__cta">
+      <a class="btn btn--ghost btn--small nav__github" href="https://github.com/nikrich/poltergeist" target="_blank" rel="noopener noreferrer" aria-label="github">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+      </a>
+      <a class="btn btn--primary btn--small" href="https://github.com/nikrich/poltergeist/releases/latest" target="_blank" rel="noopener noreferrer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        download
+      </a>
+    </div>
+  </div>
+</nav>
+
+<div class="docs">
+  <aside class="sidebar">
+    <div class="sidebar__group">
+      <div class="sidebar__head">getting started</div>
+      <ul class="sidebar__list">
+        <li><a class="sidebar__link" href="./">overview</a></li>
+        <li><a class="sidebar__link" href="quickstart.html">quickstart</a></li>
+      </ul>
+    </div>
+    <div class="sidebar__group">
+      <div class="sidebar__head">guides</div>
+      <ul class="sidebar__list">
+        <li><a class="sidebar__link" href="connectors.html">connectors</a></li>
+        <li><a class="sidebar__link sidebar__link--active" href="query.html">query syntax</a></li>
+        <li><a class="sidebar__link" href="vault.html">vault structure</a></li>
+      </ul>
+    </div>
+    <div class="sidebar__group">
+      <div class="sidebar__head">reference</div>
+      <ul class="sidebar__list">
+        <li><a class="sidebar__link" href="api.html">api &amp; cli</a></li>
+        <li><a class="sidebar__link" href="self-host.html">self-host</a></li>
+        <li><a class="sidebar__link" href="privacy.html">privacy &amp; security</a></li>
+      </ul>
+    </div>
+  </aside>
+
+  <article class="article">
+    <div class="article__crumb">
+      <a href="../">poltergeist</a><span class="sep">/</span><a href="./">docs</a><span class="sep">/</span><span>query syntax</span>
+    </div>
+
+    <h1>query syntax</h1>
+    <p class="article__lede">
+      the recommended way to query poltergeist is to ask it a question. operators
+      exist for when you already know the shape of the answer — they narrow
+      the search before the language model ever sees it, which is faster and
+      cheaper than reranking.
+    </p>
+
+    <h2 id="natural">plain english</h2>
+    <p>just type. poltergeist extracts entities (people, projects, dates, source apps) and runs a hybrid lexical + semantic search across the matching corpora.</p>
+
+    <pre><code><span class="c-key">?</span> what did marie say about the q3 launch
+<span class="c-key">?</span> meetings about pricing this week
+<span class="c-key">?</span> who was upset about the migration
+<span class="c-key">?</span> the figma file someone shared in the team channel last month</code></pre>
+
+    <p>under the hood every query goes through three phases: <strong>extract</strong> (find named entities and constraints), <strong>retrieve</strong> (lexical + vector hits per source), <strong>rank</strong> (small reranker, then the local model writes the summary). all three run on your machine.</p>
+
+    <h2 id="operators">operators</h2>
+    <p>operators look like <code>key:value</code> and can appear anywhere in the query. they compose with <em>and</em> by default.</p>
+
+    <table>
+      <thead><tr><th>operator</th><th>matches</th></tr></thead>
+      <tbody>
+        <tr><td>from:&lt;name&gt;</td><td>messages, prs, comments authored by a person</td></tr>
+        <tr><td>with:&lt;name&gt;</td><td>threads or meetings <em>involving</em> a person</td></tr>
+        <tr><td>mentions:&lt;name&gt;</td><td>items that name a person but weren't written by them</td></tr>
+        <tr><td>in:&lt;channel&gt;</td><td>slack channels, gmail labels, notion workspaces, linear projects</td></tr>
+        <tr><td>source:&lt;app&gt;</td><td>restrict to one connector. e.g. <code>source:slack</code></td></tr>
+        <tr><td>before:&lt;date&gt;</td><td>strict cutoff. accepts <code>2026-04-01</code>, <code>last-monday</code>, <code>3w</code></td></tr>
+        <tr><td>after:&lt;date&gt;</td><td>strict cutoff, the other way</td></tr>
+        <tr><td>during:&lt;range&gt;</td><td>shorthand. <code>during:last-week</code>, <code>during:apr-2026</code></td></tr>
+        <tr><td>type:&lt;kind&gt;</td><td>narrow by item kind. <code>type:meeting</code>, <code>type:thread</code>, <code>type:pr</code>, <code>type:doc</code></td></tr>
+        <tr><td>has:&lt;feature&gt;</td><td><code>has:attachment</code>, <code>has:link</code>, <code>has:decision</code></td></tr>
+        <tr><td>limit:&lt;n&gt;</td><td>cap returned items. default is 20.</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="dates">date shortcuts</h3>
+    <p>anything <code>before:</code>, <code>after:</code>, or <code>during:</code> understands:</p>
+    <ul>
+      <li><strong>absolute</strong> — <code>2026-04-12</code>, <code>2026-q1</code>, <code>apr-2026</code>.</li>
+      <li><strong>relative</strong> — <code>today</code>, <code>yesterday</code>, <code>last-monday</code>, <code>3d</code>, <code>2w</code>, <code>6m</code>.</li>
+      <li><strong>named periods</strong> — <code>last-week</code>, <code>this-quarter</code>, <code>last-month</code>.</li>
+    </ul>
+
+    <h3 id="people">resolving people</h3>
+    <p>people names are resolved against your contacts (gmail + calendar + slack) plus any <code>people/*.md</code> notes you've created. <code>from:marie</code> matches "marie chen", "m.chen@stripe.com", and her slack <code>U07XYZ</code> as one entity. ambiguous names will surface a picker.</p>
+
+    <div class="callout callout--tip">
+      <span class="callout__label">tip</span>
+      <p>if you find yourself disambiguating "marie" every time, edit <code>vault/people/marie chen.md</code> and add the alias to frontmatter: <code>aliases: [marie, m.chen, marie c]</code>. poltergeist reads its own vault too.</p>
+    </div>
+
+    <h2 id="composition">composing queries</h2>
+    <p>operators combine with <em>and</em>. use <code>|</code> for <em>or</em> within one operator value, and <code>-</code> to negate.</p>
+
+    <pre><code><span class="c-com"># slack and gmail only</span>
+<span class="c-key">?</span> q3 launch <span class="c-flag">source:</span>slack|gmail
+
+<span class="c-com"># anyone but eli</span>
+<span class="c-key">?</span> hiring debrief <span class="c-flag">from:</span>-eli
+
+<span class="c-com"># last two weeks, with marie, in the launch channel</span>
+<span class="c-key">?</span> blockers <span class="c-flag">with:</span>marie <span class="c-flag">in:</span>launch <span class="c-flag">during:</span>2w</code></pre>
+
+    <h2 id="answers">getting an answer, not a list</h2>
+    <p>by default poltergeist returns ranked hits. if you want a <em>synthesised</em> answer instead — a paragraph with citations — prefix the query with <code>!</code>:</p>
+
+    <pre><code><span class="c-key">!</span> what did we decide about pricing in march
+<span class="c-com"># →</span>
+On 2026-03-14, in the #pricing slack thread, the team agreed to move
+to a single $0 tier and drop the legacy "team" plan [<span class="c-flag">[1]</span>]. This was
+confirmed by sam in the q1 retro doc [<span class="c-flag">[2]</span>].
+
+[1] slack/#pricing/2026-03-14
+[2] notion/q1-retro-2026</code></pre>
+
+    <p>citations are always linkable. clicking jumps to the underlying source or the markdown mirror, your choice.</p>
+
+    <h2 id="pipe">piping results</h2>
+    <p>any query result can be redirected with <code>&gt;</code>:</p>
+
+    <pre><code><span class="c-com"># dump matches into today's inbox note</span>
+<span class="c-key">?</span> q3 launch <span class="c-flag">&gt;</span> inbox/today.md
+
+<span class="c-com"># synthesised summary into a project doc</span>
+<span class="c-key">!</span> what's blocking the migration <span class="c-flag">&gt;</span> projects/migration/blockers.md
+
+<span class="c-com"># json on stdout (cli only)</span>
+<span class="c-fn">poltergeist</span> search <span class="c-str">"q3 launch"</span> <span class="c-flag">--json</span></code></pre>
+
+    <h2 id="saved">saved queries</h2>
+    <p>pin a query with <code>:save &lt;name&gt;</code> and it shows up in the sidebar under <strong>saved</strong>. saved queries re-run on demand and can be scheduled (every monday morning, every commit, every meeting end) — see <a href="api.html#hooks">hooks</a>.</p>
+
+    <pre><code><span class="c-key">?</span> open prs <span class="c-flag">from:</span>me <span class="c-flag">source:</span>github <span class="c-flag">:save</span> my-open-prs</code></pre>
+
+    <h2 id="examples">a small cookbook</h2>
+    <pre><code><span class="c-com"># meetings on the calendar this week, with a one-line summary each</span>
+<span class="c-key">!</span> meetings <span class="c-flag">during:</span>this-week <span class="c-flag">type:</span>meeting <span class="c-flag">limit:</span>5
+
+<span class="c-com"># every time eli has reviewed one of my prs</span>
+<span class="c-key">?</span> <span class="c-flag">from:</span>eli <span class="c-flag">type:</span>review <span class="c-flag">mentions:</span>me
+
+<span class="c-com"># things i said i'd do but haven't filed in linear</span>
+<span class="c-key">!</span> promises i made <span class="c-flag">from:</span>me <span class="c-flag">has:</span>commitment <span class="c-flag">-source:</span>linear
+
+<span class="c-com"># the last figma link anyone shared</span>
+<span class="c-key">?</span> figma.com <span class="c-flag">has:</span>link <span class="c-flag">limit:</span>1</code></pre>
+
+    <div class="page-nav">
+      <a class="page-nav__link" href="connectors.html">
+        <div class="page-nav__dir">← previous</div>
+        <div class="page-nav__title">connectors</div>
+      </a>
+      <a class="page-nav__link page-nav__link--next" href="vault.html">
+        <div class="page-nav__dir">next →</div>
+        <div class="page-nav__title">vault structure</div>
+      </a>
+    </div>
+  </article>
+
+  <aside class="toc">
+    <div class="toc__head">on this page</div>
+    <ul class="toc__list">
+      <li><a href="#natural">plain english</a></li>
+      <li><a href="#operators">operators</a></li>
+      <li><a href="#dates" class="indent">date shortcuts</a></li>
+      <li><a href="#people" class="indent">resolving people</a></li>
+      <li><a href="#composition">composing</a></li>
+      <li><a href="#answers">synthesised answers</a></li>
+      <li><a href="#pipe">piping results</a></li>
+      <li><a href="#saved">saved queries</a></li>
+      <li><a href="#examples">cookbook</a></li>
+    </ul>
+  </aside>
+</div>
+
+<script src="../script.js"></script>
+</body>
+</html>

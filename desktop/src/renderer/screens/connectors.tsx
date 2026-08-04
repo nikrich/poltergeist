@@ -1,0 +1,687 @@
+import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { TopBar } from '../components/TopBar';
+import { Btn } from '../components/Btn';
+import { Lucide } from '../components/Lucide';
+import { Pill } from '../components/Pill';
+import { Eyebrow } from '../components/Eyebrow';
+import { Toggle } from '../components/Toggle';
+import { ConnectorAuthFlow } from '../components/ConnectorAuthFlow';
+import type { Connector, ConnectorDetail, ConnectorState } from '../../shared/api-types';
+import {
+  useConnector,
+  useConnectors,
+  useDisconnectConnector,
+  useSchedulerDiagnostics,
+  useSchedulerStatus,
+  useSyncAllConnectors,
+  useSyncConnector,
+} from '../lib/api/hooks';
+import { SkeletonRows } from '../components/SkeletonRows';
+import { PanelEmpty } from '../components/PanelEmpty';
+import { PanelError } from '../components/PanelError';
+import { stub, toast } from '../stores/toast';
+import { formatRelativeTime } from '../lib/format';
+import { CONNECTOR_CARDS, cardForId } from '../lib/connector-catalog';
+
+type Filter = 'all' | ConnectorState;
+
+const FILTERS: Filter[] = ['all', 'on', 'err', 'off'];
+
+const filterLabel = (f: Filter): string =>
+  f === 'on' ? 'connected' : f === 'err' ? 'error' : f === 'off' ? 'disconnected' : 'all';
+
+// Custom 6-col grid: minmax(0, 1fr) has no clean Tailwind utility, so the
+// template stays inline. Used for both header row and data rows so columns
+// align across them.
+const ROW_GRID = '32px minmax(0, 1fr) 100px 120px 120px 90px';
+
+const connectorIconSrc = (id: string): string => `assets/connectors/${id}.svg`;
+
+export function ConnectorsScreen() {
+  const connectors = useConnectors();
+  const scheduler = useSchedulerStatus({ intervalMs: 15_000 });
+  const diagnostics = useSchedulerDiagnostics();
+  const syncAll = useSyncAllConnectors();
+  const qc = useQueryClient();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<Filter>('all');
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerAuthId, setPickerAuthId] = useState<string | null>(null);
+
+  // Default selection to first connector once data arrives
+  useEffect(() => {
+    if (selectedId === null && connectors.data && connectors.data.length > 0) {
+      setSelectedId(connectors.data[0]!.id);
+    }
+  }, [connectors.data, selectedId]);
+
+  const selected = useConnector(selectedId);
+  const filtered =
+    connectors.data?.filter((c) => filter === 'all' || c.state === filter) ?? [];
+
+  const schedulerEnabled = scheduler.data?.enabled === true;
+  const doubleSchedulingActive = !!(
+    schedulerEnabled && diagnostics.data?.double_scheduling
+  );
+
+  const handlePickerAuthDone = () => {
+    const id = pickerAuthId;
+    setPickerAuthId(null);
+    if (!id) return;
+    toast.info(`${cardForId(id)?.displayName ?? id} connected`);
+    qc.invalidateQueries({ queryKey: ['connectors'] });
+    qc.invalidateQueries({ queryKey: ['connector', id] });
+  };
+
+  return (
+    <>
+    <div className="flex flex-1 flex-col overflow-hidden bg-paper">
+      <TopBar
+        title="connectors"
+        subtitle={(() => {
+          const total = connectors.data?.length ?? 0;
+          const live = connectors.data?.filter((c) => c.state === 'on').length ?? 0;
+          if (!connectors.data) return '…';
+          return `${live} of ${total} · ${schedulerEnabled ? 'syncing live' : 'paused'}`;
+        })()}
+        right={
+          <div className="flex gap-2">
+            <Btn
+              variant="secondary"
+              size="sm"
+              icon={<Lucide name="refresh-cw" size={13} />}
+              onClick={() => {
+                if (!schedulerEnabled) {
+                  stub(3);
+                  return;
+                }
+                syncAll.mutate(undefined, {
+                  onSuccess: (results) => {
+                    const ok = Object.values(results).filter((r) => r.ok);
+                    const failed = Object.values(results).filter((r) => !r.ok);
+                    const queued = ok.reduce((s, r) => s + (r.queued ?? 0), 0);
+                    if (failed.length === 0) {
+                      toast.info(
+                        queued > 0
+                          ? `Sync complete · ${queued} new event${queued === 1 ? '' : 's'}`
+                          : 'Sync complete · everything already up to date',
+                      );
+                    } else {
+                      toast.error(
+                        `${failed.length} connector${failed.length === 1 ? '' : 's'} failed: ${failed.map((f) => f.connector).join(', ')}`,
+                      );
+                    }
+                  },
+                  onError: (e) =>
+                    toast.error(e instanceof Error ? e.message : 'sync failed'),
+                });
+              }}
+              disabled={syncAll.isPending}
+            >
+              {syncAll.isPending ? 'syncing…' : 'sync all'}
+            </Btn>
+            <Btn
+              variant="primary"
+              size="sm"
+              // intentional fixed color: icon must read dark on the always-bright neon button
+              icon={<Lucide name="plus" size={13} color="#0E0F12" />}
+              onClick={() => setPickerOpen(true)}
+            >
+              add connector
+            </Btn>
+          </div>
+        }
+      />
+
+      {doubleSchedulingActive && (
+        <div className="flex items-start gap-3 border-b border-oxblood/30 bg-oxblood/10 px-6 py-3">
+          <Lucide name="alert-triangle" size={14} color="var(--oxblood)" />
+          <div className="flex-1 text-12 leading-[1.4]">
+            <div className="font-medium text-oxblood">
+              Double scheduling detected
+            </div>
+            <div className="mt-[2px] text-ink-1">
+              Both the in-app scheduler and launchd are active. Run{' '}
+              <code className="font-mono text-11">scripts/disable-launchd.sh</code>{' '}
+              or turn off &ldquo;Run scheduler in-app&rdquo; in Settings to avoid
+              duplicate fetches.{' '}
+              {diagnostics.data?.active_launchd_plists.length ? (
+                <span className="font-mono text-11 text-ink-2">
+                  ({diagnostics.data.active_launchd_plists.join(', ')})
+                </span>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="grid flex-1 grid-cols-[1fr_380px] overflow-hidden">
+        {/* List */}
+        <div className="overflow-y-auto px-6 py-5">
+          {/* filter chips */}
+          <div className="mb-4 flex items-center gap-[6px]">
+            <Eyebrow className="mr-1">filter</Eyebrow>
+            {FILTERS.map((f) => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`cursor-pointer rounded-sm border px-[10px] py-1 font-mono text-11 ${
+                  filter === f
+                    ? 'border-neon/30 bg-neon/15 text-neon-ink'
+                    : 'border-hairline-2 bg-transparent text-ink-1'
+                }`}
+              >
+                {filterLabel(f)}
+              </button>
+            ))}
+          </div>
+
+          {connectors.isLoading && <SkeletonRows count={6} height={48} />}
+          {connectors.isError && (
+            <PanelError
+              message={
+                connectors.error instanceof Error
+                  ? connectors.error.message
+                  : 'failed to load connectors'
+              }
+              onRetry={() => connectors.refetch()}
+            />
+          )}
+          {connectors.data && connectors.data.length === 0 && (
+            <PanelEmpty icon="plug" message="no connectors configured yet" />
+          )}
+          {connectors.data && connectors.data.length > 0 && (
+            <>
+              {/* table header */}
+              <div
+                className="grid gap-3 border-b border-hairline px-[14px] pb-2"
+                style={{ gridTemplateColumns: ROW_GRID }}
+              >
+                <div />
+                <Eyebrow>app</Eyebrow>
+                <Eyebrow className="text-right">indexed</Eyebrow>
+                <Eyebrow>last sync</Eyebrow>
+                <Eyebrow>throughput</Eyebrow>
+                <Eyebrow className="text-right">status</Eyebrow>
+              </div>
+
+              <div className="mt-[6px] flex flex-col gap-[2px]">
+                {filtered.map((c) => (
+                  <ConnectorRow
+                    key={c.id}
+                    c={c}
+                    selected={selectedId === c.id}
+                    onClick={() => setSelectedId(c.id)}
+                  />
+                ))}
+                <AddConnectorRow onClick={() => setPickerOpen(true)} />
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Detail panel */}
+        {selected.isLoading && (
+          <aside className="border-l border-hairline bg-vellum p-6">
+            <SkeletonRows count={4} />
+          </aside>
+        )}
+        {selected.isError && (
+          <aside className="border-l border-hairline bg-vellum p-6">
+            <PanelError
+              message={
+                selected.error instanceof Error
+                  ? selected.error.message
+                  : 'failed to load detail'
+              }
+              onRetry={() => selected.refetch()}
+            />
+          </aside>
+        )}
+        {selected.data && <ConnectorDetailPanel c={selected.data} />}
+      </div>
+    </div>
+    {pickerOpen && (
+      <ConnectorPickerModal
+        onSelect={(id) => {
+          setPickerOpen(false);
+          setPickerAuthId(id);
+        }}
+        onClose={() => setPickerOpen(false)}
+      />
+    )}
+    {pickerAuthId && (
+      <ConnectorAuthModal
+        connectorId={pickerAuthId}
+        displayName={cardForId(pickerAuthId)?.displayName ?? pickerAuthId}
+        onDone={handlePickerAuthDone}
+        onCancel={() => setPickerAuthId(null)}
+      />
+    )}
+    </>
+  );
+}
+
+// ── Sub-components ─────────────────────────────────────────────────────────
+
+interface ConnectorRowProps {
+  c: Connector;
+  selected: boolean;
+  onClick: () => void;
+}
+
+const TONES: Record<ConnectorState, 'neon' | 'oxblood' | 'outline'> = {
+  on: 'neon',
+  err: 'oxblood',
+  off: 'outline',
+};
+
+const STATE_LABELS: Record<ConnectorState, string> = {
+  on: 'connected',
+  err: 'error',
+  off: 'off',
+};
+
+function ConnectorRow({ c, selected, onClick }: ConnectorRowProps) {
+  const [hover, setHover] = useState(false);
+  const bgClass = selected || hover ? 'bg-vellum' : 'bg-transparent';
+  const borderClass = selected ? 'border-hairline-2' : 'border-transparent';
+  const opacityClass = c.state === 'off' ? 'opacity-65' : 'opacity-100';
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      className={`grid cursor-pointer items-center gap-3 rounded-r6 border px-[14px] py-3 ${bgClass} ${borderClass} ${opacityClass}`}
+      style={{ gridTemplateColumns: ROW_GRID }}
+    >
+      <img
+        src={connectorIconSrc(c.id)}
+        alt=""
+        width={22}
+        height={22}
+        className={c.state === 'off' ? 'grayscale' : ''}
+      />
+      <div className="flex min-w-0 flex-col leading-[1.2]">
+        <span className="text-13 font-medium text-ink-0">{c.displayName}</span>
+        <span className="overflow-hidden text-ellipsis whitespace-nowrap font-mono text-10 text-ink-2">
+          {c.account ?? ''}
+        </span>
+      </div>
+      <span className="text-right font-mono text-11 text-ink-1">
+        {c.state === 'off' ? '—' : c.count.toLocaleString()}
+      </span>
+      <span
+        className={`font-mono text-11 ${c.state === 'err' ? 'text-oxblood' : 'text-ink-2'}`}
+        title={c.lastSyncAt ?? undefined}
+      >
+        {formatRelativeTime(c.lastSyncAt)}
+      </span>
+      <span className="font-mono text-11 text-ink-2">{c.throughput ?? ''}</span>
+      <div className="flex justify-end">
+        <Pill tone={TONES[c.state]}>{STATE_LABELS[c.state]}</Pill>
+      </div>
+    </div>
+  );
+}
+
+function AddConnectorRow({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="mt-2 flex w-full cursor-pointer items-center gap-[10px] rounded-r6 border border-dashed border-hairline-2 p-[14px] text-left text-13 text-ink-2"
+    >
+      <Lucide name="plus" size={14} />
+      <span>request a connector — figma, intercom, hubspot, anywhere else</span>
+    </button>
+  );
+}
+
+interface ConnectorPickerModalProps {
+  onSelect: (id: string) => void;
+  onClose: () => void;
+}
+
+function ConnectorPickerModal({ onSelect, onClose }: ConnectorPickerModalProps) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+      <div className="w-[460px] overflow-hidden rounded-lg border border-hairline-2 bg-vellum shadow-float">
+        <div className="flex items-center justify-between border-b border-hairline px-4 py-3">
+          <span className="text-13 font-semibold text-ink-0">add a connector</span>
+          <button
+            type="button"
+            aria-label="close"
+            onClick={onClose}
+            className="text-ink-3 hover:text-ink-1"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="flex max-h-[420px] flex-col gap-2 overflow-y-auto p-4">
+          {CONNECTOR_CARDS.map((card) => (
+            <button
+              key={card.id}
+              type="button"
+              onClick={() => onSelect(card.id)}
+              className="flex items-center gap-3 rounded-r6 border border-hairline bg-paper p-3 text-left hover:border-hairline-2"
+            >
+              <img
+                src={connectorIconSrc(card.id)}
+                alt=""
+                className="h-[22px] w-[22px] flex-shrink-0"
+              />
+              <div className="min-w-0 flex-1 leading-[1.25]">
+                <div className="text-13 font-medium text-ink-0">{card.displayName}</div>
+                <div className="truncate text-11 text-ink-2">{card.blurb}</div>
+              </div>
+              <Lucide name="chevron-right" size={14} color="var(--ink-3)" />
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface ConnectorDetailProps {
+  c: ConnectorDetail;
+}
+
+function ConnectorDetailPanel({ c }: ConnectorDetailProps) {
+  const syncOne = useSyncConnector();
+  const scheduler = useSchedulerStatus();
+  const disconnect = useDisconnectConnector();
+  const qc = useQueryClient();
+  const schedulerEnabled = scheduler.data?.enabled === true;
+  const jobStatus = scheduler.data?.jobs[c.id];
+  const [authOpen, setAuthOpen] = useState(false);
+
+  const handleAuthDone = () => {
+    setAuthOpen(false);
+    toast.info(`${c.displayName} connected`);
+    qc.invalidateQueries({ queryKey: ['connectors'] });
+    qc.invalidateQueries({ queryKey: ['connector', c.id] });
+  };
+
+  const handleDisconnect = () => {
+    if (!window.confirm(`Disconnect ${c.displayName}? This removes its stored credentials.`)) {
+      return;
+    }
+    disconnect.mutate(
+      { id: c.id, account: c.account ?? undefined },
+      {
+        onSuccess: () => {
+          toast.info(`${c.displayName} disconnected`);
+          qc.invalidateQueries({ queryKey: ['connector', c.id] });
+        },
+        onError: (e) =>
+          toast.error(e instanceof Error ? e.message : `${c.displayName}: disconnect failed`),
+      },
+    );
+  };
+
+  return (
+    <>
+    <aside className="flex flex-col overflow-y-auto border-l border-hairline bg-vellum">
+      {/* hero */}
+      <div className="gb-noise relative overflow-hidden border-b border-hairline p-6">
+        <div className="relative mb-[14px] flex items-center gap-[14px]">
+          <div className="flex h-14 w-14 items-center justify-center rounded-lg border border-hairline bg-paper">
+            <img src={connectorIconSrc(c.id)} alt="" width={32} height={32} />
+          </div>
+          <div className="flex-1">
+            <div className="font-display text-22 font-semibold tracking-tight-x text-ink-0">
+              {c.displayName}
+            </div>
+            <div className="mt-[2px] font-mono text-10 text-ink-2">{c.account ?? ''}</div>
+          </div>
+        </div>
+
+        <div className="flex gap-2">
+          {c.state === 'off' && (
+            <Btn
+              variant="primary"
+              size="sm"
+              // intentional fixed color: icon must read dark on the always-bright neon button
+              icon={<Lucide name="link" size={13} color="#0E0F12" />}
+              onClick={() => setAuthOpen(true)}
+            >
+              connect {c.displayName}
+            </Btn>
+          )}
+          {c.state === 'err' && (
+            <Btn
+              variant="primary"
+              size="sm"
+              // intentional fixed color: icon must read dark on the always-bright neon button
+              icon={<Lucide name="refresh-cw" size={13} color="#0E0F12" />}
+              onClick={() => setAuthOpen(true)}
+            >
+              reauthorize
+            </Btn>
+          )}
+          {c.state === 'on' && (
+            <>
+              <Btn
+                variant="secondary"
+                size="sm"
+                icon={<Lucide name="refresh-cw" size={13} />}
+                onClick={() => {
+                  if (!schedulerEnabled) {
+                    stub(3);
+                    return;
+                  }
+                  syncOne.mutate(c.id, {
+                    onSuccess: (r) => {
+                      if (r.ok) {
+                        toast.info(
+                          r.queued > 0
+                            ? `${c.displayName}: queued ${r.queued} new event${r.queued === 1 ? '' : 's'}`
+                            : `${c.displayName}: up to date`,
+                        );
+                      } else {
+                        toast.error(`${c.displayName}: ${r.error ?? 'sync failed'}`);
+                      }
+                    },
+                    onError: (e) =>
+                      toast.error(`${c.displayName}: ${e instanceof Error ? e.message : 'sync failed'}`),
+                  });
+                }}
+                disabled={syncOne.isPending}
+              >
+                {syncOne.isPending ? 'syncing…' : 'sync now'}
+              </Btn>
+              <Btn
+                variant="ghost"
+                size="sm"
+                icon={<Lucide name="pause" size={13} />}
+                onClick={() => stub(3)}
+              >
+                pause
+              </Btn>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* details */}
+      <div className="flex flex-col gap-[22px] px-6 py-5">
+        {c.state === 'err' && (
+          <div className="flex gap-[10px] rounded-r6 border border-oxblood/30 bg-oxblood/10 p-3">
+            <Lucide name="alert-triangle" size={14} color="var(--oxblood)" />
+            <div className="flex-1">
+              <div className="text-12 font-medium text-oxblood">
+                {c.error ?? 'connector error'}
+              </div>
+              <div className="mt-[2px] text-11 leading-[1.4] text-ink-1">
+                one click and it&rsquo;s quiet again.
+              </div>
+            </div>
+          </div>
+        )}
+
+        <DetailBlock label="indexed">
+          <div className="grid grid-cols-2 gap-[10px]">
+            <Stat
+              label="items"
+              value={c.state === 'off' ? '—' : c.count.toLocaleString()}
+              delta={c.throughput ?? ''}
+            />
+            <Stat
+              label="last sync"
+              value={formatRelativeTime(c.lastSyncAt)}
+              delta={
+                jobStatus
+                  ? `${jobStatus.schedule_label}${
+                      jobStatus.next_run_at
+                        ? ` · next ${formatRelativeTime(
+                            new Date(jobStatus.next_run_at * 1000).toISOString(),
+                          )}`
+                        : ''
+                    }`
+                  : schedulerEnabled
+                    ? 'pending'
+                    : 'launchd'
+              }
+            />
+          </div>
+        </DetailBlock>
+
+        <DetailBlock label="what poltergeist pulls">
+          <div className="flex flex-wrap gap-[6px]">
+            {c.pulls.map((p) => (
+              <Pill key={p} tone="fog">
+                {p}
+              </Pill>
+            ))}
+          </div>
+        </DetailBlock>
+
+        <DetailBlock label="oauth scopes">
+          <div className="flex flex-col gap-[6px]">
+            {c.scopes.map((s) => (
+              <div
+                key={s}
+                className="flex items-center gap-2 font-mono text-11 text-ink-1"
+              >
+                <Lucide name="check" size={12} color="var(--neon)" />
+                <span>{s}</span>
+              </div>
+            ))}
+          </div>
+        </DetailBlock>
+
+        <DetailBlock label="vault destination">
+          <div className="flex items-center gap-[10px] rounded-r6 border border-hairline bg-paper px-3 py-[10px]">
+            <Lucide name="folder" size={13} color="var(--ink-2)" />
+            <span className="flex-1 font-mono text-11 text-ink-0">{c.vaultDestination}</span>
+            <Lucide name="external-link" size={11} color="var(--ink-3)" />
+          </div>
+        </DetailBlock>
+
+        <DetailBlock label="filters">
+          <ConnectorFilterToggles />
+        </DetailBlock>
+
+        {c.state !== 'off' && (
+          <Btn
+            variant="danger"
+            size="sm"
+            icon={<Lucide name="unplug" size={13} />}
+            className="mt-2 self-start"
+            onClick={handleDisconnect}
+            disabled={disconnect.isPending}
+          >
+            {disconnect.isPending ? 'disconnecting…' : 'disconnect'}
+          </Btn>
+        )}
+      </div>
+    </aside>
+    {authOpen && (
+      <ConnectorAuthModal
+        connectorId={c.id}
+        displayName={c.displayName}
+        onDone={handleAuthDone}
+        onCancel={() => setAuthOpen(false)}
+      />
+    )}
+    </>
+  );
+}
+
+interface ConnectorAuthModalProps {
+  connectorId: string;
+  displayName: string;
+  onDone: (account?: string) => void;
+  onCancel: () => void;
+}
+
+function ConnectorAuthModal({ connectorId, displayName, onDone, onCancel }: ConnectorAuthModalProps) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+      <div className="w-[420px] overflow-hidden rounded-lg border border-hairline-2 bg-vellum shadow-float">
+        <div className="flex items-center justify-between border-b border-hairline px-4 py-3">
+          <span className="text-13 font-semibold text-ink-0">connect {displayName}</span>
+          <button
+            type="button"
+            aria-label="close"
+            onClick={onCancel}
+            className="text-ink-3 hover:text-ink-1"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="p-4">
+          <ConnectorAuthFlow connectorId={connectorId} onDone={onDone} onCancel={onCancel} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ConnectorFilterToggles() {
+  const [ignorePromo, setIgnorePromo] = useState(true);
+  const [skipOld, setSkipOld] = useState(false);
+  const [extractActions, setExtractActions] = useState(true);
+  return (
+    <div className="flex flex-col gap-2">
+      <Toggle label="ignore promotional & social" on={ignorePromo} onChange={setIgnorePromo} />
+      <Toggle label="skip messages older than 90 days" on={skipOld} onChange={setSkipOld} />
+      <Toggle label="extract action items" on={extractActions} onChange={setExtractActions} />
+    </div>
+  );
+}
+
+interface DetailBlockProps {
+  label: string;
+  children: React.ReactNode;
+}
+
+function DetailBlock({ label, children }: DetailBlockProps) {
+  return (
+    <div>
+      <Eyebrow className="mb-2">{label}</Eyebrow>
+      {children}
+    </div>
+  );
+}
+
+interface StatProps {
+  label: string;
+  value: string;
+  delta: string;
+}
+
+function Stat({ label, value, delta }: StatProps) {
+  return (
+    <div className="rounded-md border border-hairline bg-paper p-[14px]">
+      <Eyebrow>{label}</Eyebrow>
+      <div className="mt-1 font-display text-28 font-semibold leading-[1.1] tracking-tight-x text-ink-0">
+        {value}
+      </div>
+      <div className="mt-[2px] font-mono text-10 text-ink-2">{delta}</div>
+    </div>
+  );
+}

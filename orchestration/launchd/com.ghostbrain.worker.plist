@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Ghost Brain queue worker.
+
+  This file is a TEMPLATE. Before loading, replace the two placeholders below:
+    __REPO_ROOT__   absolute path to your local clone of ghost-brain
+    __VAULT_PATH__  absolute path to your vault (default ~/ghostbrain/vault)
+
+  Quick install (zsh):
+    sed \
+      -e "s|__REPO_ROOT__|$PWD|g" \
+      -e "s|__VAULT_PATH__|$HOME/ghostbrain/vault|g" \
+      orchestration/launchd/com.ghostbrain.worker.plist \
+      > ~/Library/LaunchAgents/com.ghostbrain.worker.plist
+    launchctl load ~/Library/LaunchAgents/com.ghostbrain.worker.plist
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ghostbrain.worker</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__REPO_ROOT__/.venv/bin/python</string>
+        <string>-m</string>
+        <string>ghostbrain.worker.main</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__REPO_ROOT__</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>__REPO_ROOT__/logs/worker.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>__REPO_ROOT__/logs/worker.err</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>VAULT_PATH</key>
+        <string>__VAULT_PATH__</string>
+        <!-- LLM calls shell out to `claude -p` (Claude Max). launchd PATH is
+             minimal, so include the dirs where `claude` and `python` live.
+             Adjust if you use MacPorts (/opt/local/bin) or a different prefix. -->
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

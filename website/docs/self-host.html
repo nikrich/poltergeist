@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>self-host — poltergeist docs</title>
+  <meta name="description" content="Build the indexer from source, run updates, manage backups, and understand the fair-source license.">
+  <link rel="icon" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+
+<nav class="nav" id="nav">
+  <div class="nav__inner">
+    <a href="../" class="nav__brand" aria-label="poltergeist home">
+      <svg viewBox="0 0 100 110" width="26" height="29" aria-hidden="true">
+        <path d="M 50 6 C 24 6, 10 24, 10 50 L 10 94 Q 17 102, 24 95 Q 31 88, 38 95 Q 44 102, 50 95 Q 56 88, 62 95 Q 69 102, 76 95 Q 83 88, 90 94 L 90 50 C 90 24, 76 6, 50 6 Z" fill="#C5FF3D"/>
+        <circle cx="38" cy="48" r="3.2" fill="#0E0F12"/>
+        <circle cx="62" cy="48" r="3.2" fill="#0E0F12"/>
+        <line x1="38" y1="48" x2="62" y2="48" stroke="#0E0F12" stroke-width="1.2" stroke-opacity="0.5"/>
+      </svg>
+      <span class="nav__wordmark">poltergeist</span>
+    </a>
+    <div class="nav__links">
+      <a href="../#how">how it works</a>
+      <a href="../#connectors">connectors</a>
+      <a href="../#pricing">pricing</a>
+      <a href="./" style="color: var(--ink-0);">docs</a>
+    </div>
+    <div class="nav__cta">
+      <a class="btn btn--ghost btn--small nav__github" href="https://github.com/nikrich/poltergeist" target="_blank" rel="noopener noreferrer" aria-label="github">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+      </a>
+      <a class="btn btn--primary btn--small" href="https://github.com/nikrich/poltergeist/releases/latest" target="_blank" rel="noopener noreferrer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        download
+      </a>
+    </div>
+  </div>
+</nav>
+
+<div class="docs">
+  <aside class="sidebar">
+    <div class="sidebar__group">
+      <div class="sidebar__head">getting started</div>
+      <ul class="sidebar__list">
+        <li><a class="sidebar__link" href="./">overview</a></li>
+        <li><a class="sidebar__link" href="quickstart.html">quickstart</a></li>
+      </ul>
+    </div>
+    <div class="sidebar__group">
+      <div class="sidebar__head">guides</div>
+      <ul class="sidebar__list">
+        <li><a class="sidebar__link" href="connectors.html">connectors</a></li>
+        <li><a class="sidebar__link" href="query.html">query syntax</a></li>
+        <li><a class="sidebar__link" href="vault.html">vault structure</a></li>
+      </ul>
+    </div>
+    <div class="sidebar__group">
+      <div class="sidebar__head">reference</div>
+      <ul class="sidebar__list">
+        <li><a class="sidebar__link" href="api.html">api &amp; cli</a></li>
+        <li><a class="sidebar__link sidebar__link--active" href="self-host.html">self-host</a></li>
+        <li><a class="sidebar__link" href="privacy.html">privacy &amp; security</a></li>
+      </ul>
+    </div>
+  </aside>
+
+  <article class="article">
+    <div class="article__crumb">
+      <a href="../">poltergeist</a><span class="sep">/</span><a href="./">docs</a><span class="sep">/</span><span>self-host</span>
+    </div>
+
+    <h1>self-host</h1>
+    <p class="article__lede">
+      poltergeist already runs entirely on your machine — "self-hosting" here
+      really means <em>building the indexer from source</em> instead of using
+      the signed binary, plus a few extras: managing updates, backing up the
+      vault, and understanding the licenses.
+    </p>
+
+    <h2 id="requirements">system requirements</h2>
+    <table>
+      <thead><tr><th>resource</th><th>minimum</th><th>recommended</th></tr></thead>
+      <tbody>
+        <tr><td>cpu</td><td>apple silicon (m1 or later)</td><td>m2 / m3 / m4</td></tr>
+        <tr><td>memory</td><td>4 gb free</td><td>8 gb free</td></tr>
+        <tr><td>disk</td><td>2 gb + 1× your mail/slack archive</td><td>same, on an ssd</td></tr>
+        <tr><td>os</td><td>macos 12 (apple silicon only — windows + linux builds soon)</td><td>macos 14+</td></tr>
+        <tr><td>obsidian</td><td>1.5.0</td><td>1.7+</td></tr>
+      </tbody>
+    </table>
+
+    <p>typical idle resource use after backfill: under 1% cpu, 250–500 mb resident memory. the local model is mmaped; you'll see the page-cache usage in <code>top</code> but it isn't pinned.</p>
+
+    <h2 id="build">building from source</h2>
+    <p>two repos:</p>
+    <ul>
+      <li><a href="https://github.com/nikrich/poltergeist" target="_blank" rel="noopener noreferrer">poltergeist</a> — the desktop app (electron + python, mit-licensed).</li>
+      <li><a href="https://github.com/nikrich/poltergeist" target="_blank" rel="noopener noreferrer">poltergeist/indexer</a> — the local indexer + extraction model bindings (rust, fair-source license; see below).</li>
+    </ul>
+
+    <h3 id="build-plugin">plugin</h3>
+    <pre><code><span class="c-fn">git</span> clone https://github.com/nikrich/poltergeist
+<span class="c-fn">cd</span> poltergeist
+<span class="c-fn">npm</span> install
+<span class="c-fn">npm</span> run build
+
+<span class="c-com"># drop the dist/ folder into your vault</span>
+<span class="c-fn">cp</span> -r dist/ <span class="c-str">"~/your-vault/.obsidian/plugins/poltergeist"</span></code></pre>
+
+    <h3 id="build-indexer">indexer</h3>
+    <pre><code><span class="c-fn">cd</span> poltergeist/indexer
+<span class="c-fn">cargo</span> build <span class="c-flag">--release</span>
+
+<span class="c-com"># run it directly; the plugin will find it on its socket</span>
+./target/release/poltergeist serve <span class="c-flag">--vault</span> ~/your-vault</code></pre>
+
+    <p>the first build downloads the <code>1.8 gb</code> model artefact. it's pinned by sha-256 in <code>indexer/models.lock</code>. you can mirror the artefact to your own object store and pass <code>POLTERGEIST_MODEL_URL</code> to fetch it from there in a locked-down environment.</p>
+
+    <div class="callout callout--note">
+      <span class="callout__label">note</span>
+      <p>rust 1.78+ and a working c toolchain are the only build-time requirements. on linux you'll also need <code>libssl-dev</code> (or <code>openssl-devel</code>) and <code>pkg-config</code>. the build is reproducible — same source tree gives byte-identical binaries.</p>
+    </div>
+
+    <h2 id="update">updating</h2>
+    <p>three update channels:</p>
+    <table>
+      <thead><tr><th>channel</th><th>what you get</th></tr></thead>
+      <tbody>
+        <tr><td>stable</td><td>once-a-month tagged release. recommended.</td></tr>
+        <tr><td>beta</td><td>release candidates, one or two weeks before stable.</td></tr>
+        <tr><td>nightly</td><td>main branch, built every commit. expect breakage.</td></tr>
+      </tbody>
+    </table>
+    <p>set the channel in <strong>settings → poltergeist → updates</strong>, or by env: <code>POLTERGEIST_CHANNEL=beta</code>. the plugin checks once a day on launch and prompts you; it never updates silently.</p>
+
+    <h2 id="storage">disk &amp; storage</h2>
+    <p>poltergeist stores three things:</p>
+    <ul>
+      <li><strong>markdown notes</strong> — in your obsidian vault. backup with your normal vault backup.</li>
+      <li><strong>indexer state</strong> — under <code>vault/.poltergeist/</code>. small, mostly text. include in vault backup.</li>
+      <li><strong>the model</strong> — under <code>~/.poltergeist/models/</code>. ~1.8 gb. you can exclude from backup; it'll be re-downloaded.</li>
+    </ul>
+
+    <h3 id="backup">backup</h3>
+    <pre><code><span class="c-com"># tar.gz the vault + .poltergeist/ (skips the model)</span>
+<span class="c-fn">poltergeist</span> export ~/Backups/poltergeist-$(<span class="c-fn">date</span> +%F).tar.gz</code></pre>
+
+    <p>restoring is "untar and point obsidian at it." tokens are <em>not</em> exported — you'll reconnect each app on restore. this is on purpose.</p>
+
+    <h3 id="encryption">encrypting at rest</h3>
+    <p>poltergeist doesn't encrypt the vault itself — that's your filesystem's job. use filevault, bitlocker, or luks. if you want per-vault encryption inside an unencrypted volume, obsidian has plugins for that (e.g. age-encrypt); they work fine with poltergeist.</p>
+
+    <h2 id="license">licenses</h2>
+    <p>two different ones, on purpose:</p>
+    <table>
+      <thead><tr><th>component</th><th>license</th><th>what it means</th></tr></thead>
+      <tbody>
+        <tr><td>desktop app</td><td>mit</td><td>do whatever you want. attribution preserved.</td></tr>
+        <tr><td>indexer (rust)</td><td><a href="https://fair.io/licenses/fair-source-0.9" target="_blank" rel="noopener noreferrer">fair-source 0.9</a></td><td>read, build, fork for personal &amp; small-org use (≤ 5 users). reach out for a commercial license at the 6th user.</td></tr>
+        <tr><td>extraction model</td><td>research-only weights</td><td>included for use inside poltergeist. not redistributable as a standalone model.</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout callout--note">
+      <span class="callout__label">note</span>
+      <p>"fair-source" isn't strictly open source under the osi definition. it's a pragmatic middle path: source available, free for almost everyone, paid only when an organisation reaches a certain size. it converts to apache-2.0 after two years (the "delayed open source publication" clause).</p>
+    </div>
+
+    <h2 id="airgap">running on an airgapped machine</h2>
+    <ol>
+      <li>on a connected machine, run <code>poltergeist bundle --output offline.tar</code>. this packages the binary, the model, and a pinned dependency mirror.</li>
+      <li>transfer <code>offline.tar</code> to the airgapped machine.</li>
+      <li><code>poltergeist bundle --install offline.tar</code>.</li>
+      <li>connect connectors that don't require oauth (linear api key, github pat, notion integration token). gmail/slack/calendar/drive require a one-time browser exchange and won't work on an airgapped host.</li>
+    </ol>
+
+    <h2 id="troubleshooting">troubleshooting</h2>
+    <p><code>poltergeist doctor</code> covers most issues. common failure modes:</p>
+    <table>
+      <thead><tr><th>symptom</th><th>cause</th><th>fix</th></tr></thead>
+      <tbody>
+        <tr><td>"port 7349 in use"</td><td>another poltergeist or unrelated process bound the port</td><td>set <code>POLTERGEIST_PORT</code> to another port, restart obsidian</td></tr>
+        <tr><td>fan spins on backfill</td><td>working as designed, briefly</td><td>backfill rate-limits itself; let it finish once and idle cpu drops &lt; 1%</td></tr>
+        <tr><td>"keychain access denied" on macos</td><td>obsidian sandboxing edge case</td><td>open keychain access, grant <code>poltergeist-indexer</code> "always allow"</td></tr>
+        <tr><td>graph view doesn't update</td><td>obsidian's cache stale</td><td><code>cmd</code>+<code>r</code> in obsidian to reload, or run <code>poltergeist reindex</code></td></tr>
+      </tbody>
+    </table>
+
+    <div class="page-nav">
+      <a class="page-nav__link" href="api.html">
+        <div class="page-nav__dir">← previous</div>
+        <div class="page-nav__title">api &amp; cli</div>
+      </a>
+      <a class="page-nav__link page-nav__link--next" href="privacy.html">
+        <div class="page-nav__dir">next →</div>
+        <div class="page-nav__title">privacy &amp; security</div>
+      </a>
+    </div>
+  </article>
+
+  <aside class="toc">
+    <div class="toc__head">on this page</div>
+    <ul class="toc__list">
+      <li><a href="#requirements">requirements</a></li>
+      <li><a href="#build">building</a></li>
+      <li><a href="#update">updating</a></li>
+      <li><a href="#storage">disk &amp; storage</a></li>
+      <li><a href="#license">licenses</a></li>
+      <li><a href="#airgap">airgapped</a></li>
+      <li><a href="#troubleshooting">troubleshooting</a></li>
+    </ul>
+  </aside>
+</div>
+
+<script src="../script.js"></script>
+</body>
+</html>

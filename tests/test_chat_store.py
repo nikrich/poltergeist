@@ -1,0 +1,161 @@
+"""Chat conversation storage: JSON file per conversation."""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from ghostbrain.api.repo import chat_store
+
+
+@pytest.fixture
+def chats(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    d = tmp_path / "chats"
+    monkeypatch.setenv("GHOSTBRAIN_CHATS_DIR", str(d))
+    return d
+
+
+def test_create_writes_file_with_defaults(chats: Path):
+    conv = chat_store.create()
+    assert conv["title"] == "new chat"
+    assert conv["messages"] == []
+    assert conv["claude_session_id"] is None
+    on_disk = json.loads((chats / f"{conv['id']}.json").read_text())
+    assert on_disk == conv
+
+
+def test_get_missing_returns_none(chats: Path):
+    assert chat_store.get("nope") is None
+
+
+def test_list_skips_corrupt_and_sorts_newest_first(chats: Path):
+    a = chat_store.create()
+    chat_store.append_user_message(chat_store.get(a["id"]), "first message")
+    b = chat_store.create()  # a has messages now, so this is a fresh conversation
+    chat_store.append_user_message(chat_store.get(b["id"]), "later message")
+    chats.joinpath("garbage.json").write_text("{not json")
+    items = chat_store.list_all()
+    assert [c["id"] for c in items] == [b["id"], a["id"]]
+    assert items[0]["message_count"] == 1
+    assert "messages" not in items[0]
+
+
+def test_first_user_message_derives_title(chats: Path):
+    conv = chat_store.create()
+    long_text = "what did we   decide about " + "x" * 100
+    chat_store.append_user_message(conv, long_text)
+    again = chat_store.get(conv["id"])
+    assert again["title"].startswith("what did we decide about")
+    assert len(again["title"]) <= 60
+    # second message must NOT re-derive the title
+    chat_store.append_user_message(again, "another question entirely")
+    assert chat_store.get(conv["id"])["title"].startswith("what did we decide")
+
+
+def test_rename_trims_and_caps(chats: Path):
+    conv = chat_store.create()
+    chat_store.rename(conv["id"], "  My Chat  ")
+    assert chat_store.get(conv["id"])["title"] == "My Chat"
+    assert chat_store.rename("missing", "x") is None
+
+
+def test_delete(chats: Path):
+    conv = chat_store.create()
+    assert chat_store.delete(conv["id"]) is True
+    assert chat_store.get(conv["id"]) is None
+    assert chat_store.delete(conv["id"]) is False
+
+
+def test_append_assistant_message_with_tools_and_session(chats: Path):
+    conv = chat_store.create()
+    chat_store.append_user_message(conv, "q")
+    chat_store.set_session_id(conv, "sess-1")
+    chat_store.append_assistant_message(
+        conv, "answer", [{"name": "search", "summary": "searched vault: q"}]
+    )
+    got = chat_store.get(conv["id"])
+    assert got["claude_session_id"] == "sess-1"
+    assert got["messages"][1] == {
+        "role": "assistant",
+        "text": "answer",
+        "tools": [{"name": "search", "summary": "searched vault: q"}],
+        "interrupted": False,
+    }
+
+
+def test_interrupted_flag_persists(chats: Path):
+    conv = chat_store.create()
+    chat_store.append_assistant_message(conv, "partial", [], interrupted=True)
+    assert chat_store.get(conv["id"])["messages"][0]["interrupted"] is True
+
+
+def test_append_user_message_stores_attachments(chats):
+    conv = chat_store.create()
+    atts = [{"path": "20-contexts/chat-attachments/a.md", "title": "a.md", "kind": "text"}]
+    chat_store.append_user_message(conv, "see attached", attachments=atts)
+    reloaded = chat_store.get(conv["id"])
+    msg = reloaded["messages"][-1]
+    assert msg["attachments"] == atts
+
+
+def test_append_user_message_omits_empty_attachments(chats):
+    conv = chat_store.create()
+    chat_store.append_user_message(conv, "plain")
+    assert "attachments" not in chat_store.get(conv["id"])["messages"][-1]
+
+
+def test_create_reuses_existing_empty_conversation(chats: Path):
+    # Rapid multi-clicks on "new chat" fire several POSTs before the button
+    # disables — create() must be idempotent while an empty conversation exists.
+    a = chat_store.create()
+    b = chat_store.create()
+    c = chat_store.create()
+    assert a["id"] == b["id"] == c["id"]
+    assert len(list(chats.glob("*.json"))) == 1
+
+
+def test_create_makes_fresh_conversation_once_previous_has_messages(chats: Path):
+    a = chat_store.create()
+    chat_store.append_user_message(chat_store.get(a["id"]), "hello")
+    b = chat_store.create()
+    assert b["id"] != a["id"]
+    assert len(list(chats.glob("*.json"))) == 2
+
+
+def test_project_field_round_trips(chats: Path):
+    conv = chat_store.create()
+    assert conv["project"] is None
+    updated = chat_store.update(conv["id"], project="personal/site")
+    assert updated["project"] == "personal/site"
+    assert chat_store.get(conv["id"])["project"] == "personal/site"
+
+
+def test_update_partial_semantics(chats: Path):
+    conv = chat_store.create()
+    chat_store.update(conv["id"], project="personal/site")
+    chat_store.update(conv["id"], title="renamed")  # project untouched
+    got = chat_store.get(conv["id"])
+    assert got["title"] == "renamed"
+    assert got["project"] == "personal/site"
+    chat_store.update(conv["id"], project=None)  # explicit clear
+    assert chat_store.get(conv["id"])["project"] is None
+
+
+def test_update_missing_conversation_returns_none(chats: Path):
+    assert chat_store.update("nope", title="x") is None
+
+
+def test_list_summaries_carry_project(chats: Path):
+    conv = chat_store.create()
+    chat_store.update(conv["id"], project="work/api")
+    assert chat_store.list_all()[0]["project"] == "work/api"
+
+
+def test_legacy_file_without_project_reads_null(chats: Path):
+    conv = chat_store.create()
+    raw = json.loads((chats / f"{conv['id']}.json").read_text())
+    del raw["project"]
+    (chats / f"{conv['id']}.json").write_text(json.dumps(raw))
+    assert chat_store.get(conv["id"]).get("project") is None
+    assert chat_store.list_all()[0]["project"] is None

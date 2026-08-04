@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>privacy &amp; security — poltergeist docs</title>
+  <meta name="description" content="Where your data lives, how tokens are stored, the telemetry policy, optional end-to-end encrypted sync, and the disclosure process.">
+  <link rel="icon" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+
+<nav class="nav" id="nav">
+  <div class="nav__inner">
+    <a href="../" class="nav__brand" aria-label="poltergeist home">
+      <svg viewBox="0 0 100 110" width="26" height="29" aria-hidden="true">
+        <path d="M 50 6 C 24 6, 10 24, 10 50 L 10 94 Q 17 102, 24 95 Q 31 88, 38 95 Q 44 102, 50 95 Q 56 88, 62 95 Q 69 102, 76 95 Q 83 88, 90 94 L 90 50 C 90 24, 76 6, 50 6 Z" fill="#C5FF3D"/>
+        <circle cx="38" cy="48" r="3.2" fill="#0E0F12"/>
+        <circle cx="62" cy="48" r="3.2" fill="#0E0F12"/>
+        <line x1="38" y1="48" x2="62" y2="48" stroke="#0E0F12" stroke-width="1.2" stroke-opacity="0.5"/>
+      </svg>
+      <span class="nav__wordmark">poltergeist</span>
+    </a>
+    <div class="nav__links">
+      <a href="../#how">how it works</a>
+      <a href="../#connectors">connectors</a>
+      <a href="../#pricing">pricing</a>
+      <a href="./" style="color: var(--ink-0);">docs</a>
+    </div>
+    <div class="nav__cta">
+      <a class="btn btn--ghost btn--small nav__github" href="https://github.com/nikrich/poltergeist" target="_blank" rel="noopener noreferrer" aria-label="github">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+      </a>
+      <a class="btn btn--primary btn--small" href="https://github.com/nikrich/poltergeist/releases/latest" target="_blank" rel="noopener noreferrer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        download
+      </a>
+    </div>
+  </div>
+</nav>
+
+<div class="docs">
+  <aside class="sidebar">
+    <div class="sidebar__group">
+      <div class="sidebar__head">getting started</div>
+      <ul class="sidebar__list">
+        <li><a class="sidebar__link" href="./">overview</a></li>
+        <li><a class="sidebar__link" href="quickstart.html">quickstart</a></li>
+      </ul>
+    </div>
+    <div class="sidebar__group">
+      <div class="sidebar__head">guides</div>
+      <ul class="sidebar__list">
+        <li><a class="sidebar__link" href="connectors.html">connectors</a></li>
+        <li><a class="sidebar__link" href="query.html">query syntax</a></li>
+        <li><a class="sidebar__link" href="vault.html">vault structure</a></li>
+      </ul>
+    </div>
+    <div class="sidebar__group">
+      <div class="sidebar__head">reference</div>
+      <ul class="sidebar__list">
+        <li><a class="sidebar__link" href="api.html">api &amp; cli</a></li>
+        <li><a class="sidebar__link" href="self-host.html">self-host</a></li>
+        <li><a class="sidebar__link sidebar__link--active" href="privacy.html">privacy &amp; security</a></li>
+      </ul>
+    </div>
+  </aside>
+
+  <article class="article">
+    <div class="article__crumb">
+      <a href="../">poltergeist</a><span class="sep">/</span><a href="./">docs</a><span class="sep">/</span><span>privacy &amp; security</span>
+    </div>
+
+    <h1>privacy &amp; security</h1>
+    <p class="article__lede">
+      poltergeist is a local-first product. nothing leaves your machine unless
+      you flip an explicit switch — and even then, only in shapes you've
+      consented to. this page lays out exactly what stays, what moves, and
+      how to verify each claim for yourself.
+    </p>
+
+    <h2 id="local">what stays local</h2>
+    <ul>
+      <li>every message, document, comment, meeting, and pr poltergeist ever indexes.</li>
+      <li>the extracted entities, the vector index, the lexical index.</li>
+      <li>every query you've ever run and every answer poltergeist has produced.</li>
+      <li>the model weights themselves — the extraction and ranking model both run on-device.</li>
+    </ul>
+
+    <p>you can verify this with a network monitor. with default settings, poltergeist makes only outbound requests <em>directly to the connector providers</em> (gmail api, slack api, etc.) using your own tokens. there is no "phone home" endpoint.</p>
+
+    <div class="callout callout--tip">
+      <span class="callout__label">tip</span>
+      <p>on macos, the simplest verification is <code>little snitch</code> or the built-in <code>tcpdump -i any host -not gmail.com -and host -not slack.com</code>. on linux, <code>ss -tnp</code> and the audit subsystem. you should see traffic only to the api hosts of the connectors you've authorised.</p>
+    </div>
+
+    <h2 id="tokens">where credentials live</h2>
+    <p>every oauth token or api key sits in your operating system's secure credential store:</p>
+    <table>
+      <thead><tr><th>os</th><th>store</th></tr></thead>
+      <tbody>
+        <tr><td>macos</td><td>keychain (login keychain)</td></tr>
+        <tr><td>windows</td><td>windows credential manager</td></tr>
+        <tr><td>linux</td><td>gnome-keyring or kwallet (whichever is active); falls back to libsecret</td></tr>
+      </tbody>
+    </table>
+    <p>poltergeist never writes tokens to a plain file. when you disconnect a connector, the token is removed from the keychain immediately — not at the next sync.</p>
+
+    <h2 id="telemetry">telemetry</h2>
+    <p>poltergeist ships <em>two</em> kinds of telemetry by default, both off:</p>
+    <ul>
+      <li><strong>anonymous crash reports</strong> — disabled. enable in <strong>settings → privacy</strong> to send stack traces (no user data) when the indexer panics.</li>
+      <li><strong>usage stats</strong> — disabled. enable to send daily counts of {queries run, items indexed, model latency p50/p99}. no content, no metadata about what was queried.</li>
+    </ul>
+    <p>both are opt-in, both off out of the box, and both can be turned off again without losing functionality. the full schema of what each report contains is in <a href="https://github.com/nikrich/poltergeist/blob/main/docs/telemetry.md" target="_blank" rel="noopener noreferrer"><code>docs/telemetry.md</code></a>.</p>
+
+    <h2 id="model">does the model train on my data?</h2>
+    <p>no. the extraction and ranking models are pre-trained, shipped as static weights, and run inference-only inside the indexer. there is no online learning, no gradient updates, no batched-then-uploaded fine-tuning. you can <code>strace</code> the indexer and confirm there is no write activity on the model files.</p>
+    <p>the model also can't see your data over the wire. it's loaded from disk on startup and runs in the same process; there is no rpc, no server, no inference api.</p>
+
+    <h2 id="sync">optional end-to-end encrypted sync</h2>
+    <p>if you want your vault on two machines, poltergeist ships an optional sync service. it is:</p>
+    <ul>
+      <li><strong>opt-in</strong> — off by default; configure in <strong>settings → sync</strong>.</li>
+      <li><strong>end-to-end encrypted</strong> — keys are derived from a passphrase you pick, then split with shamir's secret sharing. we get the encrypted blobs; we cannot read them.</li>
+      <li><strong>self-hostable</strong> — the sync server is a small go binary; run it on your own box if you'd rather. spec is documented in <code>docs/sync-protocol.md</code>.</li>
+    </ul>
+
+    <div class="callout callout--warn">
+      <span class="callout__label">warning</span>
+      <p>if you lose your sync passphrase, we cannot help you recover your data. that's the trade-off for not having a backdoor. write the passphrase down somewhere offline.</p>
+    </div>
+
+    <h2 id="permissions">permissions per connector</h2>
+    <p>each connector requests the narrowest scope its provider exposes:</p>
+    <table>
+      <thead><tr><th>connector</th><th>scopes</th></tr></thead>
+      <tbody>
+        <tr><td>gmail</td><td><code>gmail.readonly</code>, <code>gmail.metadata</code></td></tr>
+        <tr><td>slack</td><td><code>channels:history</code>, <code>groups:history</code>, <code>im:history</code>, <code>mpim:history</code> + matching <code>:read</code></td></tr>
+        <tr><td>notion</td><td>read on the pages you share with the integration</td></tr>
+        <tr><td>linear</td><td>personal api key, read scopes only</td></tr>
+        <tr><td>github</td><td><code>repo:read</code>, <code>issues:read</code>, <code>pull-requests:read</code></td></tr>
+        <tr><td>calendar</td><td><code>calendar.readonly</code></td></tr>
+        <tr><td>drive</td><td><code>drive.metadata.readonly</code> (default), <code>drive.readonly</code> if you opt in</td></tr>
+      </tbody>
+    </table>
+
+    <p>no connector ever writes back to the source. poltergeist is read-only by design — we never want to be in a position to <em>send</em> a slack message on your behalf.</p>
+
+    <h2 id="threats">threat model</h2>
+    <p>what poltergeist protects against, and what it doesn't:</p>
+
+    <h3 id="protects">protects against</h3>
+    <ul>
+      <li>a third party reading your indexed content — there is none to read.</li>
+      <li>a third party reading your tokens — they live in your os keychain.</li>
+      <li>silent training on your data — no training is possible.</li>
+      <li>vendor lock-in — your vault is plain markdown, on your disk.</li>
+    </ul>
+
+    <h3 id="doesnt">does not protect against</h3>
+    <ul>
+      <li>an attacker with root on your machine — they can read your keychain and your vault.</li>
+      <li>malicious obsidian plugins — if you open the vault in obsidian, plugins installed there share the vault and the obsidian process. install obsidian plugins from people you trust.</li>
+      <li>cloud sync of the underlying apps — if your gmail is in a breach, poltergeist can't pull it back.</li>
+    </ul>
+
+    <h2 id="disclosure">responsible disclosure</h2>
+    <p>found something? we'd rather hear about it than have it be public:</p>
+    <ul>
+      <li>email <code>security@poltergeist.app</code> with details and a reproduction.</li>
+      <li>or open a github security advisory at <a href="https://github.com/nikrich/poltergeist/security/advisories/new" target="_blank" rel="noopener noreferrer">github.com/nikrich/poltergeist/security/advisories/new</a>.</li>
+      <li>we'll respond within 72 hours, fix critical issues within 14 days, and credit you in the release notes unless you'd rather we didn't.</li>
+    </ul>
+
+    <p>no bug bounty program yet, but if your report saves us from shipping a real issue, we'll send you something nicer than a t-shirt.</p>
+
+    <div class="page-nav">
+      <a class="page-nav__link" href="self-host.html">
+        <div class="page-nav__dir">← previous</div>
+        <div class="page-nav__title">self-host</div>
+      </a>
+      <a class="page-nav__link page-nav__link--next" href="./">
+        <div class="page-nav__dir">next →</div>
+        <div class="page-nav__title">back to overview</div>
+      </a>
+    </div>
+  </article>
+
+  <aside class="toc">
+    <div class="toc__head">on this page</div>
+    <ul class="toc__list">
+      <li><a href="#local">what stays local</a></li>
+      <li><a href="#tokens">credentials</a></li>
+      <li><a href="#telemetry">telemetry</a></li>
+      <li><a href="#model">model training?</a></li>
+      <li><a href="#sync">e2e sync</a></li>
+      <li><a href="#permissions">per-connector scopes</a></li>
+      <li><a href="#threats">threat model</a></li>
+      <li><a href="#disclosure">disclosure</a></li>
+    </ul>
+  </aside>
+</div>
+
+<script src="../script.js"></script>
+</body>
+</html>
