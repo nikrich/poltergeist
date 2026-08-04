@@ -32,7 +32,7 @@ def _write_daily_digest(vault: Path, d: date, contexts: list[str], glance: str) 
     body = (
         f"# Digest — {d.strftime('%A')}, {d.isoformat()}\n\n"
         f"## Yesterday at a glance\n\n{glance}\n\n"
-        f"## Sanlam\n\n- something\n"
+        f"## Work\n\n- something\n"
     )
     meta = {
         "id": f"digest-{d.isoformat()}",
@@ -100,20 +100,20 @@ def test_extract_glance_section() -> None:
         "# Digest — Saturday, 2026-05-09\n\n"
         "## Yesterday at a glance\n\n"
         "TrustFlow happened. Heavy day.\n\n"
-        "## Sanlam\n\n- something\n"
+        "## Work\n\n- something\n"
     )
     assert "TrustFlow happened" in _extract_glance_section(body)
-    assert "Sanlam" not in _extract_glance_section(body)
+    assert "Work" not in _extract_glance_section(body)
 
 
 def test_quiet_contexts_excludes_needs_review(vault: Path) -> None:
     from ghostbrain.worker.weekly_digest import _quiet_contexts
-    _configure(vault, ["sanlam", "codeship", "personal"])
-    activity = {"sanlam": 50, "codeship": 1, "personal": 0, "needs_review": 0}
+    _configure(vault, ["work", "consulting", "personal"])
+    activity = {"work": 50, "consulting": 1, "personal": 0, "needs_review": 0}
     quiet = _quiet_contexts(activity)
-    assert "codeship" in quiet
+    assert "consulting" in quiet
     assert "personal" in quiet
-    assert "sanlam" not in quiet
+    assert "work" not in quiet
     assert "needs_review" not in quiet
 
 
@@ -127,8 +127,8 @@ def test_build_weekly_input_pulls_daily_digests(vault: Path) -> None:
 
     week_end = date(2026, 5, 10)  # Sunday
     for offset, ctx_list in [
-        (-6, ["sanlam"]), (-5, ["sanlam", "codeship"]),
-        (-1, ["sanlam"]), (0, ["sanlam", "personal"]),
+        (-6, ["work"]), (-5, ["work", "consulting"]),
+        (-1, ["work"]), (0, ["work", "personal"]),
     ]:
         _write_daily_digest(
             vault, week_end + timedelta(days=offset),
@@ -150,17 +150,17 @@ def test_build_weekly_input_pulls_artifacts_in_window(vault: Path) -> None:
     from ghostbrain.worker.weekly_digest import build_weekly_input
 
     week_end = date(2026, 5, 10)
-    _write_artifact(vault, context="sanlam", artifact_type="decision",
+    _write_artifact(vault, context="work", artifact_type="decision",
                      title="In-window decision", created="2026-05-08T10:00:00Z")
-    _write_artifact(vault, context="sanlam", artifact_type="action_item",
+    _write_artifact(vault, context="work", artifact_type="action_item",
                      title="Owner action", created="2026-05-09T10:00:00Z")
-    _write_artifact(vault, context="codeship", artifact_type="unresolved",
+    _write_artifact(vault, context="consulting", artifact_type="unresolved",
                      title="Drift risk", created="2026-05-07T10:00:00Z")
     # Out of window — last week
-    _write_artifact(vault, context="sanlam", artifact_type="decision",
+    _write_artifact(vault, context="work", artifact_type="decision",
                      title="Old decision", created="2026-04-30T10:00:00Z")
     # Out of window — next week
-    _write_artifact(vault, context="sanlam", artifact_type="decision",
+    _write_artifact(vault, context="work", artifact_type="decision",
                      title="Future decision", created="2026-05-11T10:00:00Z")
 
     inp = build_weekly_input(week_end)
@@ -174,26 +174,26 @@ def test_build_weekly_input_audit_totals(vault: Path) -> None:
     week_end = date(2026, 5, 10)
     _write_audit(vault, date(2026, 5, 5), [
         {"event_type": "event_processed", "status": "success",
-         "context": "sanlam", "source": "github"},
+         "context": "work", "source": "github"},
         {"event_type": "event_processed", "status": "success",
-         "context": "sanlam", "source": "github"},
+         "context": "work", "source": "github"},
         {"event_type": "event_processed", "status": "success",
-         "context": "codeship", "source": "claude-code"},
+         "context": "consulting", "source": "claude-code"},
     ])
     _write_audit(vault, date(2026, 5, 10), [
         {"event_type": "event_processed", "status": "success",
-         "context": "sanlam", "source": "slack"},
+         "context": "work", "source": "slack"},
     ])
     # Out of window — should not count
     _write_audit(vault, date(2026, 4, 30), [
         {"event_type": "event_processed", "status": "success",
-         "context": "sanlam", "source": "github"},
+         "context": "work", "source": "github"},
     ])
 
     inp = build_weekly_input(week_end)
     assert inp.total_events == 4
-    assert inp.activity_by_context["sanlam"] == 3
-    assert inp.activity_by_context["codeship"] == 1
+    assert inp.activity_by_context["work"] == 3
+    assert inp.activity_by_context["consulting"] == 1
     assert inp.activity_by_source["github"] == 2
     assert inp.activity_by_source["slack"] == 1
 
@@ -201,18 +201,18 @@ def test_build_weekly_input_audit_totals(vault: Path) -> None:
 def test_build_weekly_input_marks_quiet_contexts(vault: Path) -> None:
     from ghostbrain.worker.weekly_digest import build_weekly_input
 
-    _configure(vault, ["sanlam", "codeship", "reducedrecipes", "personal"])
+    _configure(vault, ["work", "consulting", "side-project", "personal"])
     week_end = date(2026, 5, 10)
     _write_audit(vault, date(2026, 5, 5), [
         {"event_type": "event_processed", "status": "success",
-         "context": "sanlam", "source": "github"},
+         "context": "work", "source": "github"},
     ] * 30)
 
     inp = build_weekly_input(week_end)
-    # sanlam very active, others silent → others should appear in quiet
-    assert "sanlam" not in inp.quiet_contexts
-    assert "codeship" in inp.quiet_contexts
-    assert "reducedrecipes" in inp.quiet_contexts
+    # work very active, others silent → others should appear in quiet
+    assert "work" not in inp.quiet_contexts
+    assert "consulting" in inp.quiet_contexts
+    assert "side-project" in inp.quiet_contexts
     assert "personal" in inp.quiet_contexts
 
 
@@ -228,16 +228,16 @@ def test_render_emits_wikilinks_for_artifacts(vault: Path) -> None:
     )
 
     week_end = date(2026, 5, 10)
-    _write_artifact(vault, context="sanlam", artifact_type="decision",
+    _write_artifact(vault, context="work", artifact_type="decision",
                      title="Defer SIMI", created="2026-05-07T10:00:00Z")
-    _write_artifact(vault, context="sanlam", artifact_type="action_item",
+    _write_artifact(vault, context="work", artifact_type="action_item",
                      title="Send funding doc", created="2026-05-08T10:00:00Z")
 
     inp = build_weekly_input(week_end)
     rendered = render_weekly_input_for_prompt(inp)
 
     # Wikilink form should be aliased: [[path|alias]]
-    assert "[[20-contexts/sanlam/calendar/artifacts/decisions/" in rendered
+    assert "[[20-contexts/work/calendar/artifacts/decisions/" in rendered
     assert "|defer-simi]]" in rendered or "defer-simi]" in rendered
     # Type grouping should appear
     assert "decisions (1):" in rendered
@@ -254,10 +254,10 @@ def test_generate_weekly_digest_writes_to_vault(vault: Path) -> None:
     from ghostbrain.llm.client import LLMResult
 
     week_end = date(2026, 5, 10)
-    _write_daily_digest(vault, week_end, ["sanlam"], "Productive week.")
+    _write_daily_digest(vault, week_end, ["work"], "Productive week.")
     _write_audit(vault, week_end, [
         {"event_type": "event_processed", "status": "success",
-         "context": "sanlam", "source": "github"},
+         "context": "work", "source": "github"},
     ])
 
     canned = LLMResult(
@@ -282,11 +282,11 @@ def test_generate_weekly_falls_back_when_llm_errors(vault: Path) -> None:
     from ghostbrain.llm import client as llm
 
     week_end = date(2026, 5, 10)
-    _write_artifact(vault, context="sanlam", artifact_type="decision",
+    _write_artifact(vault, context="work", artifact_type="decision",
                      title="Real decision", created="2026-05-08T10:00:00Z")
     _write_audit(vault, week_end, [
         {"event_type": "event_processed", "status": "success",
-         "context": "sanlam", "source": "github"},
+         "context": "work", "source": "github"},
     ])
 
     with patch("ghostbrain.worker.weekly_digest.llm.run",

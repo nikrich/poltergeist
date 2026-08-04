@@ -10,7 +10,7 @@ from ghostbrain.api.tests.conftest import write_import_routing
 PAGE_LIST_ITEM = {
     "id": "100",
     "type": "page",
-    "title": "ASCP architecture",
+    "title": "Service architecture",
     "version": {"number": 4, "when": "2026-06-01T10:00:00.000Z"},
     "children": {"page": {"size": 2}},
 }
@@ -39,16 +39,16 @@ PAGE_WITH_ONLY_FOLDER_CHILDREN = {
 SEARCH_HIT = {
     "id": "300",
     "title": "Quote domain design",
-    "space": {"key": "SPE"},
+    "space": {"key": "OPS"},
     "version": {"number": 7, "when": "2026-04-01T09:00:00.000Z"},
     "children": {"page": {"size": 0}},
 }
 ISSUE_LIST_ITEM = {
-    "key": "DIGISURE-1",
+    "key": "ACME-1",
     "fields": {
-        "summary": "Fix the BFF",
+        "summary": "Fix the API gateway",
         "status": {"name": "In Progress"},
-        "project": {"key": "DIGISURE"},
+        "project": {"key": "ACME"},
         "updated": "2026-06-08T10:00:00.000+0000",
     },
 }
@@ -62,16 +62,16 @@ def test_list_spaces_returns_monitored_spaces_with_names(
     write_import_routing(tmp_vault)
     fake_atlassian.routes["/wiki/rest/api/space"] = {
         "results": [
-            {"key": "DIG", "name": "Digisure"},
-            {"key": "SPE", "name": "Short-term"},
+            {"key": "ENG", "name": "Acme"},
+            {"key": "OPS", "name": "Short-term"},
         ]
     }
     rows = list_spaces()
     assert rows == [
-        {"site": "sft.atlassian.net", "siteSlug": "sft", "key": "DIG",
-         "name": "Digisure", "context": "sanlam"},
-        {"site": "sft.atlassian.net", "siteSlug": "sft", "key": "SPE",
-         "name": "Short-term", "context": "sanlam"},
+        {"site": "acme.atlassian.net", "siteSlug": "acme", "key": "ENG",
+         "name": "Acme", "context": "work"},
+        {"site": "acme.atlassian.net", "siteSlug": "acme", "key": "OPS",
+         "name": "Short-term", "context": "work"},
     ]
 
 
@@ -87,7 +87,7 @@ def test_list_spaces_falls_back_to_key_when_name_lookup_fails(
 
     fake_atlassian.routes["/wiki/rest/api/space"] = boom
     rows = list_spaces()
-    assert [r["name"] for r in rows] == ["DIG", "SPE"]
+    assert [r["name"] for r in rows] == ["ENG", "OPS"]
 
 
 def test_list_spaces_raises_when_unconfigured(tmp_vault: Path, fake_atlassian):
@@ -124,17 +124,17 @@ def test_list_pages_top_level_uses_root_depth(tmp_vault: Path, fake_atlassian):
     from ghostbrain.api.repo.import_atlassian import list_confluence_pages
 
     write_import_routing(tmp_vault)
-    fake_atlassian.routes["/wiki/rest/api/space/DIG/content/page"] = {
+    fake_atlassian.routes["/wiki/rest/api/space/ENG/content/page"] = {
         "results": [PAGE_LIST_ITEM, PAGE_LIST_LEAF]
     }
-    page = list_confluence_pages(site="sft.atlassian.net", space="DIG")
+    page = list_confluence_pages(site="acme.atlassian.net", space="ENG")
     assert page["items"] == [
-        {"site": "sft.atlassian.net", "id": "100", "title": "ASCP architecture",
+        {"site": "acme.atlassian.net", "id": "100", "title": "Service architecture",
          "type": "page", "parentId": None, "hasChildren": True,
-         "updatedAt": "2026-06-01T10:00:00.000Z", "version": 4, "space": "DIG"},
-        {"site": "sft.atlassian.net", "id": "200", "title": "Runbooks",
+         "updatedAt": "2026-06-01T10:00:00.000Z", "version": 4, "space": "ENG"},
+        {"site": "acme.atlassian.net", "id": "200", "title": "Runbooks",
          "type": "page", "parentId": None, "hasChildren": False,
-         "updatedAt": "2026-05-20T08:00:00.000Z", "version": 1, "space": "DIG"},
+         "updatedAt": "2026-05-20T08:00:00.000Z", "version": 1, "space": "ENG"},
     ]
     assert page["nextCursor"] is None  # fewer results than the limit
     host, path, params = fake_atlassian.calls[-1]
@@ -153,10 +153,10 @@ def test_list_pages_top_level_root_haschildren_counts_folders(
     from ghostbrain.api.repo.import_atlassian import list_confluence_pages
 
     write_import_routing(tmp_vault)
-    fake_atlassian.routes["/wiki/rest/api/space/DIG/content/page"] = {
+    fake_atlassian.routes["/wiki/rest/api/space/ENG/content/page"] = {
         "results": [PAGE_WITH_ONLY_FOLDER_CHILDREN]
     }
-    page = list_confluence_pages(site="sft.atlassian.net", space="DIG")
+    page = list_confluence_pages(site="acme.atlassian.net", space="ENG")
     assert page["items"][0]["hasChildren"] is True
     assert page["items"][0]["type"] == "page"
 
@@ -174,15 +174,15 @@ def test_list_pages_children_merges_folders_first(tmp_vault: Path, fake_atlassia
         "results": [PAGE_LIST_LEAF]
     }
     page = list_confluence_pages(
-        site="sft.atlassian.net", space="DIG", parent="100"
+        site="acme.atlassian.net", space="ENG", parent="100"
     )
     assert page["items"] == [
-        {"site": "sft.atlassian.net", "id": "900", "title": "Onboarding",
+        {"site": "acme.atlassian.net", "id": "900", "title": "Onboarding",
          "type": "folder", "parentId": "100", "hasChildren": True,
-         "updatedAt": None, "version": None, "space": "DIG"},
-        {"site": "sft.atlassian.net", "id": "200", "title": "Runbooks",
+         "updatedAt": None, "version": None, "space": "ENG"},
+        {"site": "acme.atlassian.net", "id": "200", "title": "Runbooks",
          "type": "page", "parentId": "100", "hasChildren": False,
-         "updatedAt": "2026-05-20T08:00:00.000Z", "version": 1, "space": "DIG"},
+         "updatedAt": "2026-05-20T08:00:00.000Z", "version": 1, "space": "ENG"},
     ]
 
 
@@ -201,7 +201,7 @@ def test_list_pages_next_cursor_when_either_list_full(
         "results": []  # no more pages
     }
     page = list_confluence_pages(
-        site="sft.atlassian.net", space="DIG", parent="100", limit=2
+        site="acme.atlassian.net", space="ENG", parent="100", limit=2
     )
     assert page["nextCursor"] == "2"
 
@@ -217,7 +217,7 @@ def test_list_pages_children_with_cursor(tmp_vault: Path, fake_atlassian):
         "results": []
     }
     page = list_confluence_pages(
-        site="sft.atlassian.net", space="DIG", parent="100", limit=2, cursor="4"
+        site="acme.atlassian.net", space="ENG", parent="100", limit=2, cursor="4"
     )
     assert [i["parentId"] for i in page["items"]] == ["100", "100"]
     assert [i["type"] for i in page["items"]] == ["page", "page"]
@@ -235,9 +235,9 @@ def test_list_pages_rejects_unknown_site_or_space(tmp_vault: Path, fake_atlassia
 
     write_import_routing(tmp_vault)
     with pytest.raises(ValueError):
-        list_confluence_pages(site="evil.atlassian.net", space="DIG")
+        list_confluence_pages(site="evil.atlassian.net", space="ENG")
     with pytest.raises(ValueError):
-        list_confluence_pages(site="sft.atlassian.net", space="NOTMONITORED")
+        list_confluence_pages(site="acme.atlassian.net", space="NOTMONITORED")
 
 
 def test_search_confluence_builds_title_cql_across_spaces(
@@ -251,14 +251,14 @@ def test_search_confluence_builds_title_cql_across_spaces(
     }
     rows = search_confluence(q='quote "domain"')
     assert rows == [
-        {"site": "sft.atlassian.net", "id": "300", "title": "Quote domain design",
+        {"site": "acme.atlassian.net", "id": "300", "title": "Quote domain design",
          "type": "page", "parentId": None, "hasChildren": False,
-         "updatedAt": "2026-04-01T09:00:00.000Z", "version": 7, "space": "SPE"},
+         "updatedAt": "2026-04-01T09:00:00.000Z", "version": 7, "space": "OPS"},
     ]
     host, path, params = fake_atlassian.calls[-1]
     cql = params["cql"]
     assert 'type = page' in cql
-    assert 'space = "DIG"' in cql and 'space = "SPE"' in cql
+    assert 'space = "ENG"' in cql and 'space = "OPS"' in cql
     assert 'title ~ "quote \\"domain\\""' in cql
 
 
@@ -270,8 +270,8 @@ def test_jira_issues_default_my_issues_jql(tmp_vault: Path, fake_atlassian):
     fake_atlassian.routes["/rest/api/3/search/jql"] = {"issues": [ISSUE_LIST_ITEM]}
     rows = list_jira_issues()
     assert rows == [
-        {"site": "sft.atlassian.net", "key": "DIGISURE-1", "summary": "Fix the BFF",
-         "status": "In Progress", "project": "DIGISURE",
+        {"site": "acme.atlassian.net", "key": "ACME-1", "summary": "Fix the API gateway",
+         "status": "In Progress", "project": "ACME",
          "updatedAt": "2026-06-08T10:00:00.000+0000"},
     ]
     host, path, params = fake_atlassian.calls[-1]
@@ -306,4 +306,4 @@ def test_list_pages_rejects_non_numeric_parent(tmp_vault, fake_atlassian):
 
     write_import_routing(tmp_vault)
     with pytest.raises(ValueError, match="invalid parent page id"):
-        list_confluence_pages("sft.atlassian.net", "DIGI", parent="../secrets")
+        list_confluence_pages("acme.atlassian.net", "DIGI", parent="../secrets")

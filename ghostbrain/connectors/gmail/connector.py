@@ -308,7 +308,7 @@ def _parse_accounts(config: dict) -> Iterable[GmailAccountConfig]:
     """``config`` shape::
 
         accounts:
-          jannik811@gmail.com:
+          you@example.com:
             monitored_labels: ["acme/policies", "your-context"]
             unread_lookback_hours: 24
           # ...

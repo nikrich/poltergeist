@@ -15,7 +15,7 @@ def _ts_ms(year: int, month: int, day: int) -> int:
 
 _FOLDERS_PAGE = {
     "items": [
-        {"id": "fold-sanlam", "parent_id": "", "title": "Sanlam"},
+        {"id": "fold-work", "parent_id": "", "title": "Work"},
         {"id": "fold-personal", "parent_id": "", "title": "Personal"},
     ],
     "has_more": False,
@@ -25,7 +25,7 @@ _NOTES_PAGE = {
     "items": [
         {
             "id": "note-a",
-            "parent_id": "fold-sanlam",
+            "parent_id": "fold-work",
             "title": "Compliance follow-up",
             "body": "Need to ping legal about the audit.",
             "created_time": _ts_ms(2026, 5, 10),
@@ -49,7 +49,7 @@ _NOTES_PAGE = {
         },
         {
             "id": "note-stale",
-            "parent_id": "fold-sanlam",
+            "parent_id": "fold-work",
             "title": "Old note",
             "body": "ancient history",
             "created_time": _ts_ms(2026, 1, 1),
@@ -115,8 +115,8 @@ def test_fetch_returns_normalized_events(vault: Path, tmp_path: Path) -> None:
     assert a["type"] == "note"
     assert a["subtype"] == "note"
     assert a["title"] == "Compliance follow-up"
-    assert a["metadata"]["notebook"] == "Sanlam"
-    assert a["metadata"]["notebookId"] == "fold-sanlam"
+    assert a["metadata"]["notebook"] == "Work"
+    assert a["metadata"]["notebookId"] == "fold-work"
     # rawData should not duplicate the body — it's already in `body`.
     assert "body" not in a["rawData"]
 
@@ -127,13 +127,13 @@ def test_fetch_returns_normalized_events(vault: Path, tmp_path: Path) -> None:
 
 
 def test_notebook_allowlist_filters_out_unlisted(vault: Path, tmp_path: Path) -> None:
-    connector = _make_connector(tmp_path, notebooks={"Sanlam": "sanlam"})
+    connector = _make_connector(tmp_path, notebooks={"Work": "work"})
 
     fake = _fake_get_json_factory(_FOLDERS_PAGE, [_NOTES_PAGE])
     with patch.object(connector, "_get_json", side_effect=fake):
         events = connector.fetch(datetime(2026, 5, 8, tzinfo=timezone.utc))
 
-    # Personal note dropped; Sanlam note kept.
+    # Personal note dropped; Work note kept.
     assert {e["id"] for e in events} == {"joplin:note:note-a"}
 
 
@@ -144,7 +144,7 @@ def test_empty_body_notes_skipped(vault: Path, tmp_path: Path) -> None:
         "items": [
             {
                 "id": "title-only",
-                "parent_id": "fold-sanlam",
+                "parent_id": "fold-work",
                 "title": "Just a title, no body",
                 "body": "   ",
                 "created_time": _ts_ms(2026, 5, 14),
@@ -221,11 +221,11 @@ def test_router_fast_routes_by_notebook(vault: Path) -> None:
         "source": "joplin",
         "title": "x",
         "body": "y",
-        "metadata": {"notebook": "Sanlam"},
+        "metadata": {"notebook": "Work"},
     }
-    routing = {"joplin": {"notebooks": {"Sanlam": "sanlam"}}}
+    routing = {"joplin": {"notebooks": {"Work": "work"}}}
 
     decision = route_event(event, content_excerpt="x y", routing=routing, config={})
-    assert decision.context == "sanlam"
+    assert decision.context == "work"
     assert decision.method == "path"
     assert decision.confidence == 1.0

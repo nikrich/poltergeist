@@ -9,8 +9,8 @@ def test_known_contexts_use_base_palette():
 
 
 def test_configured_context_hashes_into_ramp():
-    a = region_color("sanlam")
-    b = region_color("sanlam")
+    a = region_color("work")
+    b = region_color("work")
     assert a == b and a in _RAMP
 
 
@@ -22,4 +22,4 @@ def test_unknown_context_is_deterministic_hex():
 
 def test_label_falls_back_to_unfiled():
     assert region_label("") == "unfiled"
-    assert region_label("sanlam") == "sanlam"
+    assert region_label("work") == "work"

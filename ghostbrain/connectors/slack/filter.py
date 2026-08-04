@@ -56,7 +56,7 @@ matching the input order. Nothing else."""
 _USER_PROMPT_HEADER = """Rate each of the following Slack messages 0–3. Return one integer per message in input order.
 
 Context for the user receiving this feed:
-- They are a senior engineer at a fintech (Sanlam Digisure).
+- They are a senior software engineer.
 - "Hands-off" channels: random, gifs, anything social — score these 0 unless someone is asking the user directly.
 - Bot/automation senders (Apps with no human name) → 0 unless it's a CI failure mentioning a repo the user maintains.
 - Anything in a DM is already always-kept upstream; don't apply DM bias here.

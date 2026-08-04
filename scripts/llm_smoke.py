@@ -16,10 +16,10 @@ from ghostbrain.llm import client
 
 
 ROUTER_LIKE = """\
-Classify this content into one of: sanlam, codeship, reducedrecipes, personal, needs_review.
+Classify this content into one of: work, consulting, side-project, personal, needs_review.
 
 Content: The user is iterating on a Python worker that ingests Obsidian vault events
-under /Users/jannik/development/nikrich/ghost-brain. They use pytest, frontmatter,
+under ~/dev/example. They use pytest, frontmatter,
 and the watchdog library.
 """
 
@@ -30,7 +30,7 @@ SCHEMA = {
     "properties": {
         "context": {
             "type": "string",
-            "enum": ["sanlam", "codeship", "reducedrecipes",
+            "enum": ["work", "consulting", "side-project",
                      "personal", "needs_review"],
         },
         "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},

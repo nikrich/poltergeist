@@ -14,26 +14,26 @@ def _routing_with(rules: dict[str, str]) -> dict:
 
 def test_detect_context_returns_match(vault: Path) -> None:
     from ghostbrain.profile.claude_md import detect_context
-    routing = _routing_with({str(vault / "projects" / "my-project"): "codeship"})
+    routing = _routing_with({str(vault / "projects" / "my-project"): "consulting"})
     ctx = detect_context(vault / "projects" / "my-project", routing=routing)
-    assert ctx == "codeship"
+    assert ctx == "consulting"
 
 
 def test_detect_context_handles_subdirectory(vault: Path) -> None:
     from ghostbrain.profile.claude_md import detect_context
-    routing = _routing_with({str(vault / "dev" / "sanlam"): "sanlam"})
-    ctx = detect_context(vault / "dev" / "sanlam" / "service-x", routing=routing)
-    assert ctx == "sanlam"
+    routing = _routing_with({str(vault / "dev" / "work"): "work"})
+    ctx = detect_context(vault / "dev" / "work" / "service-x", routing=routing)
+    assert ctx == "work"
 
 
 def test_detect_context_longest_prefix_wins(vault: Path) -> None:
     from ghostbrain.profile.claude_md import detect_context
     routing = _routing_with({
         str(vault / "dev"): "personal",
-        str(vault / "dev" / "sanlam"): "sanlam",
+        str(vault / "dev" / "work"): "work",
     })
-    ctx = detect_context(vault / "dev" / "sanlam" / "service-x", routing=routing)
-    assert ctx == "sanlam"
+    ctx = detect_context(vault / "dev" / "work" / "service-x", routing=routing)
+    assert ctx == "work"
 
 
 def test_detect_context_no_match_returns_none(vault: Path) -> None:
@@ -44,10 +44,10 @@ def test_detect_context_no_match_returns_none(vault: Path) -> None:
 
 
 def test_detect_context_does_not_match_partial_segment(vault: Path) -> None:
-    """``/dev/sanlam-foo`` must NOT match a rule for ``/dev/sanlam``."""
+    """``/dev/work-foo`` must NOT match a rule for ``/dev/work``."""
     from ghostbrain.profile.claude_md import detect_context
-    routing = _routing_with({str(vault / "dev" / "sanlam"): "sanlam"})
-    ctx = detect_context(vault / "dev" / "sanlam-foo", routing=routing)
+    routing = _routing_with({str(vault / "dev" / "work"): "work"})
+    ctx = detect_context(vault / "dev" / "work-foo", routing=routing)
     assert ctx is None
 
 
@@ -55,39 +55,39 @@ def test_filter_by_context_extracts_only_target_section() -> None:
     from ghostbrain.profile.claude_md import filter_by_context
     body = (
         "# Current projects\n\n"
-        "## sanlam\n"
-        "- ASCP work\n"
+        "## work\n"
+        "- Helix work\n"
         "- DLQ triage\n\n"
-        "## codeship\n"
+        "## consulting\n"
         "- Hive\n"
         "- Ghost Brain\n\n"
         "## personal\n"
         "- cooking\n"
     )
-    sanlam = filter_by_context(body, "sanlam")
-    codeship = filter_by_context(body, "codeship")
+    work = filter_by_context(body, "work")
+    consulting = filter_by_context(body, "consulting")
 
-    assert "ASCP work" in sanlam
-    assert "DLQ triage" in sanlam
-    assert "Hive" not in sanlam
-    assert "cooking" not in sanlam
+    assert "Helix work" in work
+    assert "DLQ triage" in work
+    assert "Hive" not in work
+    assert "cooking" not in work
 
-    assert "Hive" in codeship
-    assert "Ghost Brain" in codeship
-    assert "ASCP work" not in codeship
+    assert "Hive" in consulting
+    assert "Ghost Brain" in consulting
+    assert "Helix work" not in consulting
 
 
 def test_filter_by_context_case_insensitive() -> None:
     from ghostbrain.profile.claude_md import filter_by_context
-    body = "## Sanlam\n- thing\n\n## codeship\n- other\n"
-    out = filter_by_context(body, "sanlam")
+    body = "## Work\n- thing\n\n## consulting\n- other\n"
+    out = filter_by_context(body, "work")
     assert "thing" in out
 
 
 def test_filter_by_context_missing_section_returns_empty() -> None:
     from ghostbrain.profile.claude_md import filter_by_context
-    body = "## codeship\n- only one section\n"
-    assert filter_by_context(body, "sanlam") == ""
+    body = "## consulting\n- only one section\n"
+    assert filter_by_context(body, "work") == ""
 
 
 def test_generate_claude_md_writes_full_profile(vault: Path, tmp_path: Path) -> None:
@@ -97,7 +97,7 @@ def test_generate_claude_md_writes_full_profile(vault: Path, tmp_path: Path) -> 
     project.mkdir()
     (project / "package.json").write_text('{"name": "x"}')
 
-    routing = _routing_with({str(project): "codeship"})
+    routing = _routing_with({str(project): "consulting"})
 
     # Replace placeholder profile content with concrete sections so we can
     # assert their presence.
@@ -108,11 +108,11 @@ def test_generate_claude_md_writes_full_profile(vault: Path, tmp_path: Path) -> 
         "# Preferences\nNo emoji.\n"
     )
     (vault / "80-profile" / "current-projects.md").write_text(
-        "# Current projects\n\n## sanlam\n- Ascp\n\n## codeship\n- Hive\n"
+        "# Current projects\n\n## work\n- Helix\n\n## consulting\n- Hive\n"
     )
-    (vault / "20-contexts" / "codeship").mkdir(parents=True, exist_ok=True)
-    (vault / "20-contexts" / "codeship" / "_profile.md").write_text(
-        "# Codeship profile\nShip CLI is canonical.\n"
+    (vault / "20-contexts" / "consulting").mkdir(parents=True, exist_ok=True)
+    (vault / "20-contexts" / "consulting" / "_profile.md").write_text(
+        "# Consultancy profile\nShip CLI is canonical.\n"
     )
 
     out = generate_claude_md(project, routing=routing)
@@ -124,7 +124,7 @@ def test_generate_claude_md_writes_full_profile(vault: Path, tmp_path: Path) -> 
     assert "Ship CLI is canonical." in body
     assert "Hive" in body
     # The other context's projects must not leak in.
-    assert "Ascp" not in body
+    assert "Helix" not in body
     # Auto-generated header is present.
     assert "Auto-generated by ghostbrain" in body
 
@@ -138,11 +138,11 @@ def test_generate_claude_md_falls_back_when_no_context(vault: Path, tmp_path: Pa
     project.mkdir()
 
     (vault / "80-profile" / "current-projects.md").write_text(
-        "# Current projects\n\n## sanlam\n- A\n\n## codeship\n- B\n"
+        "# Current projects\n\n## work\n- A\n\n## consulting\n- B\n"
     )
 
     out = generate_claude_md(project, routing={"claude_code": {"project_paths": {}}})
     body = out.read_text()
 
-    assert "## sanlam" in body
-    assert "## codeship" in body
+    assert "## work" in body
+    assert "## consulting" in body

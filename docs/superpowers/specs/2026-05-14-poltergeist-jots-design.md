@@ -112,19 +112,19 @@ Failure handling:
 │                      │                                              │
 │ ▾ inbox (pending)    │  # title                                     │
 │   • untitled-1       │                                              │
-│ ▾ sanlam             │  body…                                       │
+│ ▾ work             │  body…                                       │
 │   ▾ 2026-05          │                                              │
-│     • ascp-wizard-…  │  [tags: #idea #ui]                           │
+│     • checkout-wiza… │  [tags: #idea #ui]                           │
 │   ▸ 2026-04          │                                              │
-│ ▾ codeship           │  ──────── footer ────────                    │
-│ ▾ personal           │  saved 2s ago · sanlam (routed, 0.82)        │
+│ ▾ consulting           │  ──────── footer ────────                    │
+│ ▾ personal           │  saved 2s ago · work (routed, 0.82)        │
 │ ▾ unrouted           │  [re-route] [delete] [open in Obsidian ↗]    │
 └──────────────────────┴──────────────────────────────────────────────┘
 ```
 
 ### Tree
 
-- One top-level node per routed context (`sanlam`, `codeship`, `personal`, etc., sourced from the user profile's known contexts).
+- One top-level node per routed context (`work`, `consulting`, `personal`, etc., sourced from the user profile's known contexts).
 - Plus `inbox (pending)` for jots still being routed (typically empty since routing is synchronous; appears briefly during the 1–2s LLM call if the screen is open).
 - Plus `unrouted` for `routingStatus: manual_review` jots.
 - Second level: month buckets `YYYY-MM` based on `created`.
@@ -162,7 +162,7 @@ Failure handling:
 id: manual-20260514T093015-ghostbrain-jot-idea
 type: note
 source: manual
-context: sanlam              # null/absent while pending
+context: work              # null/absent while pending
 created: '2026-05-14T09:30:15+02:00'
 updated: '2026-05-14T09:30:15+02:00'
 ingestedAt: '2026-05-14T09:30:15.123456+00:00'
@@ -170,12 +170,12 @@ routingStatus: routed        # pending | routed | manual_review
 routingConfidence: 0.82      # null while pending
 routingMethod: llm           # llm | user
 routingReasoning: |
-  Mentions sft-capstone-fe-ascp-v2 component and Cognito session handling —
-  consistent with sanlam-digisure work context.
+  Mentions the orders-web-v2 component and session expiry handling —
+  consistent with the northwind work context.
 tags: [idea, ui]             # parsed from #hashtags in the body at write time
 ---
 
-body text exactly as the user typed it, #idea about the ascp wizard flow:
+body text exactly as the user typed it, #idea about the checkout wizard flow:
 …
 ```
 
@@ -272,4 +272,4 @@ None at design time. Implementation plan should confirm:
 
 ## Implementation status
 
-- 2026-06-09: E2E pass (live sidecar from feat/poltergeist-jots, real vault, real LLM router) — POST /v1/notes routed to codeship at 0.95 confidence with reasoning; frontmatter + audit (`manual_jot_routed`) verified; list `?source=manual&q=` filter OK; PATCH re-derived tags; manual re-route moved the file to personal; traversal context rejected 400; DELETE 204 → 404; test jot cleaned up. Overlay keypress (⌥-J) pending in-app human verification.
+- 2026-06-09: E2E pass (live sidecar from feat/poltergeist-jots, real vault, real LLM router) — POST /v1/notes routed to consulting at 0.95 confidence with reasoning; frontmatter + audit (`manual_jot_routed`) verified; list `?source=manual&q=` filter OK; PATCH re-derived tags; manual re-route moved the file to personal; traversal context rejected 400; DELETE 204 → 404; test jot cleaned up. Overlay keypress (⌥-J) pending in-app human verification.

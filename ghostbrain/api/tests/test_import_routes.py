@@ -16,17 +16,17 @@ def test_spaces_ok(
 ):
     write_import_routing(tmp_vault)
     fake_atlassian.routes["/wiki/rest/api/space"] = {
-        "results": [{"key": "DIG", "name": "Digisure"}]
+        "results": [{"key": "ENG", "name": "Acme"}]
     }
     res = client.get("/v1/import/confluence/spaces", headers=auth_headers)
     assert res.status_code == 200
     data = res.json()
-    assert {s["key"] for s in data} == {"DIG", "SPE"}
+    assert {s["key"] for s in data} == {"ENG", "OPS"}
     by_key = {s["key"]: s for s in data}
-    assert by_key["DIG"]["name"] == "Digisure"
-    assert by_key["SPE"]["name"] == "SPE"  # lookup miss → key fallback
-    assert by_key["DIG"]["siteSlug"] == "sft"
-    assert by_key["DIG"]["context"] == "sanlam"
+    assert by_key["ENG"]["name"] == "Acme"
+    assert by_key["OPS"]["name"] == "OPS"  # lookup miss → key fallback
+    assert by_key["ENG"]["siteSlug"] == "acme"
+    assert by_key["ENG"]["context"] == "work"
 
 
 def test_spaces_409_when_unconfigured(
@@ -49,7 +49,7 @@ def test_pages_ok_passes_params(
     }
     res = client.get(
         "/v1/import/confluence/pages"
-        "?site=sft.atlassian.net&space=DIG&parent=100&limit=1&cursor=3",
+        "?site=acme.atlassian.net&space=ENG&parent=100&limit=1&cursor=3",
         headers=auth_headers,
     )
     assert res.status_code == 200
@@ -69,14 +69,14 @@ def test_pages_requires_site_and_space(
 ):
     write_import_routing(tmp_vault)
     assert client.get(
-        "/v1/import/confluence/pages?space=DIG", headers=auth_headers
+        "/v1/import/confluence/pages?space=ENG", headers=auth_headers
     ).status_code == 422
     assert client.get(
-        "/v1/import/confluence/pages?site=sft.atlassian.net", headers=auth_headers
+        "/v1/import/confluence/pages?site=acme.atlassian.net", headers=auth_headers
     ).status_code == 422
     # unmonitored space → 400 (repo ValueError mapped like notes.py), not 500
     assert client.get(
-        "/v1/import/confluence/pages?site=sft.atlassian.net&space=NOPE",
+        "/v1/import/confluence/pages?site=acme.atlassian.net&space=NOPE",
         headers=auth_headers,
     ).status_code == 400
 
@@ -88,7 +88,7 @@ def test_pages_non_numeric_parent_returns_400(
     write_import_routing(tmp_vault)
     res = client.get(
         "/v1/import/confluence/pages"
-        "?site=sft.atlassian.net&space=DIG&parent=../secrets",
+        "?site=acme.atlassian.net&space=ENG&parent=../secrets",
         headers=auth_headers,
     )
     assert res.status_code == 400
@@ -104,7 +104,7 @@ def test_search_ok(
     }
     res = client.get("/v1/import/confluence/search?q=arch", headers=auth_headers)
     assert res.status_code == 200
-    assert res.json()[0]["title"] == "ASCP architecture"
+    assert res.json()[0]["title"] == "Service architecture"
     host, path, params = fake_atlassian.calls[-1]
     assert 'title ~ "arch"' in params["cql"]
 
@@ -116,12 +116,12 @@ def test_jira_issues_ok(
     fake_atlassian.routes["/rest/api/3/search/jql"] = {"issues": [ISSUE_LIST_ITEM]}
     res = client.get("/v1/import/jira/issues", headers=auth_headers)
     assert res.status_code == 200
-    assert res.json()[0]["key"] == "DIGISURE-1"
+    assert res.json()[0]["key"] == "ACME-1"
 
-    res = client.get("/v1/import/jira/issues?q=bff", headers=auth_headers)
+    res = client.get("/v1/import/jira/issues?q=gateway", headers=auth_headers)
     assert res.status_code == 200
     host, path, params = fake_atlassian.calls[-1]
-    assert params["jql"].startswith('text ~ "bff"')
+    assert params["jql"].startswith('text ~ "gateway"')
 
 
 def test_jira_issues_409_when_only_confluence_configured(
@@ -139,17 +139,17 @@ def test_post_import_happy_path_writes_note(
     write_import_routing(tmp_vault)
     write_live_config(tmp_vault)
     fake_atlassian.routes["/wiki/rest/api/content/1234567"] = PAGE_RAW
-    fake_atlassian.routes["/rest/api/3/issue/DIGISURE-1234"] = ISSUE_RAW
+    fake_atlassian.routes["/rest/api/3/issue/ACME-1234"] = ISSUE_RAW
     res = client.post("/v1/import", headers=auth_headers, json={"items": [
-        {"kind": "confluence_page", "site": "sft.atlassian.net", "id": "1234567"},
-        {"kind": "jira_issue", "site": "sft.atlassian.net", "key": "DIGISURE-1234"},
+        {"kind": "confluence_page", "site": "acme.atlassian.net", "id": "1234567"},
+        {"kind": "jira_issue", "site": "acme.atlassian.net", "key": "ACME-1234"},
     ]})
     assert res.status_code == 200
     results = res.json()["results"]
     assert [r["ok"] for r in results] == [True, True]
-    assert results[0]["path"].startswith("20-contexts/sanlam/confluence/")
+    assert results[0]["path"].startswith("20-contexts/work/confluence/")
     assert results[0]["updated"] is False
-    assert results[1]["path"].startswith("20-contexts/sanlam/jira/tickets/")
+    assert results[1]["path"].startswith("20-contexts/work/jira/tickets/")
     assert (tmp_vault / results[0]["path"]).exists()
     assert (tmp_vault / results[1]["path"]).exists()
 
@@ -158,7 +158,7 @@ def test_post_import_max_50_items(
     client: TestClient, auth_headers: dict[str, str], tmp_vault: Path, fake_atlassian
 ):
     write_import_routing(tmp_vault)
-    item = {"kind": "jira_issue", "site": "sft.atlassian.net", "key": "X-1"}
+    item = {"kind": "jira_issue", "site": "acme.atlassian.net", "key": "X-1"}
     res = client.post("/v1/import", headers=auth_headers,
                       json={"items": [item] * 51})
     assert res.status_code == 422
@@ -170,7 +170,7 @@ def test_post_import_409_when_unconfigured(
     client: TestClient, auth_headers: dict[str, str], tmp_vault: Path, fake_atlassian
 ):
     res = client.post("/v1/import", headers=auth_headers, json={"items": [
-        {"kind": "confluence_page", "site": "sft.atlassian.net", "id": "1"},
+        {"kind": "confluence_page", "site": "acme.atlassian.net", "id": "1"},
     ]})
     assert res.status_code == 409
     assert res.json() == {"detail": CONFLUENCE_409}
@@ -181,11 +181,11 @@ def test_post_import_item_missing_identifier_422(
 ):
     write_import_routing(tmp_vault)
     res = client.post("/v1/import", headers=auth_headers, json={"items": [
-        {"kind": "confluence_page", "site": "sft.atlassian.net"},  # no id
+        {"kind": "confluence_page", "site": "acme.atlassian.net"},  # no id
     ]})
     assert res.status_code == 422
     res = client.post("/v1/import", headers=auth_headers, json={"items": [
-        {"kind": "jira_issue", "site": "sft.atlassian.net"},  # no key
+        {"kind": "jira_issue", "site": "acme.atlassian.net"},  # no key
     ]})
     assert res.status_code == 422
 
@@ -200,10 +200,10 @@ def test_post_import_per_item_failure_isolated(
         raise RuntimeError("atlassian GET failed (last status=404)")
 
     fake_atlassian.routes["/wiki/rest/api/content/999"] = gone
-    fake_atlassian.routes["/rest/api/3/issue/DIGISURE-1234"] = ISSUE_RAW
+    fake_atlassian.routes["/rest/api/3/issue/ACME-1234"] = ISSUE_RAW
     res = client.post("/v1/import", headers=auth_headers, json={"items": [
-        {"kind": "confluence_page", "site": "sft.atlassian.net", "id": "999"},
-        {"kind": "jira_issue", "site": "sft.atlassian.net", "key": "DIGISURE-1234"},
+        {"kind": "confluence_page", "site": "acme.atlassian.net", "id": "999"},
+        {"kind": "jira_issue", "site": "acme.atlassian.net", "key": "ACME-1234"},
     ]})
     assert res.status_code == 200
     results = res.json()["results"]

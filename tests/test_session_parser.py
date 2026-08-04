@@ -94,8 +94,8 @@ def test_excerpt_caps_long_turns(tmp_path: Path) -> None:
 
 
 def test_derive_cwd_from_dirname() -> None:
-    p = Path("/Users/jannik/.claude/projects/-Users-jannik-foo-bar/abc.jsonl")
-    assert derive_cwd_from_dirname(p) == "/Users/jannik/foo/bar"
+    p = Path("~/.claude/projects/-Users-you-foo-bar/abc.jsonl")
+    assert derive_cwd_from_dirname(p) == "/Users/you/foo/bar"
 
 
 def test_derive_cwd_returns_none_when_not_encoded() -> None:

@@ -10,7 +10,7 @@
 Two features sharing one concept:
 
 1. **Dynamic projects** — user-defined routing destinations nested under the four
-   fixed contexts (`sanlam`, `codeship`, `reducedrecipes`, `personal`). Managed
+   fixed contexts (`work`, `consulting`, `side-project`, `personal`). Managed
    in-app, stored in a synced vault registry, picked up dynamically by the LLM
    auto-router, the manual re-route UI, and the jots tree.
 2. **Chat-summary export** — one action on a chat conversation produces an LLM
@@ -37,8 +37,8 @@ Project shape:
 
 ```json
 {
-  "id": "codeship/poltergeist",
-  "context": "codeship",
+  "id": "consulting/poltergeist",
+  "context": "consulting",
   "slug": "poltergeist",
   "name": "Poltergeist",
   "description": "the second-brain product: vault, connectors, desktop app",
@@ -67,7 +67,7 @@ Renaming changes `name` only; `slug` (and folder) are immutable in v1.
 
 **Auto-router** (`ghostbrain/worker/router.py`): the hardcoded context enum in
 `ROUTER_JSON_SCHEMA` becomes a dynamic **destination** enum built per call from
-the registry: `["sanlam", "sanlam/capstone", "codeship/poltergeist", ...]` — a
+the registry: `["work", "work/rockets", "consulting/poltergeist", ...]` — a
 bare context means "no project". Active projects' names + descriptions are
 injected into the router prompt. Heuristic pre-routing (email domains, Slack
 workspaces, label prefixes) keeps picking bare contexts; only the LLM stage

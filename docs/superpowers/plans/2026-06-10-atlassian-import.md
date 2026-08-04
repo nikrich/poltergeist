@@ -6,7 +6,7 @@
 
 **Architecture:** The scheduled sync works like this today (all verified on this branch): `ConfluenceConnector._fetch_site` / `JiraConnector._fetch_site` call `AtlassianClient.get` (`ghostbrain/connectors/atlassian/_base.py` — Basic auth from `ATLASSIAN_EMAIL` + `ATLASSIAN_TOKEN[_<SLUG>]`, 429 backoff, 5xx retries) and normalize each raw payload into the standard event shape (`{id, source, type, subtype, timestamp, actorId, title, body, url, rawData, metadata}`); `Connector.run()` then **enqueues** each event as JSON into `90-meta/queue/pending/`; the worker's `run_loop` (`ghostbrain/worker/main.py`) claims each file and calls `ghostbrain.worker.pipeline.process_event`, which routes (`route_event`: path-first via routing.yaml `confluence.spaces` / `jira.sites`, LLM fallback) and persists via `write_note` (`ghostbrain/worker/note_generator.py`: frontmatter + body to `00-inbox/raw/<source>/` always, and to `20-contexts/<ctx>/confluence/` or `<ctx>/jira/tickets/` when `config.yaml` `worker.routing_mode: live`). The import endpoint skips the queue hop and calls `process_event` **inline** on the same normalized event — identical frontmatter, body, filename, and routing-fallback behaviour, one (path-routed, so usually zero-LLM) call per item. Task 1 extracts the connectors' embedded normalize functions (`normalize_page`, `page_url`, `normalize_issue`, `MY_ISSUES_JQL`, `PAGE_EXPAND`) to module level with delegating call sites and a golden characterization test committed *before* the refactor. Tasks 2–4 add `ghostbrain/api/repo/import_atlassian.py` (browse + `import_items`) and `ghostbrain/api/routes/import_atlassian.py`. Tasks 5–6 add the desktop types/hooks (`ApiError` with HTTP status surfaces the 409) and the `'import'` screen. Tasks 7–8 are the regression gate and a real-credentials manual E2E.
 
-**One hard codebase fact the spec got wrong (drives the dedup design):** `write_note._filename_for` builds `{ts_slug}-{title_slug}-{id_suffix}.md` where `ts_slug` comes from the event **timestamp** (the page's `version.when` / issue's `updated`) and `id_suffix` is the first 12 chars of the slugified note id — which for Confluence is always the degenerate `confluencesf` and for Jira `jirasft…` (verified against real vault files like `20260507T081447-mvp-wrap-up-checklist…-confluencesf.md`). So the naming is deterministic **per content version**, not per pageId/key: re-importing an *unchanged* item overwrites the same file, but re-importing a *changed* item lands at a new filename. To honor the spec's "re-importing updates the same note", `import_items` looks up existing notes by frontmatter `id` (the stable `confluence:<slug>:<pageId>` / `jira:<slug>:<KEY>`) before processing, deletes any stale copies the new write didn't overwrite, and reports `updated: true` whenever a prior copy existed.
+**One hard codebase fact the spec got wrong (drives the dedup design):** `write_note._filename_for` builds `{ts_slug}-{title_slug}-{id_suffix}.md` where `ts_slug` comes from the event **timestamp** (the page's `version.when` / issue's `updated`) and `id_suffix` is the first 12 chars of the slugified note id — which for Confluence is always the degenerate `confluencesf` and for Jira `jiraacme…` (verified against real vault files like `20260507T081447-mvp-wrap-up-checklist…-confluencesf.md`). So the naming is deterministic **per content version**, not per pageId/key: re-importing an *unchanged* item overwrites the same file, but re-importing a *changed* item lands at a new filename. To honor the spec's "re-importing updates the same note", `import_items` looks up existing notes by frontmatter `id` (the stable `confluence:<slug>:<pageId>` / `jira:<slug>:<KEY>`) before processing, deletes any stale copies the new write didn't overwrite, and reports `updated: true` whenever a prior copy existed.
 
 **Tech Stack:** Python 3.11 + FastAPI (sidecar), pytest (`ghostbrain/api/tests/` with `tmp_vault`/`client`/`auth_headers` fixtures; connector golden tests in `tests/` with its `vault` fixture), Electron + React + TypeScript (desktop), Zustand (toast/navigation stores), React Query (data), Vitest + React Testing Library (renderer tests).
 
@@ -14,10 +14,10 @@
 
 **Verified baselines (2026-06-10, this worktree, after the activity-heatmap merge):**
 
-- Backend: `/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m pytest ghostbrain/api/tests/ -q` → **57 passed** (run from the worktree root).
+- Backend: `~/dev/example/.venv/bin/python -m pytest ghostbrain/api/tests/ -q` → **57 passed** (run from the worktree root).
 - Connector/worker suites: `… -m pytest tests/test_confluence_connector.py tests/test_jira_connector.py tests/test_pipeline.py -q` → **12 passed** (5 + 4 + 3).
 - Desktop: `cd desktop && npx vitest run` → **37 passed** (9 files). `cd desktop && npm run typecheck` → clean.
-- Real `~/ghostbrain/vault/90-meta/routing.yaml` shape: `jira.sites` is a **dict** `{sft.atlassian.net: sanlam}`; `confluence.sites` dict `{sft.atlassian.net: sanlam}`; `confluence.spaces` dict `{DIG: sanlam, SFTHome: sanlam, SPE: sanlam}`. The runners call `list(...)` on these (dict → keys). Real `config.yaml` has `worker.routing_mode: live`.
+- Real `~/ghostbrain/vault/90-meta/routing.yaml` shape: `jira.sites` is a **dict** `{acme.atlassian.net: work}`; `confluence.sites` dict `{acme.atlassian.net: work}`; `confluence.spaces` dict `{ENG: work, DOCS: work, OPS: work}`. The runners call `list(...)` on these (dict → keys). Real `config.yaml` has `worker.routing_mode: live`.
 - The forwarder (`desktop/src/main/api-forwarder.ts`) already returns `{ ok: false, error: <FastAPI detail>, status: <HTTP code> }`, but `desktop/src/renderer/lib/api/client.ts` currently throws a plain `Error` and **drops the status** — Task 5 adds an `ApiError` carrying it (needed for the 409 call-to-action).
 - There is **no house tab component**; the closest pattern is the capture screen's chip strip (`chipClass` in `desktop/src/renderer/screens/capture.tsx`). The import screen's tabs reuse that styling.
 - `Lucide` resolves kebab names; `download`, `chevron-down`, `chevron-right`, `plug`, `search` all exist in lucide-react.
@@ -27,7 +27,7 @@
 1. **Import persists via `pipeline.process_event` inline**, not by re-implementing write logic and not via the worker queue (waiting on the worker poll loop would make the endpoint unreliable and the worker may not even be running). `process_event` is exactly what the worker calls on dequeued connector events, so the written note is identical to a synced one. The worker's `event_processed` audit line is written by `run_loop`, **not** by `process_event`, so the import path writes its own `import_completed` audit line without double-logging.
 2. **Dedup by frontmatter `id` + stale-file removal** (see the codebase-fact paragraph above). `updated: true` ⇔ a note with the same event id already existed anywhere in `00-inbox/raw/<source>/` or `20-contexts/*/<source-dir>/`.
 3. **`GET /v1/import/confluence/pages` returns `{items, nextCursor}`** rather than the spec table's bare array — the spec itself declares a `cursor` query param, and Confluence v1 paging is start/limit, so the cursor is the stringified next start offset. The other three browse endpoints return bare arrays as specced.
-4. **Per-item UI progress via sequential 1-item POSTs.** The endpoint accepts up to 50 items per request (batch semantics for non-interactive callers, 422 above 50), but a single bulk POST can't stream progress. `useImportItems` loops `POST /v1/import {items:[item]}` one at a time, firing an `onItem` callback before each — that is what renders "3/7 — importing PAS-1234…" truthfully.
+4. **Per-item UI progress via sequential 1-item POSTs.** The endpoint accepts up to 50 items per request (batch semantics for non-interactive callers, 422 above 50), but a single bulk POST can't stream progress. `useImportItems` loops `POST /v1/import {items:[item]}` one at a time, firing an `onItem` callback before each — that is what renders "3/7 — importing ACME-1234…" truthfully.
 5. **Both "no sites/spaces configured" and "auth env vars missing" normalize to `ImportNotConfiguredError`** with the spec's exact detail string (`"confluence connector not configured — run onboarding"` / jira equivalent), and every route maps that to 409. `auth_for_site` only reads env vars (no network), so the POST validates config+auth up front and 409s before touching any item.
 6. **Space display names are best-effort**: one `GET /wiki/rest/api/space?spaceKey=…` per site, falling back to the key when the lookup fails — browse must work even if that cosmetic call breaks.
 7. **Import browse queries use `retry: false`** so a 409 renders the call-to-action immediately instead of after three retries.
@@ -69,93 +69,93 @@ import pytest
 
 PAGE_RAW = {
     "id": "1234567",
-    "title": "ASCP architecture overview",
-    "space": {"key": "DIG"},
+    "title": "Service architecture overview",
+    "space": {"key": "ENG"},
     "version": {
         "number": 5,
         "when": "2026-05-07T09:30:00.000Z",
-        "by": {"accountId": "u1", "displayName": "Jannik"},
+        "by": {"accountId": "u1", "displayName": "Priya"},
     },
     "body": {
         "storage": {
-            "value": "<p>This is the <strong>ASCP</strong> overview.</p>"
-                     "<p>It describes <em>microservices</em> and BFFs.</p>",
+            "value": "<p>This is the <strong>Helix</strong> overview.</p>"
+                     "<p>It describes <em>microservices</em> and APIs.</p>",
         },
     },
     "_links": {
-        "base": "https://sft.atlassian.net/wiki",
-        "webui": "/spaces/DIG/pages/1234567/Overview",
+        "base": "https://acme.atlassian.net/wiki",
+        "webui": "/spaces/ENG/pages/1234567/Overview",
     },
 }
 
 EXPECTED_PAGE_EVENT = {
-    "id": "confluence:sft:1234567",
+    "id": "confluence:acme:1234567",
     "source": "confluence",
     "type": "page",
     "subtype": "updated",
     "timestamp": "2026-05-07T09:30:00.000Z",
     "actorId": "confluence:u1",
-    "title": "ASCP architecture overview",
-    "body": "This is the **ASCP** overview.\n\nIt describes *microservices* and BFFs.",
-    "url": "https://sft.atlassian.net/wiki/spaces/DIG/pages/1234567/Overview",
+    "title": "Service architecture overview",
+    "body": "This is the **Helix** overview.\n\nIt describes *microservices* and APIs.",
+    "url": "https://acme.atlassian.net/wiki/spaces/ENG/pages/1234567/Overview",
     "rawData": PAGE_RAW,
     "metadata": {
-        "site": "sft.atlassian.net",
-        "siteSlug": "sft",
-        "space": "DIG",
+        "site": "acme.atlassian.net",
+        "siteSlug": "acme",
+        "space": "ENG",
         "pageId": "1234567",
         "version": 5,
-        "lastModifiedBy": "Jannik",
+        "lastModifiedBy": "Priya",
     },
 }
 
 ISSUE_RAW = {
-    "key": "DIGISURE-1234",
+    "key": "ACME-1234",
     "id": "10001",
     "fields": {
-        "summary": "Add cashback to quote domain",
+        "summary": "Add discount to billing domain",
         "status": {"name": "In Progress",
                    "statusCategory": {"key": "indeterminate"}},
         "priority": {"name": "Medium"},
         "issuetype": {"name": "Story"},
-        "assignee": {"accountId": "abc", "displayName": "Jannik"},
+        "assignee": {"accountId": "abc", "displayName": "Priya"},
         "reporter": {"accountId": "def", "displayName": "Reporter"},
-        "labels": ["capstone"],
-        "project": {"key": "DIGISURE"},
+        "labels": ["backend"],
+        "project": {"key": "ACME"},
         "created": "2026-05-01T08:00:00.000+0000",
         "updated": "2026-05-07T10:00:00.000+0000",
         "description": {
             "type": "doc",
             "content": [{
                 "type": "paragraph",
-                "content": [{"type": "text", "text": "Add a cashback field..."}],
+                "content": [{"type": "text", "text": "Add a discount field..."}],
             }],
         },
     },
 }
 
 EXPECTED_ISSUE_EVENT = {
-    "id": "jira:sft:DIGISURE-1234",
+    "id": "jira:acme:ACME-1234",
     "source": "jira",
     "type": "ticket",
     "subtype": "in progress",
     "timestamp": "2026-05-07T10:00:00.000+0000",
     "actorId": "jira:def",
-    "title": "DIGISURE-1234 Add cashback to quote domain",
-    "body": "Add a cashback field...",
-    "url": "https://sft.atlassian.net/browse/DIGISURE-1234",
+    "title": "ACME-1234 Add discount to billing domain",
+    "body": "Add a discount field...",
+    "url": "https://acme.atlassian.net/browse/ACME-1234",
     "rawData": ISSUE_RAW,
     "metadata": {
-        "site": "sft.atlassian.net",
-        "siteSlug": "sft",
-        "project": "DIGISURE",
-        "key": "DIGISURE-1234",
+        "site": "acme.atlassian.net",
+        "siteSlug": "acme",
+        "project": "ACME",
+        "key": "ACME-1234",
         "status": "In Progress",
         "statusCategory": "indeterminate",
         "priority": "Medium",
-        "assignee": "Jannik",
+        "assignee": "Priya",
         "reporter": "Reporter",
-        "labels": ["capstone"],
+        "labels": ["backend"],
         "issueType": "Story",
     },
 }
@@ -164,14 +164,14 @@ EXPECTED_ISSUE_EVENT = {
 @pytest.fixture(autouse=True)
 def _atlassian_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ATLASSIAN_EMAIL", "u@example.com")
-    monkeypatch.setenv("ATLASSIAN_TOKEN_SFT", "test-token")
+    monkeypatch.setenv("ATLASSIAN_TOKEN_ACME", "test-token")
 
 
 def test_confluence_scheduled_sync_output_is_pinned(tmp_path) -> None:
     from ghostbrain.connectors.confluence import ConfluenceConnector
 
     connector = ConfluenceConnector(
-        config={"sites": ["sft.atlassian.net"], "spaces": {"DIG": "sanlam"}},
+        config={"sites": ["acme.atlassian.net"], "spaces": {"ENG": "work"}},
         queue_dir=tmp_path / "q",
         state_dir=tmp_path / "s",
     )
@@ -187,7 +187,7 @@ def test_jira_scheduled_sync_output_is_pinned(tmp_path) -> None:
     from ghostbrain.connectors.jira import JiraConnector
 
     connector = JiraConnector(
-        config={"sites": ["sft.atlassian.net"]},
+        config={"sites": ["acme.atlassian.net"]},
         queue_dir=tmp_path / "q",
         state_dir=tmp_path / "s",
     )
@@ -202,7 +202,7 @@ def test_jira_scheduled_sync_output_is_pinned(tmp_path) -> None:
 - [ ] **Step 2: Run it — it must PASS against the unrefactored code**
 
 ```bash
-/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m pytest tests/test_atlassian_import_refactor.py -v
+~/dev/example/.venv/bin/python -m pytest tests/test_atlassian_import_refactor.py -v
 ```
 Expected: **2 passed**. If the `body` literal mismatches (markdownify whitespace), pin the actual output into the literal and re-run until green — this is a characterization test of *current* behaviour.
 
@@ -642,7 +642,7 @@ def test_normalize_page_function_matches_pinned_output() -> None:
     from ghostbrain.connectors.confluence import normalize_page
 
     assert normalize_page(
-        PAGE_RAW, host="sft.atlassian.net", space_map={"DIG": "sanlam"}
+        PAGE_RAW, host="acme.atlassian.net", space_map={"ENG": "work"}
     ) == EXPECTED_PAGE_EVENT
 
 
@@ -650,20 +650,20 @@ def test_normalize_page_drops_unmonitored_space() -> None:
     from ghostbrain.connectors.confluence import normalize_page
 
     assert normalize_page(
-        PAGE_RAW, host="sft.atlassian.net", space_map={"OTHER": "personal"}
+        PAGE_RAW, host="acme.atlassian.net", space_map={"OTHER": "personal"}
     ) is None
 
 
 def test_normalize_issue_function_matches_pinned_output() -> None:
     from ghostbrain.connectors.jira import normalize_issue
 
-    assert normalize_issue(ISSUE_RAW, host="sft.atlassian.net") == EXPECTED_ISSUE_EVENT
+    assert normalize_issue(ISSUE_RAW, host="acme.atlassian.net") == EXPECTED_ISSUE_EVENT
 ```
 
 - [ ] **Step 7: Run the golden file + the existing connector suites**
 
 ```bash
-/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m pytest \
+~/dev/example/.venv/bin/python -m pytest \
   tests/test_atlassian_import_refactor.py \
   tests/test_confluence_connector.py tests/test_jira_connector.py tests/test_pipeline.py -v
 ```
@@ -671,7 +671,7 @@ Expected: **17 passed** (5 golden + 5 confluence + 4 jira + 3 pipeline). The two
 
 Also confirm the API suite is untouched:
 ```bash
-/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m pytest ghostbrain/api/tests/ -q
+~/dev/example/.venv/bin/python -m pytest ghostbrain/api/tests/ -q
 ```
 Expected: **57 passed**.
 
@@ -709,11 +709,11 @@ def write_import_routing(vault: Path, *, jira: bool = True, confluence: bool = T
     """Write a routing.yaml mirroring the real shape: dicts keyed by host/space."""
     routing: dict = {"version": 1}
     if jira:
-        routing["jira"] = {"sites": {"sft.atlassian.net": "sanlam"}}
+        routing["jira"] = {"sites": {"acme.atlassian.net": "work"}}
     if confluence:
         routing["confluence"] = {
-            "sites": {"sft.atlassian.net": "sanlam"},
-            "spaces": {"DIG": "sanlam", "SPE": "sanlam"},
+            "sites": {"acme.atlassian.net": "work"},
+            "spaces": {"ENG": "work", "OPS": "work"},
         }
     p = vault / "90-meta" / "routing.yaml"
     p.write_text(yaml.safe_dump(routing))
@@ -782,7 +782,7 @@ from ghostbrain.api.tests.conftest import write_import_routing
 
 PAGE_LIST_ITEM = {
     "id": "100",
-    "title": "ASCP architecture",
+    "title": "Service architecture",
     "version": {"number": 4, "when": "2026-06-01T10:00:00.000Z"},
     "children": {"page": {"size": 2}},
 }
@@ -794,17 +794,17 @@ PAGE_LIST_LEAF = {
 }
 SEARCH_HIT = {
     "id": "300",
-    "title": "Quote domain design",
-    "space": {"key": "SPE"},
+    "title": "Billing domain design",
+    "space": {"key": "OPS"},
     "version": {"number": 7, "when": "2026-04-01T09:00:00.000Z"},
     "children": {"page": {"size": 0}},
 }
 ISSUE_LIST_ITEM = {
-    "key": "DIGISURE-1",
+    "key": "ACME-1",
     "fields": {
-        "summary": "Fix the BFF",
+        "summary": "Fix the orders-api",
         "status": {"name": "In Progress"},
-        "project": {"key": "DIGISURE"},
+        "project": {"key": "ACME"},
         "updated": "2026-06-08T10:00:00.000+0000",
     },
 }
@@ -818,16 +818,16 @@ def test_list_spaces_returns_monitored_spaces_with_names(
     write_import_routing(tmp_vault)
     fake_atlassian.routes["/wiki/rest/api/space"] = {
         "results": [
-            {"key": "DIG", "name": "Digisure"},
-            {"key": "SPE", "name": "Short-term"},
+            {"key": "ENG", "name": "Engineering"},
+            {"key": "OPS", "name": "Operations"},
         ]
     }
     rows = list_spaces()
     assert rows == [
-        {"site": "sft.atlassian.net", "siteSlug": "sft", "key": "DIG",
-         "name": "Digisure", "context": "sanlam"},
-        {"site": "sft.atlassian.net", "siteSlug": "sft", "key": "SPE",
-         "name": "Short-term", "context": "sanlam"},
+        {"site": "acme.atlassian.net", "siteSlug": "acme", "key": "ENG",
+         "name": "Engineering", "context": "work"},
+        {"site": "acme.atlassian.net", "siteSlug": "acme", "key": "OPS",
+         "name": "Operations", "context": "work"},
     ]
 
 
@@ -843,7 +843,7 @@ def test_list_spaces_falls_back_to_key_when_name_lookup_fails(
 
     fake_atlassian.routes["/wiki/rest/api/space"] = boom
     rows = list_spaces()
-    assert [r["name"] for r in rows] == ["DIG", "SPE"]
+    assert [r["name"] for r in rows] == ["ENG", "OPS"]
 
 
 def test_list_spaces_raises_when_unconfigured(tmp_vault: Path, fake_atlassian):
@@ -880,17 +880,17 @@ def test_list_pages_top_level_uses_root_depth(tmp_vault: Path, fake_atlassian):
     from ghostbrain.api.repo.import_atlassian import list_confluence_pages
 
     write_import_routing(tmp_vault)
-    fake_atlassian.routes["/wiki/rest/api/space/DIG/content/page"] = {
+    fake_atlassian.routes["/wiki/rest/api/space/ENG/content/page"] = {
         "results": [PAGE_LIST_ITEM, PAGE_LIST_LEAF]
     }
-    page = list_confluence_pages(site="sft.atlassian.net", space="DIG")
+    page = list_confluence_pages(site="acme.atlassian.net", space="ENG")
     assert page["items"] == [
-        {"site": "sft.atlassian.net", "id": "100", "title": "ASCP architecture",
+        {"site": "acme.atlassian.net", "id": "100", "title": "Service architecture",
          "parentId": None, "hasChildren": True,
-         "updatedAt": "2026-06-01T10:00:00.000Z", "version": 4, "space": "DIG"},
-        {"site": "sft.atlassian.net", "id": "200", "title": "Runbooks",
+         "updatedAt": "2026-06-01T10:00:00.000Z", "version": 4, "space": "ENG"},
+        {"site": "acme.atlassian.net", "id": "200", "title": "Runbooks",
          "parentId": None, "hasChildren": False,
-         "updatedAt": "2026-05-20T08:00:00.000Z", "version": 1, "space": "DIG"},
+         "updatedAt": "2026-05-20T08:00:00.000Z", "version": 1, "space": "ENG"},
     ]
     assert page["nextCursor"] is None  # fewer results than the limit
     host, path, params = fake_atlassian.calls[-1]
@@ -907,7 +907,7 @@ def test_list_pages_children_with_cursor(tmp_vault: Path, fake_atlassian):
         "results": [PAGE_LIST_ITEM, PAGE_LIST_LEAF]
     }
     page = list_confluence_pages(
-        site="sft.atlassian.net", space="DIG", parent="100", limit=2, cursor="4"
+        site="acme.atlassian.net", space="ENG", parent="100", limit=2, cursor="4"
     )
     assert [i["parentId"] for i in page["items"]] == ["100", "100"]
     # limit hit → there may be more; nextCursor advances start by limit.
@@ -923,9 +923,9 @@ def test_list_pages_rejects_unknown_site_or_space(tmp_vault: Path, fake_atlassia
 
     write_import_routing(tmp_vault)
     with pytest.raises(ValueError):
-        list_confluence_pages(site="evil.atlassian.net", space="DIG")
+        list_confluence_pages(site="evil.atlassian.net", space="ENG")
     with pytest.raises(ValueError):
-        list_confluence_pages(site="sft.atlassian.net", space="NOTMONITORED")
+        list_confluence_pages(site="acme.atlassian.net", space="NOTMONITORED")
 
 
 def test_search_confluence_builds_title_cql_across_spaces(
@@ -939,14 +939,14 @@ def test_search_confluence_builds_title_cql_across_spaces(
     }
     rows = search_confluence(q='quote "domain"')
     assert rows == [
-        {"site": "sft.atlassian.net", "id": "300", "title": "Quote domain design",
+        {"site": "acme.atlassian.net", "id": "300", "title": "Billing domain design",
          "parentId": None, "hasChildren": False,
-         "updatedAt": "2026-04-01T09:00:00.000Z", "version": 7, "space": "SPE"},
+         "updatedAt": "2026-04-01T09:00:00.000Z", "version": 7, "space": "OPS"},
     ]
     host, path, params = fake_atlassian.calls[-1]
     cql = params["cql"]
     assert 'type = page' in cql
-    assert 'space = "DIG"' in cql and 'space = "SPE"' in cql
+    assert 'space = "ENG"' in cql and 'space = "OPS"' in cql
     assert 'title ~ "quote \\"domain\\""' in cql
 
 
@@ -958,8 +958,8 @@ def test_jira_issues_default_my_issues_jql(tmp_vault: Path, fake_atlassian):
     fake_atlassian.routes["/rest/api/3/search/jql"] = {"issues": [ISSUE_LIST_ITEM]}
     rows = list_jira_issues()
     assert rows == [
-        {"site": "sft.atlassian.net", "key": "DIGISURE-1", "summary": "Fix the BFF",
-         "status": "In Progress", "project": "DIGISURE",
+        {"site": "acme.atlassian.net", "key": "ACME-1", "summary": "Fix the orders-api",
+         "status": "In Progress", "project": "ACME",
          "updatedAt": "2026-06-08T10:00:00.000+0000"},
     ]
     host, path, params = fake_atlassian.calls[-1]
@@ -971,9 +971,9 @@ def test_jira_issues_text_search(tmp_vault: Path, fake_atlassian):
 
     write_import_routing(tmp_vault)
     fake_atlassian.routes["/rest/api/3/search/jql"] = {"issues": [ISSUE_LIST_ITEM]}
-    list_jira_issues(q="cashback")
+    list_jira_issues(q="discount")
     host, path, params = fake_atlassian.calls[-1]
-    assert params["jql"] == 'text ~ "cashback" ORDER BY updated DESC'
+    assert params["jql"] == 'text ~ "discount" ORDER BY updated DESC'
 
 
 def test_jira_issues_raises_when_unconfigured(tmp_vault: Path, fake_atlassian):
@@ -992,7 +992,7 @@ def test_jira_issues_raises_when_unconfigured(tmp_vault: Path, fake_atlassian):
 - [ ] **Step 3: Run test to verify it fails**
 
 ```bash
-/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m pytest ghostbrain/api/tests/test_import_repo.py -v
+~/dev/example/.venv/bin/python -m pytest ghostbrain/api/tests/test_import_repo.py -v
 ```
 Expected: FAIL — `ModuleNotFoundError: No module named 'ghostbrain.api.repo.import_atlassian'` (the `fake_atlassian` fixture imports it).
 
@@ -1311,12 +1311,12 @@ def list_jira_issues(q: str | None = None, limit: int = DEFAULT_LIMIT) -> list[d
 - [ ] **Step 6: Run test to verify it passes**
 
 ```bash
-/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m pytest ghostbrain/api/tests/test_import_repo.py -v
+~/dev/example/.venv/bin/python -m pytest ghostbrain/api/tests/test_import_repo.py -v
 ```
 Expected: PASS — 11 tests green.
 
 ```bash
-/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m pytest ghostbrain/api/tests/ -q
+~/dev/example/.venv/bin/python -m pytest ghostbrain/api/tests/ -q
 ```
 Expected: **68 passed** (57 baseline + 11 new).
 
@@ -1358,51 +1358,51 @@ from ghostbrain.api.tests.conftest import write_import_routing, write_live_confi
 
 PAGE_RAW = {
     "id": "1234567",
-    "title": "ASCP architecture overview",
-    "space": {"key": "DIG"},
+    "title": "Service architecture overview",
+    "space": {"key": "ENG"},
     "version": {
         "number": 5,
         "when": "2026-05-07T09:30:00.000Z",
-        "by": {"accountId": "u1", "displayName": "Jannik"},
+        "by": {"accountId": "u1", "displayName": "Priya"},
     },
     "body": {
         "storage": {
-            "value": "<p>This is the <strong>ASCP</strong> overview.</p>",
+            "value": "<p>This is the <strong>Helix</strong> overview.</p>",
         },
     },
     "_links": {
-        "base": "https://sft.atlassian.net/wiki",
-        "webui": "/spaces/DIG/pages/1234567/Overview",
+        "base": "https://acme.atlassian.net/wiki",
+        "webui": "/spaces/ENG/pages/1234567/Overview",
     },
 }
 
 ISSUE_RAW = {
-    "key": "DIGISURE-1234",
+    "key": "ACME-1234",
     "id": "10001",
     "fields": {
-        "summary": "Add cashback to quote domain",
+        "summary": "Add discount to billing domain",
         "status": {"name": "In Progress",
                    "statusCategory": {"key": "indeterminate"}},
         "priority": {"name": "Medium"},
         "issuetype": {"name": "Story"},
-        "assignee": {"accountId": "abc", "displayName": "Jannik"},
+        "assignee": {"accountId": "abc", "displayName": "Priya"},
         "reporter": {"accountId": "def", "displayName": "Reporter"},
-        "labels": ["capstone"],
-        "project": {"key": "DIGISURE"},
+        "labels": ["backend"],
+        "project": {"key": "ACME"},
         "created": "2026-05-01T08:00:00.000+0000",
         "updated": "2026-05-07T10:00:00.000+0000",
         "description": {
             "type": "doc",
             "content": [{
                 "type": "paragraph",
-                "content": [{"type": "text", "text": "Add a cashback field..."}],
+                "content": [{"type": "text", "text": "Add a discount field..."}],
             }],
         },
     },
 }
 
-PAGE_ITEM = {"kind": "confluence_page", "site": "sft.atlassian.net", "id": "1234567"}
-ISSUE_ITEM = {"kind": "jira_issue", "site": "sft.atlassian.net", "key": "DIGISURE-1234"}
+PAGE_ITEM = {"kind": "confluence_page", "site": "acme.atlassian.net", "id": "1234567"}
+ISSUE_ITEM = {"kind": "jira_issue", "site": "acme.atlassian.net", "key": "ACME-1234"}
 
 
 @pytest.fixture
@@ -1440,9 +1440,9 @@ def test_import_confluence_page_writes_routed_note_and_audit(
     assert r["kind"] == "confluence_page"
     assert r["id"] == "1234567"
     assert r["ok"] is True
-    assert r["context"] == "sanlam"
+    assert r["context"] == "work"
     assert r["updated"] is False
-    assert r["path"].startswith("20-contexts/sanlam/confluence/")
+    assert r["path"].startswith("20-contexts/work/confluence/")
 
     # fetched with the connector's exact expand set
     host, path, params = fake_atlassian.calls[-1]
@@ -1450,13 +1450,13 @@ def test_import_confluence_page_writes_routed_note_and_audit(
 
     note = configured_vault / r["path"]
     fm = _frontmatter(note)
-    assert fm["id"] == "confluence:sft:1234567"
+    assert fm["id"] == "confluence:acme:1234567"
     assert fm["source"] == "confluence"
-    assert fm["space"] == "DIG"
-    assert fm["context"] == "sanlam"
+    assert fm["space"] == "ENG"
+    assert fm["context"] == "work"
     assert fm["routingMethod"] == "path"
-    assert fm["sourceUrl"].endswith("/spaces/DIG/pages/1234567/Overview")
-    assert "**ASCP**" in note.read_text()
+    assert fm["sourceUrl"].endswith("/spaces/ENG/pages/1234567/Overview")
+    assert "**Helix**" in note.read_text()
 
     # inbox copy exists too (write_note always writes it)
     inbox = configured_vault / "00-inbox" / "raw" / "confluence"
@@ -1465,25 +1465,25 @@ def test_import_confluence_page_writes_routed_note_and_audit(
     audits = [a for a in _audit_lines(configured_vault)
               if a["event_type"] == "import_completed"]
     assert len(audits) == 1
-    assert audits[0]["event_id"] == "confluence:sft:1234567"
+    assert audits[0]["event_id"] == "confluence:acme:1234567"
     assert audits[0]["source"] == "confluence"
     assert audits[0]["ok"] is True
-    assert audits[0]["context"] == "sanlam"
+    assert audits[0]["context"] == "work"
 
 
 def test_import_jira_issue_writes_routed_note(configured_vault: Path, fake_atlassian):
     from ghostbrain.api.repo.import_atlassian import import_items
 
-    fake_atlassian.routes["/rest/api/3/issue/DIGISURE-1234"] = ISSUE_RAW
+    fake_atlassian.routes["/rest/api/3/issue/ACME-1234"] = ISSUE_RAW
     results = import_items([ISSUE_ITEM])
 
     r = results[0]
     assert r["ok"] is True
-    assert r["key"] == "DIGISURE-1234"
-    assert r["path"].startswith("20-contexts/sanlam/jira/tickets/")
+    assert r["key"] == "ACME-1234"
+    assert r["path"].startswith("20-contexts/work/jira/tickets/")
     fm = _frontmatter(configured_vault / r["path"])
-    assert fm["id"] == "jira:sft:DIGISURE-1234"
-    assert fm["key"] == "DIGISURE-1234"
+    assert fm["id"] == "jira:acme:ACME-1234"
+    assert fm["key"] == "ACME-1234"
     assert fm["status"] == "In Progress"
     # fetched with the connector's full field list (body fidelity)
     host, path, params = fake_atlassian.calls[-1]
@@ -1503,7 +1503,7 @@ def test_reimport_unchanged_page_overwrites_same_path_updated_true(
     assert first["updated"] is False
     assert second["updated"] is True
     assert second["path"] == first["path"]
-    ctx_dir = configured_vault / "20-contexts" / "sanlam" / "confluence"
+    ctx_dir = configured_vault / "20-contexts" / "work" / "confluence"
     assert len(list(ctx_dir.glob("*.md"))) == 1
     inbox = configured_vault / "00-inbox" / "raw" / "confluence"
     assert len(list(inbox.glob("*.md"))) == 1
@@ -1521,7 +1521,7 @@ def test_reimport_changed_page_removes_stale_note(
     # connector filename changes, so the old note would be a stale duplicate.
     changed = {
         **PAGE_RAW,
-        "title": "ASCP architecture overview v2",
+        "title": "Service architecture overview v2",
         "version": {**PAGE_RAW["version"],
                     "number": 6, "when": "2026-06-09T12:00:00.000Z"},
     }
@@ -1530,7 +1530,7 @@ def test_reimport_changed_page_removes_stale_note(
 
     assert second["updated"] is True
     assert second["path"] != first["path"]
-    ctx_dir = configured_vault / "20-contexts" / "sanlam" / "confluence"
+    ctx_dir = configured_vault / "20-contexts" / "work" / "confluence"
     assert len(list(ctx_dir.glob("*.md"))) == 1  # stale copy removed
     assert not (configured_vault / first["path"]).exists()
     inbox = configured_vault / "00-inbox" / "raw" / "confluence"
@@ -1544,10 +1544,10 @@ def test_failed_item_is_isolated_and_audited(configured_vault: Path, fake_atlass
         raise RuntimeError("atlassian GET failed (last status=404)")
 
     fake_atlassian.routes["/wiki/rest/api/content/999"] = not_found
-    fake_atlassian.routes["/rest/api/3/issue/DIGISURE-1234"] = ISSUE_RAW
+    fake_atlassian.routes["/rest/api/3/issue/ACME-1234"] = ISSUE_RAW
 
     results = import_items([
-        {"kind": "confluence_page", "site": "sft.atlassian.net", "id": "999"},
+        {"kind": "confluence_page", "site": "acme.atlassian.net", "id": "999"},
         ISSUE_ITEM,
     ])
     assert results[0]["ok"] is False
@@ -1587,7 +1587,7 @@ def test_import_output_identical_to_scheduled_sync(
         lambda self, path, params=None, **kw: {"results": [PAGE_RAW]},
     )
     connector = ConfluenceConnector(
-        config={"sites": ["sft.atlassian.net"], "spaces": {"DIG": "sanlam"}},
+        config={"sites": ["acme.atlassian.net"], "spaces": {"ENG": "work"}},
         queue_dir=configured_vault / "q",
         state_dir=configured_vault / "s",
     )
@@ -1617,7 +1617,7 @@ def test_import_output_identical_to_scheduled_sync(
 - [ ] **Step 2: Run test to verify it fails**
 
 ```bash
-/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m pytest ghostbrain/api/tests/test_import_items.py -v
+~/dev/example/.venv/bin/python -m pytest ghostbrain/api/tests/test_import_items.py -v
 ```
 Expected: FAIL — `ImportError: cannot import name 'import_items'`.
 
@@ -1795,12 +1795,12 @@ def _vault_relative(path: str | None) -> str | None:
 - [ ] **Step 4: Run test to verify it passes**
 
 ```bash
-/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m pytest ghostbrain/api/tests/test_import_items.py -v
+~/dev/example/.venv/bin/python -m pytest ghostbrain/api/tests/test_import_items.py -v
 ```
 Expected: PASS — 7 tests green. (If `test_import_output_identical_to_scheduled_sync` fails, the import path has drifted from the worker path — fix the repo, never the normalizer.)
 
 ```bash
-/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m pytest ghostbrain/api/tests/ -q
+~/dev/example/.venv/bin/python -m pytest ghostbrain/api/tests/ -q
 ```
 Expected: **75 passed** (68 + 7).
 
@@ -1844,17 +1844,17 @@ def test_spaces_ok(
 ):
     write_import_routing(tmp_vault)
     fake_atlassian.routes["/wiki/rest/api/space"] = {
-        "results": [{"key": "DIG", "name": "Digisure"}]
+        "results": [{"key": "ENG", "name": "Engineering"}]
     }
     res = client.get("/v1/import/confluence/spaces", headers=auth_headers)
     assert res.status_code == 200
     data = res.json()
-    assert {s["key"] for s in data} == {"DIG", "SPE"}
+    assert {s["key"] for s in data} == {"ENG", "OPS"}
     by_key = {s["key"]: s for s in data}
-    assert by_key["DIG"]["name"] == "Digisure"
-    assert by_key["SPE"]["name"] == "SPE"  # lookup miss → key fallback
-    assert by_key["DIG"]["siteSlug"] == "sft"
-    assert by_key["DIG"]["context"] == "sanlam"
+    assert by_key["ENG"]["name"] == "Engineering"
+    assert by_key["OPS"]["name"] == "OPS"  # lookup miss → key fallback
+    assert by_key["ENG"]["siteSlug"] == "acme"
+    assert by_key["ENG"]["context"] == "work"
 
 
 def test_spaces_409_when_unconfigured(
@@ -1874,7 +1874,7 @@ def test_pages_ok_passes_params(
     }
     res = client.get(
         "/v1/import/confluence/pages"
-        "?site=sft.atlassian.net&space=DIG&parent=100&limit=1&cursor=3",
+        "?site=acme.atlassian.net&space=ENG&parent=100&limit=1&cursor=3",
         headers=auth_headers,
     )
     assert res.status_code == 200
@@ -1892,14 +1892,14 @@ def test_pages_requires_site_and_space(
 ):
     write_import_routing(tmp_vault)
     assert client.get(
-        "/v1/import/confluence/pages?space=DIG", headers=auth_headers
+        "/v1/import/confluence/pages?space=ENG", headers=auth_headers
     ).status_code == 422
     assert client.get(
-        "/v1/import/confluence/pages?site=sft.atlassian.net", headers=auth_headers
+        "/v1/import/confluence/pages?site=acme.atlassian.net", headers=auth_headers
     ).status_code == 422
     # unmonitored space → 422 (repo ValueError), not 500
     assert client.get(
-        "/v1/import/confluence/pages?site=sft.atlassian.net&space=NOPE",
+        "/v1/import/confluence/pages?site=acme.atlassian.net&space=NOPE",
         headers=auth_headers,
     ).status_code == 422
 
@@ -1913,7 +1913,7 @@ def test_search_ok(
     }
     res = client.get("/v1/import/confluence/search?q=arch", headers=auth_headers)
     assert res.status_code == 200
-    assert res.json()[0]["title"] == "ASCP architecture"
+    assert res.json()[0]["title"] == "Service architecture"
     host, path, params = fake_atlassian.calls[-1]
     assert 'title ~ "arch"' in params["cql"]
 
@@ -1925,12 +1925,12 @@ def test_jira_issues_ok(
     fake_atlassian.routes["/rest/api/3/search/jql"] = {"issues": [ISSUE_LIST_ITEM]}
     res = client.get("/v1/import/jira/issues", headers=auth_headers)
     assert res.status_code == 200
-    assert res.json()[0]["key"] == "DIGISURE-1"
+    assert res.json()[0]["key"] == "ACME-1"
 
-    res = client.get("/v1/import/jira/issues?q=bff", headers=auth_headers)
+    res = client.get("/v1/import/jira/issues?q=discount", headers=auth_headers)
     assert res.status_code == 200
     host, path, params = fake_atlassian.calls[-1]
-    assert params["jql"].startswith('text ~ "bff"')
+    assert params["jql"].startswith('text ~ "discount"')
 
 
 def test_jira_issues_409_when_only_confluence_configured(
@@ -1948,17 +1948,17 @@ def test_post_import_happy_path_writes_note(
     write_import_routing(tmp_vault)
     write_live_config(tmp_vault)
     fake_atlassian.routes["/wiki/rest/api/content/1234567"] = PAGE_RAW
-    fake_atlassian.routes["/rest/api/3/issue/DIGISURE-1234"] = ISSUE_RAW
+    fake_atlassian.routes["/rest/api/3/issue/ACME-1234"] = ISSUE_RAW
     res = client.post("/v1/import", headers=auth_headers, json={"items": [
-        {"kind": "confluence_page", "site": "sft.atlassian.net", "id": "1234567"},
-        {"kind": "jira_issue", "site": "sft.atlassian.net", "key": "DIGISURE-1234"},
+        {"kind": "confluence_page", "site": "acme.atlassian.net", "id": "1234567"},
+        {"kind": "jira_issue", "site": "acme.atlassian.net", "key": "ACME-1234"},
     ]})
     assert res.status_code == 200
     results = res.json()["results"]
     assert [r["ok"] for r in results] == [True, True]
-    assert results[0]["path"].startswith("20-contexts/sanlam/confluence/")
+    assert results[0]["path"].startswith("20-contexts/work/confluence/")
     assert results[0]["updated"] is False
-    assert results[1]["path"].startswith("20-contexts/sanlam/jira/tickets/")
+    assert results[1]["path"].startswith("20-contexts/work/jira/tickets/")
     assert (tmp_vault / results[0]["path"]).exists()
     assert (tmp_vault / results[1]["path"]).exists()
 
@@ -1967,7 +1967,7 @@ def test_post_import_max_50_items(
     client: TestClient, auth_headers: dict[str, str], tmp_vault: Path, fake_atlassian
 ):
     write_import_routing(tmp_vault)
-    item = {"kind": "jira_issue", "site": "sft.atlassian.net", "key": "X-1"}
+    item = {"kind": "jira_issue", "site": "acme.atlassian.net", "key": "X-1"}
     res = client.post("/v1/import", headers=auth_headers,
                       json={"items": [item] * 51})
     assert res.status_code == 422
@@ -1979,7 +1979,7 @@ def test_post_import_409_when_unconfigured(
     client: TestClient, auth_headers: dict[str, str], tmp_vault: Path, fake_atlassian
 ):
     res = client.post("/v1/import", headers=auth_headers, json={"items": [
-        {"kind": "confluence_page", "site": "sft.atlassian.net", "id": "1"},
+        {"kind": "confluence_page", "site": "acme.atlassian.net", "id": "1"},
     ]})
     assert res.status_code == 409
     assert res.json() == {"detail": CONFLUENCE_409}
@@ -1990,11 +1990,11 @@ def test_post_import_item_missing_identifier_422(
 ):
     write_import_routing(tmp_vault)
     res = client.post("/v1/import", headers=auth_headers, json={"items": [
-        {"kind": "confluence_page", "site": "sft.atlassian.net"},  # no id
+        {"kind": "confluence_page", "site": "acme.atlassian.net"},  # no id
     ]})
     assert res.status_code == 422
     res = client.post("/v1/import", headers=auth_headers, json={"items": [
-        {"kind": "jira_issue", "site": "sft.atlassian.net"},  # no key
+        {"kind": "jira_issue", "site": "acme.atlassian.net"},  # no key
     ]})
     assert res.status_code == 422
 
@@ -2009,10 +2009,10 @@ def test_post_import_per_item_failure_isolated(
         raise RuntimeError("atlassian GET failed (last status=404)")
 
     fake_atlassian.routes["/wiki/rest/api/content/999"] = gone
-    fake_atlassian.routes["/rest/api/3/issue/DIGISURE-1234"] = ISSUE_RAW
+    fake_atlassian.routes["/rest/api/3/issue/ACME-1234"] = ISSUE_RAW
     res = client.post("/v1/import", headers=auth_headers, json={"items": [
-        {"kind": "confluence_page", "site": "sft.atlassian.net", "id": "999"},
-        {"kind": "jira_issue", "site": "sft.atlassian.net", "key": "DIGISURE-1234"},
+        {"kind": "confluence_page", "site": "acme.atlassian.net", "id": "999"},
+        {"kind": "jira_issue", "site": "acme.atlassian.net", "key": "ACME-1234"},
     ]})
     assert res.status_code == 200
     results = res.json()["results"]
@@ -2024,7 +2024,7 @@ def test_post_import_per_item_failure_isolated(
 - [ ] **Step 2: Run test to verify it fails**
 
 ```bash
-/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m pytest ghostbrain/api/tests/test_import_routes.py -v
+~/dev/example/.venv/bin/python -m pytest ghostbrain/api/tests/test_import_routes.py -v
 ```
 Expected: FAIL — every request returns 404 (router not registered).
 
@@ -2126,12 +2126,12 @@ Edit `ghostbrain/api/main.py`:
 - [ ] **Step 5: Run test to verify it passes**
 
 ```bash
-/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m pytest ghostbrain/api/tests/test_import_routes.py -v
+~/dev/example/.venv/bin/python -m pytest ghostbrain/api/tests/test_import_routes.py -v
 ```
 Expected: PASS — 12 tests green.
 
 ```bash
-/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m pytest ghostbrain/api/tests/ -q
+~/dev/example/.venv/bin/python -m pytest ghostbrain/api/tests/ -q
 ```
 Expected: **87 passed** (75 + 12).
 
@@ -2218,13 +2218,13 @@ describe('useConfluencePages', () => {
       data: { items: [], nextCursor: null },
     });
     const { result } = renderHook(
-      () => useConfluencePages('sft.atlassian.net', 'DIG', '100'),
+      () => useConfluencePages('acme.atlassian.net', 'ENG', '100'),
       { wrapper: makeWrapper() },
     );
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(apiRequest).toHaveBeenCalledWith(
       'GET',
-      '/v1/import/confluence/pages?site=sft.atlassian.net&space=DIG&parent=100',
+      '/v1/import/confluence/pages?site=acme.atlassian.net&space=ENG&parent=100',
     );
   });
 
@@ -2242,7 +2242,7 @@ describe('useConfluenceSearch', () => {
 
   it('fetches with an encoded query', async () => {
     apiRequest.mockResolvedValueOnce({ ok: true, data: [] });
-    const { result } = renderHook(() => useConfluenceSearch('quote domain'), {
+    const { result } = renderHook(() => useConfluenceSearch('billing domain'), {
       wrapper: makeWrapper(),
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
@@ -2263,21 +2263,21 @@ describe('useJiraIssues', () => {
 
   it('fetches a text search when a query is set', async () => {
     apiRequest.mockResolvedValueOnce({ ok: true, data: [] });
-    const { result } = renderHook(() => useJiraIssues('cashback'), {
+    const { result } = renderHook(() => useJiraIssues('discount'), {
       wrapper: makeWrapper(),
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(apiRequest).toHaveBeenCalledWith(
       'GET',
-      '/v1/import/jira/issues?q=cashback',
+      '/v1/import/jira/issues?q=discount',
     );
   });
 });
 
 describe('useImportItems', () => {
   const items: ImportItem[] = [
-    { kind: 'confluence_page', site: 'sft.atlassian.net', id: '100' },
-    { kind: 'jira_issue', site: 'sft.atlassian.net', key: 'DIGISURE-1' },
+    { kind: 'confluence_page', site: 'acme.atlassian.net', id: '100' },
+    { kind: 'jira_issue', site: 'acme.atlassian.net', key: 'ACME-1' },
   ];
 
   it('POSTs one item at a time and reports progress', async () => {
@@ -2292,7 +2292,7 @@ describe('useImportItems', () => {
             key: item.key ?? null,
             ok: true,
             path: 'x.md',
-            context: 'sanlam',
+            context: 'work',
             updated: false,
             error: null,
           }],
@@ -2598,30 +2598,30 @@ import type {
 } from '../../shared/api-types';
 
 const spaces: ImportSpace[] = [
-  { site: 'sft.atlassian.net', siteSlug: 'sft', key: 'DIG', name: 'Digisure', context: 'sanlam' },
-  { site: 'sft.atlassian.net', siteSlug: 'sft', key: 'SPE', name: 'Short-term', context: 'sanlam' },
+  { site: 'acme.atlassian.net', siteSlug: 'acme', key: 'ENG', name: 'Engineering', context: 'work' },
+  { site: 'acme.atlassian.net', siteSlug: 'acme', key: 'OPS', name: 'Operations', context: 'work' },
 ];
 
 const digPages: ConfluencePagesResponse = {
   items: [
-    { site: 'sft.atlassian.net', id: '100', title: 'ASCP architecture', parentId: null,
-      hasChildren: true, updatedAt: '2026-06-01T10:00:00.000Z', version: 4, space: 'DIG' },
-    { site: 'sft.atlassian.net', id: '200', title: 'Runbooks', parentId: null,
-      hasChildren: false, updatedAt: null, version: 1, space: 'DIG' },
+    { site: 'acme.atlassian.net', id: '100', title: 'Service architecture', parentId: null,
+      hasChildren: true, updatedAt: '2026-06-01T10:00:00.000Z', version: 4, space: 'ENG' },
+    { site: 'acme.atlassian.net', id: '200', title: 'Runbooks', parentId: null,
+      hasChildren: false, updatedAt: null, version: 1, space: 'ENG' },
   ],
   nextCursor: null,
 };
 
 const searchHits: ImportPage[] = [
-  { site: 'sft.atlassian.net', id: '300', title: 'Quote domain design', parentId: null,
-    hasChildren: false, updatedAt: '2026-04-01T09:00:00.000Z', version: 7, space: 'SPE' },
+  { site: 'acme.atlassian.net', id: '300', title: 'Billing domain design', parentId: null,
+    hasChildren: false, updatedAt: '2026-04-01T09:00:00.000Z', version: 7, space: 'OPS' },
 ];
 
 const issues: ImportJiraIssue[] = [
-  { site: 'sft.atlassian.net', key: 'DIGISURE-1', summary: 'Fix the BFF',
-    status: 'In Progress', project: 'DIGISURE', updatedAt: '2026-06-08T10:00:00.000+0000' },
-  { site: 'sft.atlassian.net', key: 'DIGISURE-2', summary: 'Add cashback',
-    status: 'To Do', project: 'DIGISURE', updatedAt: '2026-06-07T10:00:00.000+0000' },
+  { site: 'acme.atlassian.net', key: 'ACME-1', summary: 'Fix the orders-api',
+    status: 'In Progress', project: 'ACME', updatedAt: '2026-06-08T10:00:00.000+0000' },
+  { site: 'acme.atlassian.net', key: 'ACME-2', summary: 'Add discount',
+    status: 'To Do', project: 'ACME', updatedAt: '2026-06-07T10:00:00.000+0000' },
 ];
 
 const apiRequest = vi.fn();
@@ -2634,10 +2634,10 @@ function mockBrowseApi() {
     if (path.startsWith('/v1/import/jira/issues')) return { ok: true, data: issues };
     if (method === 'POST' && path === '/v1/import') {
       const item = (body as { items: Array<{ kind: string; key?: string; id?: string }> }).items[0]!;
-      if (item.key === 'DIGISURE-2') {
+      if (item.key === 'ACME-2') {
         return { ok: true, data: { results: [{ kind: item.kind, key: item.key ?? null, id: item.id ?? null, ok: false, error: 'not found' }] } };
       }
-      return { ok: true, data: { results: [{ kind: item.kind, key: item.key ?? null, id: item.id ?? null, ok: true, path: '20-contexts/sanlam/x.md', context: 'sanlam', updated: false, error: null }] } };
+      return { ok: true, data: { results: [{ kind: item.kind, key: item.key ?? null, id: item.id ?? null, ok: true, path: '20-contexts/work/x.md', context: 'work', updated: false, error: null }] } };
     }
     return { ok: true, data: null };
   });
@@ -2658,28 +2658,28 @@ function wrap(node: React.ReactNode) {
 describe('ImportScreen', () => {
   it('lists monitored spaces, expands one to its pages, and ticking shows the selection bar', async () => {
     render(wrap(<ImportScreen />));
-    expect(await screen.findByText('Digisure')).toBeInTheDocument();
-    expect(screen.getByText('Short-term')).toBeInTheDocument();
+    expect(await screen.findByText('Engineering')).toBeInTheDocument();
+    expect(screen.getByText('Operations')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'toggle space DIG' }));
-    expect(await screen.findByText('ASCP architecture')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'toggle space ENG' }));
+    expect(await screen.findByText('Service architecture')).toBeInTheDocument();
     expect(screen.getByText('Runbooks')).toBeInTheDocument();
     // only the page with children gets an expand affordance
-    expect(screen.getByRole('button', { name: 'expand ASCP architecture' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'expand Service architecture' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'expand Runbooks' })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('checkbox', { name: 'select ASCP architecture' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'select Service architecture' }));
     expect(screen.getByRole('button', { name: 'import 1 selected' })).toBeInTheDocument();
   });
 
   it('a confluence search replaces the space list with results', async () => {
     render(wrap(<ImportScreen />));
-    await screen.findByText('Digisure');
+    await screen.findByText('Engineering');
     fireEvent.change(screen.getByPlaceholderText('search pages by title…'), {
       target: { value: 'quote' },
     });
-    expect(await screen.findByText('Quote domain design')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'toggle space DIG' })).not.toBeInTheDocument();
+    expect(await screen.findByText('Billing domain design')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'toggle space ENG' })).not.toBeInTheDocument();
     await waitFor(() =>
       expect(apiRequest).toHaveBeenCalledWith('GET', '/v1/import/confluence/search?q=quote'),
     );
@@ -2688,17 +2688,17 @@ describe('ImportScreen', () => {
   it('the jira tab lists my issues by default', async () => {
     render(wrap(<ImportScreen />));
     fireEvent.click(screen.getByRole('button', { name: 'jira' }));
-    expect(await screen.findByText('DIGISURE-1')).toBeInTheDocument();
-    expect(screen.getByText('Fix the BFF')).toBeInTheDocument();
+    expect(await screen.findByText('ACME-1')).toBeInTheDocument();
+    expect(screen.getByText('Fix the orders-api')).toBeInTheDocument();
     expect(apiRequest).toHaveBeenCalledWith('GET', '/v1/import/jira/issues');
   });
 
   it('imports the selection one item at a time, marks results, and keeps failed items ticked', async () => {
     render(wrap(<ImportScreen />));
     fireEvent.click(screen.getByRole('button', { name: 'jira' }));
-    await screen.findByText('DIGISURE-1');
-    fireEvent.click(screen.getByRole('checkbox', { name: 'select DIGISURE-1' }));
-    fireEvent.click(screen.getByRole('checkbox', { name: 'select DIGISURE-2' }));
+    await screen.findByText('ACME-1');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'select ACME-1' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'select ACME-2' }));
     fireEvent.click(screen.getByRole('button', { name: 'import 2 selected' }));
 
     expect(await screen.findByText('imported')).toBeInTheDocument();
@@ -2707,15 +2707,15 @@ describe('ImportScreen', () => {
     const posts = apiRequest.mock.calls.filter(([m]) => m === 'POST');
     expect(posts).toHaveLength(2);
     expect(posts[0]![2]).toEqual({
-      items: [{ kind: 'jira_issue', site: 'sft.atlassian.net', key: 'DIGISURE-1' }],
+      items: [{ kind: 'jira_issue', site: 'acme.atlassian.net', key: 'ACME-1' }],
     });
     expect(posts[1]![2]).toEqual({
-      items: [{ kind: 'jira_issue', site: 'sft.atlassian.net', key: 'DIGISURE-2' }],
+      items: [{ kind: 'jira_issue', site: 'acme.atlassian.net', key: 'ACME-2' }],
     });
 
     // success unticked; failure stays ticked for retry
-    expect(screen.getByRole('checkbox', { name: 'select DIGISURE-1' })).not.toBeChecked();
-    expect(screen.getByRole('checkbox', { name: 'select DIGISURE-2' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'select ACME-1' })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'select ACME-2' })).toBeChecked();
     expect(screen.getByRole('button', { name: 'import 1 selected' })).toBeInTheDocument();
   });
 
@@ -3342,14 +3342,14 @@ No new code — every suite the feature touches must be green before the manual 
 
 From the worktree root:
 ```bash
-/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m pytest ghostbrain/api/tests/ -q
+~/dev/example/.venv/bin/python -m pytest ghostbrain/api/tests/ -q
 ```
 Expected: **87 passed** (57 baseline + 11 repo browse + 7 import_items + 12 routes).
 
 - [ ] **Step 2: Connector + worker suites (the refactor-safety net)**
 
 ```bash
-/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m pytest \
+~/dev/example/.venv/bin/python -m pytest \
   tests/test_atlassian_import_refactor.py \
   tests/test_confluence_connector.py tests/test_jira_connector.py \
   tests/test_pipeline.py tests/test_note_generator.py tests/test_router.py -q
@@ -3367,13 +3367,13 @@ Expected: **51 passed** (37 baseline + 8 hooks + 5 screen + 1 App), typecheck cl
 
 ## Task 8: Manual end-to-end with real Atlassian credentials
 
-Real credentials live on this machine (`ATLASSIAN_EMAIL` + `ATLASSIAN_TOKEN[_SFT]` via the sidecar's env loading; the scheduled confluence/jira connectors already sync). Verify the whole feature against the real vault, then clean up the test imports.
+Real credentials live on this machine (`ATLASSIAN_EMAIL` + `ATLASSIAN_TOKEN[_ACME]` via the sidecar's env loading; the scheduled confluence/jira connectors already sync). Verify the whole feature against the real vault, then clean up the test imports.
 
 - [ ] **Step 1: Boot the sidecar against the real vault**
 
 ```bash
-cd /Users/jannik/development/nikrich/ghost-brain/.claude/worktrees/feat-activity-and-import
-/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m ghostbrain.api
+cd ~/dev/example/.claude/worktrees/feat-activity-and-import
+~/dev/example/.venv/bin/python -m ghostbrain.api
 ```
 Expected: `READY port=<PORT> token=<TOKEN> scheduler=off`. Note PORT and TOKEN; export them in a second terminal: `PORT=…; TOKEN=…`.
 
@@ -3383,11 +3383,11 @@ Expected: `READY port=<PORT> token=<TOKEN> scheduler=off`. Note PORT and TOKEN; 
 curl -s -H "Authorization: Bearer $TOKEN" \
   "http://127.0.0.1:$PORT/v1/import/confluence/spaces" | python3 -m json.tool
 ```
-Expected: the three monitored spaces (`DIG`, `SFTHome`, `SPE`), each with `site: sft.atlassian.net`, `siteSlug: sft`, real display names, `context: sanlam`.
+Expected: the three monitored spaces (`ENG`, `DOCS`, `OPS`), each with `site: acme.atlassian.net`, `siteSlug: acme`, real display names, `context: work`.
 
 ```bash
 curl -s -H "Authorization: Bearer $TOKEN" \
-  "http://127.0.0.1:$PORT/v1/import/confluence/pages?site=sft.atlassian.net&space=DIG&limit=10" \
+  "http://127.0.0.1:$PORT/v1/import/confluence/pages?site=acme.atlassian.net&space=ENG&limit=10" \
   | python3 -m json.tool | head -40
 curl -s -H "Authorization: Bearer $TOKEN" \
   "http://127.0.0.1:$PORT/v1/import/confluence/search?q=architecture" \
@@ -3395,7 +3395,7 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 curl -s -H "Authorization: Bearer $TOKEN" \
   "http://127.0.0.1:$PORT/v1/import/jira/issues" | python3 -m json.tool | head -40
 ```
-Expected: top-level DIG pages with `hasChildren` flags; title-search hits with `space`; my-issues newest-first with real keys.
+Expected: top-level ENG pages with `hasChildren` flags; title-search hits with `space`; my-issues newest-first with real keys.
 
 - [ ] **Step 3: Import ONE real page + ONE real jira issue**
 
@@ -3404,12 +3404,12 @@ Pick from Step 2 a page and an issue that are **old** (not updated in the last 2
 ```bash
 curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"items": [
-        {"kind": "confluence_page", "site": "sft.atlassian.net", "id": "<PAGE_ID>"},
-        {"kind": "jira_issue", "site": "sft.atlassian.net", "key": "<ISSUE-KEY>"}
+        {"kind": "confluence_page", "site": "acme.atlassian.net", "id": "<PAGE_ID>"},
+        {"kind": "jira_issue", "site": "acme.atlassian.net", "key": "<ISSUE-KEY>"}
       ]}' \
   "http://127.0.0.1:$PORT/v1/import" | python3 -m json.tool
 ```
-Expected: both results `"ok": true`, `"context": "sanlam"`, `"updated": false`, paths under `20-contexts/sanlam/confluence/` and `20-contexts/sanlam/jira/tickets/`.
+Expected: both results `"ok": true`, `"context": "work"`, `"updated": false`, paths under `20-contexts/work/confluence/` and `20-contexts/work/jira/tickets/`.
 
 - [ ] **Step 4: Verify vault files, audit, and heatmap**
 
@@ -3420,7 +3420,7 @@ grep import_completed ~/ghostbrain/vault/90-meta/audit/$(date +%F).jsonl
 curl -s -H "Authorization: Bearer $TOKEN" \
   "http://127.0.0.1:$PORT/v1/activity/heatmap?days=7" | python3 -m json.tool
 ```
-Expected: frontmatter identical in shape to scheduled-sync notes (compare with a neighbour file in the same dir: `id`/`sourceId` like `confluence:sft:<id>`, `routingMethod: path`, `space`/`key` keys present); two `import_completed` audit lines with `"ok": true` and `source` `confluence`/`jira`; today's heatmap entry's `bySource` includes `confluence` and `jira` counts (the import shows up as activity).
+Expected: frontmatter identical in shape to scheduled-sync notes (compare with a neighbour file in the same dir: `id`/`sourceId` like `confluence:acme:<id>`, `routingMethod: path`, `space`/`key` keys present); two `import_completed` audit lines with `"ok": true` and `source` `confluence`/`jira`; today's heatmap entry's `bySource` includes `confluence` and `jira` counts (the import shows up as activity).
 
 - [ ] **Step 5: Visual check in the app**
 
@@ -3458,8 +3458,8 @@ Append at the bottom of `docs/superpowers/specs/2026-06-10-atlassian-import-desi
 ## Implementation status
 
 - 2026-06-XX: E2E pass — browse (spaces/pages/search/issues) verified against
-  sft.atlassian.net; imported 1 real Confluence page + 1 real Jira issue
-  (path-routed to sanlam, connector-identical frontmatter, `updated: false`);
+  acme.atlassian.net; imported 1 real Confluence page + 1 real Jira issue
+  (path-routed to work, connector-identical frontmatter, `updated: false`);
   re-import returned `updated: true`; `import_completed` audit lines present
   and visible in the activity heatmap (`bySource.confluence`/`bySource.jira`);
   full tab/select/progress/toast flow verified visually; imported test files

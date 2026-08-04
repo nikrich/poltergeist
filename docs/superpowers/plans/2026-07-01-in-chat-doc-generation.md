@@ -15,7 +15,7 @@
 - HTML size cap: `MAX_HTML_BYTES = 2_000_000`.
 - Filename: `YYYYMMDDTHHMMSS-<slug>.html` (slug from the title, `[^a-z0-9]+`→`-`, ≤60 chars).
 - The `open-generated` IPC and the render helper MUST re-validate the path is under `20-contexts/generated-docs/` and ends in `.html`.
-- Run Python tests from the worktree root with `/Users/jannik/.agentflow/.venv/bin/pytest <paths> -v`. Desktop tests: `npx vitest run <filter>` and `npm run typecheck` from `desktop/`.
+- Run Python tests from the worktree root with `~/.agentflow/.venv/bin/pytest <paths> -v`. Desktop tests: `npx vitest run <filter>` and `npm run typecheck` from `desktop/`.
 
 ---
 
@@ -77,7 +77,7 @@ def test_oversize_html_rejected(tmp_vault: Path):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `/Users/jannik/.agentflow/.venv/bin/pytest ghostbrain/api/tests/test_generated_docs.py -v`
+Run: `~/.agentflow/.venv/bin/pytest ghostbrain/api/tests/test_generated_docs.py -v`
 Expected: FAIL — `ModuleNotFoundError: ghostbrain.api.repo.generated_docs`.
 
 - [ ] **Step 3: Implement the repo**
@@ -128,7 +128,7 @@ def write_doc(title: str, html: str) -> dict:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `/Users/jannik/.agentflow/.venv/bin/pytest ghostbrain/api/tests/test_generated_docs.py -v`
+Run: `~/.agentflow/.venv/bin/pytest ghostbrain/api/tests/test_generated_docs.py -v`
 Expected: PASS (5 tests).
 
 - [ ] **Step 5: Commit**
@@ -185,7 +185,7 @@ def test_write_endpoint_oversize_400(client, auth_headers):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `/Users/jannik/.agentflow/.venv/bin/pytest ghostbrain/api/tests/test_generated_docs.py -v -k endpoint`
+Run: `~/.agentflow/.venv/bin/pytest ghostbrain/api/tests/test_generated_docs.py -v -k endpoint`
 Expected: FAIL — route missing (404/405).
 
 - [ ] **Step 3: Add the models**
@@ -233,7 +233,7 @@ def write_doc(payload: WriteDocRequest) -> dict:
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `/Users/jannik/.agentflow/.venv/bin/pytest ghostbrain/api/tests/test_generated_docs.py -v`
+Run: `~/.agentflow/.venv/bin/pytest ghostbrain/api/tests/test_generated_docs.py -v`
 Expected: PASS (all).
 
 - [ ] **Step 6: Commit**
@@ -300,7 +300,7 @@ def test_write_doc_tool_is_allowlisted():
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `/Users/jannik/.agentflow/.venv/bin/pytest tests/test_mcp_tools.py tests/test_agent_run.py -v -k write_doc`
+Run: `~/.agentflow/.venv/bin/pytest tests/test_mcp_tools.py tests/test_agent_run.py -v -k write_doc`
 Expected: FAIL — `tools.write_doc` missing; key not in `ALLOWED_TOOLS`.
 
 - [ ] **Step 3: Add the client method**
@@ -372,7 +372,7 @@ the tool's returned path on its own line as a wikilink, e.g. \
 
 - [ ] **Step 7: Run tests to verify they pass**
 
-Run: `/Users/jannik/.agentflow/.venv/bin/pytest tests/test_mcp_tools.py tests/test_agent_run.py -q`
+Run: `~/.agentflow/.venv/bin/pytest tests/test_mcp_tools.py tests/test_agent_run.py -q`
 Expected: PASS (existing + new).
 
 - [ ] **Step 8: Commit**
@@ -413,7 +413,7 @@ describe('isGeneratedDocPath', () => {
     expect(isGeneratedDocPath('20-contexts/generated-docs/20260701T120000-x.html')).toBe(true);
   });
   it('rejects paths outside generated-docs', () => {
-    expect(isGeneratedDocPath('20-contexts/sanlam/notes/x.html')).toBe(false);
+    expect(isGeneratedDocPath('20-contexts/work/notes/x.html')).toBe(false);
   });
   it('rejects non-.html', () => {
     expect(isGeneratedDocPath('20-contexts/generated-docs/x.md')).toBe(false);
@@ -633,7 +633,7 @@ git commit -m "feat(docs): Open as PDF button on generated-doc chat replies"
 
 ## Final verification
 
-- [ ] Python: `/Users/jannik/.agentflow/.venv/bin/pytest ghostbrain/api/tests/test_generated_docs.py tests/test_mcp_tools.py tests/test_mcp_client.py tests/test_agent_run.py tests/test_docs_routes.py -q` — expect green.
+- [ ] Python: `~/.agentflow/.venv/bin/pytest ghostbrain/api/tests/test_generated_docs.py tests/test_mcp_tools.py tests/test_mcp_client.py tests/test_agent_run.py tests/test_docs_routes.py -q` — expect green.
 - [ ] Desktop: from `desktop/`, `npx vitest run` then `npm run typecheck` — expect green.
 - [ ] Manual smoke (dev app): in chat, "write a short confidential one-pager on X". Confirm: the agent calls `write_doc` (a "wrote doc" tool chip appears), the reply has an "Open as PDF" button, clicking it renders and opens a styled PDF in Preview, and both `…​.html` and `…​.pdf` exist under `~/ghostbrain/vault/20-contexts/generated-docs/`.
 

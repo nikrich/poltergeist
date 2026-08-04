@@ -18,7 +18,7 @@ _HEADERS = {"Authorization": f"Bearer {_TOKEN}"}
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("VAULT_PATH", str(tmp_path))
     monkeypatch.setenv("GHOSTBRAIN_STATE_DIR", str(tmp_path / "state"))
-    cal = tmp_path / "20-contexts" / "sanlam" / "calendar"
+    cal = tmp_path / "20-contexts" / "work" / "calendar"
     cal.mkdir(parents=True)
     (cal / "20260525T090000-eng-standup.md").write_text(textwrap.dedent("""\
         ---

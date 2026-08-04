@@ -36,7 +36,7 @@ def test_propose_writes_jsonl_lines(vault: Path) -> None:
             excerpt="some excerpt content",
             parent_event_id="ev-1",
             parent_session_id="sess-1",
-            parent_note_path=vault / "20-contexts" / "codeship" / "claude" / "sessions" / "p.md",
+            parent_note_path=vault / "20-contexts" / "consulting" / "claude" / "sessions" / "p.md",
         )
 
     assert len(proposals) == 2
@@ -49,7 +49,7 @@ def test_propose_writes_jsonl_lines(vault: Path) -> None:
     assert rec["field"] == "current-projects"
     assert rec["after"] == "Built ghost-brain Phase 6"
     assert rec["parent_event_id"] == "ev-1"
-    assert "20-contexts/codeship" in rec["parent_note_path"]
+    assert "20-contexts/consulting" in rec["parent_note_path"]
 
 
 def test_low_confidence_diffs_dropped(vault: Path) -> None:

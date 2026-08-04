@@ -9,7 +9,7 @@ from ghostbrain.api.tests.conftest import write_note
 SYNCED = (
     "---\n"
     "source: gmail\n"
-    "context: sanlam\n"
+    "context: work\n"
     "updated: '2026-01-01T00:00:00+00:00'\n"
     "---\n"
     "\n"
@@ -18,16 +18,16 @@ SYNCED = (
 
 
 def test_patch_body_rewrites_and_preserves_frontmatter(tmp_vault, client, auth_headers):
-    write_note(tmp_vault, "20-contexts/sanlam/notes/synced.md", SYNCED)
+    write_note(tmp_vault, "20-contexts/work/notes/synced.md", SYNCED)
     resp = client.patch(
         "/v1/notes/body",
-        json={"path": "20-contexts/sanlam/notes/synced.md", "body": "# edited\n\nnew body"},
+        json={"path": "20-contexts/work/notes/synced.md", "body": "# edited\n\nnew body"},
         headers=auth_headers,
     )
     assert resp.status_code == 200
     data = resp.json()
-    assert data["path"] == "20-contexts/sanlam/notes/synced.md"
-    post = frontmatter.load(tmp_vault / "20-contexts/sanlam/notes/synced.md")
+    assert data["path"] == "20-contexts/work/notes/synced.md"
+    post = frontmatter.load(tmp_vault / "20-contexts/work/notes/synced.md")
     assert post.content.strip() == "# edited\n\nnew body"
     # connector file edit is allowed; source key untouched
     assert post["source"] == "gmail"
@@ -72,7 +72,7 @@ def test_patch_body_jot_route_still_reachable(tmp_vault, client, auth_headers):
 def test_patch_body_unknown_path_404(tmp_vault, client, auth_headers):
     resp = client.patch(
         "/v1/notes/body",
-        json={"path": "20-contexts/sanlam/notes/missing.md", "body": "x"},
+        json={"path": "20-contexts/work/notes/missing.md", "body": "x"},
         headers=auth_headers,
     )
     assert resp.status_code == 404
@@ -90,12 +90,12 @@ def test_patch_body_traversal_400(tmp_vault, client, auth_headers):
 def test_patch_body_empty_body_422(tmp_vault, client, auth_headers):
     write_note(
         tmp_vault,
-        "20-contexts/sanlam/notes/n.md",
+        "20-contexts/work/notes/n.md",
         "---\nsource: manual\n---\n\nbody\n",
     )
     resp = client.patch(
         "/v1/notes/body",
-        json={"path": "20-contexts/sanlam/notes/n.md", "body": "   "},
+        json={"path": "20-contexts/work/notes/n.md", "body": "   "},
         headers=auth_headers,
     )
     assert resp.status_code == 422

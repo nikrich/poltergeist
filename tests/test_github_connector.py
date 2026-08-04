@@ -14,10 +14,10 @@ _PR_RAW = {
     "number": 42,
     "title": "feat: ship the worker",
     "body": "Adds the queue worker.",
-    "url": "https://github.com/CodeshipAI/x/pull/42",
+    "url": "https://github.com/AcmeLabs/x/pull/42",
     "state": "OPEN",
     "isDraft": False,
-    "repository": {"nameWithOwner": "CodeshipAI/x"},
+    "repository": {"nameWithOwner": "AcmeLabs/x"},
     "author": {"login": "nikrich"},
     "labels": [{"name": "feature"}],
     "createdAt": "2026-05-01T08:00:00Z",
@@ -28,9 +28,9 @@ _ISSUE_RAW = {
     "number": 7,
     "title": "Bug: extractor returns []",
     "body": "...",
-    "url": "https://github.com/CodeshipAI/x/issues/7",
+    "url": "https://github.com/AcmeLabs/x/issues/7",
     "state": "OPEN",
-    "repository": {"nameWithOwner": "CodeshipAI/x"},
+    "repository": {"nameWithOwner": "AcmeLabs/x"},
     "author": {"login": "nikrich"},
     "labels": [],
     "createdAt": "2026-05-05T08:00:00Z",
@@ -52,7 +52,7 @@ def test_fetch_dedups_prs_across_queries(vault: Path, tmp_path: Path) -> None:
     from ghostbrain.connectors.github import GitHubConnector
 
     connector = GitHubConnector(
-        config={"orgs": ["CodeshipAI"]},
+        config={"orgs": ["AcmeLabs"]},
         queue_dir=tmp_path / "q",
         state_dir=tmp_path / "s",
         gh_binary="/fake/gh",
@@ -92,17 +92,17 @@ def test_normalize_pr_shape(vault: Path, tmp_path: Path) -> None:
     from ghostbrain.connectors.github import GitHubConnector
 
     connector = GitHubConnector(
-        config={"orgs": ["CodeshipAI"]},
+        config={"orgs": ["AcmeLabs"]},
         queue_dir=tmp_path / "q", state_dir=tmp_path / "s",
         gh_binary="/fake/gh",
     )
     ev = connector._normalize_pr(_PR_RAW, origin="authored")
-    assert ev["id"] == "github:pr:CodeshipAI/x#42"
+    assert ev["id"] == "github:pr:AcmeLabs/x#42"
     assert ev["source"] == "github"
     assert ev["type"] == "pr"
     assert ev["subtype"] == "opened"
-    assert ev["metadata"]["repo"] == "CodeshipAI/x"
-    assert ev["metadata"]["org"] == "CodeshipAI"
+    assert ev["metadata"]["repo"] == "AcmeLabs/x"
+    assert ev["metadata"]["org"] == "AcmeLabs"
     assert ev["metadata"]["origin"] == "authored"
     assert ev["title"] == "feat: ship the worker"
 

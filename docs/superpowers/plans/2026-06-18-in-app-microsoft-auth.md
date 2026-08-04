@@ -449,7 +449,7 @@ Run:
 python3 - <<'PY'
 import yaml
 from ghostbrain.connectors.microsoft.graph.auth import resolve_scopes, SCOPES
-ms = yaml.safe_load(open('/Users/jannik/ghostbrain/vault/90-meta/routing.yaml'))['microsoft']
+ms = yaml.safe_load(open('~/ghostbrain/vault/90-meta/routing.yaml'))['microsoft']
 assert ms.get('scopes') is None, "scopes override still present"
 assert resolve_scopes(ms) == SCOPES, resolve_scopes(ms)
 print("OK union:", resolve_scopes(ms))

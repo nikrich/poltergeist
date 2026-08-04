@@ -22,10 +22,10 @@ _RAW_TIMED_EVENT = {
     "start": {"dateTime": "2026-05-09T10:00:00+02:00",
               "timeZone": "Africa/Johannesburg"},
     "end":   {"dateTime": "2026-05-09T10:30:00+02:00"},
-    "organizer": {"email": "manager@codeship.app", "displayName": "Manager"},
+    "organizer": {"email": "manager@consulting.app", "displayName": "Manager"},
     "attendees": [
-        {"email": "jannik@codeship.app"},
-        {"email": "alex@codeship.app"},
+        {"email": "sam@consulting.app"},
+        {"email": "alex@consulting.app"},
     ],
 }
 
@@ -42,23 +42,23 @@ def test_calendar_event_to_event_shape() -> None:
     from ghostbrain.connectors.calendar._base import CalendarEvent
 
     ce = CalendarEvent(
-        provider="google", account="jannik@codeship.app",
+        provider="google", account="sam@consulting.app",
         event_id="abc", title="Standup",
         start="2026-05-09T10:00:00+02:00",
         end="2026-05-09T10:30:00+02:00",
         is_all_day=False,
         location="Online — Zoom",
-        organizer="manager@codeship.app",
-        attendees=("jannik@codeship.app", "alex@codeship.app"),
+        organizer="manager@consulting.app",
+        attendees=("sam@consulting.app", "alex@consulting.app"),
     )
     ev = ce.to_event()
 
-    assert ev["id"] == "calendar:google:jannik@codeship.app:abc"
+    assert ev["id"] == "calendar:google:sam@consulting.app:abc"
     assert ev["source"] == "calendar"
     assert ev["type"] == "event"
     assert ev["subtype"] == "meeting"
     assert ev["title"] == "Standup"
-    assert ev["metadata"]["account"] == "jannik@codeship.app"
+    assert ev["metadata"]["account"] == "sam@consulting.app"
     assert ev["metadata"]["isAllDay"] is False
     assert ev["metadata"]["start"] == "2026-05-09T10:00:00+02:00"
     assert "Online — Zoom" in ev["body"]
@@ -82,7 +82,7 @@ def test_google_connector_fetches_with_mocked_service(vault: Path, tmp_path: Pat
     from ghostbrain.connectors.calendar.google import GoogleCalendarConnector
 
     connector = GoogleCalendarConnector(
-        config={"accounts": {"jannik@codeship.app": "codeship"}},
+        config={"accounts": {"sam@consulting.app": "consulting"}},
         queue_dir=tmp_path / "q",
         state_dir=tmp_path / "s",
     )
@@ -123,24 +123,24 @@ def test_router_path_routes_calendar_event(vault: Path) -> None:
         "calendar": {
             "google": {
                 "accounts": {
-                    "jannik@codeship.app": "codeship",
-                    "jannik811@gmail.com": "personal",
+                    "sam@consulting.app": "consulting",
+                    "you@example.com": "personal",
                 },
             },
         },
     }
     event = {
-        "id": "calendar:google:jannik@codeship.app:abc",
+        "id": "calendar:google:sam@consulting.app:abc",
         "source": "calendar",
         "type": "event",
         "title": "Standup",
         "metadata": {
             "provider": "google",
-            "account": "jannik@codeship.app",
+            "account": "sam@consulting.app",
         },
     }
     decision = route_event(event, routing=routing)
-    assert decision.context == "codeship"
+    assert decision.context == "consulting"
     assert decision.method == "path"
 
 
@@ -150,23 +150,23 @@ def test_digest_loads_today_calendar(vault: Path) -> None:
     import yaml
     from ghostbrain.worker.digest import build_digest_input
 
-    cal_dir = vault / "20-contexts" / "codeship" / "calendar"
+    cal_dir = vault / "20-contexts" / "consulting" / "calendar"
     cal_dir.mkdir(parents=True, exist_ok=True)
     note = (
         "---\n"
         + yaml.safe_dump({
             "id": "x",
             "type": "event",
-            "context": "codeship",
+            "context": "consulting",
             "source": "calendar",
             "title": "Standup",
             "start": "2026-05-09T10:00:00+02:00",
             "end":   "2026-05-09T10:30:00+02:00",
             "isAllDay": False,
             "location": "Zoom",
-            "organizer": "manager@codeship.app",
+            "organizer": "manager@consulting.app",
             "provider": "google",
-            "account": "jannik@codeship.app",
+            "account": "sam@consulting.app",
         }, sort_keys=False)
         + "---\n\n# Standup\n"
     )
@@ -176,7 +176,7 @@ def test_digest_loads_today_calendar(vault: Path) -> None:
     assert len(digest.today_calendar) == 1
     item = digest.today_calendar[0]
     assert item.title == "Standup"
-    assert item.context == "codeship"
+    assert item.context == "consulting"
     assert item.start.startswith("2026-05-09")
 
 
@@ -186,7 +186,7 @@ def test_macos_connector_normalizes_jxa_payload(vault: Path, tmp_path: Path) -> 
     from ghostbrain.connectors.calendar.macos import MacosCalendarConnector
 
     connector = MacosCalendarConnector(
-        config={"accounts": {"Calendar": "sanlam"}},
+        config={"accounts": {"Calendar": "work"}},
         queue_dir=tmp_path / "q",
         state_dir=tmp_path / "s",
     )
@@ -251,7 +251,7 @@ def test_router_path_routes_macos_calendar_event(vault: Path) -> None:
     from ghostbrain.worker.router import route_event
     routing = {
         "calendar": {
-            "macos": {"accounts": {"Calendar": "sanlam"}},
+            "macos": {"accounts": {"Calendar": "work"}},
         },
     }
     event = {
@@ -262,7 +262,7 @@ def test_router_path_routes_macos_calendar_event(vault: Path) -> None:
         "metadata": {"provider": "macos", "account": "Calendar"},
     }
     decision = route_event(event, routing=routing)
-    assert decision.context == "sanlam"
+    assert decision.context == "work"
     assert decision.method == "path"
 
 
@@ -270,12 +270,12 @@ def test_digest_ignores_calendar_for_other_dates(vault: Path) -> None:
     import yaml
     from ghostbrain.worker.digest import build_digest_input
 
-    cal_dir = vault / "20-contexts" / "codeship" / "calendar"
+    cal_dir = vault / "20-contexts" / "consulting" / "calendar"
     cal_dir.mkdir(parents=True, exist_ok=True)
     note = (
         "---\n"
         + yaml.safe_dump({
-            "id": "x", "type": "event", "context": "codeship",
+            "id": "x", "type": "event", "context": "consulting",
             "source": "calendar", "title": "Tomorrow event",
             "start": "2026-05-10T10:00:00+02:00",
             "end": "2026-05-10T10:30:00+02:00",

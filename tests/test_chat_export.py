@@ -25,14 +25,14 @@ def _conv_with_messages() -> dict:
     chat_store.append_user_message(conv, "what did we decide about the rebrand?")
     chat_store.append_assistant_message(
         conv,
-        "You renamed ghost-brain to Poltergeist. See [[20-contexts/codeship/decision]].",
+        "You renamed ghost-brain to Poltergeist. See [[20-contexts/consulting/decision]].",
         [{"name": "search", "summary": "searched vault: rebrand"}],
     )
     return conv
 
 
 class FakeLLMResult:
-    text = "## Rebrand summary\n\n- renamed to Poltergeist [[20-contexts/codeship/decision]]\n"
+    text = "## Rebrand summary\n\n- renamed to Poltergeist [[20-contexts/consulting/decision]]\n"
 
 
 def test_export_writes_summary_jot_and_routes(env, monkeypatch):
@@ -47,15 +47,15 @@ def test_export_writes_summary_jot_and_routes(env, monkeypatch):
     monkeypatch.setattr(
         chat_export,
         "route_existing_jot",
-        lambda jot_id: {"id": jot_id, "path": f"20-contexts/codeship/notes/{jot_id}.md",
-                        "routingStatus": "routed", "context": "codeship", "project": None},
+        lambda jot_id: {"id": jot_id, "path": f"20-contexts/consulting/notes/{jot_id}.md",
+                        "routingStatus": "routed", "context": "consulting", "project": None},
     )
     result = chat_export.export_conversation(conv["id"])
     assert result["routingStatus"] == "routed"
-    assert result["context"] == "codeship"
+    assert result["context"] == "consulting"
     # the transcript and the citation made it into the prompt
     assert "rebrand" in captured["prompt"]
-    assert "[[20-contexts/codeship/decision]]" in captured["prompt"]
+    assert "[[20-contexts/consulting/decision]]" in captured["prompt"]
     # frontmatter marks provenance (file may have been "moved" by the fake router;
     # read via the inbox path captured before routing)
     assert result["jot_id"]

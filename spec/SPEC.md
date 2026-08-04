@@ -118,14 +118,14 @@ vault/
 ├── 10-daily/
 │   ├── YYYY-MM-DD.md
 │   └── by-context/
-│       ├── sanlam-YYYY-MM-DD.md
-│       ├── codeship-YYYY-MM-DD.md
-│       ├── reducedrecipes-YYYY-MM-DD.md
+│       ├── work-YYYY-MM-DD.md
+│       ├── consulting-YYYY-MM-DD.md
+│       ├── side-project-YYYY-MM-DD.md
 │       └── personal-YYYY-MM-DD.md
 ├── 20-contexts/
-│   ├── sanlam/
-│   ├── codeship/
-│   ├── reducedrecipes/
+│   ├── work/
+│   ├── consulting/
+│   ├── side-project/
 │   └── personal/
 ├── 30-cross-context/
 │   ├── people/
@@ -137,9 +137,9 @@ vault/
 │   └── _pulse.md
 ├── 60-dashboards/
 │   ├── all.md
-│   ├── sanlam.md
-│   ├── codeship.md
-│   ├── reducedrecipes.md
+│   ├── work.md
+│   ├── consulting.md
+│   ├── side-project.md
 │   ├── personal.md
 │   └── team-pulse.md
 ├── 80-profile/
@@ -203,7 +203,7 @@ Every note has YAML frontmatter following this schema:
 ---
 # Required
 id: <uuid>
-context: sanlam | codeship | reducedrecipes | personal | cross
+context: work | consulting | side-project | personal | cross
 type: session | pr | issue | ticket | page | decision | artifact | person | project | message | email
 
 # Source
@@ -321,7 +321,7 @@ All connectors emit events in this shape:
     "org": "...",
     "branch": "..."
   },
-  "routingHint": "codeship"
+  "routingHint": "consulting"
 }
 ```
 
@@ -481,15 +481,15 @@ All prompts live in `vault/90-meta/prompts/` as markdown files. They use Jinja2-
 You are a routing classifier for the owner's personal knowledge system.
 
 Available contexts:
-- **sanlam**: work at the company (financial services, internal projects, team)
-- **codeship**: the owner's company, clients, products
-- **reducedrecipes**: a personal side-project product (recipe aggregation)
+- **work**: the day job at the company (internal projects, team)
+- **consulting**: the owner's company, clients, products
+- **side-project**: a personal side-project product (recipe aggregation)
 - **personal**: life, family, hobbies, health, music, cooking
 
 Given the following content, output JSON:
 ```json
 {
-  "context": "sanlam|codeship|reducedrecipes|personal|needs_review",
+  "context": "work|consulting|side-project|personal|needs_review",
   "confidence": 0.0,
   "reasoning": "one sentence explanation",
   "secondary_contexts": []
@@ -673,13 +673,13 @@ def generate_claude_md(project_path: Path) -> None:
 {{calendar_events}}
 
 ## 🏢 the company
-{{sanlam_section}}
+{{work_section}}
 
 ## 🚀 the consultancy
-{{codeship_section}}
+{{consulting_section}}
 
 ## 🍳 a personal side-project
-{{reducedrecipes_section}}
+{{side-project_section}}
 
 ## 🏠 Personal
 {{personal_section}}
@@ -777,7 +777,7 @@ Each phase has a goal, deliverables, and acceptance criteria. **Do not move to t
 - [ ] One Dataview query in `vault/60-dashboards/all.md` showing open PRs
 
 **Acceptance:**
-- Open a PR in a the consultancy repo. Within 2 hours, it appears in `vault/20-contexts/codeship/github/prs/` with correct frontmatter. Dataview dashboard shows it.
+- Open a PR in a the consultancy repo. Within 2 hours, it appears in `vault/20-contexts/consulting/github/prs/` with correct frontmatter. Dataview dashboard shows it.
 
 ### Phase 5 — Daily Digest v1 (Week 3-4)
 

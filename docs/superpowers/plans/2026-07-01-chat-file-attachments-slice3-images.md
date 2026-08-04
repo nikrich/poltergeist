@@ -16,7 +16,7 @@
 - Resilience: on caption failure (LLMError) or empty caption, STILL store the note with a placeholder body (never block the send). Mirrors jots' never-raise-on-vision-failure behavior.
 - Accepted image types (this slice): extensions `png, jpg, jpeg, gif, webp`; MIME `image/png|jpeg|gif|webp`. Per-image size cap `MAX_IMAGE_BYTES = 20_000_000`.
 - Content-addressed dedup hashes the RAW image bytes; a re-uploaded identical image reuses the note+asset and is not re-captioned.
-- Run Python tests from the worktree root with `/Users/jannik/.agentflow/.venv/bin/pytest <paths> -v`. Desktop: `npx vitest run <filter>` and `npm run typecheck` from `desktop/`.
+- Run Python tests from the worktree root with `~/.agentflow/.venv/bin/pytest <paths> -v`. Desktop: `npx vitest run <filter>` and `npm run typecheck` from `desktop/`.
 
 ---
 
@@ -93,7 +93,7 @@ def test_caption_image_empty_on_llm_error(monkeypatch, tmp_path):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `/Users/jannik/.agentflow/.venv/bin/pytest ghostbrain/api/tests/test_attachment_caption.py -v`
+Run: `~/.agentflow/.venv/bin/pytest ghostbrain/api/tests/test_attachment_caption.py -v`
 Expected: FAIL — `ModuleNotFoundError: ghostbrain.api.repo.attachment_caption`.
 
 - [ ] **Step 3: Implement the helper**
@@ -160,7 +160,7 @@ def caption_image(abs_path: str | Path) -> str:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `/Users/jannik/.agentflow/.venv/bin/pytest ghostbrain/api/tests/test_attachment_caption.py -v`
+Run: `~/.agentflow/.venv/bin/pytest ghostbrain/api/tests/test_attachment_caption.py -v`
 Expected: PASS (4 tests).
 
 - [ ] **Step 5: Commit**
@@ -243,7 +243,7 @@ def test_image_over_cap_rejected(tmp_vault, monkeypatch):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `/Users/jannik/.agentflow/.venv/bin/pytest ghostbrain/api/tests/test_chat_attachments.py -v -k image`
+Run: `~/.agentflow/.venv/bin/pytest ghostbrain/api/tests/test_chat_attachments.py -v -k image`
 Expected: FAIL — png currently classified `None` → `UnsupportedAttachment`.
 
 - [ ] **Step 3: Restructure `save_attachment` + add the image branch**
@@ -361,7 +361,7 @@ Note: the old inline body/decoding code inside `save_attachment` is now entirely
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `/Users/jannik/.agentflow/.venv/bin/pytest ghostbrain/api/tests/test_chat_attachments.py -v`
+Run: `~/.agentflow/.venv/bin/pytest ghostbrain/api/tests/test_chat_attachments.py -v`
 Expected: PASS — all prior text/pdf/docx tests (behavior unchanged) plus the 4 new image tests.
 
 - [ ] **Step 5: Commit**
@@ -456,7 +456,7 @@ git commit -m "feat(chat): accept image attachments (paste/drop/browse) in the c
 
 ## Final verification
 
-- [ ] Python: `/Users/jannik/.agentflow/.venv/bin/pytest ghostbrain/api/tests/test_attachment_caption.py ghostbrain/api/tests/test_chat_attachments.py ghostbrain/api/tests/test_attachment_extract.py ghostbrain/api/tests/test_chat.py tests/test_chat_store.py tests/test_chat_repo.py -q` — expect green.
+- [ ] Python: `~/.agentflow/.venv/bin/pytest ghostbrain/api/tests/test_attachment_caption.py ghostbrain/api/tests/test_chat_attachments.py ghostbrain/api/tests/test_attachment_extract.py ghostbrain/api/tests/test_chat.py tests/test_chat_store.py tests/test_chat_repo.py -q` — expect green.
 - [ ] Desktop: from `desktop/`, `npx vitest run` then `npm run typecheck` — expect green.
 - [ ] Manual smoke: paste a screenshot into the composer, send. Confirm the upload takes a few seconds (captioning), the turn references `[[20-contexts/chat-attachments/…]]`, and the note on disk has `kind: image`, a caption body, and an `![[…/assets/….png]]` embed pointing at the stored binary.
 

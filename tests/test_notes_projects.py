@@ -20,20 +20,24 @@ def vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (v / "00-inbox/raw/manual").mkdir(parents=True)
     (v / "90-meta").mkdir(parents=True)
     (v / "20-contexts").mkdir()
+    (v / "90-meta" / "routing.yaml").write_text(
+        "contexts:\n  - personal\n  - work\n  - consulting\n  - side-project\n",
+        encoding="utf-8",
+    )
     monkeypatch.setenv("VAULT_PATH", str(v))
     return v
 
 
 def test_move_jot_into_project_folder_and_frontmatter(vault: Path):
-    projects.create_project("codeship", "Poltergeist")
+    projects.create_project("consulting", "Poltergeist")
     jot = write_inbox_jot("ship the chat feature")
     moved = move_jot(
-        jot["id"], to_context="codeship", to_project="poltergeist",
+        jot["id"], to_context="consulting", to_project="poltergeist",
         confidence=0.9, method="llm", reasoning="r",
     )
-    assert moved["context"] == "codeship"
+    assert moved["context"] == "consulting"
     assert moved["project"] == "poltergeist"
-    assert moved["path"].startswith("20-contexts/codeship/projects/poltergeist/")
+    assert moved["path"].startswith("20-contexts/consulting/projects/poltergeist/")
     post = frontmatter.load(vault / moved["path"])
     assert post["project"] == "poltergeist"
 
@@ -49,24 +53,24 @@ def test_move_jot_without_project_unchanged(vault: Path):
 
 
 def test_reroute_out_of_project_clears_frontmatter(vault: Path):
-    projects.create_project("codeship", "Poltergeist")
+    projects.create_project("consulting", "Poltergeist")
     jot = write_inbox_jot("note")
-    move_jot(jot["id"], to_context="codeship", to_project="poltergeist",
+    move_jot(jot["id"], to_context="consulting", to_project="poltergeist",
              confidence=0.9, method="llm", reasoning="r")
-    moved = move_jot(jot["id"], to_context="codeship",
+    moved = move_jot(jot["id"], to_context="consulting",
                      confidence=1.0, method="user", reasoning="r")
-    assert moved["path"].startswith("20-contexts/codeship/notes/")
+    assert moved["path"].startswith("20-contexts/consulting/notes/")
     post = frontmatter.load(vault / moved["path"])
     assert post.get("project") is None
 
 
 def test_list_jots_scans_project_folders_and_filters(vault: Path):
-    projects.create_project("codeship", "Poltergeist")
+    projects.create_project("consulting", "Poltergeist")
     a = write_inbox_jot("in project")
-    move_jot(a["id"], to_context="codeship", to_project="poltergeist",
+    move_jot(a["id"], to_context="consulting", to_project="poltergeist",
              confidence=0.9, method="llm", reasoning="r")
     b = write_inbox_jot("loose note")
-    move_jot(b["id"], to_context="codeship",
+    move_jot(b["id"], to_context="consulting",
              confidence=1.0, method="user", reasoning="r")
     page = list_jots()
     by_id = {i["id"]: i for i in page["items"]}
@@ -107,18 +111,18 @@ def test_route_jot_core_passes_project(vault, monkeypatch):
     import ghostbrain.api.repo.notes_manual as nm
     from ghostbrain.worker.router import RoutingDecision
 
-    projects.create_project("codeship", "Poltergeist")
+    projects.create_project("consulting", "Poltergeist")
     jot = write_inbox_jot("note about the brain")
     monkeypatch.setattr(
         nm, "route_event",
         lambda event, **kw: RoutingDecision(
-            context="codeship", confidence=0.9, reasoning="r",
+            context="consulting", confidence=0.9, reasoning="r",
             method="llm", project="poltergeist",
         ),
     )
     from ghostbrain.api.repo.notes_manual import route_existing_jot
     result = route_existing_jot(jot["id"])
     assert result["routingStatus"] == "routed"
-    assert result["context"] == "codeship"
+    assert result["context"] == "consulting"
     assert result["project"] == "poltergeist"
-    assert result["path"].startswith("20-contexts/codeship/projects/poltergeist/")
+    assert result["path"].startswith("20-contexts/consulting/projects/poltergeist/")

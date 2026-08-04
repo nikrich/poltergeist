@@ -25,7 +25,7 @@ def test_archives_items_not_reinforced_in_60_days(vault: Path) -> None:
     from ghostbrain.profile.decay import decay_monthly
 
     _write_current_projects(vault,
-        "# Current projects\n\n## codeship\n- Stale work\n- Recent work\n"
+        "# Current projects\n\n## consulting\n- Stale work\n- Recent work\n"
     )
     # "Stale work" last reinforced 70 days before target.
     _write_audit(vault, date(2026, 2, 26), [
@@ -54,7 +54,7 @@ def test_proposes_promotion_for_long_stable_items(vault: Path) -> None:
     from ghostbrain.profile.decay import decay_monthly
 
     _write_current_projects(vault,
-        "# Current projects\n\n## codeship\n- Settled fact\n"
+        "# Current projects\n\n## consulting\n- Settled fact\n"
     )
     # Last reinforced 35 days ago — between PROMOTION_DAYS and DECAY_DAYS.
     _write_audit(vault, date(2026, 4, 2), [
@@ -74,7 +74,7 @@ def test_hand_edited_items_left_alone(vault: Path) -> None:
     from ghostbrain.profile.decay import decay_monthly
 
     _write_current_projects(vault,
-        "# Current projects\n\n## sanlam\n- TODO: hand-written placeholder\n"
+        "# Current projects\n\n## work\n- TODO: hand-written placeholder\n"
         "- Hand-curated entry\n"
     )
     result = decay_monthly(target_date=date(2026, 5, 7))

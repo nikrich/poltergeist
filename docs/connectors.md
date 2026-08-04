@@ -52,7 +52,7 @@ Edit `<vault>/90-meta/routing.yaml` to map your orgs to contexts:
 ```yaml
 github:
   orgs:
-    YourOrg: codeship
+    YourOrg: consulting
     YourEmployer: work
     YourSideProject: side
 ```

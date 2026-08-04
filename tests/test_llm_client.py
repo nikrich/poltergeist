@@ -32,8 +32,8 @@ def test_parse_clean_json_array() -> None:
 
 
 def test_parse_strips_markdown_fence() -> None:
-    text = '```json\n{"context": "codeship", "confidence": 0.9}\n```'
-    assert _parse_json_tolerant(text) == {"context": "codeship", "confidence": 0.9}
+    text = '```json\n{"context": "consulting", "confidence": 0.9}\n```'
+    assert _parse_json_tolerant(text) == {"context": "consulting", "confidence": 0.9}
 
 
 def test_parse_strips_lowercase_fence_without_lang() -> None:
@@ -67,17 +67,17 @@ def test_parse_raises_on_empty() -> None:
 
 
 def test_llmresult_as_json_uses_tolerant_parser() -> None:
-    r = _result('Done. Result: {"context": "codeship", "confidence": 0.9}')
-    assert r.as_json() == {"context": "codeship", "confidence": 0.9}
+    r = _result('Done. Result: {"context": "consulting", "confidence": 0.9}')
+    assert r.as_json() == {"context": "consulting", "confidence": 0.9}
 
 
 def test_llmresult_prefers_structured_over_text() -> None:
     """When --json-schema was used, `structured` is already a parsed object."""
     r = LLMResult(
-        text="", structured={"context": "sanlam", "confidence": 0.9},
+        text="", structured={"context": "work", "confidence": 0.9},
         model="haiku", cost_usd=0.0, duration_ms=0, session_id="s", raw={},
     )
-    assert r.as_json() == {"context": "sanlam", "confidence": 0.9}
+    assert r.as_json() == {"context": "work", "confidence": 0.9}
 
 
 def test_llmresult_falls_back_to_text_when_no_structured() -> None:

@@ -14,13 +14,13 @@ Configured via ``vault/90-meta/config.yaml:inverse_search``::
 
     inverse_search:
       watched_names:
-        jannik811: ["jannik", "jannik richter", "jr"]
+        you: ["yourname", "your full name", "yn"]
         julia: ["julia", "julia v"]
       lookback_days: 7
       # Contexts where each name is "expected" (so cross-context surfacings
       # surface as `unexpected`). Defaults to all when not specified.
       expected_contexts:
-        jannik811: ["acme", "your-context", "personal"]
+        you: ["acme", "your-context", "personal"]
         julia: ["acme"]
 
 Output is a list of ``UnexpectedReference`` for the weekly digest.

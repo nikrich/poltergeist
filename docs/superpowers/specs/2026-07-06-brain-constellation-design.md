@@ -123,8 +123,8 @@ Three layers, each independently testable:
 
 Region → colour must agree between the API (`regions[].color`) and the renderer. Define it
 once (Python side, surfaced in the payload) so there's a single source of truth. Mockup
-palette: poltergeist `#6EE7A8`, sanlam `#38BDF8`, personal `#A78BFA`, reducedrecipes
-`#FBBF24`, codeship `#F472B6`. Contexts beyond these get colours from a deterministic
+palette: poltergeist `#6EE7A8`, work `#38BDF8`, personal `#A78BFA`, side-project
+`#FBBF24`, consulting `#F472B6`. Contexts beyond these get colours from a deterministic
 extended ramp (even lightness, varied hue — same principle as the dataviz palette).
 
 ## Data flow

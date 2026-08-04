@@ -14,9 +14,9 @@ from ghostbrain.worker.router import RoutingDecision
 # ---------------------------------------------------------------------------
 
 _CONFIDENT = RoutingDecision(
-    context="sanlam",
+    context="work",
     confidence=0.82,
-    reasoning="matches sanlam",
+    reasoning="matches work",
     method="llm",
     secondary_contexts=[],
 )
@@ -102,7 +102,7 @@ def test_create_with_route_true_still_routes(
     tmp_vault, client, auth_headers, monkeypatch
 ):
     """route=true (default) must still call route_event — no regression."""
-    (tmp_vault / "20-contexts" / "sanlam" / "notes").mkdir(parents=True, exist_ok=True)
+    (tmp_vault / "20-contexts" / "work" / "notes").mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(
         "ghostbrain.api.repo.notes_manual.route_event",
         lambda event, **kw: _CONFIDENT,
@@ -110,7 +110,7 @@ def test_create_with_route_true_still_routes(
 
     resp = client.post(
         "/v1/notes",
-        json={"body": "route me to sanlam", "route": True},
+        json={"body": "route me to work", "route": True},
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -126,7 +126,7 @@ def test_route_auto_confident_decision_moves_file(
     tmp_vault, client, auth_headers, monkeypatch
 ):
     """Confident route_event decision → file moves, status=routed."""
-    (tmp_vault / "20-contexts" / "sanlam" / "notes").mkdir(parents=True, exist_ok=True)
+    (tmp_vault / "20-contexts" / "work" / "notes").mkdir(parents=True, exist_ok=True)
 
     # Create pending jot
     monkeypatch.setattr(
@@ -153,10 +153,10 @@ def test_route_auto_confident_decision_moves_file(
     assert resp.status_code == 200
     data = resp.json()
     assert data["routingStatus"] == "routed"
-    assert data["path"].startswith("20-contexts/sanlam/notes/")
+    assert data["path"].startswith("20-contexts/work/notes/")
     # File must have moved
     fm = frontmatter.load(tmp_vault / data["path"])
-    assert fm["context"] == "sanlam"
+    assert fm["context"] == "work"
     assert fm["routingStatus"] == "routed"
 
 
@@ -229,7 +229,7 @@ def test_route_auto_reads_current_body(
     tmp_vault, client, auth_headers, monkeypatch
 ):
     """route-auto uses the jot's CURRENT body (after an update), not the creation body."""
-    (tmp_vault / "20-contexts" / "sanlam" / "notes").mkdir(parents=True, exist_ok=True)
+    (tmp_vault / "20-contexts" / "work" / "notes").mkdir(parents=True, exist_ok=True)
 
     monkeypatch.setattr(
         "ghostbrain.api.repo.notes_manual.route_event",
@@ -245,7 +245,7 @@ def test_route_auto_reads_current_body(
     # Update the body to real content
     client.patch(
         f"/v1/notes/{jot_id}",
-        json={"body": "updated sanlam content"},
+        json={"body": "updated work content"},
         headers=auth_headers,
     )
 
@@ -262,14 +262,14 @@ def test_route_auto_reads_current_body(
         headers=auth_headers,
     )
     assert resp.status_code == 200
-    assert seen_bodies == ["updated sanlam content"]
+    assert seen_bodies == ["updated work content"]
 
 
 def test_both_route_endpoints_coexist(
     tmp_vault, client, auth_headers, monkeypatch
 ):
     """Both /route and /route-auto endpoints must be reachable without conflict."""
-    (tmp_vault / "20-contexts" / "sanlam" / "notes").mkdir(parents=True, exist_ok=True)
+    (tmp_vault / "20-contexts" / "work" / "notes").mkdir(parents=True, exist_ok=True)
 
     monkeypatch.setattr(
         "ghostbrain.api.repo.notes_manual.route_event",
@@ -285,7 +285,7 @@ def test_both_route_endpoints_coexist(
     # /route (manual context selection) — should work
     route_resp = client.post(
         f"/v1/notes/{jot_id}/route",
-        json={"context": "sanlam"},
+        json={"context": "work"},
         headers=auth_headers,
     )
     assert route_resp.status_code == 200, route_resp.json()

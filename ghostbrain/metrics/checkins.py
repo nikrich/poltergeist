@@ -38,7 +38,7 @@ class CheckinSuggestion:
     person: str            # name or email
     reason: str            # human-readable, fits "worth a check-in with <person> because <reason>"
     source_kind: str       # "pr" | "ticket" | "calendar"
-    source_ref: str        # e.g. "ASCP-1234" or note path
+    source_ref: str        # e.g. "ACME-1234" or note path
     last_activity: str     # ISO
     age_days: float
 

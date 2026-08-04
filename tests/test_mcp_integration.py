@@ -11,10 +11,10 @@ from ghostbrain.mcp.client import SidecarClient, SidecarNotRunning
 @pytest.fixture
 def seeded_vault(tmp_path, monkeypatch):
     vault = tmp_path / "vault"
-    note_dir = vault / "20-contexts" / "sanlam" / "notes"
+    note_dir = vault / "20-contexts" / "work" / "notes"
     note_dir.mkdir(parents=True)
     (note_dir / "x.md").write_text(
-        "---\ntitle: ASCP wizard\ncontext: sanlam\n---\n\nUse Cognito session refresh.\n"
+        "---\ntitle: Helix wizard\ncontext: work\n---\n\nUse Cognito session refresh.\n"
     )
     monkeypatch.setenv("VAULT_PATH", str(vault))
     return vault
@@ -33,17 +33,17 @@ def _client_for(app, token):
 def test_get_note_end_to_end(seeded_vault):
     app = create_app(token="test-token")
     client = _client_for(app, "test-token")
-    out = tools.get_note(client, "20-contexts/sanlam/notes/x.md")
-    assert "ASCP wizard" in out
+    out = tools.get_note(client, "20-contexts/work/notes/x.md")
+    assert "Helix wizard" in out
     assert "Cognito session refresh" in out
-    assert "context: sanlam" in out
+    assert "context: work" in out
 
 
 def test_bad_token_is_rejected(seeded_vault):
     app = create_app(token="real-token")
     client = _client_for(app, "wrong-token")
     with pytest.raises(httpx.HTTPStatusError):
-        tools.get_note(client, "20-contexts/sanlam/notes/x.md")
+        tools.get_note(client, "20-contexts/work/notes/x.md")
 
 
 def test_not_running_path():

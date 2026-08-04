@@ -46,8 +46,8 @@ def test_status_reports_count_and_model(client, auth_headers, tmp_index):
             {
                 "model_name": "sentence-transformers/all-MiniLM-L6-v2",
                 "entries": {
-                    "20-contexts/sanlam/a.md": {"row": 0, "mtime": 1.0, "hash": "x"},
-                    "20-contexts/sanlam/b.md": {"row": 1, "mtime": 2.0, "hash": "y"},
+                    "20-contexts/work/a.md": {"row": 0, "mtime": 1.0, "hash": "x"},
+                    "20-contexts/work/b.md": {"row": 1, "mtime": 2.0, "hash": "y"},
                 },
             }
         ),

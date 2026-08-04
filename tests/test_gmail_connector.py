@@ -18,14 +18,14 @@ import pytest
 
 def test_quote_label_leaves_simple_labels_unquoted() -> None:
     from ghostbrain.connectors.gmail.connector import _quote_label
-    assert _quote_label("sanlam") == "sanlam"
-    assert _quote_label("sanlam/policies") == "sanlam/policies"
-    assert _quote_label("Codeship-Internal") == "Codeship-Internal"
+    assert _quote_label("work") == "work"
+    assert _quote_label("work/policies") == "work/policies"
+    assert _quote_label("Consultancy-Internal") == "Consultancy-Internal"
 
 
 def test_quote_label_quotes_labels_with_spaces() -> None:
     from ghostbrain.connectors.gmail.connector import _quote_label
-    assert _quote_label("Sanlam Internal") == '"Sanlam Internal"'
+    assert _quote_label("Work Internal") == '"Work Internal"'
 
 
 def test_build_query_combines_labels_and_unread() -> None:
@@ -35,12 +35,12 @@ def test_build_query_combines_labels_and_unread() -> None:
     )
     acc = GmailAccountConfig(
         email="x@y.com",
-        monitored_labels=["sanlam/policies", "codeship"],
+        monitored_labels=["work/policies", "consulting"],
         unread_lookback_hours=24,
     )
     q = _build_query(acc)
-    assert "label:sanlam/policies" in q
-    assert "label:codeship" in q
+    assert "label:work/policies" in q
+    assert "label:consulting" in q
     assert "is:unread newer_than:1d" in q
     # Two filters joined by OR.
     assert " OR " in q
@@ -81,8 +81,8 @@ def _make_thread(
     *,
     thread_id: str = "t-1",
     subject: str = "Hello",
-    from_addr: str = "alex@sanlam.co.za",
-    to_addr: str = "jannik@example.com",
+    from_addr: str = "alex@work.co.za",
+    to_addr: str = "sam@example.com",
     body: str = "Body text here.",
     labels: list[str] | None = None,
     internal_date_ms: int = 1715000000000,
@@ -122,9 +122,9 @@ def test_normalize_thread_pulls_headers_and_body() -> None:
     assert ev["title"] == "Beneficiaries query"
     assert ev["body"] == "Need foreign ID"
     md = ev["metadata"]
-    assert md["from_address"] == "alex@sanlam.co.za"
-    assert md["from_domain"] == "sanlam.co.za"
-    assert md["to"] == ["jannik@example.com"]
+    assert md["from_address"] == "alex@work.co.za"
+    assert md["from_domain"] == "work.co.za"
+    assert md["to"] == ["sam@example.com"]
     assert md["account"] == "me@example.com"
     assert md["is_unread"] is True
 
@@ -257,7 +257,7 @@ def test_fetch_one_account_normalizes_threads(
     c = GmailConnector(
         config={
             "accounts": {"me@example.com": {
-                "monitored_labels": ["sanlam"],
+                "monitored_labels": ["work"],
             }},
             "relevance_gate": False,   # this test predates the gate
         },
@@ -286,14 +286,14 @@ def test_router_routes_by_sender_domain() -> None:
         "source": "gmail",
         "id": "gmail:thread:abc",
         "metadata": {
-            "from_domain": "sanlam.co.za",
+            "from_domain": "work.co.za",
             "labels": ["INBOX"],
         },
     }
-    routing = {"gmail": {"sender_domains": {"sanlam.co.za": "sanlam"}}}
+    routing = {"gmail": {"sender_domains": {"work.co.za": "work"}}}
     decision = _fast_route(event, routing)
     assert decision is not None
-    assert decision.context == "sanlam"
+    assert decision.context == "work"
     assert decision.method == "path"
     assert decision.confidence == 1.0
 
@@ -306,13 +306,13 @@ def test_router_routes_by_label_prefix() -> None:
         "id": "gmail:thread:abc",
         "metadata": {
             "from_domain": "alex@gmail.com",
-            "labels": ["INBOX", "sanlam/policies"],
+            "labels": ["INBOX", "work/policies"],
         },
     }
-    routing = {"gmail": {"label_prefixes": {"sanlam/": "sanlam"}}}
+    routing = {"gmail": {"label_prefixes": {"work/": "work"}}}
     decision = _fast_route(event, routing)
     assert decision is not None
-    assert decision.context == "sanlam"
+    assert decision.context == "work"
     assert decision.method == "path"
 
 
@@ -328,8 +328,8 @@ def test_router_falls_through_to_llm_when_no_gmail_rule_matches() -> None:
         },
     }
     routing = {"gmail": {
-        "sender_domains": {"sanlam.co.za": "sanlam"},
-        "label_prefixes": {"sanlam/": "sanlam"},
+        "sender_domains": {"work.co.za": "work"},
+        "label_prefixes": {"work/": "work"},
     }}
     assert _fast_route(event, routing) is None
 
@@ -381,7 +381,7 @@ def test_fetch_filters_denylist_before_relevance_gate(
                 thread_id=id, from_addr="promo@humblebundle.com",
             )))
         return MagicMock(execute=MagicMock(return_value=_make_thread(
-            thread_id=id, from_addr="alex@sanlam.co.za",
+            thread_id=id, from_addr="alex@work.co.za",
         )))
     fake_service.users().threads().get.side_effect = _get
 
@@ -460,7 +460,7 @@ def test_relevance_gate_keeps_event_when_gate_errors(
         "threads": [{"id": "x"}],
     }
     fake_service.users().threads().get().execute.return_value = _make_thread(
-        thread_id="x", from_addr="alex@sanlam.co.za",
+        thread_id="x", from_addr="alex@work.co.za",
     )
 
     def angry_gate(ev: dict) -> tuple[bool, str]:
@@ -516,21 +516,21 @@ def test_relevance_gate_disabled_keeps_everything(
 
 def test_router_sender_domain_beats_label_prefix() -> None:
     """When both rules would match, sender_domain wins because its signal
-    is stronger (legit sanlam.co.za email vs. user-applied label)."""
+    is stronger (legit work.co.za email vs. user-applied label)."""
     from ghostbrain.worker.router import _fast_route
 
     event = {
         "source": "gmail",
         "id": "gmail:thread:abc",
         "metadata": {
-            "from_domain": "sanlam.co.za",
-            "labels": ["INBOX", "codeship/internal"],
+            "from_domain": "work.co.za",
+            "labels": ["INBOX", "consulting/internal"],
         },
     }
     routing = {"gmail": {
-        "sender_domains": {"sanlam.co.za": "sanlam"},
-        "label_prefixes": {"codeship/": "codeship"},
+        "sender_domains": {"work.co.za": "work"},
+        "label_prefixes": {"consulting/": "consulting"},
     }}
     decision = _fast_route(event, routing)
     assert decision is not None
-    assert decision.context == "sanlam"
+    assert decision.context == "work"

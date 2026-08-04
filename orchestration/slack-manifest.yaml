@@ -1,6 +1,6 @@
 # Slack app manifest for the ghostbrain connector.
 # Paste into https://api.slack.com/apps → Create New App → From a manifest.
-# Repeat per workspace (sft, codeship, ...). After install, copy the
+# Repeat per workspace (acme, side-gig, ...). After install, copy the
 # User OAuth Token (xoxp-...) and run:
 #   ghostbrain-slack-token-add <slug> xoxp-...
 

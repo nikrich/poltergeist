@@ -53,14 +53,14 @@ def test_default_current_projects_doc_uses_configured_contexts(vault: Path) -> N
 
     cp = target.read_text()
     assert "## alpha" in cp
-    for legacy in ("sanlam", "codeship", "reducedrecipes"):
+    for legacy in ("work", "consulting", "side-project"):
         assert f"## {legacy}" not in cp
 
 
 def test_three_corroborating_adds_apply_to_current_projects(vault: Path) -> None:
     from ghostbrain.profile.apply import apply_weekly
 
-    parent = str(vault / "20-contexts" / "codeship" / "claude" / "sessions" / "p.md")
+    parent = str(vault / "20-contexts" / "consulting" / "claude" / "sessions" / "p.md")
     _write_proposed(vault, date(2026, 5, 5), [
         _proposal("current-projects", "Building ghost-brain", parent_path=parent),
         _proposal("current-projects", "building ghost-brain", parent_path=parent),  # normalized match
@@ -74,8 +74,8 @@ def test_three_corroborating_adds_apply_to_current_projects(vault: Path) -> None
     assert len(result.applied) == 1
     cp = (vault / "80-profile" / "current-projects.md").read_text()
     assert "Building ghost-brain" in cp
-    # Bullet should land under codeship since parent paths point there.
-    sec = cp.split("## codeship", 1)[1].split("\n## ", 1)[0]
+    # Bullet should land under consulting since parent paths point there.
+    sec = cp.split("## consulting", 1)[1].split("\n## ", 1)[0]
     assert "Building ghost-brain" in sec
 
 
@@ -94,7 +94,7 @@ def test_stable_field_proposals_always_deferred(vault: Path) -> None:
     from ghostbrain.profile.apply import apply_weekly
 
     # 5 corroborating "preferences" updates — must NOT auto-apply.
-    parent = str(vault / "20-contexts" / "codeship" / "x" / "p.md")
+    parent = str(vault / "20-contexts" / "consulting" / "x" / "p.md")
     _write_proposed(vault, date(2026, 5, 5), [
         _proposal("preferences", "Use ruff over flake8", op="update",
                   parent_path=parent)
@@ -125,7 +125,7 @@ def test_no_proposals_within_window_is_noop(vault: Path) -> None:
 def test_grouping_preserves_distinct_facts(vault: Path) -> None:
     from ghostbrain.profile.apply import apply_weekly
 
-    parent = str(vault / "20-contexts" / "codeship" / "claude" / "sessions" / "p.md")
+    parent = str(vault / "20-contexts" / "consulting" / "claude" / "sessions" / "p.md")
     _write_proposed(vault, date(2026, 5, 5), [
         _proposal("current-projects", "A", parent_path=parent),
         _proposal("current-projects", "A", parent_path=parent),
@@ -143,13 +143,13 @@ def test_grouping_preserves_distinct_facts(vault: Path) -> None:
 def test_picks_h2_from_parent_note_paths(vault: Path) -> None:
     from ghostbrain.profile.apply import apply_weekly
 
-    sanlam_parent = str(vault / "20-contexts" / "sanlam" / "x" / "p.md")
+    work_parent = str(vault / "20-contexts" / "work" / "x" / "p.md")
     _write_proposed(vault, date(2026, 5, 5), [
-        _proposal("current-projects", "ASCP capstone work", parent_path=sanlam_parent)
+        _proposal("current-projects", "Helix rockets work", parent_path=work_parent)
         for _ in range(3)
     ])
     apply_weekly(target_date=date(2026, 5, 7))
 
     cp = (vault / "80-profile" / "current-projects.md").read_text()
-    sanlam_sec = cp.split("## sanlam", 1)[1].split("\n## ", 1)[0]
-    assert "ASCP capstone work" in sanlam_sec
+    work_sec = cp.split("## work", 1)[1].split("\n## ", 1)[0]
+    assert "Helix rockets work" in work_sec

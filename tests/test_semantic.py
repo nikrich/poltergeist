@@ -58,23 +58,23 @@ def test_refresh_writes_related_frontmatter(vault: Path, index_dir: Path) -> Non
     import frontmatter
     from ghostbrain.semantic.refresh import refresh
 
-    sanlam_dir = vault / "20-contexts" / "sanlam"
-    codeship_dir = vault / "20-contexts" / "codeship"
+    work_dir = vault / "20-contexts" / "work"
+    consulting_dir = vault / "20-contexts" / "consulting"
 
     _write_note(
-        sanlam_dir / "calendar" / "doc.md",
+        work_dir / "calendar" / "doc.md",
         "Avro schema discussion",
-        "Avro schema for Kinesis", "sanlam",
+        "Avro schema for Kinesis", "work",
     )
     _write_note(
-        sanlam_dir / "github" / "prs" / "pr.md",
+        work_dir / "github" / "prs" / "pr.md",
         "Avro schema fix",
-        "Avro schema fix for the policy domain", "sanlam",
+        "Avro schema fix for the policy domain", "work",
     )
     _write_note(
-        codeship_dir / "claude" / "sessions" / "x.md",
+        consulting_dir / "claude" / "sessions" / "x.md",
         "Build hive orchestration",
-        "Building the hive multi-repo orchestrator", "codeship",
+        "Building the hive multi-repo orchestrator", "consulting",
     )
 
     result = refresh(
@@ -87,7 +87,7 @@ def test_refresh_writes_related_frontmatter(vault: Path, index_dir: Path) -> Non
     # notes were embedded and the PR got SOME related entries written.
     assert result.embedded >= 3
     assert result.linked >= 1
-    pr = frontmatter.load(sanlam_dir / "github" / "prs" / "pr.md")
+    pr = frontmatter.load(work_dir / "github" / "prs" / "pr.md")
     related = pr.metadata.get("related") or []
     assert related, "expected at least one related entry"
     # All entries should be wikilinks pointing at vault-relative paths.
@@ -101,12 +101,12 @@ def test_refresh_indexes_transcripts(vault: Path, index_dir: Path) -> None:
     dominating the embedding space."""
     from ghostbrain.semantic.refresh import refresh
 
-    sanlam_cal = vault / "20-contexts" / "sanlam" / "calendar" / "transcripts"
-    sanlam_cal.mkdir(parents=True, exist_ok=True)
-    _write_note(sanlam_cal / "include-me.md", "Transcript", "noisy text", "sanlam")
+    work_cal = vault / "20-contexts" / "work" / "calendar" / "transcripts"
+    work_cal.mkdir(parents=True, exist_ok=True)
+    _write_note(work_cal / "include-me.md", "Transcript", "noisy text", "work")
     _write_note(
-        vault / "20-contexts" / "sanlam" / "calendar" / "keep.md",
-        "Calendar event", "real meeting", "sanlam",
+        vault / "20-contexts" / "work" / "calendar" / "keep.md",
+        "Calendar event", "real meeting", "work",
     )
 
     refresh(top_k=3, min_similarity=0.4, embedder=FakeEmbedder())
@@ -121,12 +121,12 @@ def test_refresh_skips_unchanged_on_second_run(vault: Path, index_dir: Path) -> 
     from ghostbrain.semantic.refresh import refresh
 
     _write_note(
-        vault / "20-contexts" / "sanlam" / "calendar" / "n1.md",
-        "A", "alpha", "sanlam",
+        vault / "20-contexts" / "work" / "calendar" / "n1.md",
+        "A", "alpha", "work",
     )
     _write_note(
-        vault / "20-contexts" / "sanlam" / "calendar" / "n2.md",
-        "B", "beta", "sanlam",
+        vault / "20-contexts" / "work" / "calendar" / "n2.md",
+        "B", "beta", "work",
     )
 
     first = refresh(top_k=1, min_similarity=0.0, embedder=FakeEmbedder())
@@ -144,26 +144,26 @@ def test_cross_context_only_filter(vault: Path, index_dir: Path) -> None:
     from ghostbrain.semantic.refresh import refresh
 
     _write_note(
-        vault / "20-contexts" / "sanlam" / "calendar" / "a.md",
-        "Avro schema A", "Avro schema A", "sanlam",
+        vault / "20-contexts" / "work" / "calendar" / "a.md",
+        "Avro schema A", "Avro schema A", "work",
     )
     _write_note(
-        vault / "20-contexts" / "sanlam" / "calendar" / "b.md",
-        "Avro schema B", "Avro schema B", "sanlam",
+        vault / "20-contexts" / "work" / "calendar" / "b.md",
+        "Avro schema B", "Avro schema B", "work",
     )
     _write_note(
-        vault / "20-contexts" / "codeship" / "calendar" / "c.md",
-        "Avro schema C", "Avro schema C", "codeship",
+        vault / "20-contexts" / "consulting" / "calendar" / "c.md",
+        "Avro schema C", "Avro schema C", "consulting",
     )
 
     refresh(top_k=3, min_similarity=0.0,
             cross_context_only=True, embedder=FakeEmbedder())
 
-    a = frontmatter.load(vault / "20-contexts" / "sanlam" / "calendar" / "a.md")
+    a = frontmatter.load(vault / "20-contexts" / "work" / "calendar" / "a.md")
     related = a.metadata.get("related") or []
-    # All related entries should be from a non-sanlam context.
+    # All related entries should be from a non-work context.
     assert related, "expected at least one cross-context related note"
     for r in related:
-        assert "20-contexts/sanlam" not in r, (
-            f"related entry {r} should be cross-context, not sanlam"
+        assert "20-contexts/work" not in r, (
+            f"related entry {r} should be cross-context, not work"
         )

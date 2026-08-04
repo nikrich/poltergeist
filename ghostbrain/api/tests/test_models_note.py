@@ -7,14 +7,14 @@ from ghostbrain.api.models.note import Note, NoteListItem, NotesPage
 
 def test_note_accepts_jot_frontmatter():
     note = Note(
-        path="20-contexts/sanlam/notes/manual-20260514T093015-x.md",
+        path="20-contexts/work/notes/manual-20260514T093015-x.md",
         title="ghostbrain idea",
-        body="thoughts about the ascp wizard flow",
+        body="thoughts about the helix wizard flow",
         frontmatter={
             "id": "manual-20260514T093015-x",
             "type": "note",
             "source": "manual",
-            "context": "sanlam",
+            "context": "work",
             "routingStatus": "routed",
             "routingMethod": "llm",
             "routingConfidence": 0.82,
@@ -27,10 +27,10 @@ def test_note_accepts_jot_frontmatter():
 def test_note_list_item_shape():
     item = NoteListItem(
         id="manual-20260514T093015-x",
-        path="20-contexts/sanlam/notes/manual-20260514T093015-x.md",
+        path="20-contexts/work/notes/manual-20260514T093015-x.md",
         title="ghostbrain idea",
         excerpt="thoughts about the…",
-        context="sanlam",
+        context="work",
         routingStatus="routed",
         tags=["idea"],
         created="2026-05-14T09:30:15+02:00",
@@ -55,6 +55,6 @@ def test_note_list_item_rejects_unknown_routing_status_and_accepts_null_context(
         updated="2026-05-14T09:30:15+02:00",
     )
     with pytest.raises(ValidationError):
-        NoteListItem(context="sanlam", routingStatus="unknown", **kwargs)
+        NoteListItem(context="work", routingStatus="unknown", **kwargs)
     item = NoteListItem(context=None, routingStatus="pending", **kwargs)
     assert item.context is None

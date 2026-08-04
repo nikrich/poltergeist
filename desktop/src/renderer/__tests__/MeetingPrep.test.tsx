@@ -11,7 +11,7 @@ const fullPrep: Prep = {
   eventId: 'evt-1',
   brief: 'Continuing last week\'s auth thread.',
   related: [{
-    path: '20-contexts/sanlam/meetings/2026-05-18-eng-standup.md',
+    path: '20-contexts/work/meetings/2026-05-18-eng-standup.md',
     title: 'Eng standup 2026-05-18',
     source: 'meeting',
     snippet: 'agreed to spike auth',

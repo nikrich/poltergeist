@@ -14,7 +14,7 @@
 - No new renderer dependency. The constellation renders on **Canvas 2D** (decision locked; no d3/sigma/three).
 - Semantic artifacts live in `index_dir()` (`ghostbrain/semantic/index.py`): `~/ghostbrain/semantic/`, overridable via `GHOSTBRAIN_SEMANTIC_INDEX_DIR`. `layout.json` is written there, atomically, `chmod 0o600` — same pattern as `index.save()`.
 - Vault notes live under `vault/20-contexts/<context>/…`; a note's **context** = the path segment after `20-contexts` (reuse `_ctx_from_rel` logic). Coordinates are normalised to a stable box `[-1000, 1000]` on both axes.
-- Region colours are the single source of truth in Python and travel in the payload. Base palette (copy verbatim): poltergeist `#6EE7A8`, sanlam `#38BDF8`, personal `#A78BFA`, reducedrecipes `#FBBF24`, codeship `#F472B6`.
+- Region colours are the single source of truth in Python and travel in the payload. Base palette (copy verbatim): poltergeist `#6EE7A8`, work `#38BDF8`, personal `#A78BFA`, side-project `#FBBF24`, consulting `#F472B6`.
 - Edge `kind` is exactly `"related"` or `"wikilink"`.
 - API models are Pydantic `BaseModel` with `model_config = ConfigDict(populate_by_name=True)`; TypeScript mirrors are maintained by hand in `desktop/src/shared/api-types.ts`.
 - All git commits end with the repo's trailer: `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`.
@@ -390,19 +390,19 @@ from ghostbrain.semantic.regions import region_color, region_label
 
 def test_known_contexts_use_base_palette():
     assert region_color("poltergeist") == "#6EE7A8"
-    assert region_color("sanlam") == "#38BDF8"
+    assert region_color("work") == "#38BDF8"
     assert region_color("personal") == "#A78BFA"
 
 
 def test_unknown_context_is_deterministic_hex():
-    a = region_color("reducedrecipes-clone")
-    b = region_color("reducedrecipes-clone")
+    a = region_color("side-project-clone")
+    b = region_color("side-project-clone")
     assert a == b and a.startswith("#") and len(a) == 7
 
 
 def test_label_falls_back_to_unfiled():
     assert region_label("") == "unfiled"
-    assert region_label("sanlam") == "sanlam"
+    assert region_label("work") == "work"
 ```
 
 - [ ] **Step 2: Run to verify it fails** — Run: `pytest ghostbrain/semantic/tests/test_regions.py -v` — Expected: FAIL (import error)
@@ -418,10 +418,10 @@ import hashlib
 
 _BASE = {
     "poltergeist": "#6EE7A8",
-    "sanlam": "#38BDF8",
+    "work": "#38BDF8",
     "personal": "#A78BFA",
-    "reducedrecipes": "#FBBF24",
-    "codeship": "#F472B6",
+    "side-project": "#FBBF24",
+    "consulting": "#F472B6",
 }
 
 # Extended ramp for unknown contexts: even lightness, varied hue.
@@ -482,23 +482,23 @@ def _note(vault: Path, rel: str, body: str = "", **meta) -> None:
 
 def test_build_graph_nodes_edges_regions(tmp_vault: Path, monkeypatch, tmp_path):
     monkeypatch.setenv("GHOSTBRAIN_SEMANTIC_INDEX_DIR", str(tmp_path / "sem"))
-    _note(tmp_vault, "20-contexts/sanlam/a.md", title="A")
-    _note(tmp_vault, "20-contexts/sanlam/b.md", title="B")
+    _note(tmp_vault, "20-contexts/work/a.md", title="A")
+    _note(tmp_vault, "20-contexts/work/b.md", title="B")
     # a relates to b (semantic edge)
-    (tmp_vault / "20-contexts/sanlam/a.md").write_text(
-        "---\ntitle: A\nrelated:\n- '[[20-contexts/sanlam/b]]'\n---\nbody", encoding="utf-8")
+    (tmp_vault / "20-contexts/work/a.md").write_text(
+        "---\ntitle: A\nrelated:\n- '[[20-contexts/work/b]]'\n---\nbody", encoding="utf-8")
 
     graph = build_graph()
     paths = {n["path"] for n in graph["nodes"]}
-    assert paths == {"20-contexts/sanlam/a.md", "20-contexts/sanlam/b.md"}
+    assert paths == {"20-contexts/work/a.md", "20-contexts/work/b.md"}
     assert all("x" in n and "y" in n for n in graph["nodes"])
     edges = graph["edges"]
     assert any(e["kind"] == "related"
-               and {e["source"], e["target"]} == {"20-contexts/sanlam/a.md", "20-contexts/sanlam/b.md"}
+               and {e["source"], e["target"]} == {"20-contexts/work/a.md", "20-contexts/work/b.md"}
                for e in edges)
     regions = {r["id"]: r for r in graph["regions"]}
-    assert regions["sanlam"]["count"] == 2
-    assert regions["sanlam"]["color"] == "#38BDF8"
+    assert regions["work"]["count"] == 2
+    assert regions["work"]["color"] == "#38BDF8"
 
 
 def test_build_graph_empty_vault(tmp_vault: Path, monkeypatch, tmp_path):
@@ -509,9 +509,9 @@ def test_build_graph_empty_vault(tmp_vault: Path, monkeypatch, tmp_path):
 
 def test_wikilink_parent_edge(tmp_vault: Path, monkeypatch, tmp_path):
     monkeypatch.setenv("GHOSTBRAIN_SEMANTIC_INDEX_DIR", str(tmp_path / "sem"))
-    _note(tmp_vault, "20-contexts/sanlam/parent.md", title="P")
-    (tmp_vault / "20-contexts/sanlam/child.md").write_text(
-        "---\ntitle: C\nparent: '[[20-contexts/sanlam/parent]]'\n---\nbody", encoding="utf-8")
+    _note(tmp_vault, "20-contexts/work/parent.md", title="P")
+    (tmp_vault / "20-contexts/work/child.md").write_text(
+        "---\ntitle: C\nparent: '[[20-contexts/work/parent]]'\n---\nbody", encoding="utf-8")
     graph = build_graph()
     assert any(e["kind"] == "wikilink" for e in graph["edges"])
 ```
@@ -707,14 +707,14 @@ from fastapi.testclient import TestClient
 
 def test_graph_endpoint_returns_shape(client: TestClient, auth_headers, tmp_vault: Path, monkeypatch, tmp_path):
     monkeypatch.setenv("GHOSTBRAIN_SEMANTIC_INDEX_DIR", str(tmp_path / "sem"))
-    d = tmp_vault / "20-contexts" / "sanlam"
+    d = tmp_vault / "20-contexts" / "work"
     d.mkdir(parents=True)
     (d / "a.md").write_text("---\ntitle: A\n---\nbody", encoding="utf-8")
     resp = client.get("/v1/vault/graph", headers=auth_headers)
     assert resp.status_code == 200
     data = resp.json()
     assert {"nodes", "edges", "regions"} <= data.keys()
-    assert data["nodes"][0]["path"] == "20-contexts/sanlam/a.md"
+    assert data["nodes"][0]["path"] == "20-contexts/work/a.md"
 
 
 def test_graph_endpoint_empty(client: TestClient, auth_headers, monkeypatch, tmp_path):

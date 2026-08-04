@@ -20,8 +20,8 @@ def test_configured_context_is_accepted_needs_review_is_not(vault):
 
 def test_route_note_rejects_unconfigured_context(vault):
     _configure(vault, ["alpha"])
-    req = notes_mod.RouteNoteRequest(context="sanlam")
+    req = notes_mod.RouteNoteRequest(context="work")
     with pytest.raises(HTTPException) as exc:
         notes_mod.route_note(req, jot_id="a" * 12)
     assert exc.value.status_code == 400
-    assert "sanlam" in exc.value.detail
+    assert "work" in exc.value.detail

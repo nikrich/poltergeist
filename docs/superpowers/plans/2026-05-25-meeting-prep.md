@@ -70,7 +70,7 @@ def test_prep_model_round_trips():
         hash="abc123",
     )
     rel = RelatedItem(
-        path="20-contexts/sanlam/meetings/2026-05-18-eng-standup.md",
+        path="20-contexts/work/meetings/2026-05-18-eng-standup.md",
         title="Eng standup 2026-05-18",
         source="meeting",
         snippet="discussed sprint plan",
@@ -182,7 +182,7 @@ from ghostbrain.worker import meeting_prep as mp
 def vault(tmp_path, monkeypatch):
     """Create a fake vault with one calendar event note and one prior meeting."""
     monkeypatch.setenv("VAULT_PATH", str(tmp_path))
-    cal = tmp_path / "20-contexts" / "sanlam" / "calendar"
+    cal = tmp_path / "20-contexts" / "work" / "calendar"
     cal.mkdir(parents=True)
     (cal / "20260525T090000-eng-standup.md").write_text(textwrap.dedent("""\
         ---
@@ -307,7 +307,7 @@ def test_build_prep_happy_path(vault, monkeypatch):
         "query": "Eng standup",
         "total": 1,
         "items": [{
-            "path": "20-contexts/sanlam/meetings/2026-05-18-eng-standup.md",
+            "path": "20-contexts/work/meetings/2026-05-18-eng-standup.md",
             "title": "Eng standup 2026-05-18",
             "snippet": "agreed to spike auth",
             "score": 0.82,
@@ -772,7 +772,7 @@ from ghostbrain.api.main import app
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("VAULT_PATH", str(tmp_path))
     monkeypatch.setenv("GHOSTBRAIN_STATE_DIR", str(tmp_path / "state"))
-    cal = tmp_path / "20-contexts" / "sanlam" / "calendar"
+    cal = tmp_path / "20-contexts" / "work" / "calendar"
     cal.mkdir(parents=True)
     (cal / "20260525T090000-eng-standup.md").write_text(textwrap.dedent("""\
         ---
@@ -1320,7 +1320,7 @@ const fullPrep: Prep = {
   eventId: 'evt-1',
   brief: 'Continuing last week\'s auth thread.',
   related: [{
-    path: '20-contexts/sanlam/meetings/2026-05-18-eng-standup.md',
+    path: '20-contexts/work/meetings/2026-05-18-eng-standup.md',
     title: 'Eng standup 2026-05-18',
     source: 'meeting',
     snippet: 'agreed to spike auth',

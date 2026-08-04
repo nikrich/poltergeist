@@ -10,23 +10,23 @@ def test_post_notes_writes_routes_and_returns_routed(
     monkeypatch.setattr(
         "ghostbrain.api.repo.notes_manual.route_event",
         lambda event, **kw: RoutingDecision(
-            context="sanlam",
+            context="work",
             confidence=0.82,
-            reasoning="matches sanlam",
+            reasoning="matches work",
             method="llm",
             secondary_contexts=[],
         ),
     )
-    (tmp_vault / "20-contexts" / "sanlam" / "notes").mkdir(parents=True, exist_ok=True)
+    (tmp_vault / "20-contexts" / "work" / "notes").mkdir(parents=True, exist_ok=True)
     resp = client.post(
-        "/v1/notes", json={"body": "ascp wizard idea"}, headers=auth_headers
+        "/v1/notes", json={"body": "helix wizard idea"}, headers=auth_headers
     )
     assert resp.status_code == 200
     data = resp.json()
     assert data["routingStatus"] == "routed"
-    assert data["path"].startswith("20-contexts/sanlam/notes/")
+    assert data["path"].startswith("20-contexts/work/notes/")
     fm = frontmatter.load(tmp_vault / data["path"])
-    assert fm["context"] == "sanlam"
+    assert fm["context"] == "work"
     assert fm["routingMethod"] == "llm"
 
 

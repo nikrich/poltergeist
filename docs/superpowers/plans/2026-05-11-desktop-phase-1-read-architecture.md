@@ -188,7 +188,7 @@ Create `ghostbrain/api/tests/__init__.py` as an empty file.
 - [ ] **Step 1.4: Install the new extras**
 
 ```bash
-cd /Users/jannik/development/nikrich/ghost-brain
+cd ~/dev/poltergeist
 source .venv/bin/activate   # or however the user activates the project venv
 pip install -e ".[api,dev]"
 ```

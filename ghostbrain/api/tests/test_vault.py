@@ -6,7 +6,12 @@ from fastapi.testclient import TestClient
 from ghostbrain.api.tests.conftest import write_last_run, write_note
 
 
-def test_empty_vault_returns_zeros(client: TestClient, auth_headers: dict[str, str]):
+def test_empty_vault_returns_zeros(
+    client: TestClient, auth_headers: dict[str, str], tmp_vault: Path
+):
+    # The shared fixture seeds a routing.yaml so context validation works; an
+    # "empty" vault (no notes, no bytes) requires dropping that config file.
+    (tmp_vault / "90-meta" / "routing.yaml").unlink()
     res = client.get("/v1/vault/stats", headers=auth_headers)
     assert res.status_code == 200
     data = res.json()

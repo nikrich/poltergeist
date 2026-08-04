@@ -5,7 +5,7 @@ Automation, ``osascript -l JavaScript``). No API tokens, no third-party
 auth — Apple Calendar is already syncing whatever accounts the user
 added in System Settings → Internet Accounts (iCloud, Google, Exchange).
 
-This is the path that works for tenants like Sanlam where Microsoft
+This is the path that works for tenants where Microsoft
 Graph delegated permission is admin-blocked: Calendar.app uses Apple's
 sanctioned EAS/EWS connection, ghostbrain just reads the local cache.
 """

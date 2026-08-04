@@ -14,22 +14,26 @@ def vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     v = tmp_path / "vault"
     (v / "90-meta").mkdir(parents=True)
     (v / "20-contexts").mkdir()
+    (v / "90-meta" / "routing.yaml").write_text(
+        "contexts:\n  - personal\n  - work\n  - consulting\n  - side-project\n",
+        encoding="utf-8",
+    )
     monkeypatch.setenv("VAULT_PATH", str(v))
     return v
 
 
 def test_create_writes_registry_and_folder(vault: Path):
-    p = projects.create_project("codeship", "Poltergeist", "second brain product")
+    p = projects.create_project("consulting", "Poltergeist", "second brain product")
     assert p == {
-        "id": "codeship/poltergeist",
-        "context": "codeship",
+        "id": "consulting/poltergeist",
+        "context": "consulting",
         "slug": "poltergeist",
         "name": "Poltergeist",
         "description": "second brain product",
         "archived": False,
         "created_at": p["created_at"],
     }
-    assert (vault / "20-contexts/codeship/projects/poltergeist").is_dir()
+    assert (vault / "20-contexts/consulting/projects/poltergeist").is_dir()
     on_disk = json.loads((vault / "90-meta/projects.json").read_text())
     assert on_disk == [p]
 
@@ -51,18 +55,18 @@ def test_list_filters_archived_by_default(vault: Path):
 
 
 def test_update_edits_and_returns_none_for_missing(vault: Path):
-    projects.create_project("sanlam", "Capstone", "old")
-    p = projects.update_project("sanlam", "capstone", name="Capstone v2", description="new")
-    assert p["name"] == "Capstone v2" and p["description"] == "new"
-    assert projects.update_project("sanlam", "missing", name="x") is None
+    projects.create_project("work", "Rockets", "old")
+    p = projects.update_project("work", "rockets", name="Rockets v2", description="new")
+    assert p["name"] == "Rockets v2" and p["description"] == "new"
+    assert projects.update_project("work", "missing", name="x") is None
 
 
 def test_get_project_active_only_flag(vault: Path):
-    projects.create_project("codeship", "Ship")
-    assert projects.get_project("codeship", "ship")["name"] == "Ship"
-    projects.update_project("codeship", "ship", archived=True)
-    assert projects.get_project("codeship", "ship", active_only=True) is None
-    assert projects.get_project("codeship", "ship") is not None
+    projects.create_project("consulting", "Ship")
+    assert projects.get_project("consulting", "ship")["name"] == "Ship"
+    projects.update_project("consulting", "ship", archived=True)
+    assert projects.get_project("consulting", "ship", active_only=True) is None
+    assert projects.get_project("consulting", "ship") is not None
 
 
 def test_corrupt_registry_reads_as_empty(vault: Path):
@@ -71,12 +75,12 @@ def test_corrupt_registry_reads_as_empty(vault: Path):
 
 
 def test_active_destinations_and_prompt_lines(vault: Path):
-    projects.create_project("codeship", "Poltergeist", "the second brain")
-    projects.create_project("codeship", "Archived One")
-    projects.update_project("codeship", "archived-one", archived=True)
+    projects.create_project("consulting", "Poltergeist", "the second brain")
+    projects.create_project("consulting", "Archived One")
+    projects.update_project("consulting", "archived-one", archived=True)
     dests = projects.active_destinations()
-    assert "codeship/poltergeist" in dests
-    assert "codeship/archived-one" not in dests
-    assert {"sanlam", "codeship", "reducedrecipes", "personal"} <= set(dests)
+    assert "consulting/poltergeist" in dests
+    assert "consulting/archived-one" not in dests
+    assert {"work", "consulting", "side-project", "personal"} <= set(dests)
     lines = projects.project_prompt_lines()
-    assert lines == ["codeship/poltergeist — Poltergeist: the second brain"]
+    assert lines == ["consulting/poltergeist — Poltergeist: the second brain"]

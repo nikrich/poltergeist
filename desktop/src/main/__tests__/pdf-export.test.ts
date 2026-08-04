@@ -50,7 +50,7 @@ describe('isGeneratedDocPath', () => {
     expect(isGeneratedDocPath('20-contexts/generated-docs/20260701T120000-x.html')).toBe(true);
   });
   it('rejects paths outside generated-docs', () => {
-    expect(isGeneratedDocPath('20-contexts/sanlam/notes/x.html')).toBe(false);
+    expect(isGeneratedDocPath('20-contexts/work/notes/x.html')).toBe(false);
   });
   it('rejects non-.html', () => {
     expect(isGeneratedDocPath('20-contexts/generated-docs/x.md')).toBe(false);

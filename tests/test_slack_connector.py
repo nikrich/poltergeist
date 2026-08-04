@@ -19,15 +19,15 @@ def test_auth_save_and_load_roundtrip(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("GHOSTBRAIN_STATE_DIR", str(tmp_path))
-    monkeypatch.delenv("SLACK_TOKEN_SFT", raising=False)
+    monkeypatch.delenv("SLACK_TOKEN_ACME", raising=False)
     import importlib
     from ghostbrain.connectors.slack import auth as auth_mod
     importlib.reload(auth_mod)
 
-    path = auth_mod.save_token("sft", "xoxp-test-token-1234")
+    path = auth_mod.save_token("acme", "xoxp-test-token-1234")
     assert path.exists()
     assert path.stat().st_mode & 0o777 == 0o600
-    assert auth_mod.load_token("sft") == "xoxp-test-token-1234"
+    assert auth_mod.load_token("acme") == "xoxp-test-token-1234"
 
 
 def test_auth_load_missing_raises(
@@ -52,7 +52,7 @@ def test_auth_save_rejects_garbage_token(
     importlib.reload(auth_mod)
 
     with pytest.raises(auth_mod.SlackAuthError, match="xoxp-"):
-        auth_mod.save_token("sft", "not-a-token")
+        auth_mod.save_token("acme", "not-a-token")
 
 
 def test_auth_slug_normalizes_path(
@@ -62,8 +62,8 @@ def test_auth_slug_normalizes_path(
     import importlib
     from ghostbrain.connectors.slack import auth as auth_mod
     importlib.reload(auth_mod)
-    path = auth_mod.token_path("Sanlam Capstone")
-    assert path.name == "slack.sanlam_capstone.token"
+    path = auth_mod.token_path("Acme Rockets")
+    assert path.name == "slack.acme_rockets.token"
 
 
 def test_auth_env_var_takes_precedence_over_file(
@@ -77,28 +77,28 @@ def test_auth_env_var_takes_precedence_over_file(
     importlib.reload(auth_mod)
 
     # Both sources present — env wins.
-    auth_mod.save_token("sft", "xoxp-from-file")
-    monkeypatch.setenv("SLACK_TOKEN_SFT", "xoxp-from-env")
-    assert auth_mod.load_token("sft") == "xoxp-from-env"
+    auth_mod.save_token("acme", "xoxp-from-file")
+    monkeypatch.setenv("SLACK_TOKEN_ACME", "xoxp-from-env")
+    assert auth_mod.load_token("acme") == "xoxp-from-env"
 
 
 def test_auth_env_var_name_capitalises_and_dashes() -> None:
     from ghostbrain.connectors.slack import auth as auth_mod
-    assert auth_mod.env_var_name("sft") == "SLACK_TOKEN_SFT"
-    assert auth_mod.env_var_name("codeship-tech") == "SLACK_TOKEN_CODESHIP_TECH"
-    assert auth_mod.env_var_name("Sanlam Capstone") == "SLACK_TOKEN_SANLAM_CAPSTONE"
+    assert auth_mod.env_var_name("acme") == "SLACK_TOKEN_ACME"
+    assert auth_mod.env_var_name("consulting-tech") == "SLACK_TOKEN_CONSULTING_TECH"
+    assert auth_mod.env_var_name("Acme Rockets") == "SLACK_TOKEN_ACME_ROCKETS"
 
 
 def test_auth_env_var_rejects_garbage(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("GHOSTBRAIN_STATE_DIR", str(tmp_path))
-    monkeypatch.setenv("SLACK_TOKEN_SFT", "not-a-real-token")
+    monkeypatch.setenv("SLACK_TOKEN_ACME", "not-a-real-token")
     import importlib
     from ghostbrain.connectors.slack import auth as auth_mod
     importlib.reload(auth_mod)
     with pytest.raises(auth_mod.SlackAuthError, match="xoxp"):
-        auth_mod.load_token("sft")
+        auth_mod.load_token("acme")
 
 
 # ---------------------------------------------------------------------------
@@ -121,9 +121,9 @@ def test_build_title_for_dm() -> None:
 
 def test_build_title_for_channel() -> None:
     from ghostbrain.connectors.slack.connector import _build_title
-    title = _build_title(channel_name="dev-capstone", is_dm=False,
+    title = _build_title(channel_name="dev-rockets", is_dm=False,
                           is_mpim=False, user_name="alex", text="@you ping")
-    assert title.startswith("#dev-capstone:")
+    assert title.startswith("#dev-rockets:")
 
 
 def test_build_title_truncates_long_text() -> None:
@@ -137,11 +137,11 @@ def test_build_title_truncates_long_text() -> None:
 def test_parse_workspaces_skips_entries_without_context(caplog) -> None:
     from ghostbrain.connectors.slack.connector import _parse_workspaces
     out = list(_parse_workspaces({"workspaces": {
-        "sft": {"context": "sanlam"},
+        "acme": {"context": "work"},
         "broken": {"lookback_hours": 24},  # no context
     }}))
     slugs = [ws.slug for ws in out]
-    assert "sft" in slugs
+    assert "acme" in slugs
     assert "broken" not in slugs
 
 
@@ -214,10 +214,10 @@ def _match(
     username: str = "alex",
     ts: str = "1715000000.001",
     channel_id: str = "C123",
-    channel_name: str = "dev-capstone",
+    channel_name: str = "dev-rockets",
     is_im: bool = False,
     is_mpim: bool = False,
-    permalink: str = "https://sft.slack.com/archives/C123/p1715000000001",
+    permalink: str = "https://acme.slack.com/archives/C123/p1715000000001",
 ) -> dict:
     return {
         "text": text,
@@ -238,9 +238,9 @@ def test_normalize_match_channel_mention() -> None:
     from ghostbrain.connectors.slack.connector import _normalize_match
     ev = _normalize_match(
         _match(),
-        workspace_slug="sft",
+        workspace_slug="acme",
         workspace_team_id="T1",
-        workspace_name="Sanlam Capstone",
+        workspace_name="Acme Rockets",
         my_user_id="U-me",
     )
     assert ev is not None
@@ -248,11 +248,11 @@ def test_normalize_match_channel_mention() -> None:
     assert ev["type"] == "slack_message"
     assert ev["subtype"] == "mention"
     assert ev["id"] == "slack:msg:T1:C123:1715000000.001"
-    assert ev["title"].startswith("#dev-capstone:")
+    assert ev["title"].startswith("#dev-rockets:")
     md = ev["metadata"]
-    assert md["workspace_slug"] == "sft"
+    assert md["workspace_slug"] == "acme"
     assert md["workspace_id"] == "T1"
-    assert md["channel_name"] == "dev-capstone"
+    assert md["channel_name"] == "dev-rockets"
     assert md["user_name"] == "alex"
     assert md["my_user_id"] == "U-me"
 
@@ -262,8 +262,8 @@ def test_normalize_match_dm() -> None:
     ev = _normalize_match(
         _match(channel_id="D456", channel_name="", is_im=True,
                 username="alex"),
-        workspace_slug="sft", workspace_team_id="T1",
-        workspace_name="Sanlam", my_user_id="U-me",
+        workspace_slug="acme", workspace_team_id="T1",
+        workspace_name="Work", my_user_id="U-me",
     )
     assert ev is not None
     assert ev["title"].startswith("DM with alex:")
@@ -274,8 +274,8 @@ def test_normalize_match_skips_when_ts_missing() -> None:
     from ghostbrain.connectors.slack.connector import _normalize_match
     ev = _normalize_match(
         _match(ts=""),
-        workspace_slug="sft", workspace_team_id="T1",
-        workspace_name="Sanlam", my_user_id="U-me",
+        workspace_slug="acme", workspace_team_id="T1",
+        workspace_name="Work", my_user_id="U-me",
     )
     assert ev is None
 
@@ -302,14 +302,14 @@ def test_fetch_one_workspace(
     import importlib
     monkeypatch.setenv("GHOSTBRAIN_STATE_DIR", str(tmp_path))
     importlib.reload(auth_mod)
-    auth_mod.save_token("sft", "xoxp-test")
+    auth_mod.save_token("acme", "xoxp-test")
     # Re-import the connector module so it sees the reloaded auth.
     from ghostbrain.connectors.slack import connector as conn_mod
     importlib.reload(conn_mod)
 
     fake = MagicMock()
     fake.auth_test.return_value = {
-        "user_id": "U-me", "team_id": "T1", "team": "Sanlam Capstone",
+        "user_id": "U-me", "team_id": "T1", "team": "Acme Rockets",
     }
     fake.search_messages.return_value = {
         "messages": {
@@ -320,7 +320,7 @@ def test_fetch_one_workspace(
     }
 
     c = conn_mod.SlackConnector(
-        config={"workspaces": {"sft": {"context": "sanlam"}}},
+        config={"workspaces": {"acme": {"context": "work"}}},
         queue_dir=tmp_path / "q", state_dir=tmp_path / "s",
         client_factory=lambda token: fake,
     )
@@ -394,7 +394,7 @@ def test_fetch_continues_after_workspace_error(
     c = conn_mod.SlackConnector(
         config={"workspaces": {
             "bad": {"context": "personal"},
-            "good": {"context": "sanlam"},
+            "good": {"context": "work"},
         }},
         queue_dir=tmp_path / "q", state_dir=tmp_path / "s",
         client_factory=lambda token: fake,
@@ -414,30 +414,30 @@ def test_router_routes_by_workspace_slug() -> None:
     event = {
         "source": "slack",
         "id": "slack:msg:T1:C1:123.456",
-        "metadata": {"workspace_slug": "sft"},
+        "metadata": {"workspace_slug": "acme"},
     }
-    routing = {"slack": {"workspaces": {"sft": {"context": "sanlam"}}}}
+    routing = {"slack": {"workspaces": {"acme": {"context": "work"}}}}
     decision = _fast_route(event, routing)
     assert decision is not None
-    assert decision.context == "sanlam"
+    assert decision.context == "work"
     assert decision.method == "path"
     assert decision.confidence == 1.0
 
 
 def test_router_supports_legacy_string_value() -> None:
-    """Older routing.yaml format may have ``slack.workspaces: {sft: sanlam}``
+    """Older routing.yaml format may have ``slack.workspaces: {acme: work}``
     — string value instead of dict. Accept it."""
     from ghostbrain.worker.router import _fast_route
 
     event = {
         "source": "slack",
         "id": "slack:msg:T1:C1:123.456",
-        "metadata": {"workspace_slug": "sft"},
+        "metadata": {"workspace_slug": "acme"},
     }
-    routing = {"slack": {"workspaces": {"sft": "sanlam"}}}
+    routing = {"slack": {"workspaces": {"acme": "work"}}}
     decision = _fast_route(event, routing)
     assert decision is not None
-    assert decision.context == "sanlam"
+    assert decision.context == "work"
 
 
 def test_router_falls_through_when_workspace_unknown() -> None:
@@ -448,7 +448,7 @@ def test_router_falls_through_when_workspace_unknown() -> None:
         "id": "slack:msg:T1:C1:123.456",
         "metadata": {"workspace_slug": "stranger"},
     }
-    routing = {"slack": {"workspaces": {"sft": {"context": "sanlam"}}}}
+    routing = {"slack": {"workspaces": {"acme": {"context": "work"}}}}
     assert _fast_route(event, routing) is None
 
 

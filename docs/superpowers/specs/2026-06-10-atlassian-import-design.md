@@ -1,7 +1,7 @@
 # Atlassian Import (Confluence + Jira picker) — Design
 
 **Date:** 2026-06-10
-**Status:** Approved (brainstormed with Jannik; visual companion session)
+**Status:** Approved (brainstormed with the maintainer; visual companion session)
 **Branch:** `feat/atlassian-import`, stacked on `feat/activity-heatmap` (or rebased to `main` after that merges)
 
 ## Goal
@@ -36,7 +36,7 @@ New `ghostbrain/api/routes/import_atlassian.py` + repo module `ghostbrain/api/re
 ```
 POST /v1/import   { "items": [
   { "kind": "confluence_page", "site": "...", "id": "12345" },
-  { "kind": "jira_issue", "site": "...", "key": "PAS-1234" }
+  { "kind": "jira_issue", "site": "...", "key": "ACME-1234" }
 ] }
 ```
 
@@ -46,8 +46,8 @@ POST /v1/import   { "items": [
 
 ```json
 { "results": [
-  { "kind": "confluence_page", "id": "12345", "ok": true, "path": "20-contexts/sanlam/confluence/....md", "context": "sanlam", "updated": false },
-  { "kind": "jira_issue", "key": "PAS-9999", "ok": false, "error": "not found" }
+  { "kind": "confluence_page", "id": "12345", "ok": true, "path": "20-contexts/work/confluence/....md", "context": "work", "updated": false },
+  { "kind": "jira_issue", "key": "ACME-9999", "ok": false, "error": "not found" }
 ] }
 ```
 
@@ -60,7 +60,7 @@ POST /v1/import   { "items": [
 
 - New `'import'` in `ScreenId` + sidebar entry (icon `download`, after `connectors`).
 - Two tabs: **confluence** and **jira** (house tab pattern). Each tab: search input at top, list below with checkboxes; confluence list starts at monitored spaces → expand a space to its top-level pages → expand pages with children. Jira tab lists my-issues by default; search replaces the list.
-- A selection bar appears when ≥1 item is ticked: "import N selected" `Btn` (primary). During import: per-item progress (`3/7 — importing PAS-1234…`), then a summary toast (`imported 6 · 1 failed`) and inline per-item result marks. Failed items stay ticked for retry.
+- A selection bar appears when ≥1 item is ticked: "import N selected" `Btn` (primary). During import: per-item progress (`3/7 — importing ACME-1234…`), then a summary toast (`imported 6 · 1 failed`) and inline per-item result marks. Failed items stay ticked for retry.
 - Connector-not-configured (409) renders a call-to-action state linking to the connectors screen, not an error toast.
 - Hooks: `useImportSpaces`, `useConfluencePages(space, parent?)`, `useConfluenceSearch(q)`, `useJiraIssues(q?)`, `useImportItems` (mutation; invalidates captures + activity queries on success).
 
@@ -84,4 +84,4 @@ POST /v1/import   { "items": [
 
 ## Implementation status
 
-- 2026-06-10: Live E2E pass (real sft.atlassian.net, real vault) — browse returned 3 monitored spaces with display names, DIG page tree, real my-issues JQL list; POST /v1/import imported 1 page + 1 issue with connector-identical frontmatter (routingMethod path, confidence 1.0); the issue import returned `updated: true`, live-proving dedup against the previously-synced copy; `import_completed` audit events landed and surfaced in the activity heatmap bySource. Test page cleaned up (context + inbox copies); refreshed issue note retained. Gates: 90 API + 14 connector/golden tests, 52 desktop tests, typecheck, production build. In-app picker visual check pending human hands.
+- 2026-06-10: Live E2E pass (a real Atlassian site + real vault) — browse returned 3 monitored spaces with display names, ENG page tree, real my-issues JQL list; POST /v1/import imported one page + one issue with connector-identical frontmatter (routingMethod path, confidence 1.0); the issue import returned `updated: true`, live-proving dedup against the previously-synced copy; `import_completed` audit events landed and surfaced in the activity heatmap bySource. Test page cleaned up (context + inbox copies); refreshed issue note retained. Gates: 90 API + 14 connector/golden tests, 52 desktop tests, typecheck, production build. In-app picker visual check pending human hands.

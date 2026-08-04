@@ -39,5 +39,5 @@ def test_prompt_includes_configured_contexts(vault, monkeypatch):
     result = answer_mod._answer("what's up", 8)
 
     assert "alpha, beta" in captured["prompt"]
-    assert "sanlam" not in captured["prompt"]
+    assert "gamma" not in captured["prompt"]
     assert result["answer"] == "An answer [1]."

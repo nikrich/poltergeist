@@ -8,12 +8,12 @@
 
 **Tech Stack:** Python 3.11 / FastAPI / pytest (sidecar); Electron + React + zustand + React Query + Vitest (desktop); `claude` CLI subprocess for the LLM.
 
-**Repo:** ALL work happens in `/Users/jannik/development/nikrich/ghost-brain` (NOT hive-ide). Spec: `docs/superpowers/specs/2026-06-10-poltergeist-chat-design.md`.
+**Repo:** ALL work happens in `~/dev/poltergeist` (NOT hive-ide). Spec: `docs/superpowers/specs/2026-06-10-poltergeist-chat-design.md`.
 
 **Setup before Task 1:**
 
 ```bash
-cd /Users/jannik/development/nikrich/ghost-brain
+cd ~/dev/poltergeist
 git checkout -b feat/poltergeist-chat
 # Python tests use the repo venv. If .venv is missing:
 #   python3.11 -m venv .venv && .venv/bin/pip install -e ".[dev,mcp]"
@@ -163,7 +163,7 @@ def test_interrupted_flag_persists(chats: Path):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd /Users/jannik/development/nikrich/ghost-brain && .venv/bin/pytest tests/test_chat_store.py -v`
+Run: `cd ~/dev/poltergeist && .venv/bin/pytest tests/test_chat_store.py -v`
 Expected: FAIL — `ImportError: cannot import name 'chat_store'`
 
 - [ ] **Step 3: Implement**
@@ -667,7 +667,7 @@ Rules:
 (cheap), poltergeist_get_note to read one, poltergeist_ask for a synthesized \
 cited answer when the question is broad.
 2. Cite vault notes as Obsidian wikilinks containing the vault-relative path \
-exactly as the tools return it, e.g. [[20-contexts/sanlam/decision-x]] or \
+exactly as the tools return it, e.g. [[20-contexts/work/decision-x]] or \
 [[10-daily/2026-06-09|yesterday's daily]]. The app renders these as clickable \
 links — never invent paths.
 3. If the vault doesn't cover something, say so plainly. Do NOT invent facts \
@@ -2612,7 +2612,7 @@ git commit -m "feat(chat): replace AskPanel with the chat screen (⌘K opens cha
 
 - [ ] **Step 1: Full backend suite**
 
-Run: `cd /Users/jannik/development/nikrich/ghost-brain && .venv/bin/pytest tests ghostbrain/api/tests -q`
+Run: `cd ~/dev/poltergeist && .venv/bin/pytest tests ghostbrain/api/tests -q`
 Expected: all pass
 
 - [ ] **Step 2: Full desktop suite**
@@ -2623,7 +2623,7 @@ Expected: all pass
 - [ ] **Step 3: Manual smoke (real claude, real vault)**
 
 ```bash
-cd /Users/jannik/development/nikrich/ghost-brain/desktop && npm run dev
+cd ~/dev/poltergeist/desktop && npm run dev
 ```
 
 In the app:

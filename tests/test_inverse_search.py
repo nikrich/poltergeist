@@ -52,8 +52,8 @@ def test_finds_mention_in_body(vault: Path) -> None:
         "lookback_days": 7,
     }})
     _write_note(
-        vault, rel_path="20-contexts/sanlam/confluence/page1.md",
-        context="sanlam",
+        vault, rel_path="20-contexts/work/confluence/page1.md",
+        context="work",
         body="Julia approved the funding doc on Tuesday.",
         actor="confluence:other-user",
     )
@@ -62,7 +62,7 @@ def test_finds_mention_in_body(vault: Path) -> None:
     assert len(refs) == 1
     assert refs[0].name_key == "julia"
     assert refs[0].matched_phrase == "Julia"
-    assert refs[0].note_context == "sanlam"
+    assert refs[0].note_context == "work"
     assert "Julia approved" in refs[0].excerpt
 
 
@@ -71,13 +71,13 @@ def test_skips_when_actor_is_the_watched_person(vault: Path) -> None:
     from ghostbrain.metrics.inverse_search import find_unexpected_references
 
     _write_config(vault, {"inverse_search": {
-        "watched_names": {"jannik": ["jannik"]},
+        "watched_names": {"sam": ["sam"]},
     }})
     _write_note(
-        vault, rel_path="20-contexts/codeship/note.md",
-        context="codeship",
-        body="jannik wrote this himself",
-        actor="claude-code:jannik",
+        vault, rel_path="20-contexts/consulting/note.md",
+        context="consulting",
+        body="sam wrote this himself",
+        actor="claude-code:sam",
     )
     assert find_unexpected_references() == []
 
@@ -104,21 +104,21 @@ def test_cross_context_flag_set(vault: Path) -> None:
 
     _write_config(vault, {"inverse_search": {
         "watched_names": {"julia": ["Julia"]},
-        "expected_contexts": {"julia": ["sanlam"]},
+        "expected_contexts": {"julia": ["work"]},
     }})
     _write_note(
-        vault, rel_path="20-contexts/sanlam/n.md",
-        context="sanlam", body="Julia signed off.", actor="other",
+        vault, rel_path="20-contexts/work/n.md",
+        context="work", body="Julia signed off.", actor="other",
     )
     _write_note(
-        vault, rel_path="20-contexts/codeship/n.md",
-        context="codeship", body="Julia is also seen here.", actor="other",
+        vault, rel_path="20-contexts/consulting/n.md",
+        context="consulting", body="Julia is also seen here.", actor="other",
     )
 
     refs = find_unexpected_references()
     by_ctx = {r.note_context: r for r in refs}
-    assert by_ctx["sanlam"].is_cross_context is False
-    assert by_ctx["codeship"].is_cross_context is True
+    assert by_ctx["work"].is_cross_context is False
+    assert by_ctx["consulting"].is_cross_context is True
 
 
 def test_lookback_filters_old_notes(vault: Path) -> None:
@@ -129,13 +129,13 @@ def test_lookback_filters_old_notes(vault: Path) -> None:
         "lookback_days": 3,
     }})
     _write_note(
-        vault, rel_path="20-contexts/sanlam/old.md",
-        context="sanlam", body="Julia stuff.", actor="other",
+        vault, rel_path="20-contexts/work/old.md",
+        context="work", body="Julia stuff.", actor="other",
         created=datetime.now(timezone.utc) - timedelta(days=10),
     )
     _write_note(
-        vault, rel_path="20-contexts/sanlam/new.md",
-        context="sanlam", body="Julia stuff.", actor="other",
+        vault, rel_path="20-contexts/work/new.md",
+        context="work", body="Julia stuff.", actor="other",
         created=datetime.now(timezone.utc),
     )
 
@@ -152,7 +152,7 @@ def test_case_insensitive(vault: Path) -> None:
         "watched_names": {"julia": ["Julia"]},
     }})
     _write_note(
-        vault, rel_path="20-contexts/sanlam/n.md",
-        context="sanlam", body="JULIA in caps.", actor="other",
+        vault, rel_path="20-contexts/work/n.md",
+        context="work", body="JULIA in caps.", actor="other",
     )
     assert len(find_unexpected_references()) == 1

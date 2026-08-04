@@ -24,14 +24,14 @@ def test_ask_includes_answer_and_source_paths():
     client = FakeClient(answer={
         "answer": "Use sonnet.",
         "sources": [
-            {"path": "20-contexts/sanlam/a.md", "title": "A", "score": 0.81, "snippet": "..."},
-            {"path": "20-contexts/codeship/b.md", "title": "B", "score": 0.77, "snippet": "..."},
+            {"path": "20-contexts/work/a.md", "title": "A", "score": 0.81, "snippet": "..."},
+            {"path": "20-contexts/consulting/b.md", "title": "B", "score": 0.77, "snippet": "..."},
         ],
     })
     out = tools.ask(client, "which model?", limit=5)
     assert "Use sonnet." in out
-    assert "20-contexts/sanlam/a.md" in out
-    assert "20-contexts/codeship/b.md" in out
+    assert "20-contexts/work/a.md" in out
+    assert "20-contexts/consulting/b.md" in out
     assert client.calls == [("answer", "which model?", 5)]
 
 
@@ -59,7 +59,7 @@ def test_search_empty_says_no_matches():
 
 
 def test_get_note_renders_title_and_body():
-    client = FakeClient(note={"path": "p.md", "title": "Title", "body": "Body text", "frontmatter": {"context": "sanlam"}})
+    client = FakeClient(note={"path": "p.md", "title": "Title", "body": "Body text", "frontmatter": {"context": "work"}})
     out = tools.get_note(client, "p.md")
     assert "Title" in out
     assert "Body text" in out

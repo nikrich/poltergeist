@@ -44,9 +44,9 @@ def _write_session(vault: Path, project_path: Path) -> Path:
 def test_review_only_writes_inbox_only(vault: Path) -> None:
     from ghostbrain.worker import pipeline
 
-    project = vault / "fake-codeship-project"
+    project = vault / "fake-consulting-project"
     project.mkdir()
-    _write_routing(vault, {str(project): "codeship"})
+    _write_routing(vault, {str(project): "consulting"})
     _set_routing_mode(vault, "review_only")
     transcript = _write_session(vault, project)
 
@@ -66,7 +66,7 @@ def test_review_only_writes_inbox_only(vault: Path) -> None:
         summary = pipeline.process_event(event)
 
     # Inbox always populated; context path skipped in review-only.
-    assert summary["context"] == "codeship"
+    assert summary["context"] == "consulting"
     assert summary["routing_mode"] == "review_only"
     assert summary["inbox_path"]
     assert summary["context_path"] is None
@@ -77,9 +77,9 @@ def test_review_only_writes_inbox_only(vault: Path) -> None:
 def test_live_mode_writes_to_context_and_extracts(vault: Path) -> None:
     from ghostbrain.worker import pipeline
 
-    project = vault / "fake-codeship-project"
+    project = vault / "fake-consulting-project"
     project.mkdir()
-    _write_routing(vault, {str(project): "codeship"})
+    _write_routing(vault, {str(project): "consulting"})
     _set_routing_mode(vault, "live")
     transcript = _write_session(vault, project)
 
@@ -98,7 +98,7 @@ def test_live_mode_writes_to_context_and_extracts(vault: Path) -> None:
                return_value=[Path("/fake/specs/x.md")]) as ex:
         summary = pipeline.process_event(event)
 
-    assert summary["context"] == "codeship"
+    assert summary["context"] == "consulting"
     assert summary["routing_mode"] == "live"
     assert summary["context_path"] is not None
     assert summary["artifact_count"] == 1

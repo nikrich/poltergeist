@@ -15,7 +15,7 @@ nearly the whole Python package, but:
    that doesn't exist.
 2. The frozen binary exposes only the HTTP server and an `mcp` subcommand — none of
    the `ghostbrain-*` CLI entry points, so connector setup still requires pip.
-3. The user's four personal contexts (`sanlam`, `codeship`, `reducedrecipes`,
+3. The user's four personal contexts (`work`, `consulting`, `side-project`,
    `personal`) are hardcoded in six modules, so another user's vault is seeded with
    them and — worse — the LLM router's JSON-schema enum makes any other context
    unroutable, and the notes API rejects other contexts outright.
@@ -118,8 +118,8 @@ The context *list* becomes data with a single source of truth in `routing.yaml`:
 - **New vaults:** bootstrap seeds a neutral default — `personal`, `work` — writing
   both the `contexts:` key and the matching `20-contexts/<ctx>/` folders.
 - **Back-compat (existing vault):** if `contexts:` is absent from `routing.yaml`,
-  the accessor falls back to the legacy four (`sanlam`, `codeship`,
-  `reducedrecipes`, `personal`) and logs a hint once. The startup path never
+  the accessor falls back to the legacy four (`work`, `consulting`,
+  `side-project`, `personal`) and logs a hint once. The startup path never
   rewrites an existing routing.yaml (first-run bootstrap only fires when the file
   is missing), so the fallback persists until the user adds the key — or runs
   `ghostbrain-bootstrap` / `ghostbrain-api bootstrap` manually, which (being

@@ -20,7 +20,7 @@ function withConnectors(
       return {
         ok: true,
         status: 200,
-        data: { contexts: ['sanlam', 'codeship', 'reducedrecipes', 'personal'] },
+        data: { contexts: ['work', 'consulting', 'side-project', 'personal'] },
       };
     }
     return impl(method, path, body);
@@ -61,10 +61,10 @@ const page: JotsPage = {
   items: [
     {
       id: 'manual-20260514T093015-a',
-      path: '20-contexts/sanlam/notes/manual-20260514T093015-a.md',
+      path: '20-contexts/work/notes/manual-20260514T093015-a.md',
       title: 'first jot',
       excerpt: 'body',
-      context: 'sanlam',
+      context: 'work',
       routingStatus: 'routed',
       tags: [],
       created: '2026-05-14T09:30:15+02:00',
@@ -75,7 +75,7 @@ const page: JotsPage = {
 };
 
 const detail: Note = {
-  path: '20-contexts/sanlam/notes/manual-20260514T093015-a.md',
+  path: '20-contexts/work/notes/manual-20260514T093015-a.md',
   title: 'first jot',
   body: 'first jot\n\nfull body here',
   frontmatter: {},
@@ -86,10 +86,10 @@ const twoJotPage: JotsPage = {
   items: [
     {
       id: 'manual-20260514T093015-a',
-      path: '20-contexts/sanlam/notes/manual-20260514T093015-a.md',
+      path: '20-contexts/work/notes/manual-20260514T093015-a.md',
       title: 'first jot',
       excerpt: 'body',
-      context: 'sanlam',
+      context: 'work',
       routingStatus: 'routed',
       tags: [],
       created: '2026-05-14T09:30:15+02:00',
@@ -111,7 +111,7 @@ const twoJotPage: JotsPage = {
 };
 
 const detailA: Note = {
-  path: '20-contexts/sanlam/notes/manual-20260514T093015-a.md',
+  path: '20-contexts/work/notes/manual-20260514T093015-a.md',
   title: 'first jot',
   body: 'first jot\n\nfull body here',
   frontmatter: {},
@@ -209,9 +209,9 @@ describe('JotsScreen', () => {
   it('switching away from an unrouted jot fires POST .../route-auto', async () => {
     const routeAutoResponse: AutoRouteResponse = {
       id: 'manual-20260514T120000-b',
-      path: '20-contexts/sanlam/notes/manual-20260514T120000-b.md',
+      path: '20-contexts/work/notes/manual-20260514T120000-b.md',
       routingStatus: 'routed',
-      context: 'sanlam',
+      context: 'work',
     };
 
     apiRequest.mockImplementation(withConnectors(async (method, path) => {
@@ -313,9 +313,9 @@ describe('JotsScreen', () => {
 
     const routeAutoResponse: AutoRouteResponse = {
       id: 'manual-20260514T120000-b',
-      path: '20-contexts/sanlam/notes/manual-20260514T120000-b.md',
+      path: '20-contexts/work/notes/manual-20260514T120000-b.md',
       routingStatus: 'routed',
-      context: 'sanlam',
+      context: 'work',
     };
 
     apiRequest.mockImplementation(withConnectors(async (method, path) => {
@@ -348,8 +348,8 @@ describe('JotsScreen', () => {
 
 const projectsData: Project[] = [
   {
-    id: 'codeship/poltergeist',
-    context: 'codeship',
+    id: 'consulting/poltergeist',
+    context: 'consulting',
     slug: 'poltergeist',
     name: 'Poltergeist',
     description: '',
@@ -372,8 +372,8 @@ describe('JotsScreen re-route picker', () => {
 
     const select = screen.getByDisplayValue('re-route…');
     const options = Array.from(select.querySelectorAll('option')).map((o) => o.getAttribute('value'));
-    expect(options).toContain('codeship');
-    expect(options).toContain('codeship/poltergeist');
+    expect(options).toContain('consulting');
+    expect(options).toContain('consulting/poltergeist');
   });
 });
 

@@ -8,8 +8,8 @@ import type { Project } from '../../shared/api-types';
 
 const projects: Project[] = [
   {
-    id: 'codeship/poltergeist',
-    context: 'codeship',
+    id: 'consulting/poltergeist',
+    context: 'consulting',
     slug: 'poltergeist',
     name: 'Poltergeist',
     description: 'second brain',
@@ -28,7 +28,7 @@ vi.mock('../lib/api/client', () => ({
 function renderSection() {
   vi.mocked(client.get).mockImplementation(((path: string) =>
     path === '/v1/vault/contexts'
-      ? Promise.resolve({ contexts: ['sanlam', 'codeship', 'reducedrecipes', 'personal'] })
+      ? Promise.resolve({ contexts: ['work', 'consulting', 'side-project', 'personal'] })
       : Promise.resolve(projects)) as never);
   vi.mocked(client.post).mockResolvedValue(projects[0] as never);
   vi.mocked(client.patch).mockResolvedValue(projects[0] as never);
@@ -45,7 +45,7 @@ describe('ProjectsSettings', () => {
     renderSection();
     expect(await screen.findByText('Poltergeist')).toBeTruthy();
     // Eyebrow context heading exists (may also appear in select options — use getAllByText)
-    expect(screen.getAllByText('codeship').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('consulting').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('second brain')).toBeTruthy();
   });
 
@@ -78,7 +78,8 @@ describe('ProjectsSettings', () => {
     );
     await waitFor(() => expect(screen.getByRole('option', { name: 'work' })).toBeTruthy());
     expect(screen.getByRole('option', { name: 'home' })).toBeTruthy();
-    expect(screen.queryByRole('option', { name: 'sanlam' })).toBeNull();
-    expect(screen.queryByRole('option', { name: 'reducedrecipes' })).toBeNull();
+    // Only the endpoint-served list renders — no baked-in defaults sneak in.
+    expect(screen.getAllByRole('option')).toHaveLength(2);
+    expect(screen.queryByRole('option', { name: 'personal' })).toBeNull();
   });
 });

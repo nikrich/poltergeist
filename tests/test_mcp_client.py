@@ -47,10 +47,10 @@ def test_get_note_gets_with_path_query():
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "GET"
         assert request.url.path == "/v1/notes"
-        assert request.url.params.get("path") == "20-contexts/sanlam/x.md"
+        assert request.url.params.get("path") == "20-contexts/work/x.md"
         return httpx.Response(200, json={"path": "p", "title": "t", "body": "b", "frontmatter": {}})
 
-    out = _client(handler, DESCRIPTOR).get_note("20-contexts/sanlam/x.md")
+    out = _client(handler, DESCRIPTOR).get_note("20-contexts/work/x.md")
     assert out["title"] == "t"
 
 

@@ -2,7 +2,7 @@
 
 Tokens are read from the environment so they never enter source or vault.
 
-For a site like ``sft.atlassian.net`` the connector will look for:
+For a site like ``acme.atlassian.net`` the connector will look for:
     1. ``ATLASSIAN_TOKEN_SFT`` (preferred — site-specific)
     2. ``ATLASSIAN_TOKEN``    (fallback — single-token setups)
 
@@ -162,7 +162,7 @@ def auth_for_site(host: str) -> tuple[str, str]:
 def slug_for_host(host: str) -> str:
     """Extract the site slug from an Atlassian host.
 
-    ``sft.atlassian.net`` → ``sft``.
+    ``acme.atlassian.net`` → ``acme``.
     """
     return host.split(".", 1)[0]
 

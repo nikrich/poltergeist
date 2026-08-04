@@ -38,7 +38,7 @@ def test_count_picks_up_inbox_files(vault: Path) -> None:
 
 
 def test_count_picks_up_context_files(vault: Path) -> None:
-    _touch(vault / "20-contexts" / "sanlam" / "slack" / "msg-1.md")
+    _touch(vault / "20-contexts" / "work" / "slack" / "msg-1.md")
     _touch(vault / "20-contexts" / "personal" / "slack" / "msg-2.md")
     assert conn_repo._count_indexed("slack") == 2
 
@@ -47,17 +47,17 @@ def test_count_combines_inbox_and_contexts(vault: Path) -> None:
     """The "INDEXED" stat is total reach across both staging and routed
     notes — anything below the connector's name in the vault."""
     _touch(vault / "00-inbox" / "raw" / "slack" / "a.md")
-    _touch(vault / "20-contexts" / "sanlam" / "slack" / "b.md")
-    _touch(vault / "20-contexts" / "codeship" / "slack" / "c.md")
+    _touch(vault / "20-contexts" / "work" / "slack" / "b.md")
+    _touch(vault / "20-contexts" / "consulting" / "slack" / "c.md")
     assert conn_repo._count_indexed("slack") == 3
 
 
 def test_count_recurses_into_nested_subdirs(vault: Path) -> None:
     """github stores PRs and issues in subfolders — rglob has to catch
     both or the count under-reports by half."""
-    _touch(vault / "20-contexts" / "sanlam" / "github" / "prs" / "p1.md")
-    _touch(vault / "20-contexts" / "sanlam" / "github" / "prs" / "p2.md")
-    _touch(vault / "20-contexts" / "sanlam" / "github" / "issues" / "i1.md")
+    _touch(vault / "20-contexts" / "work" / "github" / "prs" / "p1.md")
+    _touch(vault / "20-contexts" / "work" / "github" / "prs" / "p2.md")
+    _touch(vault / "20-contexts" / "work" / "github" / "issues" / "i1.md")
     assert conn_repo._count_indexed("github") == 3
 
 
@@ -66,8 +66,8 @@ def test_claude_code_uses_remapped_dirs(vault: Path) -> None:
     inbox writes to ``claude-code/`` (hyphenated), per-context writes
     to ``claude/`` (no suffix). The remap dicts must cover both."""
     _touch(vault / "00-inbox" / "raw" / "claude-code" / "session-1.md")
-    _touch(vault / "20-contexts" / "codeship" / "claude" / "session-2.md")
-    _touch(vault / "20-contexts" / "sanlam" / "claude" / "session-3.md")
+    _touch(vault / "20-contexts" / "consulting" / "claude" / "session-2.md")
+    _touch(vault / "20-contexts" / "work" / "claude" / "session-3.md")
     assert conn_repo._count_indexed("claude_code") == 3
 
 
@@ -82,7 +82,7 @@ def test_connector_record_surfaces_real_count(vault: Path) -> None:
     """End-to-end via the public connector record builder — the field
     the UI binds to actually carries the count, not a hardcoded 0."""
     for i in range(5):
-        _touch(vault / "20-contexts" / "sanlam" / "slack" / f"m{i}.md")
+        _touch(vault / "20-contexts" / "work" / "slack" / f"m{i}.md")
     record = conn_repo._connector_record("slack")
     assert record["count"] == 5
     assert record["id"] == "slack"

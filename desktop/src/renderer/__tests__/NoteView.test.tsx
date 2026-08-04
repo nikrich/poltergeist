@@ -24,17 +24,17 @@ function withQuery(children: React.ReactNode) {
 }
 
 const syncedNote: Note = {
-  path: '20-contexts/sanlam/notes/synced.md',
+  path: '20-contexts/work/notes/synced.md',
   title: 'synced note',
   body: '# synced\n\nfrom gmail',
-  frontmatter: { source: 'gmail', context: 'sanlam' },
+  frontmatter: { source: 'gmail', context: 'work' },
 };
 
 const manualNote: Note = {
-  path: '20-contexts/sanlam/notes/manual-20260609T090000-x.md',
+  path: '20-contexts/work/notes/manual-20260609T090000-x.md',
   title: 'manual note',
   body: 'hand-written',
-  frontmatter: { source: 'manual', context: 'sanlam' },
+  frontmatter: { source: 'manual', context: 'work' },
 };
 
 describe('NoteView', () => {
@@ -59,10 +59,10 @@ describe('NoteView', () => {
 
   it('clicking a wikilink in the note body opens the target note via useNoteView.open', async () => {
     const wikilinkNote: Note = {
-      path: '20-contexts/sanlam/notes/with-links.md',
+      path: '20-contexts/work/notes/with-links.md',
       title: 'has links',
       body: 'See [[20-contexts/personal/_profile]] for context.',
-      frontmatter: { source: 'manual', context: 'sanlam' },
+      frontmatter: { source: 'manual', context: 'work' },
     };
     apiRequest.mockResolvedValue({ ok: true, data: wikilinkNote });
     let editor: Editor | undefined;

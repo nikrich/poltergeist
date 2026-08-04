@@ -57,64 +57,64 @@ def test_no_history_returns_empty(vault: Path) -> None:
 def test_flags_context_with_history_but_no_today_activity(vault: Path) -> None:
     from ghostbrain.metrics.anticipation import detect_anticipations
 
-    _configure(vault, ["sanlam", "codeship", "reducedrecipes", "personal"])
+    _configure(vault, ["work", "consulting", "side-project", "personal"])
     today = date(2026, 5, 8)  # Friday
-    # Build 4 prior Fridays with sanlam=10 each → median 10 ≥ floor.
+    # Build 4 prior Fridays with work=10 each → median 10 ≥ floor.
     for weeks_back in range(1, 5):
         prior_friday = today - timedelta(weeks=weeks_back)
-        _write_audit(vault, prior_friday, {"sanlam": 10})
-    # Today is empty for sanlam.
+        _write_audit(vault, prior_friday, {"work": 10})
+    # Today is empty for work.
     refs = detect_anticipations(today=today, lookback_days=30,
                                  activity_floor=3)
     contexts = [a.context for a in refs]
-    assert "sanlam" in contexts
+    assert "work" in contexts
 
 
 def test_does_not_flag_when_context_active_today(vault: Path) -> None:
     from ghostbrain.metrics.anticipation import detect_anticipations
 
-    _configure(vault, ["sanlam", "codeship", "reducedrecipes", "personal"])
+    _configure(vault, ["work", "consulting", "side-project", "personal"])
     today = date(2026, 5, 8)
     for weeks_back in range(1, 5):
         prior = today - timedelta(weeks=weeks_back)
-        _write_audit(vault, prior, {"sanlam": 10})
-    # Today HAS sanlam activity → should not flag.
-    _write_audit(vault, today, {"sanlam": 4})
+        _write_audit(vault, prior, {"work": 10})
+    # Today HAS work activity → should not flag.
+    _write_audit(vault, today, {"work": 4})
 
     refs = detect_anticipations(today=today, lookback_days=30,
                                  activity_floor=3)
-    assert "sanlam" not in [a.context for a in refs]
+    assert "work" not in [a.context for a in refs]
 
 
 def test_does_not_flag_when_calendar_has_event_today(vault: Path) -> None:
     from ghostbrain.metrics.anticipation import detect_anticipations
 
-    _configure(vault, ["sanlam", "codeship", "reducedrecipes", "personal"])
+    _configure(vault, ["work", "consulting", "side-project", "personal"])
     today = date(2026, 5, 8)
     for weeks_back in range(1, 5):
         prior = today - timedelta(weeks=weeks_back)
-        _write_audit(vault, prior, {"sanlam": 10})
-    # Today has a calendar event for sanlam.
+        _write_audit(vault, prior, {"work": 10})
+    # Today has a calendar event for work.
     _write_calendar_event(
-        vault, context="sanlam",
+        vault, context="work",
         start=datetime(2026, 5, 8, 9, 0, tzinfo=timezone.utc),
     )
 
     refs = detect_anticipations(today=today, lookback_days=30,
                                  activity_floor=3)
-    assert "sanlam" not in [a.context for a in refs]
+    assert "work" not in [a.context for a in refs]
 
 
 def test_below_activity_floor_not_flagged(vault: Path) -> None:
     """Contexts that only barely show on this weekday shouldn't flag."""
     from ghostbrain.metrics.anticipation import detect_anticipations
 
-    _configure(vault, ["sanlam", "codeship", "reducedrecipes", "personal"])
+    _configure(vault, ["work", "consulting", "side-project", "personal"])
     today = date(2026, 5, 8)
     # 1 event on each prior Friday → median 1 < default floor 3.
     for weeks_back in range(1, 5):
         _write_audit(vault, today - timedelta(weeks=weeks_back),
-                      {"sanlam": 1})
+                      {"work": 1})
     refs = detect_anticipations(today=today, lookback_days=30)
     assert refs == []
 
@@ -122,7 +122,7 @@ def test_below_activity_floor_not_flagged(vault: Path) -> None:
 def test_only_known_contexts_evaluated(vault: Path) -> None:
     from ghostbrain.metrics.anticipation import detect_anticipations
 
-    _configure(vault, ["sanlam", "codeship", "reducedrecipes", "personal"])
+    _configure(vault, ["work", "consulting", "side-project", "personal"])
     today = date(2026, 5, 8)
     for weeks_back in range(1, 5):
         prior = today - timedelta(weeks=weeks_back)
@@ -130,5 +130,5 @@ def test_only_known_contexts_evaluated(vault: Path) -> None:
     # Strange context should never appear in anticipations even if active.
     refs = detect_anticipations(today=today, lookback_days=30,
                                  activity_floor=3)
-    assert all(a.context in ("sanlam", "codeship", "reducedrecipes",
+    assert all(a.context in ("work", "consulting", "side-project",
                               "personal") for a in refs)

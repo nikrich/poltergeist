@@ -67,5 +67,5 @@ ghostbrain-<connector>-fetch              # prints "queued N event(s)"
 - **Connect buttons are stubs** — always use the CLI + routing.yaml.
 - **Google:** gmail + calendar share ONE Desktop OAuth client JSON. An "External + Testing" consent screen expires refresh tokens ~weekly — publish the consent screen, or re-auth.
 - **Microsoft is delegated device-code.** `getAllTranscripts` is application-only (unusable here). Calendar auto-discovery for meetings needs `Calendars.Read` + admin consent. To pull transcripts with **transcripts-only** scope today, list meetings explicitly in `microsoft.teams_meetings.meetings` (join URLs, `/meet/<id>` links, or bare IDs). Set `microsoft.scopes` to ONLY the scopes you actually consented, or silent token refresh fails.
-- **Contexts are hard-coded** (`sanlam / codeship / reducedrecipes / personal` in `bootstrap.py:CONTEXTS`). Route to one of those, or events fall to `needs_review`.
+- **Contexts are hard-coded** (`work / consulting / side-project / personal` in `bootstrap.py:CONTEXTS`). Route to one of those, or events fall to `needs_review`.
 - **Nothing appears in `20-contexts/`** until `worker.routing_mode` is flipped from `review_only` to `live` in `config.yaml`.

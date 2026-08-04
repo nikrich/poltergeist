@@ -151,7 +151,7 @@ def test_export_route(client, tmp_chats_dir, auth_headers, monkeypatch):
     monkeypatch.setattr(
         "ghostbrain.api.routes.chat.repo_chat_export.export_conversation",
         lambda conv_id: {"jot_id": "j1", "path": "p", "routingStatus": "routed",
-                         "context": "codeship", "project": None, "title": "t"},
+                         "context": "consulting", "project": None, "title": "t"},
     )
     r = client.post(f"/v1/chat/{conv['id']}/export-jot", headers=auth_headers)
     assert r.status_code == 200

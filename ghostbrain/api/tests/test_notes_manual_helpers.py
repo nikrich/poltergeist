@@ -42,8 +42,8 @@ def test_make_jot_id_rejects_naive_datetime():
 
 
 def test_extract_tags_finds_hashtags():
-    body = "thinking about #ui and the #ascp-wizard flow #idea"
-    assert extract_tags(body) == ["ui", "ascp-wizard", "idea"]
+    body = "thinking about #ui and the #orders-wizard flow #idea"
+    assert extract_tags(body) == ["ui", "orders-wizard", "idea"]
 
 
 def test_extract_tags_deduplicates_and_preserves_first_order():

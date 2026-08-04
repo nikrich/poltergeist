@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-06-09-rich-markdown-editor-design.md`
 
-**Branch:** `feat/rich-markdown-editor` (this worktree). All `pytest` commands run from the worktree root with the repo venv: `/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m pytest …`. All desktop commands run from `desktop/`.
+**Branch:** `feat/rich-markdown-editor` (this worktree). All `pytest` commands run from the worktree root with the repo venv: `~/dev/poltergeist/.venv/bin/python -m pytest …`. All desktop commands run from `desktop/`.
 
 Facts verified against the working tree before writing this plan (do not re-litigate them):
 
@@ -51,7 +51,7 @@ from ghostbrain.api.tests.conftest import write_note
 SYNCED = (
     "---\n"
     "source: gmail\n"
-    "context: sanlam\n"
+    "context: work\n"
     "tags:\n"
     "- mail\n"
     "updated: '2026-01-01T00:00:00+00:00'\n"
@@ -62,21 +62,21 @@ SYNCED = (
 
 
 def test_save_rewrites_body_and_preserves_frontmatter(tmp_vault):
-    write_note(tmp_vault, "20-contexts/sanlam/notes/synced.md", SYNCED)
-    result = save_note_body("20-contexts/sanlam/notes/synced.md", "# edited\n\nnew body")
-    post = frontmatter.load(tmp_vault / "20-contexts/sanlam/notes/synced.md")
+    write_note(tmp_vault, "20-contexts/work/notes/synced.md", SYNCED)
+    result = save_note_body("20-contexts/work/notes/synced.md", "# edited\n\nnew body")
+    post = frontmatter.load(tmp_vault / "20-contexts/work/notes/synced.md")
     assert post.content.strip() == "# edited\n\nnew body"
     # connector-managed file: every frontmatter key survives untouched
     assert post["source"] == "gmail"
-    assert post["context"] == "sanlam"
+    assert post["context"] == "work"
     assert post["tags"] == ["mail"]
-    assert result["path"] == "20-contexts/sanlam/notes/synced.md"
+    assert result["path"] == "20-contexts/work/notes/synced.md"
 
 
 def test_save_bumps_updated_when_key_exists(tmp_vault):
-    write_note(tmp_vault, "20-contexts/sanlam/notes/synced.md", SYNCED)
-    result = save_note_body("20-contexts/sanlam/notes/synced.md", "new body")
-    post = frontmatter.load(tmp_vault / "20-contexts/sanlam/notes/synced.md")
+    write_note(tmp_vault, "20-contexts/work/notes/synced.md", SYNCED)
+    result = save_note_body("20-contexts/work/notes/synced.md", "new body")
+    post = frontmatter.load(tmp_vault / "20-contexts/work/notes/synced.md")
     assert post["updated"] != "2026-01-01T00:00:00+00:00"
     assert result["updated"] == post["updated"]
 
@@ -105,7 +105,7 @@ def test_save_plain_file_stays_frontmatter_free(tmp_vault):
 
 def test_save_unknown_path_raises(tmp_vault):
     with pytest.raises(NoteNotFound):
-        save_note_body("20-contexts/sanlam/notes/missing.md", "x")
+        save_note_body("20-contexts/work/notes/missing.md", "x")
 
 
 def test_save_traversal_rejected(tmp_vault):
@@ -115,12 +115,12 @@ def test_save_traversal_rejected(tmp_vault):
 
 def test_save_non_md_rejected(tmp_vault):
     with pytest.raises(NoteInvalidPath):
-        save_note_body("20-contexts/sanlam/notes/script.sh", "x")
+        save_note_body("20-contexts/work/notes/script.sh", "x")
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m pytest ghostbrain/api/tests/test_repo_note_save.py -q`
+Run: `~/dev/poltergeist/.venv/bin/python -m pytest ghostbrain/api/tests/test_repo_note_save.py -q`
 Expected: FAIL — `ImportError: cannot import name 'save_note_body'`.
 
 - [ ] **Step 3: Implement `save_note_body`**
@@ -164,7 +164,7 @@ def save_note_body(rel_path: str, body: str) -> dict:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m pytest ghostbrain/api/tests/test_repo_note_save.py -q`
+Run: `~/dev/poltergeist/.venv/bin/python -m pytest ghostbrain/api/tests/test_repo_note_save.py -q`
 Expected: PASS — 7 tests green.
 
 - [ ] **Step 5: Commit**
@@ -199,7 +199,7 @@ from ghostbrain.api.tests.conftest import write_note
 SYNCED = (
     "---\n"
     "source: gmail\n"
-    "context: sanlam\n"
+    "context: work\n"
     "updated: '2026-01-01T00:00:00+00:00'\n"
     "---\n"
     "\n"
@@ -208,16 +208,16 @@ SYNCED = (
 
 
 def test_patch_body_rewrites_and_preserves_frontmatter(tmp_vault, client, auth_headers):
-    write_note(tmp_vault, "20-contexts/sanlam/notes/synced.md", SYNCED)
+    write_note(tmp_vault, "20-contexts/work/notes/synced.md", SYNCED)
     resp = client.patch(
         "/v1/notes/body",
-        json={"path": "20-contexts/sanlam/notes/synced.md", "body": "# edited\n\nnew body"},
+        json={"path": "20-contexts/work/notes/synced.md", "body": "# edited\n\nnew body"},
         headers=auth_headers,
     )
     assert resp.status_code == 200
     data = resp.json()
-    assert data["path"] == "20-contexts/sanlam/notes/synced.md"
-    post = frontmatter.load(tmp_vault / "20-contexts/sanlam/notes/synced.md")
+    assert data["path"] == "20-contexts/work/notes/synced.md"
+    post = frontmatter.load(tmp_vault / "20-contexts/work/notes/synced.md")
     assert post.content.strip() == "# edited\n\nnew body"
     # connector file edit is allowed; source key untouched
     assert post["source"] == "gmail"
@@ -262,7 +262,7 @@ def test_patch_body_jot_route_still_reachable(tmp_vault, client, auth_headers):
 def test_patch_body_unknown_path_404(tmp_vault, client, auth_headers):
     resp = client.patch(
         "/v1/notes/body",
-        json={"path": "20-contexts/sanlam/notes/missing.md", "body": "x"},
+        json={"path": "20-contexts/work/notes/missing.md", "body": "x"},
         headers=auth_headers,
     )
     assert resp.status_code == 404
@@ -280,12 +280,12 @@ def test_patch_body_traversal_400(tmp_vault, client, auth_headers):
 def test_patch_body_empty_body_422(tmp_vault, client, auth_headers):
     write_note(
         tmp_vault,
-        "20-contexts/sanlam/notes/n.md",
+        "20-contexts/work/notes/n.md",
         "---\nsource: manual\n---\n\nbody\n",
     )
     resp = client.patch(
         "/v1/notes/body",
-        json={"path": "20-contexts/sanlam/notes/n.md", "body": "   "},
+        json={"path": "20-contexts/work/notes/n.md", "body": "   "},
         headers=auth_headers,
     )
     assert resp.status_code == 422
@@ -293,7 +293,7 @@ def test_patch_body_empty_body_422(tmp_vault, client, auth_headers):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m pytest ghostbrain/api/tests/test_routes_notes_body.py -q`
+Run: `~/dev/poltergeist/.venv/bin/python -m pytest ghostbrain/api/tests/test_routes_notes_body.py -q`
 Expected: FAIL — `test_patch_body_not_shadowed_by_jot_route` and friends get **422** (`string_too_short` from the `/{jot_id}` path validator), proving the shadowing hazard; 404/400 cases also 422 for the same reason.
 
 - [ ] **Step 3: Add the request model**
@@ -364,12 +364,12 @@ def patch_note_body(req: UpdateNoteBodyRequest) -> dict:
 
 - [ ] **Step 5: Run test to verify it passes**
 
-Run: `/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m pytest ghostbrain/api/tests/test_routes_notes_body.py ghostbrain/api/tests/test_routes_notes_mutate.py -q`
+Run: `~/dev/poltergeist/.venv/bin/python -m pytest ghostbrain/api/tests/test_routes_notes_body.py ghostbrain/api/tests/test_routes_notes_mutate.py -q`
 Expected: PASS — 6 new tests + the 5 pre-existing jot-mutation tests all green (proves the jot family is unaffected).
 
 - [ ] **Step 6: Run the full backend suite**
 
-Run: `/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m pytest ghostbrain/api/tests/ -q`
+Run: `~/dev/poltergeist/.venv/bin/python -m pytest ghostbrain/api/tests/ -q`
 Expected: PASS — 104 passed (91 pre-existing + 7 from Task 1 + 6 from this task).
 
 - [ ] **Step 7: Commit**
@@ -455,10 +455,10 @@ const FIXTURES: Record<string, string> = {
   'fenced code with language': '```python\ndef hello():\n    return "world"\n```',
   link: 'see [the docs](https://example.com/docs) for more',
   blockquote: '> quoted line one\n>\n> quoted line two',
-  'obsidian wikilinks': 'see [[20-contexts/sanlam/_profile]] and [[a/b|Title]]',
+  'obsidian wikilinks': 'see [[20-contexts/work/_profile]] and [[a/b|Title]]',
   'mixed document':
     '# meeting notes\n\n' +
-    'context for **the ascp wizard** and `route_event`:\n\n' +
+    'context for **the helix wizard** and `route_event`:\n\n' +
     '- [ ] follow up with [the docs](https://example.com)\n- [x] shipped\n\n' +
     '```ts\nconst x = 1;\n```',
 };
@@ -1799,17 +1799,17 @@ function withQuery(children: React.ReactNode) {
 }
 
 const syncedNote: Note = {
-  path: '20-contexts/sanlam/notes/synced.md',
+  path: '20-contexts/work/notes/synced.md',
   title: 'synced note',
   body: '# synced\n\nfrom gmail',
-  frontmatter: { source: 'gmail', context: 'sanlam' },
+  frontmatter: { source: 'gmail', context: 'work' },
 };
 
 const manualNote: Note = {
-  path: '20-contexts/sanlam/notes/manual-20260609T090000-x.md',
+  path: '20-contexts/work/notes/manual-20260609T090000-x.md',
   title: 'manual note',
   body: 'hand-written',
-  frontmatter: { source: 'manual', context: 'sanlam' },
+  frontmatter: { source: 'manual', context: 'work' },
 };
 
 describe('NoteView', () => {
@@ -2044,7 +2044,7 @@ No new code — both stacks must be green before manual E2E.
 
 - [ ] **Step 1: Backend suite**
 
-Run: `/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m pytest ghostbrain/api/tests/ -q`
+Run: `~/dev/poltergeist/.venv/bin/python -m pytest ghostbrain/api/tests/ -q`
 Expected: 104 passed, 0 failed.
 
 - [ ] **Step 2: Desktop suite**

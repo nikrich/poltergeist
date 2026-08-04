@@ -32,7 +32,7 @@ def test_worker_processes_pending_event(vault: Path) -> None:
         "version: 1\n"
         "claude_code:\n"
         "  project_paths:\n"
-        f"    \"{vault}/fake-project\": codeship\n"
+        f"    \"{vault}/fake-project\": consulting\n"
     )
 
     event = {
@@ -77,5 +77,5 @@ def test_worker_processes_pending_event(vault: Path) -> None:
     assert success[0]["event_id"] == "smoke-test-1"
     assert success[0]["status"] == "success"
     # Pipeline now records routing context too.
-    assert success[0].get("context") == "codeship"
+    assert success[0].get("context") == "consulting"
     assert success[0].get("method") == "path"

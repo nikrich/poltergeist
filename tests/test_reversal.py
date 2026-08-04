@@ -48,7 +48,7 @@ def test_no_candidates_short_circuits(vault: Path) -> None:
     from ghostbrain.worker import reversal
 
     new = _write_decision(
-        vault, context="sanlam", artifact_id="new-1",
+        vault, context="work", artifact_id="new-1",
         title="Use Postgres", body="Decision body.",
         created=datetime.now(timezone.utc),
     )
@@ -70,13 +70,13 @@ def test_reversal_writes_frontmatter_on_both_notes(vault: Path) -> None:
 
     now = datetime.now(timezone.utc)
     old = _write_decision(
-        vault, context="sanlam", artifact_id="old-1",
+        vault, context="work", artifact_id="old-1",
         title="Use DynamoDB for policy domain",
         body="We're going DynamoDB; cheaper and simpler.",
         created=now - timedelta(days=10),
     )
     new = _write_decision(
-        vault, context="sanlam", artifact_id="new-1",
+        vault, context="work", artifact_id="new-1",
         title="Use Postgres for policy domain",
         body="Switching to Postgres after the dynamo cost spike.",
         created=now,
@@ -106,10 +106,10 @@ def test_reversal_writes_frontmatter_on_both_notes(vault: Path) -> None:
 def test_skips_non_decision_artifacts(vault: Path) -> None:
     from ghostbrain.worker import reversal
 
-    folder = vault / "20-contexts" / "sanlam" / "calendar" / "artifacts" / "action_items"
+    folder = vault / "20-contexts" / "work" / "calendar" / "artifacts" / "action_items"
     folder.mkdir(parents=True, exist_ok=True)
     meta = {
-        "id": "act-1", "context": "sanlam", "type": "artifact",
+        "id": "act-1", "context": "work", "type": "artifact",
         "artifactType": "action_item",
         "created": datetime.now(timezone.utc).isoformat(),
     }
@@ -134,11 +134,11 @@ def test_lookback_excludes_old_candidates(vault: Path) -> None:
 
     now = datetime.now(timezone.utc)
     _write_decision(
-        vault, context="sanlam", artifact_id="ancient",
+        vault, context="work", artifact_id="ancient",
         title="Old", body="Old.", created=now - timedelta(days=200),
     )
     new = _write_decision(
-        vault, context="sanlam", artifact_id="new-x",
+        vault, context="work", artifact_id="new-x",
         title="New", body="New.", created=now,
     )
 
@@ -161,11 +161,11 @@ def test_llm_error_returns_empty_result(vault: Path) -> None:
 
     now = datetime.now(timezone.utc)
     _write_decision(
-        vault, context="sanlam", artifact_id="old-2",
+        vault, context="work", artifact_id="old-2",
         title="Old", body="Old.", created=now - timedelta(days=5),
     )
     new = _write_decision(
-        vault, context="sanlam", artifact_id="new-2",
+        vault, context="work", artifact_id="new-2",
         title="New", body="New.", created=now,
     )
 
@@ -184,11 +184,11 @@ def test_unknown_contradicts_id_skipped(vault: Path) -> None:
 
     now = datetime.now(timezone.utc)
     _write_decision(
-        vault, context="sanlam", artifact_id="real-old",
+        vault, context="work", artifact_id="real-old",
         title="Real old", body="...", created=now - timedelta(days=3),
     )
     new = _write_decision(
-        vault, context="sanlam", artifact_id="new-3",
+        vault, context="work", artifact_id="new-3",
         title="New", body="...", created=now,
     )
 

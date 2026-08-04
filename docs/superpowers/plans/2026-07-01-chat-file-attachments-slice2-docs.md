@@ -16,7 +16,7 @@
 - Size caps: text files `MAX_TEXT_BYTES = 1_000_000` (unchanged); PDF/docx `MAX_DOC_BYTES = 20_000_000`.
 - Content-addressed dedup hashes the RAW uploaded bytes (not the extracted text), same as Slice 1.
 - A doc that yields no extractable text (scanned/image-only PDF, empty docx) is rejected with a clear error, not stored as an empty note.
-- Run Python tests from the worktree root with `/Users/jannik/.agentflow/.venv/bin/pytest <paths> -v`. Desktop: `npx vitest run <filter>` and `npm run typecheck` from `desktop/`.
+- Run Python tests from the worktree root with `~/.agentflow/.venv/bin/pytest <paths> -v`. Desktop: `npx vitest run <filter>` and `npm run typecheck` from `desktop/`.
 
 ---
 
@@ -120,7 +120,7 @@ def test_extract_unknown_kind_raises():
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `/Users/jannik/.agentflow/.venv/bin/pytest ghostbrain/api/tests/test_attachment_extract.py -v`
+Run: `~/.agentflow/.venv/bin/pytest ghostbrain/api/tests/test_attachment_extract.py -v`
 Expected: FAIL — `ModuleNotFoundError: ghostbrain.api.repo.attachment_extract`.
 
 - [ ] **Step 3: Add the dependencies**
@@ -134,7 +134,7 @@ In `pyproject.toml`, add to the `dependencies = [` list (near `markdown>=3.6`):
 
 Then install into the venv so tests can import them:
 
-Run: `/Users/jannik/.agentflow/.venv/bin/pip install "pypdf>=4.0" "python-docx>=1.1"`
+Run: `~/.agentflow/.venv/bin/pip install "pypdf>=4.0" "python-docx>=1.1"`
 Expected: both installed (python-docx may already be present).
 
 - [ ] **Step 4: Implement the extractor**
@@ -217,7 +217,7 @@ def _extract_docx(content: bytes) -> str:
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `/Users/jannik/.agentflow/.venv/bin/pytest ghostbrain/api/tests/test_attachment_extract.py -v`
+Run: `~/.agentflow/.venv/bin/pytest ghostbrain/api/tests/test_attachment_extract.py -v`
 Expected: PASS (6 tests). (A `pypdf` "incorrect startxref" warning on the minimal-PDF test is expected and does not fail the test.)
 
 - [ ] **Step 6: Commit**
@@ -289,7 +289,7 @@ from ghostbrain.api.repo.attachment_extract import DOCX_MIME as repo_ex_DOCX_MIM
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `/Users/jannik/.agentflow/.venv/bin/pytest ghostbrain/api/tests/test_chat_attachments.py -v -k "pdf or docx"`
+Run: `~/.agentflow/.venv/bin/pytest ghostbrain/api/tests/test_chat_attachments.py -v -k "pdf or docx"`
 Expected: FAIL — pdf/docx currently hit `UnsupportedAttachment` (not text), so `save_attachment` raises before writing.
 
 - [ ] **Step 3: Refactor `save_attachment` to dispatch by kind**
@@ -390,7 +390,7 @@ Delete the now-unused `_is_text` function. (Its logic moved into `_classify`.)
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `/Users/jannik/.agentflow/.venv/bin/pytest ghostbrain/api/tests/test_chat_attachments.py -v`
+Run: `~/.agentflow/.venv/bin/pytest ghostbrain/api/tests/test_chat_attachments.py -v`
 Expected: PASS (all Slice 1 text tests + the 5 new pdf/docx tests). The Slice 1 text tests still exercise the `kind == "text"` path unchanged.
 
 - [ ] **Step 5: Commit**
@@ -508,7 +508,7 @@ git commit -m "feat(chat): accept PDF/docx attachments in the composer"
 
 ## Final verification
 
-- [ ] Full Python attachment + chat suites: `/Users/jannik/.agentflow/.venv/bin/pytest ghostbrain/api/tests/test_attachment_extract.py ghostbrain/api/tests/test_chat_attachments.py ghostbrain/api/tests/test_chat.py tests/test_chat_store.py tests/test_chat_repo.py -q` — expect green.
+- [ ] Full Python attachment + chat suites: `~/.agentflow/.venv/bin/pytest ghostbrain/api/tests/test_attachment_extract.py ghostbrain/api/tests/test_chat_attachments.py ghostbrain/api/tests/test_chat.py tests/test_chat_store.py tests/test_chat_repo.py -q` — expect green.
 - [ ] Full desktop suite + typecheck: from `desktop/`, `npx vitest run` then `npm run typecheck` — expect green.
 - [ ] Manual smoke: drop a real PDF and a .docx onto the composer, send, confirm the turn references `[[20-contexts/chat-attachments/…]]`, the notes exist on disk with `kind: pdf`/`kind: docx` and the extracted text as body.
 

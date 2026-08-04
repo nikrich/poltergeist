@@ -22,7 +22,7 @@ from ghostbrain.api.repo.notes_manual import (
 def vault(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("VAULT_PATH", str(tmp_path))
     (tmp_path / "00-inbox" / "raw" / "manual").mkdir(parents=True)
-    (tmp_path / "20-contexts" / "sanlam" / "notes").mkdir(parents=True)
+    (tmp_path / "20-contexts" / "work" / "notes").mkdir(parents=True)
     return tmp_path
 
 
@@ -56,7 +56,7 @@ def test_list_jots_walks_inbox_and_routed_locations(vault):
     inbox = write_inbox_jot("first jot", captured_at=when)
     later = datetime(2026, 5, 14, 10, 0, 0, tzinfo=timezone.utc)
     routed = write_inbox_jot("second jot routed", captured_at=later)
-    move_jot(routed["id"], to_context="sanlam", confidence=0.82, method="llm",
+    move_jot(routed["id"], to_context="work", confidence=0.82, method="llm",
              reasoning="test")
     page = list_jots()
     assert page["total"] == 2
@@ -69,20 +69,20 @@ def test_list_jots_respects_context_filter(vault):
     when = datetime(2026, 5, 14, 9, 30, 15, tzinfo=timezone.utc)
     a = write_inbox_jot("a", captured_at=when)
     b = write_inbox_jot("b", captured_at=when.replace(second=20))
-    move_jot(b["id"], to_context="sanlam", confidence=1.0, method="user",
+    move_jot(b["id"], to_context="work", confidence=1.0, method="user",
              reasoning="manual")
-    page = list_jots(context="sanlam")
+    page = list_jots(context="work")
     assert [item["id"] for item in page["items"]] == [b["id"]]
     _ = a  # silence linter
 
 
 def test_list_jots_substring_q_matches_title_and_body(vault):
     when = datetime(2026, 5, 14, 9, 30, 15, tzinfo=timezone.utc)
-    write_inbox_jot("ghostbrain idea about ascp", captured_at=when)
+    write_inbox_jot("ghostbrain idea about helix", captured_at=when)
     write_inbox_jot("unrelated thought", captured_at=when.replace(second=20))
-    page = list_jots(q="ascp")
+    page = list_jots(q="helix")
     assert page["total"] == 1
-    assert "ascp" in page["items"][0]["title"]
+    assert "helix" in page["items"][0]["title"]
 
 
 def test_list_jots_tag_filter(vault):
@@ -122,11 +122,11 @@ def test_update_jot_body_rewrites_file_and_bumps_updated(vault):
 def test_move_jot_moves_file_and_updates_frontmatter(vault):
     when = datetime(2026, 5, 14, 9, 30, 15, tzinfo=timezone.utc)
     rec = write_inbox_jot("routing me", captured_at=when)
-    move_jot(rec["id"], to_context="sanlam", confidence=0.7, method="llm",
-             reasoning="content matches sanlam terminology")
+    move_jot(rec["id"], to_context="work", confidence=0.7, method="llm",
+             reasoning="content matches work terminology")
     note = read_jot(rec["id"])
-    assert note["path"].startswith("20-contexts/sanlam/notes/")
-    assert note["frontmatter"]["context"] == "sanlam"
+    assert note["path"].startswith("20-contexts/work/notes/")
+    assert note["frontmatter"]["context"] == "work"
     assert note["frontmatter"]["routingStatus"] == "routed"
     assert note["frontmatter"]["routingConfidence"] == 0.7
 

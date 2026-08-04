@@ -403,10 +403,10 @@ def test_get_note_gets_with_path_query():
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "GET"
         assert request.url.path == "/v1/notes"
-        assert request.url.params.get("path") == "20-contexts/sanlam/x.md"
+        assert request.url.params.get("path") == "20-contexts/work/x.md"
         return httpx.Response(200, json={"path": "p", "title": "t", "body": "b", "frontmatter": {}})
 
-    out = _client(handler, DESCRIPTOR).get_note("20-contexts/sanlam/x.md")
+    out = _client(handler, DESCRIPTOR).get_note("20-contexts/work/x.md")
     assert out["title"] == "t"
 
 
@@ -537,14 +537,14 @@ def test_ask_includes_answer_and_source_paths():
     client = FakeClient(answer={
         "answer": "Use sonnet.",
         "sources": [
-            {"path": "20-contexts/sanlam/a.md", "title": "A", "score": 0.81, "snippet": "..."},
-            {"path": "20-contexts/codeship/b.md", "title": "B", "score": 0.77, "snippet": "..."},
+            {"path": "20-contexts/work/a.md", "title": "A", "score": 0.81, "snippet": "..."},
+            {"path": "20-contexts/consulting/b.md", "title": "B", "score": 0.77, "snippet": "..."},
         ],
     })
     out = tools.ask(client, "which model?", limit=5)
     assert "Use sonnet." in out
-    assert "20-contexts/sanlam/a.md" in out
-    assert "20-contexts/codeship/b.md" in out
+    assert "20-contexts/work/a.md" in out
+    assert "20-contexts/consulting/b.md" in out
     assert client.calls == [("answer", "which model?", 5)]
 
 
@@ -572,7 +572,7 @@ def test_search_empty_says_no_matches():
 
 
 def test_get_note_renders_title_and_body():
-    client = FakeClient(note={"path": "p.md", "title": "Title", "body": "Body text", "frontmatter": {"context": "sanlam"}})
+    client = FakeClient(note={"path": "p.md", "title": "Title", "body": "Body text", "frontmatter": {"context": "work"}})
     out = tools.get_note(client, "p.md")
     assert "Title" in out
     assert "Body text" in out
@@ -801,10 +801,10 @@ from ghostbrain.mcp.client import SidecarClient, SidecarNotRunning
 @pytest.fixture
 def seeded_vault(tmp_path, monkeypatch):
     vault = tmp_path / "vault"
-    note_dir = vault / "20-contexts" / "sanlam" / "notes"
+    note_dir = vault / "20-contexts" / "work" / "notes"
     note_dir.mkdir(parents=True)
     (note_dir / "x.md").write_text(
-        "---\ntitle: ASCP wizard\ncontext: sanlam\n---\n\nUse Cognito session refresh.\n"
+        "---\ntitle: Helix wizard\ncontext: work\n---\n\nUse Cognito session refresh.\n"
     )
     monkeypatch.setenv("VAULT_PATH", str(vault))
     return vault
@@ -822,17 +822,17 @@ def _client_for(app, token):
 def test_get_note_end_to_end(seeded_vault):
     app = create_app(token="test-token")
     client = _client_for(app, "test-token")
-    out = tools.get_note(client, "20-contexts/sanlam/notes/x.md")
-    assert "ASCP wizard" in out
+    out = tools.get_note(client, "20-contexts/work/notes/x.md")
+    assert "Helix wizard" in out
     assert "Cognito session refresh" in out
-    assert "context: sanlam" in out
+    assert "context: work" in out
 
 
 def test_bad_token_is_rejected(seeded_vault):
     app = create_app(token="real-token")
     client = _client_for(app, "wrong-token")
     with pytest.raises(httpx.HTTPStatusError):
-        tools.get_note(client, "20-contexts/sanlam/notes/x.md")
+        tools.get_note(client, "20-contexts/work/notes/x.md")
 
 
 def test_not_running_path():

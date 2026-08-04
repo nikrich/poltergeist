@@ -29,14 +29,14 @@ from ghostbrain.api.models.note import Note, NoteListItem, NotesPage
 
 def test_note_accepts_jot_frontmatter():
     note = Note(
-        path="20-contexts/sanlam/notes/manual-20260514T093015-x.md",
+        path="20-contexts/work/notes/manual-20260514T093015-x.md",
         title="ghostbrain idea",
-        body="thoughts about the ascp wizard flow",
+        body="thoughts about the checkout wizard flow",
         frontmatter={
             "id": "manual-20260514T093015-x",
             "type": "note",
             "source": "manual",
-            "context": "sanlam",
+            "context": "work",
             "routingStatus": "routed",
             "routingMethod": "llm",
             "routingConfidence": 0.82,
@@ -49,10 +49,10 @@ def test_note_accepts_jot_frontmatter():
 def test_note_list_item_shape():
     item = NoteListItem(
         id="manual-20260514T093015-x",
-        path="20-contexts/sanlam/notes/manual-20260514T093015-x.md",
+        path="20-contexts/work/notes/manual-20260514T093015-x.md",
         title="ghostbrain idea",
         excerpt="thoughts about the…",
-        context="sanlam",
+        context="work",
         routingStatus="routed",
         tags=["idea"],
         created="2026-05-14T09:30:15+02:00",
@@ -189,8 +189,8 @@ def test_make_jot_id_format():
 
 
 def test_extract_tags_finds_hashtags():
-    body = "thinking about #ui and the #ascp-wizard flow #idea"
-    assert extract_tags(body) == ["ui", "ascp-wizard", "idea"]
+    body = "thinking about #ui and the #checkout-wizard flow #idea"
+    assert extract_tags(body) == ["ui", "checkout-wizard", "idea"]
 
 
 def test_extract_tags_deduplicates_and_preserves_first_order():
@@ -329,7 +329,7 @@ from ghostbrain.api.repo.notes_manual import (
 def vault(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("VAULT_PATH", str(tmp_path))
     (tmp_path / "00-inbox" / "raw" / "manual").mkdir(parents=True)
-    (tmp_path / "20-contexts" / "sanlam" / "notes").mkdir(parents=True)
+    (tmp_path / "20-contexts" / "work" / "notes").mkdir(parents=True)
     return tmp_path
 
 
@@ -363,7 +363,7 @@ def test_list_jots_walks_inbox_and_routed_locations(vault):
     inbox = write_inbox_jot("first jot", captured_at=when)
     later = datetime(2026, 5, 14, 10, 0, 0, tzinfo=timezone.utc)
     routed = write_inbox_jot("second jot routed", captured_at=later)
-    move_jot(routed["id"], to_context="sanlam", confidence=0.82, method="llm",
+    move_jot(routed["id"], to_context="work", confidence=0.82, method="llm",
              reasoning="test")
     page = list_jots()
     assert page["total"] == 2
@@ -376,20 +376,20 @@ def test_list_jots_respects_context_filter(vault):
     when = datetime(2026, 5, 14, 9, 30, 15, tzinfo=timezone.utc)
     a = write_inbox_jot("a", captured_at=when)
     b = write_inbox_jot("b", captured_at=when.replace(second=20))
-    move_jot(b["id"], to_context="sanlam", confidence=1.0, method="user",
+    move_jot(b["id"], to_context="work", confidence=1.0, method="user",
              reasoning="manual")
-    page = list_jots(context="sanlam")
+    page = list_jots(context="work")
     assert [item["id"] for item in page["items"]] == [b["id"]]
     _ = a  # silence linter
 
 
 def test_list_jots_substring_q_matches_title_and_body(vault):
     when = datetime(2026, 5, 14, 9, 30, 15, tzinfo=timezone.utc)
-    write_inbox_jot("ghostbrain idea about ascp", captured_at=when)
+    write_inbox_jot("ghostbrain idea about checkout", captured_at=when)
     write_inbox_jot("unrelated thought", captured_at=when.replace(second=20))
-    page = list_jots(q="ascp")
+    page = list_jots(q="checkout")
     assert page["total"] == 1
-    assert "ascp" in page["items"][0]["title"]
+    assert "checkout" in page["items"][0]["title"]
 
 
 def test_list_jots_tag_filter(vault):
@@ -429,11 +429,11 @@ def test_update_jot_body_rewrites_file_and_bumps_updated(vault):
 def test_move_jot_moves_file_and_updates_frontmatter(vault):
     when = datetime(2026, 5, 14, 9, 30, 15, tzinfo=timezone.utc)
     rec = write_inbox_jot("routing me", captured_at=when)
-    move_jot(rec["id"], to_context="sanlam", confidence=0.7, method="llm",
-             reasoning="content matches sanlam terminology")
+    move_jot(rec["id"], to_context="work", confidence=0.7, method="llm",
+             reasoning="content matches work terminology")
     note = read_jot(rec["id"])
-    assert note["path"].startswith("20-contexts/sanlam/notes/")
-    assert note["frontmatter"]["context"] == "sanlam"
+    assert note["path"].startswith("20-contexts/work/notes/")
+    assert note["frontmatter"]["context"] == "work"
     assert note["frontmatter"]["routingStatus"] == "routed"
     assert note["frontmatter"]["routingConfidence"] == 0.7
 
@@ -734,7 +734,7 @@ from ghostbrain.worker.router import RoutingDecision
 def vault(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("VAULT_PATH", str(tmp_path))
     (tmp_path / "00-inbox" / "raw" / "manual").mkdir(parents=True)
-    (tmp_path / "20-contexts" / "sanlam" / "notes").mkdir(parents=True)
+    (tmp_path / "20-contexts" / "work" / "notes").mkdir(parents=True)
     return tmp_path
 
 
@@ -747,17 +747,17 @@ def test_post_notes_writes_routes_and_returns_routed(vault, client, monkeypatch)
     monkeypatch.setattr(
         "ghostbrain.api.repo.notes_manual.route_event",
         lambda event, **kw: RoutingDecision(
-            context="sanlam", confidence=0.82, reasoning="matches sanlam",
+            context="work", confidence=0.82, reasoning="matches work",
             method="llm", secondary_contexts=[],
         ),
     )
-    resp = client.post("/v1/notes", json={"body": "ascp wizard idea"})
+    resp = client.post("/v1/notes", json={"body": "checkout wizard idea"})
     assert resp.status_code == 200
     data = resp.json()
     assert data["routingStatus"] == "routed"
-    assert data["path"].startswith("20-contexts/sanlam/notes/")
+    assert data["path"].startswith("20-contexts/work/notes/")
     fm = frontmatter.load(vault / data["path"])
-    assert fm["context"] == "sanlam"
+    assert fm["context"] == "work"
     assert fm["routingMethod"] == "llm"
 
 
@@ -947,7 +947,7 @@ from ghostbrain.api.repo.notes_manual import write_inbox_jot, move_jot
 def vault(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("VAULT_PATH", str(tmp_path))
     (tmp_path / "00-inbox" / "raw" / "manual").mkdir(parents=True)
-    (tmp_path / "20-contexts" / "sanlam" / "notes").mkdir(parents=True)
+    (tmp_path / "20-contexts" / "work" / "notes").mkdir(parents=True)
     return tmp_path
 
 
@@ -960,8 +960,8 @@ def _seed_two(vault):
     t1 = datetime(2026, 5, 14, 9, 0, 0, tzinfo=timezone.utc)
     t2 = datetime(2026, 5, 14, 10, 0, 0, tzinfo=timezone.utc)
     a = write_inbox_jot("first jot #ui", captured_at=t1)
-    b = write_inbox_jot("second jot ascp #idea", captured_at=t2)
-    move_jot(b["id"], to_context="sanlam", confidence=0.9, method="llm",
+    b = write_inbox_jot("second jot checkout #idea", captured_at=t2)
+    move_jot(b["id"], to_context="work", confidence=0.9, method="llm",
              reasoning="t")
     return a, b
 
@@ -978,10 +978,10 @@ def test_list_returns_both_inbox_and_routed(vault, client):
 
 def test_list_q_filter(vault, client):
     _seed_two(vault)
-    resp = client.get("/v1/notes?source=manual&q=ascp")
+    resp = client.get("/v1/notes?source=manual&q=checkout")
     data = resp.json()
     assert data["total"] == 1
-    assert "ascp" in data["items"][0]["title"]
+    assert "checkout" in data["items"][0]["title"]
 
 
 def test_list_tag_filter(vault, client):
@@ -994,7 +994,7 @@ def test_list_tag_filter(vault, client):
 
 def test_list_context_filter(vault, client):
     a, b = _seed_two(vault)
-    resp = client.get("/v1/notes?source=manual&context=sanlam")
+    resp = client.get("/v1/notes?source=manual&context=work")
     data = resp.json()
     assert [item["id"] for item in data["items"]] == [b["id"]]
     _ = a
@@ -1117,8 +1117,8 @@ from ghostbrain.api.repo.notes_manual import write_inbox_jot
 def vault(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("VAULT_PATH", str(tmp_path))
     (tmp_path / "00-inbox" / "raw" / "manual").mkdir(parents=True)
-    (tmp_path / "20-contexts" / "sanlam" / "notes").mkdir(parents=True)
-    (tmp_path / "20-contexts" / "codeship" / "notes").mkdir(parents=True)
+    (tmp_path / "20-contexts" / "work" / "notes").mkdir(parents=True)
+    (tmp_path / "20-contexts" / "consulting" / "notes").mkdir(parents=True)
     return tmp_path
 
 
@@ -1146,12 +1146,12 @@ def test_route_moves_to_chosen_context(vault, client):
     when = datetime(2026, 5, 14, 9, 0, 0, tzinfo=timezone.utc)
     rec = write_inbox_jot("re-route me", captured_at=when)
     resp = client.post(
-        f"/v1/notes/{rec['id']}/route", json={"context": "codeship"},
+        f"/v1/notes/{rec['id']}/route", json={"context": "consulting"},
     )
     assert resp.status_code == 200
     data = resp.json()
-    assert data["context"] == "codeship"
-    assert data["path"].startswith("20-contexts/codeship/notes/")
+    assert data["context"] == "consulting"
+    assert data["path"].startswith("20-contexts/consulting/notes/")
 
 
 def test_route_rejects_unknown_context(vault, client):
@@ -1197,7 +1197,7 @@ from ghostbrain.api.repo.notes_manual import (
 # Known contexts must match the router's enum — keep this list in sync with
 # ghostbrain/worker/router.py:ROUTER_JSON_SCHEMA. If a context is added there,
 # add it here too.
-_KNOWN_CONTEXTS = {"sanlam", "codeship", "reducedrecipes", "personal"}
+_KNOWN_CONTEXTS = {"work", "consulting", "side-project", "personal"}
 
 
 @router.patch("/{jot_id}")
@@ -2059,10 +2059,10 @@ import type { JotListItem } from '../../../shared/api-types';
 const items: JotListItem[] = [
   {
     id: 'manual-20260514T093015-a',
-    path: '20-contexts/sanlam/notes/manual-20260514T093015-a.md',
-    title: 'ascp wizard',
-    excerpt: 'ascp wizard',
-    context: 'sanlam',
+    path: '20-contexts/work/notes/manual-20260514T093015-a.md',
+    title: 'checkout wizard',
+    excerpt: 'checkout wizard',
+    context: 'work',
     routingStatus: 'routed',
     tags: ['ui'],
     created: '2026-05-14T09:30:15+02:00',
@@ -2070,10 +2070,10 @@ const items: JotListItem[] = [
   },
   {
     id: 'manual-20260413T093015-b',
-    path: '20-contexts/sanlam/notes/manual-20260413T093015-b.md',
-    title: 'older sanlam note',
+    path: '20-contexts/work/notes/manual-20260413T093015-b.md',
+    title: 'older work note',
     excerpt: '',
-    context: 'sanlam',
+    context: 'work',
     routingStatus: 'routed',
     tags: [],
     created: '2026-04-13T09:30:15+02:00',
@@ -2095,7 +2095,7 @@ const items: JotListItem[] = [
 describe('JotTree', () => {
   it('groups items by context → month', () => {
     render(<JotTree items={items} selectedId={null} onSelect={() => {}} />);
-    expect(screen.getByText('sanlam')).toBeInTheDocument();
+    expect(screen.getByText('work')).toBeInTheDocument();
     expect(screen.getByText('unrouted')).toBeInTheDocument();
     expect(screen.getByText('2026-05')).toBeInTheDocument();
     expect(screen.getByText('2026-04')).toBeInTheDocument();
@@ -2104,7 +2104,7 @@ describe('JotTree', () => {
   it('calls onSelect with the jot id when a leaf is clicked', () => {
     const onSelect = vi.fn();
     render(<JotTree items={items} selectedId={null} onSelect={onSelect} />);
-    fireEvent.click(screen.getByText('ascp wizard'));
+    fireEvent.click(screen.getByText('checkout wizard'));
     expect(onSelect).toHaveBeenCalledWith('manual-20260514T093015-a');
   });
 
@@ -2116,7 +2116,7 @@ describe('JotTree', () => {
         onSelect={() => {}}
       />,
     );
-    const leaf = screen.getByText('ascp wizard').closest('button');
+    const leaf = screen.getByText('checkout wizard').closest('button');
     expect(leaf?.className).toContain('bg-neon');
   });
 });
@@ -2438,10 +2438,10 @@ const page: JotsPage = {
   items: [
     {
       id: 'manual-20260514T093015-a',
-      path: '20-contexts/sanlam/notes/manual-20260514T093015-a.md',
+      path: '20-contexts/work/notes/manual-20260514T093015-a.md',
       title: 'first jot',
       excerpt: 'body',
-      context: 'sanlam',
+      context: 'work',
       routingStatus: 'routed',
       tags: [],
       created: '2026-05-14T09:30:15+02:00',
@@ -2500,7 +2500,7 @@ import {
 } from '../lib/api/hooks';
 import { toast } from '../stores/toast';
 
-const KNOWN_CONTEXTS = ['sanlam', 'codeship', 'reducedrecipes', 'personal'];
+const KNOWN_CONTEXTS = ['work', 'consulting', 'side-project', 'personal'];
 
 export function JotsScreen() {
   const [q, setQ] = useState('');
@@ -2648,7 +2648,7 @@ Expected: no errors.
 
 - [ ] **Step 9: Manually verify**
 
-`cd desktop && npm run dev` → click "jots" in the sidebar → empty state. Press ⌥-J → type "test sanlam ascp" → ⌘-Enter. Within a few seconds the jot should appear in the tree under either `sanlam` or `unrouted`. Click it → editor shows the body. Edit → save indicator (Network) fires after 1s. Re-route → file moves. Delete → leaf disappears.
+`cd desktop && npm run dev` → click "jots" in the sidebar → empty state. Press ⌥-J → type "test work checkout" → ⌘-Enter. Within a few seconds the jot should appear in the tree under either `work` or `unrouted`. Click it → editor shows the body. Edit → save indicator (Network) fires after 1s. Re-route → file moves. Delete → leaf disappears.
 
 - [ ] **Step 10: Commit**
 
@@ -2675,16 +2675,16 @@ cd desktop && npm run dev
 
 - [ ] **Step 2: Capture via overlay**
 
-Press ⌥-J → a 480×260 frameless overlay appears. Type: `testing poltergeist jots — ascp wizard cognito session #idea`. Press ⌘-Enter. Overlay closes immediately.
+Press ⌥-J → a 480×260 frameless overlay appears. Type: `testing poltergeist jots — checkout wizard session expiry #idea`. Press ⌘-Enter. Overlay closes immediately.
 
 Check: `ls -lt ~/ghostbrain/vault/00-inbox/raw/manual/ | head -3`
 Within ~3s, run: `ls -lt ~/ghostbrain/vault/20-contexts/*/notes/ 2>/dev/null | grep manual- | head -3`
-Expected: the new file appears under one of the routed context folders (sanlam most likely given the body).
+Expected: the new file appears under one of the routed context folders (work most likely given the body).
 
 - [ ] **Step 3: Verify the frontmatter**
 
 ```bash
-head -20 ~/ghostbrain/vault/20-contexts/sanlam/notes/manual-*.md | tail -20
+head -20 ~/ghostbrain/vault/20-contexts/work/notes/manual-*.md | tail -20
 ```
 Expected: `source: manual`, `routingStatus: routed`, `routingMethod: llm`, `tags: [idea]`, a non-empty `routingReasoning`.
 
@@ -2710,7 +2710,7 @@ python -m ghostbrain.semantic.refresh
 Then ask the brain a question that should retrieve the jot:
 ```bash
 curl -s -X POST http://127.0.0.1:8787/v1/answer -H "Content-Type: application/json" \
-  -d '{"question": "what did I think about the ascp wizard cognito session?"}' | jq .
+  -d '{"question": "what did I think about the checkout wizard session expiry?"}' | jq .
 ```
 Expected: the jot path appears in the answer's citations.
 

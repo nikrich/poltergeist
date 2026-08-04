@@ -2,7 +2,7 @@
 
 Per-connector detail for `onboarding-poltergeist`. Each connector = (1) create an external credential, (2) authenticate, (3) add its `routing.yaml` block, (4) fetch to verify. All paths assume default `~/ghostbrain/vault/` and state `~/.ghostbrain/state/`. Use generic placeholders below — substitute the user's real values into THEIR vault (never into the repo).
 
-Routing maps source signals to a **context** (`sanlam`, `codeship`, `reducedrecipes`, `personal`). Below, `<ctx>` means one of those.
+Routing maps source signals to a **context** (`work`, `consulting`, `side-project`, `personal`). Below, `<ctx>` means one of those.
 
 ---
 
@@ -169,7 +169,7 @@ Event-driven (not polling) — captures each Claude Code session via a **Session
 claude_code:
   project_paths:
     ~/development/work-repo: <ctx>
-    ~/development/consulting: codeship
+    ~/development/consulting: consulting
 ```
 **Verify:** finish a Claude Code session, then check `vault/00-inbox/raw/claude-code/` for the captured transcript. No `.last_run`; "on" state = presence of inbox captures.
 

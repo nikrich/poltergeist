@@ -13,8 +13,8 @@ import { ConfluenceExportDialog } from '../components/ConfluenceExportDialog';
 import type { ImportSpace } from '../../shared/api-types';
 
 const spaces: ImportSpace[] = [
-  { site: 'example.atlassian.net', siteSlug: 'example', key: 'ENG', name: 'Engineering', context: 'sanlam' },
-  { site: 'example.atlassian.net', siteSlug: 'example', key: 'MKT', name: 'Marketing', context: 'sanlam' },
+  { site: 'example.atlassian.net', siteSlug: 'example', key: 'ENG', name: 'Engineering', context: 'work' },
+  { site: 'example.atlassian.net', siteSlug: 'example', key: 'MKT', name: 'Marketing', context: 'work' },
 ];
 
 function withQuery(children: React.ReactNode) {

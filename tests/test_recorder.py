@@ -20,7 +20,7 @@ from ghostbrain.recorder.policy import RecorderPolicy, should_record
 
 def test_policy_skips_focus_titles() -> None:
     policy = RecorderPolicy(excluded_titles=("Focus", "focus"))
-    ok, reason = should_record(title="Focus", context="sanlam", policy=policy)
+    ok, reason = should_record(title="Focus", context="work", policy=policy)
     assert ok is False
     assert "exclusion" in reason.lower()
 
@@ -28,7 +28,7 @@ def test_policy_skips_focus_titles() -> None:
 def test_policy_case_insensitive() -> None:
     policy = RecorderPolicy(excluded_titles=("Focus",))
     for title in ("Focus", "focus", "FOCUS", "FoCuS"):
-        ok, _ = should_record(title=title, context="sanlam", policy=policy)
+        ok, _ = should_record(title=title, context="work", policy=policy)
         assert ok is False, title
 
 
@@ -52,15 +52,15 @@ def test_policy_excluded_contexts() -> None:
 def test_policy_included_contexts_acts_as_whitelist() -> None:
     policy = RecorderPolicy(
         excluded_titles=(),
-        included_contexts=("sanlam", "codeship"),
+        included_contexts=("work", "consulting"),
     )
-    assert should_record(title="x", context="sanlam", policy=policy)[0] is True
+    assert should_record(title="x", context="work", policy=policy)[0] is True
     assert should_record(title="x", context="personal", policy=policy)[0] is False
 
 
 def test_policy_disabled_blocks_everything() -> None:
     policy = RecorderPolicy(enabled=False)
-    ok, _ = should_record(title="anything", context="sanlam", policy=policy)
+    ok, _ = should_record(title="anything", context="work", policy=policy)
     assert ok is False
 
 
@@ -77,7 +77,7 @@ def test_state_roundtrip(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Non
 
     s = state_mod.RecorderState(
         active=state_mod.ActiveRecording(
-            event_id="ev1", title="Test", context="sanlam",
+            event_id="ev1", title="Test", context="work",
             pid=12345, wav_path="/tmp/x.wav",
             started_at="2026-05-08T10:00:00+00:00",
             scheduled_end="2026-05-08T10:30:00+00:00",
@@ -166,7 +166,7 @@ def test_daemon_picks_in_progress_eligible_event(
         poll_interval_s=30, end_grace_s=60,
         audio_device="Ghost Brain", fallback_output="",
         policy=RecorderPolicy(),
-        macos_accounts={"Calendar": "sanlam"},
+        macos_accounts={"Calendar": "work"},
     )
     state = state_mod.RecorderState()
 
@@ -180,7 +180,7 @@ def test_daemon_picks_in_progress_eligible_event(
 
     assert candidate is not None
     assert candidate.event_id == "ev-real"
-    assert candidate.context == "sanlam"
+    assert candidate.context == "work"
     # Focus should have been recorded as processed (skipped)
     assert "ev-focus" in state.processed
 
@@ -207,7 +207,7 @@ def test_daemon_skips_already_processed(
         poll_interval_s=30, end_grace_s=60,
         audio_device="Ghost Brain", fallback_output="",
         policy=RecorderPolicy(),
-        macos_accounts={"Calendar": "sanlam"},
+        macos_accounts={"Calendar": "work"},
     )
     state = state_mod.RecorderState(
         processed={"ev-done": now.isoformat()},
@@ -246,7 +246,7 @@ def test_daemon_skips_event_starting_too_far_in_future(
         poll_interval_s=30, end_grace_s=60,
         audio_device="Ghost Brain", fallback_output="",
         policy=RecorderPolicy(),
-        macos_accounts={"Calendar": "sanlam"},
+        macos_accounts={"Calendar": "work"},
     )
     state = state_mod.RecorderState()
 

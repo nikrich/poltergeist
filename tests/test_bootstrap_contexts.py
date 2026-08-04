@@ -1,8 +1,8 @@
 """bootstrap(): context folders and seeds come from configuration.
 
 Fresh vault → neutral DEFAULT_CONTEXTS. Existing vault → whatever
-routing_config resolves (configured or legacy fallback), and routing.yaml
-gains the `contexts:` key by APPEND (user edits/comments preserved).
+routing_config resolves, and routing.yaml gains the `contexts:` key by
+APPEND (user edits/comments preserved).
 """
 from __future__ import annotations
 
@@ -56,9 +56,7 @@ def test_existing_vault_without_key_gets_contexts_appended(vault):
     after = routing_file.read_text()
     assert "# user comment to preserve" in after
     routing = yaml.safe_load(after)
-    # Key absent, and this vault has no 20-contexts/sanlam (it was bootstrapped
-    # fresh with DEFAULT_CONTEXTS) → the non-legacy fallback is what gets
-    # recorded, not the hardcoded legacy four.
+    # Key absent → the default fallback is what gets recorded.
     assert routing["contexts"] == list(routing_config.DEFAULT_CONTEXTS)
 
 

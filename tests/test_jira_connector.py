@@ -10,7 +10,7 @@ import pytest
 
 
 _ISSUE_RAW = {
-    "key": "ASCP-1234",
+    "key": "Helix-1234",
     "id": "10001",
     "fields": {
         "summary": "Add cashback to quote domain",
@@ -18,10 +18,10 @@ _ISSUE_RAW = {
                    "statusCategory": {"key": "indeterminate"}},
         "priority": {"name": "Medium"},
         "issuetype": {"name": "Story"},
-        "assignee": {"accountId": "abc", "displayName": "Jannik"},
+        "assignee": {"accountId": "abc", "displayName": "Priya"},
         "reporter": {"accountId": "def", "displayName": "Reporter"},
-        "labels": ["capstone"],
-        "project": {"key": "ASCP"},
+        "labels": ["rockets"],
+        "project": {"key": "Helix"},
         "created": "2026-05-01T08:00:00.000+0000",
         "updated": "2026-05-07T10:00:00.000+0000",
         "description": {
@@ -38,14 +38,14 @@ _ISSUE_RAW = {
 @pytest.fixture(autouse=True)
 def _atlassian_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ATLASSIAN_EMAIL", "u@example.com")
-    monkeypatch.setenv("ATLASSIAN_TOKEN_SFT", "test-token")
+    monkeypatch.setenv("ATLASSIAN_TOKEN_ACME", "test-token")
 
 
 def test_fetch_normalizes_issue_into_event(vault: Path, tmp_path: Path) -> None:
     from ghostbrain.connectors.jira import JiraConnector
 
     connector = JiraConnector(
-        config={"sites": ["sft.atlassian.net"]},
+        config={"sites": ["acme.atlassian.net"]},
         queue_dir=tmp_path / "q",
         state_dir=tmp_path / "s",
     )
@@ -58,19 +58,19 @@ def test_fetch_normalizes_issue_into_event(vault: Path, tmp_path: Path) -> None:
 
     assert len(events) == 1
     ev = events[0]
-    assert ev["id"] == "jira:sft:ASCP-1234"
+    assert ev["id"] == "jira:acme:Helix-1234"
     assert ev["source"] == "jira"
     assert ev["type"] == "ticket"
     assert ev["subtype"] == "in progress"
-    assert ev["title"] == "ASCP-1234 Add cashback to quote domain"
+    assert ev["title"] == "Helix-1234 Add cashback to quote domain"
     assert "Add a cashback field" in ev["body"]
-    assert ev["url"] == "https://sft.atlassian.net/browse/ASCP-1234"
-    assert ev["metadata"]["site"] == "sft.atlassian.net"
-    assert ev["metadata"]["siteSlug"] == "sft"
-    assert ev["metadata"]["project"] == "ASCP"
+    assert ev["url"] == "https://acme.atlassian.net/browse/Helix-1234"
+    assert ev["metadata"]["site"] == "acme.atlassian.net"
+    assert ev["metadata"]["siteSlug"] == "acme"
+    assert ev["metadata"]["project"] == "Helix"
     assert ev["metadata"]["status"] == "In Progress"
     assert ev["metadata"]["priority"] == "Medium"
-    assert ev["metadata"]["labels"] == ["capstone"]
+    assert ev["metadata"]["labels"] == ["rockets"]
 
 
 def test_fetch_returns_empty_for_zero_sites(vault: Path, tmp_path: Path) -> None:
@@ -88,7 +88,7 @@ def test_fetch_falls_back_to_legacy_search(vault: Path, tmp_path: Path) -> None:
     from ghostbrain.connectors.jira import JiraConnector
 
     connector = JiraConnector(
-        config={"sites": ["sft.atlassian.net"]},
+        config={"sites": ["acme.atlassian.net"]},
         queue_dir=tmp_path / "q", state_dir=tmp_path / "s",
     )
 

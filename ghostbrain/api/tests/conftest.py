@@ -28,6 +28,12 @@ def tmp_vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (vault / "90-meta" / "queue").mkdir()
     (vault / "90-meta" / "queue" / "pending").mkdir()
     (vault / "90-meta" / "audit").mkdir()
+    # Declare the contexts the test suite routes into — validation reads
+    # routing.yaml's `contexts:` (no implicit fallback beyond the defaults).
+    (vault / "90-meta" / "routing.yaml").write_text(
+        "contexts:\n  - work\n  - consulting\n  - side-project\n  - personal\n",
+        encoding="utf-8",
+    )
     monkeypatch.setenv("VAULT_PATH", str(vault))
     return vault
 
@@ -87,13 +93,16 @@ def tmp_chats_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def write_import_routing(vault: Path, *, jira: bool = True, confluence: bool = True) -> Path:
     """Write a routing.yaml mirroring the real shape: dicts keyed by host/space."""
-    routing: dict = {"version": 1}
+    routing: dict = {
+        "version": 1,
+        "contexts": ["work", "consulting", "side-project", "personal"],
+    }
     if jira:
-        routing["jira"] = {"sites": {"sft.atlassian.net": "sanlam"}}
+        routing["jira"] = {"sites": {"acme.atlassian.net": "work"}}
     if confluence:
         routing["confluence"] = {
-            "sites": {"sft.atlassian.net": "sanlam"},
-            "spaces": {"DIG": "sanlam", "SPE": "sanlam"},
+            "sites": {"acme.atlassian.net": "work"},
+            "spaces": {"ENG": "work", "OPS": "work"},
         }
     p = vault / "90-meta" / "routing.yaml"
     p.write_text(yaml.safe_dump(routing))

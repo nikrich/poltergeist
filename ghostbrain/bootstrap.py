@@ -882,8 +882,8 @@ __CONTEXT_SECTIONS__
 def _resolve_contexts(root: Path) -> tuple[str, ...]:
     """Context list for this bootstrap run.
 
-    Existing vault (routing.yaml present) → configured list, or the legacy
-    fallback via routing_config. Fresh vault → neutral defaults.
+    Existing vault (routing.yaml present) → configured list via
+    routing_config. Fresh vault → neutral defaults.
     """
     if (root / "90-meta" / "routing.yaml").exists():
         return routing_config.contexts(root=root)

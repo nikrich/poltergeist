@@ -12,7 +12,7 @@ from ghostbrain.api.tests.conftest import write_note
 SYNCED = (
     "---\n"
     "source: gmail\n"
-    "context: sanlam\n"
+    "context: work\n"
     "tags:\n"
     "- mail\n"
     "updated: '2026-01-01T00:00:00+00:00'\n"
@@ -23,21 +23,21 @@ SYNCED = (
 
 
 def test_save_rewrites_body_and_preserves_frontmatter(tmp_vault):
-    write_note(tmp_vault, "20-contexts/sanlam/notes/synced.md", SYNCED)
-    result = save_note_body("20-contexts/sanlam/notes/synced.md", "# edited\n\nnew body")
-    post = frontmatter.load(tmp_vault / "20-contexts/sanlam/notes/synced.md")
+    write_note(tmp_vault, "20-contexts/work/notes/synced.md", SYNCED)
+    result = save_note_body("20-contexts/work/notes/synced.md", "# edited\n\nnew body")
+    post = frontmatter.load(tmp_vault / "20-contexts/work/notes/synced.md")
     assert post.content.strip() == "# edited\n\nnew body"
     # connector-managed file: every frontmatter key survives untouched
     assert post["source"] == "gmail"
-    assert post["context"] == "sanlam"
+    assert post["context"] == "work"
     assert post["tags"] == ["mail"]
-    assert result["path"] == "20-contexts/sanlam/notes/synced.md"
+    assert result["path"] == "20-contexts/work/notes/synced.md"
 
 
 def test_save_bumps_updated_when_key_exists(tmp_vault):
-    write_note(tmp_vault, "20-contexts/sanlam/notes/synced.md", SYNCED)
-    result = save_note_body("20-contexts/sanlam/notes/synced.md", "new body")
-    post = frontmatter.load(tmp_vault / "20-contexts/sanlam/notes/synced.md")
+    write_note(tmp_vault, "20-contexts/work/notes/synced.md", SYNCED)
+    result = save_note_body("20-contexts/work/notes/synced.md", "new body")
+    post = frontmatter.load(tmp_vault / "20-contexts/work/notes/synced.md")
     assert post["updated"] != "2026-01-01T00:00:00+00:00"
     assert result["updated"] == post["updated"]
 
@@ -66,7 +66,7 @@ def test_save_plain_file_stays_frontmatter_free(tmp_vault):
 
 def test_save_unknown_path_raises(tmp_vault):
     with pytest.raises(NoteNotFound):
-        save_note_body("20-contexts/sanlam/notes/missing.md", "x")
+        save_note_body("20-contexts/work/notes/missing.md", "x")
 
 
 def test_save_traversal_rejected(tmp_vault):
@@ -76,4 +76,4 @@ def test_save_traversal_rejected(tmp_vault):
 
 def test_save_non_md_rejected(tmp_vault):
     with pytest.raises(NoteInvalidPath):
-        save_note_body("20-contexts/sanlam/notes/script.sh", "x")
+        save_note_body("20-contexts/work/notes/script.sh", "x")

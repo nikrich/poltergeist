@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Download installer → open app → backend fully works: vault auto-bootstraps on first run, the bundled binary doubles as the full `ghostbrain` CLI, and the vault's context list is user configuration instead of Jannik's hardcoded workspaces.
+**Goal:** Download installer → open app → backend fully works: vault auto-bootstraps on first run, the bundled binary doubles as the full `ghostbrain` CLI, and the vault's context list is user configuration instead of the author's hardcoded workspaces.
 
 **Architecture:** All behavior lives in the Python sidecar so dev (`python -m ghostbrain.api`) and frozen (PyInstaller `ghostbrain-api`) builds share one code path. A new `ghostbrain/routing_config.py` is the single source of truth for the context list (read from `routing.yaml:contexts`, legacy fallback for old vaults). `ghostbrain/api/__main__.py` grows a first-run `ensure_vault()` and a busybox-style subcommand table mirroring `[project.scripts]`. The desktop app adds one optional macOS Settings action that writes a `poltergeist` PATH shim.
 
@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Legacy context tuple `("sanlam", "codeship", "reducedrecipes", "personal")` may appear in exactly ONE place in `ghostbrain/`: the fallback in `ghostbrain/routing_config.py` (enforced by Task 6's guard test).
+- Legacy context tuple `("work", "consulting", "side-project", "personal")` may appear in exactly ONE place in `ghostbrain/`: the fallback in `ghostbrain/routing_config.py` (enforced by Task 6's guard test).
 - New-vault default contexts are exactly `("personal", "work")`.
 - `needs_review` is never a configured context: the router schema appends it; the notes API excludes it.
 - Sidecar startup must not crash-loop: first-run bootstrap failures are logged and the server still boots (Electron `sidecar.ts` auto-respawns on exit).
@@ -135,7 +135,7 @@ log = logging.getLogger("ghostbrain.routing_config")
 
 # Fallback for vaults without a `contexts:` key. Do not add call sites — use
 # contexts() instead.
-LEGACY_CONTEXTS: tuple[str, ...] = ("sanlam", "codeship", "reducedrecipes", "personal")
+LEGACY_CONTEXTS: tuple[str, ...] = ("work", "consulting", "side-project", "personal")
 
 # Seeded into brand-new vaults by bootstrap.
 DEFAULT_CONTEXTS: tuple[str, ...] = ("personal", "work")
@@ -234,7 +234,7 @@ def test_fresh_vault_seeds_default_contexts(vault):
 
 def test_fresh_vault_has_no_legacy_context_folders(vault):
     root = bootstrap()
-    assert not (root / "20-contexts" / "sanlam").exists()
+    assert not (root / "20-contexts" / "work").exists()
 
 
 def test_seeded_files_do_not_mention_legacy_contexts(vault):
@@ -242,7 +242,7 @@ def test_seeded_files_do_not_mention_legacy_contexts(vault):
     for f in root.rglob("*"):
         if f.is_file() and f.suffix in (".md", ".yaml"):
             body = f.read_text(encoding="utf-8")
-            for name in ("sanlam", "codeship", "reducedrecipes"):
+            for name in ("work", "consulting", "side-project"):
                 assert name not in body, f"{name} leaked into seed {f}"
 
 
@@ -295,7 +295,7 @@ def test_bootstrap_is_idempotent(vault):
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `pytest tests/test_bootstrap_contexts.py -v`
-Expected: FAIL — fresh vault seeds `sanlam/...` folders, no `contexts:` key in seeded routing.yaml.
+Expected: FAIL — fresh vault seeds `work/...` folders, no `contexts:` key in seeded routing.yaml.
 
 - [ ] **Step 3: Implement in `ghostbrain/bootstrap.py`**
 
@@ -394,18 +394,18 @@ def bootstrap(root: Path | None = None) -> Path:
 
 3d. Neutralize every context mention inside `SEED_FILES` literals and comments. Find them all with:
 
-Run: `grep -n "sanlam\|codeship\|reducedrecipes" ghostbrain/bootstrap.py`
+Run: `grep -n "work\|consulting\|side-project" ghostbrain/bootstrap.py`
 
 Apply these replacements (content-based — line numbers will have shifted):
 
 | Current seed text | Replacement |
 |---|---|
-| `Available contexts: sanlam, codeship, reducedrecipes, personal — see` (router prompt seed) | `Available contexts: {{contexts}} — see` |
-| `` `context` ∈ `{sanlam, codeship, reducedrecipes, personal, needs_review}`. `` (router prompt seed) | `` `context` must be one of the available contexts above, or `needs_review`. `` |
-| The context bullet list in the daily-digest prompt seed (`- **sanlam** — the user's primary employer / day-job work.` and its 3 sibling bullets) | `__CONTEXT_BULLETS__` (single line replacing all four bullets) |
-| `# Routing rules — maps source signals to one of: sanlam, codeship, reducedrecipes, personal.` (routing.yaml seed header) | `# Routing rules — maps source signals to one of the contexts listed below.` |
-| Every `# TODO:` example naming a real context (e.g. `# TODO: "your-org": sanlam`, `# TODO: e.g. "PROJ": sanlam`, `#     context: sanlam`) | same line with the context replaced by `your-context` |
-| Any seed body that enumerates per-context sections or bullets (e.g. the CLAUDE.md/profile seed's `## sanlam` … `## personal` sections — the 3d grep shows every occurrence) | Replace the whole enumerated block with the single line `__CONTEXT_SECTIONS__`, and add this marker to `_render_seed`: `.replace("__CONTEXT_SECTIONS__", "\n\n".join(f"## {c}\n- TODO: what belongs to this context." for c in contexts))` |
+| `Available contexts: work, consulting, side-project, personal — see` (router prompt seed) | `Available contexts: {{contexts}} — see` |
+| `` `context` ∈ `{work, consulting, side-project, personal, needs_review}`. `` (router prompt seed) | `` `context` must be one of the available contexts above, or `needs_review`. `` |
+| The context bullet list in the daily-digest prompt seed (`- **work** — the user's primary employer / day-job work.` and its 3 sibling bullets) | `__CONTEXT_BULLETS__` (single line replacing all four bullets) |
+| `# Routing rules — maps source signals to one of: work, consulting, side-project, personal.` (routing.yaml seed header) | `# Routing rules — maps source signals to one of the contexts listed below.` |
+| Every `# TODO:` example naming a real context (e.g. `# TODO: "your-org": work`, `# TODO: e.g. "PROJ": work`, `#     context: work`) | same line with the context replaced by `your-context` |
+| Any seed body that enumerates per-context sections or bullets (e.g. the CLAUDE.md/profile seed's `## work` … `## personal` sections — the 3d grep shows every occurrence) | Replace the whole enumerated block with the single line `__CONTEXT_SECTIONS__`, and add this marker to `_render_seed`: `.replace("__CONTEXT_SECTIONS__", "\n\n".join(f"## {c}\n- TODO: what belongs to this context." for c in contexts))` |
 
 Then add the `contexts:` block to the routing.yaml seed itself, directly under `version: 1`:
 
@@ -610,11 +610,11 @@ def test_configured_context_is_accepted_needs_review_is_not(vault):
 
 def test_route_note_rejects_unconfigured_context(vault, monkeypatch):
     _configure(vault, ["alpha"])
-    req = notes_mod.RouteNoteRequest(context="sanlam")
+    req = notes_mod.RouteNoteRequest(context="work")
     with pytest.raises(HTTPException) as exc:
         notes_mod.route_note(req, jot_id="a" * 12)
     assert exc.value.status_code == 400
-    assert "sanlam" in exc.value.detail
+    assert "work" in exc.value.detail
 ```
 
 Note: if `RouteNoteRequest` has additional required fields, fill them with minimal valid values (open `notes.py` to check the model).
@@ -785,7 +785,7 @@ In **`ghostbrain/metrics/anticipation.py`**: same import, delete the constant (l
 - [ ] **Step 4: Run tests**
 
 Run: `pytest tests/test_digest_contexts.py tests/test_digest.py tests/test_anticipation.py -v`
-Expected: PASS — existing tests still pass because the fixture vault has no routing.yaml → legacy fallback preserves current ordering (`tests/test_digest.py:116` relies on sanlam-before-codeship).
+Expected: PASS — existing tests still pass because the fixture vault has no routing.yaml → legacy fallback preserves current ordering (`tests/test_digest.py:116` relies on work-before-consulting).
 
 - [ ] **Step 5: Commit**
 
@@ -819,7 +819,7 @@ from pathlib import Path
 
 PACKAGE = Path(__file__).resolve().parents[1] / "ghostbrain"
 ALLOWED = {PACKAGE / "routing_config.py"}
-NAMES = ("sanlam", "codeship", "reducedrecipes")  # "personal" is a legit default
+NAMES = ("work", "consulting", "side-project")  # "personal" is a legit default
 
 
 def test_legacy_context_names_only_in_routing_config():
@@ -1460,7 +1460,7 @@ contexts plus active `context/slug` projects. The context list now lives in
 ### New Task 5b: remaining production references (dispatch after Task 5)
 
 - `ghostbrain/api/repo/answer.py:39` (`PROMPT_TEMPLATE`): replace the sentence
-  `The user is a software engineer working across four contexts: sanlam (day-job/employer), codeship (consulting + product), reducedrecipes (side project), and personal projects.`
+  `The user is a software engineer working across four contexts: work (day-job/employer), consulting (consulting + product), side-project (side project), and personal projects.`
   with `The user is a software engineer working across these contexts: {contexts}.`
   and pass `contexts=", ".join(routing_config.contexts())` at the single
   `PROMPT_TEMPLATE.format(...)` call site. Test: format the template via the

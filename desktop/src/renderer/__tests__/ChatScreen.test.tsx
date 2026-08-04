@@ -306,9 +306,9 @@ describe('ChatScreen', () => {
 
 const exportResponse: ChatExportResponse = {
   jot_id: 'j1',
-  path: '20-contexts/codeship/notes/j1.md',
+  path: '20-contexts/consulting/notes/j1.md',
   routingStatus: 'routed',
-  context: 'codeship',
+  context: 'consulting',
   project: null,
   title: 'auth thread',
 };

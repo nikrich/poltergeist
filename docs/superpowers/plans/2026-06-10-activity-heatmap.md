@@ -12,7 +12,7 @@
 
 **Verified baselines (2026-06-10, this worktree):**
 
-- Backend: `/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m pytest ghostbrain/api/tests/ -q` → **42 passed** (run from the worktree root).
+- Backend: `~/dev/poltergeist/.venv/bin/python -m pytest ghostbrain/api/tests/ -q` → **42 passed** (run from the worktree root).
 - Desktop: `cd desktop && npx vitest run` → **18 passed** (5 files). `cd desktop && npm run typecheck` → clean.
 - Real audit event shapes (from `~/ghostbrain/vault/90-meta/audit/2026-06-10.jsonl`): `{"ts": "...", "event_type": "connector_skipped", "event_id": "joplin", "reason": "not_configured"}` — many events have **no `source` field** and `event_id` values **repeat within a day** (e.g. `joplin` on every scheduler cycle). Tests never depend on real files; they write fixtures into the tmp vault.
 
@@ -168,7 +168,7 @@ def test_list_for_date_missing_file_returns_empty(tmp_vault: Path):
 
 Run (from the worktree root):
 ```bash
-/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m pytest ghostbrain/api/tests/test_activity_heatmap_repo.py -v
+~/dev/poltergeist/.venv/bin/python -m pytest ghostbrain/api/tests/test_activity_heatmap_repo.py -v
 ```
 Expected: FAIL — `ImportError: cannot import name 'build_heatmap'`.
 
@@ -410,14 +410,14 @@ def build_heatmap(days: int = 365) -> dict:
 - [ ] **Step 4: Run test to verify it passes**
 
 ```bash
-/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m pytest ghostbrain/api/tests/test_activity_heatmap_repo.py -v
+~/dev/poltergeist/.venv/bin/python -m pytest ghostbrain/api/tests/test_activity_heatmap_repo.py -v
 ```
 Expected: PASS — 9 tests green.
 
 - [ ] **Step 5: Verify no regression in the existing suite**
 
 ```bash
-/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m pytest ghostbrain/api/tests/ -q
+~/dev/poltergeist/.venv/bin/python -m pytest ghostbrain/api/tests/ -q
 ```
 Expected: **51 passed** (42 baseline + 9 new). The 4 existing tests in `test_activity.py` exercise the refactored `list_activity` and must stay green.
 
@@ -538,7 +538,7 @@ def test_activity_invalid_date_422(client: TestClient, auth_headers: dict[str, s
 - [ ] **Step 2: Run test to verify it fails**
 
 ```bash
-/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m pytest ghostbrain/api/tests/test_activity_heatmap.py -v
+~/dev/poltergeist/.venv/bin/python -m pytest ghostbrain/api/tests/test_activity_heatmap.py -v
 ```
 Expected: FAIL — `/v1/activity/heatmap` returns 404 (route missing); the `?date=` tests return the windowMinutes behavior (empty list) instead of the day's rows.
 
@@ -617,13 +617,13 @@ def activity(
 - [ ] **Step 5: Run test to verify it passes**
 
 ```bash
-/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m pytest ghostbrain/api/tests/test_activity_heatmap.py ghostbrain/api/tests/test_activity.py -v
+~/dev/poltergeist/.venv/bin/python -m pytest ghostbrain/api/tests/test_activity_heatmap.py ghostbrain/api/tests/test_activity.py -v
 ```
 Expected: PASS — 6 new + 4 existing tests green.
 
 Then the full suite:
 ```bash
-/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m pytest ghostbrain/api/tests/ -q
+~/dev/poltergeist/.venv/bin/python -m pytest ghostbrain/api/tests/ -q
 ```
 Expected: **57 passed**.
 
@@ -1853,7 +1853,7 @@ No new code — confirm the whole feature against the real vault before calling 
 
 From the worktree root:
 ```bash
-/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m pytest ghostbrain/api/tests/ -q
+~/dev/poltergeist/.venv/bin/python -m pytest ghostbrain/api/tests/ -q
 ```
 Expected: **57 passed**.
 
@@ -1865,8 +1865,8 @@ Expected: **35 passed**, typecheck clean.
 - [ ] **Step 2: Boot the sidecar against the real vault**
 
 ```bash
-cd /Users/jannik/development/nikrich/ghost-brain/.claude/worktrees/feat-activity-and-import
-/Users/jannik/development/nikrich/ghost-brain/.venv/bin/python -m ghostbrain.api
+cd ~/dev/poltergeist/.claude/worktrees/feat-activity-and-import
+~/dev/poltergeist/.venv/bin/python -m ghostbrain.api
 ```
 Expected: a single line `READY port=<PORT> token=<TOKEN> scheduler=off` (scheduler stays off without `GHOSTBRAIN_SCHEDULER_ENABLED=1`; VAULT_PATH unset → it reads `~/ghostbrain/vault`). Note PORT and TOKEN.
 

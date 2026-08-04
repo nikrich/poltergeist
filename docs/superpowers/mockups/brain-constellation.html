@@ -400,21 +400,21 @@
       "MCP recall server", "microsoft graph auth flow", "Poltergeist naming decision",
       "connector relevance scoring", "onboarding — bootstrap the vault", "activity heatmap",
       "in-app Microsoft sign-in", "meeting prep pipeline" ] },
-    { id: "sanlam", label: "sanlam · capstone", color: "#38bdf8", titles: [
-      "SFT capstone — add BFF endpoint", "Digisure standup", "CreateClaimRequest handler",
-      "local-runner bootstrap", "Bruno E2E — claims happy path", "prd incident — DLQ triage",
+    { id: "work", label: "work · helix", color: "#38bdf8", titles: [
+      "Helix platform — add API endpoint", "Northwind standup", "CreateOrderRequest handler",
+      "local-runner bootstrap", "Bruno E2E — orders happy path", "prd incident — DLQ triage",
       "correlation-id tracing", "memory palace — drawer", "hive assign — multi-repo",
-      "fe-ascp-v2 audit", "InputSanitizer at BFF boundary", "Avro schema — tampering defense",
-      "CoE draft — correction of error", "Cognito session expiry" ] },
+      "web-frontend audit", "input validation at API boundary", "webhook signature verification",
+      "incident write-up — post-mortem", "session expiry handling" ] },
     { id: "personal", label: "personal", color: "#a78bfa", titles: [
       "flat — lease renewal", "training block — July", "books to read",
       "budget — July", "Cape Town — trip notes", "birthday — mom",
       "dentist appointment", "weekend plans", "car service", "photos to back up" ] },
-    { id: "reducedrecipes", label: "reducedrecipes", color: "#fbbf24", titles: [
+    { id: "side-project", label: "side-project", color: "#fbbf24", titles: [
       "pantry model", "recipe scaling algorithm", "grocery API integration",
       "meal-plan UI", "cost-per-serving calc", "landing page copy",
       "beta feedback round 1", "ingredient substitution graph", "onboarding funnel" ] },
-    { id: "codeship", label: "codeship", color: "#f472b6", titles: [
+    { id: "consulting", label: "consulting", color: "#f472b6", titles: [
       "MCP connectors config", "project import flow", "epic templates",
       "ship CLI — session mgmt", "client onboarding", "connector: jira",
       "billing model", "second-brain integration" ] },
@@ -472,8 +472,8 @@
     });
   });
   // semantic bridges between related regions (the "discovery" wow)
-  const BRIDGES = [["poltergeist", "sanlam"], ["poltergeist", "codeship"],
-    ["sanlam", "codeship"], ["personal", "reducedrecipes"], ["poltergeist", "personal"]];
+  const BRIDGES = [["poltergeist", "work"], ["poltergeist", "consulting"],
+    ["work", "consulting"], ["personal", "side-project"], ["poltergeist", "personal"]];
   BRIDGES.forEach(([a, b]) => {
     const ai = LOBES.findIndex(l => l.id === a), bi = LOBES.findIndex(l => l.id === b);
     const ga = byLobe[ai], gb = byLobe[bi];
@@ -663,10 +663,10 @@
   function excerptFor(id) {
     const m = {
       poltergeist: "Decision captured from a working session — the rationale, the tradeoff considered, and what it means for the next slice of the build.",
-      sanlam: "Traced through BFF → command-status → Kinesis handler. Root cause noted with the correlation id and the follow-up owner.",
+      work: "Traced through api → command-status → event handler. Root cause noted with the correlation id and the follow-up owner.",
       personal: "A quick capture — the thing to remember, the date it matters, and who to loop in.",
-      reducedrecipes: "Product note — the model, the constraint it solves, and the open question left for the next iteration.",
-      codeship: "Integration note — the connector, its config surface, and how it threads into the wider session.",
+      "side-project": "Product note — the model, the constraint it solves, and the open question left for the next iteration.",
+      consulting: "Integration note — the connector, its config surface, and how it threads into the wider session.",
     };
     return m[id];
   }

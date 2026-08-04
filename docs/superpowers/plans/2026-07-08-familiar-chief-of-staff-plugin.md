@@ -878,9 +878,9 @@ describe('extractPaths', () => {
       { path: null },
       {},
       { path: 'Familiar/briefings/2026-07-01.md' },
-      { path: '20-contexts/codeship/x.md' },
+      { path: '20-contexts/consulting/x.md' },
     ];
-    expect(extractPaths(rows)).toEqual(['10-daily/2026-07-07.md', '20-contexts/codeship/x.md']);
+    expect(extractPaths(rows)).toEqual(['10-daily/2026-07-07.md', '20-contexts/consulting/x.md']);
   });
 });
 ```

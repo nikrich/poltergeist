@@ -33,20 +33,20 @@ def test_writes_artifacts_for_each_extracted_item(vault: Path) -> None:
                return_value=_llm_result(payload)):
         paths = extractor.extract(
             "some excerpt",
-            context="codeship",
+            context="consulting",
             parent_note_id="parent-1",
             parent_note_path=vault / "00-inbox" / "raw" / "claude-code" / "p.md",
         )
 
     assert len(paths) == 2
-    artifacts_dir = vault / "20-contexts" / "codeship" / "claude" / "artifacts"
+    artifacts_dir = vault / "20-contexts" / "consulting" / "claude" / "artifacts"
     assert (artifacts_dir / "decisions").exists()
     assert (artifacts_dir / "specs").exists()
     decisions = list((artifacts_dir / "decisions").glob("*.md"))
     assert decisions, "decision artifact not written"
     note = frontmatter.load(decisions[0])
     assert note["artifactType"] == "decision"
-    assert note["context"] == "codeship"
+    assert note["context"] == "consulting"
 
 
 def test_empty_array_writes_nothing(vault: Path) -> None:
@@ -55,7 +55,7 @@ def test_empty_array_writes_nothing(vault: Path) -> None:
     with patch("ghostbrain.worker.extractor.llm.run",
                return_value=_llm_result('{"items": []}')):
         paths = extractor.extract(
-            "trivial chat", context="codeship",
+            "trivial chat", context="consulting",
             parent_note_id="p", parent_note_path=None,
         )
     assert paths == []
@@ -90,7 +90,7 @@ def test_extractor_handles_raw_array_fallback(vault: Path) -> None:
     with patch("ghostbrain.worker.extractor.llm.run",
                return_value=_llm_result(payload)):
         paths = extractor.extract(
-            "excerpt", context="codeship",
+            "excerpt", context="consulting",
             parent_note_id="p", parent_note_path=None,
         )
     assert len(paths) == 1
@@ -103,7 +103,7 @@ def test_llm_error_returns_empty_list(vault: Path) -> None:
     with patch("ghostbrain.worker.extractor.llm.run",
                side_effect=llm.LLMError("rate limit")):
         paths = extractor.extract(
-            "excerpt", context="codeship",
+            "excerpt", context="consulting",
             parent_note_id="p", parent_note_path=None,
         )
     assert paths == []
@@ -128,9 +128,9 @@ def test_transcript_profile_routes_to_calendar_artifacts(vault: Path) -> None:
                return_value=_llm_result(payload)):
         paths = extractor.extract(
             "raw transcript text",
-            context="sanlam",
+            context="work",
             parent_note_id="t1",
-            parent_note_path=vault / "20-contexts" / "sanlam" / "calendar"
+            parent_note_path=vault / "20-contexts" / "work" / "calendar"
             / "transcripts" / "trustflow.md",
             prompt_name="transcript-extractor.md",
             artifact_root=("calendar", "artifacts"),
@@ -138,7 +138,7 @@ def test_transcript_profile_routes_to_calendar_artifacts(vault: Path) -> None:
         )
 
     assert len(paths) == 2
-    cal_dir = vault / "20-contexts" / "sanlam" / "calendar" / "artifacts"
+    cal_dir = vault / "20-contexts" / "work" / "calendar" / "artifacts"
     assert (cal_dir / "action_items").exists()
     assert (cal_dir / "decisions").exists()
     items = list((cal_dir / "action_items").glob("*.md"))

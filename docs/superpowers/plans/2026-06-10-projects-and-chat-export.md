@@ -19,7 +19,7 @@ All work happens on a worktree so the main checkout stays free.
 - [ ] **Step 1: Create the worktree + branch**
 
 ```bash
-cd /Users/jannik/development/nikrich/ghost-brain
+cd ~/dev/poltergeist
 git pull
 git worktree add .claude/worktrees/projects-export -b feat/projects-and-chat-export main
 ```
@@ -27,7 +27,7 @@ git worktree add .claude/worktrees/projects-export -b feat/projects-and-chat-exp
 - [ ] **Step 2: Python env in the worktree** (the main checkout's `.venv` is an editable install pointing at the MAIN checkout's code — tests run there would import the wrong tree)
 
 ```bash
-cd /Users/jannik/development/nikrich/ghost-brain/.claude/worktrees/projects-export
+cd ~/dev/poltergeist/.claude/worktrees/projects-export
 python3.11 -m venv .venv && .venv/bin/pip install -q -e ".[dev,mcp]"
 .venv/bin/pytest ghostbrain/api/tests -q 2>&1 | tail -2   # sanity: same pass/fail profile as main
 ```
@@ -38,7 +38,7 @@ python3.11 -m venv .venv && .venv/bin/pip install -q -e ".[dev,mcp]"
 cd desktop && npm install --no-audit --no-fund 2>&1 | tail -1 && npm test -- --run 2>&1 | grep "Tests" && npm run typecheck
 ```
 
-ALL subsequent tasks run inside `/Users/jannik/development/nikrich/ghost-brain/.claude/worktrees/projects-export` (referred to as `$WT`). Backend tests: `$WT/.venv/bin/pytest`. Known pre-existing env failures (calendar/joplin/weekly-digest/confluence) are NOT regressions.
+ALL subsequent tasks run inside `~/dev/poltergeist/.claude/worktrees/projects-export` (referred to as `$WT`). Backend tests: `$WT/.venv/bin/pytest`. Known pre-existing env failures (calendar/joplin/weekly-digest/confluence) are NOT regressions.
 
 ---
 
@@ -72,17 +72,17 @@ def vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def test_create_writes_registry_and_folder(vault: Path):
-    p = projects.create_project("codeship", "Poltergeist", "second brain product")
+    p = projects.create_project("consulting", "Poltergeist", "second brain product")
     assert p == {
-        "id": "codeship/poltergeist",
-        "context": "codeship",
+        "id": "consulting/poltergeist",
+        "context": "consulting",
         "slug": "poltergeist",
         "name": "Poltergeist",
         "description": "second brain product",
         "archived": False,
         "created_at": p["created_at"],
     }
-    assert (vault / "20-contexts/codeship/projects/poltergeist").is_dir()
+    assert (vault / "20-contexts/consulting/projects/poltergeist").is_dir()
     on_disk = json.loads((vault / "90-meta/projects.json").read_text())
     assert on_disk == [p]
 
@@ -104,18 +104,18 @@ def test_list_filters_archived_by_default(vault: Path):
 
 
 def test_update_edits_and_returns_none_for_missing(vault: Path):
-    projects.create_project("sanlam", "Capstone", "old")
-    p = projects.update_project("sanlam", "capstone", name="Capstone v2", description="new")
-    assert p["name"] == "Capstone v2" and p["description"] == "new"
-    assert projects.update_project("sanlam", "missing", name="x") is None
+    projects.create_project("work", "Rockets", "old")
+    p = projects.update_project("work", "rockets", name="Rockets v2", description="new")
+    assert p["name"] == "Rockets v2" and p["description"] == "new"
+    assert projects.update_project("work", "missing", name="x") is None
 
 
 def test_get_project_active_only_flag(vault: Path):
-    projects.create_project("codeship", "Ship")
-    assert projects.get_project("codeship", "ship")["name"] == "Ship"
-    projects.update_project("codeship", "ship", archived=True)
-    assert projects.get_project("codeship", "ship", active_only=True) is None
-    assert projects.get_project("codeship", "ship") is not None
+    projects.create_project("consulting", "Ship")
+    assert projects.get_project("consulting", "ship")["name"] == "Ship"
+    projects.update_project("consulting", "ship", archived=True)
+    assert projects.get_project("consulting", "ship", active_only=True) is None
+    assert projects.get_project("consulting", "ship") is not None
 
 
 def test_corrupt_registry_reads_as_empty(vault: Path):
@@ -124,15 +124,15 @@ def test_corrupt_registry_reads_as_empty(vault: Path):
 
 
 def test_active_destinations_and_prompt_lines(vault: Path):
-    projects.create_project("codeship", "Poltergeist", "the second brain")
-    projects.create_project("codeship", "Archived One")
-    projects.update_project("codeship", "archived-one", archived=True)
+    projects.create_project("consulting", "Poltergeist", "the second brain")
+    projects.create_project("consulting", "Archived One")
+    projects.update_project("consulting", "archived-one", archived=True)
     dests = projects.active_destinations()
-    assert "codeship/poltergeist" in dests
-    assert "codeship/archived-one" not in dests
-    assert {"sanlam", "codeship", "reducedrecipes", "personal"} <= set(dests)
+    assert "consulting/poltergeist" in dests
+    assert "consulting/archived-one" not in dests
+    assert {"work", "consulting", "side-project", "personal"} <= set(dests)
     lines = projects.project_prompt_lines()
-    assert lines == ["codeship/poltergeist — Poltergeist: the second brain"]
+    assert lines == ["consulting/poltergeist — Poltergeist: the second brain"]
 ```
 
 - [ ] **Step 2: Run** `$WT/.venv/bin/pytest tests/test_projects_repo.py -v` → ImportError.
@@ -158,7 +158,7 @@ from ghostbrain.paths import vault_path
 
 log = logging.getLogger("ghostbrain.projects")
 
-KNOWN_CONTEXTS = ("sanlam", "codeship", "reducedrecipes", "personal")
+KNOWN_CONTEXTS = ("work", "consulting", "side-project", "personal")
 REGISTRY_REL = "90-meta/projects.json"
 PROJECT_DIR_TEMPLATE = "20-contexts/{context}/projects/{slug}"
 
@@ -298,14 +298,14 @@ from __future__ import annotations
 def test_create_list_roundtrip(client, auth_headers):
     created = client.post(
         "/v1/projects",
-        json={"context": "codeship", "name": "Poltergeist", "description": "brain"},
+        json={"context": "consulting", "name": "Poltergeist", "description": "brain"},
         headers=auth_headers,
     )
     assert created.status_code == 200
     body = created.json()
-    assert body["id"] == "codeship/poltergeist"
+    assert body["id"] == "consulting/poltergeist"
     listed = client.get("/v1/projects", headers=auth_headers).json()
-    assert [p["id"] for p in listed] == ["codeship/poltergeist"]
+    assert [p["id"] for p in listed] == ["consulting/poltergeist"]
 
 
 def test_create_validation(client, auth_headers):
@@ -317,9 +317,9 @@ def test_create_validation(client, auth_headers):
 
 
 def test_patch_edit_and_archive(client, auth_headers):
-    client.post("/v1/projects", json={"context": "sanlam", "name": "Capstone"}, headers=auth_headers)
+    client.post("/v1/projects", json={"context": "work", "name": "Rockets"}, headers=auth_headers)
     r = client.patch(
-        "/v1/projects/sanlam/capstone",
+        "/v1/projects/work/rockets",
         json={"description": "the big one", "archived": True},
         headers=auth_headers,
     )
@@ -328,7 +328,7 @@ def test_patch_edit_and_archive(client, auth_headers):
     assert client.get("/v1/projects", headers=auth_headers).json() == []
     full = client.get("/v1/projects?includeArchived=true", headers=auth_headers).json()
     assert full[0]["description"] == "the big one"
-    missing = client.patch("/v1/projects/sanlam/none", json={"name": "x"}, headers=auth_headers)
+    missing = client.patch("/v1/projects/work/none", json={"name": "x"}, headers=auth_headers)
     assert missing.status_code == 404
 ```
 
@@ -425,7 +425,7 @@ def update_project(context: str, slug: str, payload: UpdateProjectRequest) -> di
 - Modify: `ghostbrain/worker/router.py`
 - Test: `tests/test_router_projects.py`
 
-The static `ROUTER_JSON_SCHEMA` context enum becomes a per-call destination enum; the LLM may answer `"codeship/poltergeist"`. `RoutingDecision` gains `project`. Unknown/archived project in the answer degrades to context-only.
+The static `ROUTER_JSON_SCHEMA` context enum becomes a per-call destination enum; the LLM may answer `"consulting/poltergeist"`. `RoutingDecision` gains `project`. Unknown/archived project in the answer degrades to context-only.
 
 - [ ] **Step 1: Write the failing tests** — `tests/test_router_projects.py`:
 
@@ -450,29 +450,29 @@ def vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def test_build_router_schema_includes_destinations(vault):
-    projects.create_project("codeship", "Poltergeist")
+    projects.create_project("consulting", "Poltergeist")
     schema = build_router_schema()
     enum = schema["properties"]["context"]["enum"]
-    assert "codeship/poltergeist" in enum
+    assert "consulting/poltergeist" in enum
     assert "needs_review" in enum
-    assert "sanlam" in enum
+    assert "work" in enum
 
 
 def test_parse_destination_bare_context(vault):
-    assert parse_destination("sanlam") == ("sanlam", None)
+    assert parse_destination("work") == ("work", None)
     assert parse_destination("needs_review") == ("needs_review", None)
 
 
 def test_parse_destination_valid_project(vault):
-    projects.create_project("codeship", "Poltergeist")
-    assert parse_destination("codeship/poltergeist") == ("codeship", "poltergeist")
+    projects.create_project("consulting", "Poltergeist")
+    assert parse_destination("consulting/poltergeist") == ("consulting", "poltergeist")
 
 
 def test_parse_destination_unknown_or_archived_project_degrades(vault):
-    projects.create_project("codeship", "Poltergeist")
-    projects.update_project("codeship", "poltergeist", archived=True)
-    assert parse_destination("codeship/poltergeist") == ("codeship", None)
-    assert parse_destination("codeship/never-existed") == ("codeship", None)
+    projects.create_project("consulting", "Poltergeist")
+    projects.update_project("consulting", "poltergeist", archived=True)
+    assert parse_destination("consulting/poltergeist") == ("consulting", None)
+    assert parse_destination("consulting/never-existed") == ("consulting", None)
     # garbage context in a pair degrades to needs_review
     assert parse_destination("nope/x") == ("needs_review", None)
 ```
@@ -497,7 +497,7 @@ def build_router_schema() -> dict:
 
 
 def parse_destination(value: str) -> tuple[str, str | None]:
-    """'codeship/poltergeist' → ('codeship', 'poltergeist'); bare context
+    """'consulting/poltergeist' → ('consulting', 'poltergeist'); bare context
     passes through. Unknown/archived project degrades to context-only;
     unknown context degrades to needs_review."""
     if "/" not in value:
@@ -585,15 +585,15 @@ def vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def test_move_jot_into_project_folder_and_frontmatter(vault: Path):
-    projects.create_project("codeship", "Poltergeist")
+    projects.create_project("consulting", "Poltergeist")
     jot = write_inbox_jot("ship the chat feature")
     moved = move_jot(
-        jot["id"], to_context="codeship", to_project="poltergeist",
+        jot["id"], to_context="consulting", to_project="poltergeist",
         confidence=0.9, method="llm", reasoning="r",
     )
-    assert moved["context"] == "codeship"
+    assert moved["context"] == "consulting"
     assert moved["project"] == "poltergeist"
-    assert moved["path"].startswith("20-contexts/codeship/projects/poltergeist/")
+    assert moved["path"].startswith("20-contexts/consulting/projects/poltergeist/")
     post = frontmatter.load(vault / moved["path"])
     assert post["project"] == "poltergeist"
 
@@ -609,24 +609,24 @@ def test_move_jot_without_project_unchanged(vault: Path):
 
 
 def test_reroute_out_of_project_clears_frontmatter(vault: Path):
-    projects.create_project("codeship", "Poltergeist")
+    projects.create_project("consulting", "Poltergeist")
     jot = write_inbox_jot("note")
-    move_jot(jot["id"], to_context="codeship", to_project="poltergeist",
+    move_jot(jot["id"], to_context="consulting", to_project="poltergeist",
              confidence=0.9, method="llm", reasoning="r")
-    moved = move_jot(jot["id"], to_context="codeship",
+    moved = move_jot(jot["id"], to_context="consulting",
                      confidence=1.0, method="user", reasoning="r")
-    assert moved["path"].startswith("20-contexts/codeship/notes/")
+    assert moved["path"].startswith("20-contexts/consulting/notes/")
     post = frontmatter.load(vault / moved["path"])
     assert post.get("project") is None
 
 
 def test_list_jots_scans_project_folders_and_filters(vault: Path):
-    projects.create_project("codeship", "Poltergeist")
+    projects.create_project("consulting", "Poltergeist")
     a = write_inbox_jot("in project")
-    move_jot(a["id"], to_context="codeship", to_project="poltergeist",
+    move_jot(a["id"], to_context="consulting", to_project="poltergeist",
              confidence=0.9, method="llm", reasoning="r")
     b = write_inbox_jot("loose note")
-    move_jot(b["id"], to_context="codeship",
+    move_jot(b["id"], to_context="consulting",
              confidence=1.0, method="user", reasoning="r")
     page = list_jots()
     by_id = {i["id"]: i for i in page["items"]}
@@ -705,21 +705,21 @@ def test_route_jot_core_passes_project(vault, monkeypatch):
     import ghostbrain.api.repo.notes_manual as nm
     from ghostbrain.worker.router import RoutingDecision
 
-    projects.create_project("codeship", "Poltergeist")
+    projects.create_project("consulting", "Poltergeist")
     jot = write_inbox_jot("note about the brain")
     monkeypatch.setattr(
         nm, "route_event",
         lambda event, **kw: RoutingDecision(
-            context="codeship", confidence=0.9, reasoning="r",
+            context="consulting", confidence=0.9, reasoning="r",
             method="llm", project="poltergeist",
         ),
     )
     from ghostbrain.api.repo.notes_manual import route_existing_jot
     result = route_existing_jot(jot["id"])
     assert result["routingStatus"] == "routed"
-    assert result["context"] == "codeship"
+    assert result["context"] == "consulting"
     assert result["project"] == "poltergeist"
-    assert result["path"].startswith("20-contexts/codeship/projects/poltergeist/")
+    assert result["path"].startswith("20-contexts/consulting/projects/poltergeist/")
 ```
 
 Append to `ghostbrain/api/tests/test_routes_notes_mutate.py` (match its existing fixture/style — read the file first; it has client fixtures creating jots via POST /v1/notes):
@@ -727,20 +727,20 @@ Append to `ghostbrain/api/tests/test_routes_notes_mutate.py` (match its existing
 ```python
 def test_manual_route_with_project(client, auth_headers):
     from ghostbrain.api.repo import projects
-    projects.create_project("codeship", "Poltergeist")
+    projects.create_project("consulting", "Poltergeist")
     created = client.post(
         "/v1/notes", json={"body": "note", "route": False}, headers=auth_headers
     ).json()
     r = client.post(
         f"/v1/notes/{created['id']}/route",
-        json={"context": "codeship", "project": "poltergeist"},
+        json={"context": "consulting", "project": "poltergeist"},
         headers=auth_headers,
     )
     assert r.status_code == 200
     assert r.json()["project"] == "poltergeist"
     bad = client.post(
         f"/v1/notes/{created['id']}/route",
-        json={"context": "codeship", "project": "ghost-project"},
+        json={"context": "consulting", "project": "ghost-project"},
         headers=auth_headers,
     )
     assert bad.status_code == 400
@@ -836,14 +836,14 @@ def _conv_with_messages() -> dict:
     chat_store.append_user_message(conv, "what did we decide about the rebrand?")
     chat_store.append_assistant_message(
         conv,
-        "You renamed ghost-brain to Poltergeist. See [[20-contexts/codeship/decision]].",
+        "You renamed ghost-brain to Poltergeist. See [[20-contexts/consulting/decision]].",
         [{"name": "search", "summary": "searched vault: rebrand"}],
     )
     return conv
 
 
 class FakeLLMResult:
-    text = "## Rebrand summary\n\n- renamed to Poltergeist [[20-contexts/codeship/decision]]\n"
+    text = "## Rebrand summary\n\n- renamed to Poltergeist [[20-contexts/consulting/decision]]\n"
 
 
 def test_export_writes_summary_jot_and_routes(env, monkeypatch):
@@ -858,15 +858,15 @@ def test_export_writes_summary_jot_and_routes(env, monkeypatch):
     monkeypatch.setattr(
         chat_export,
         "route_existing_jot",
-        lambda jot_id: {"id": jot_id, "path": f"20-contexts/codeship/notes/{jot_id}.md",
-                        "routingStatus": "routed", "context": "codeship", "project": None},
+        lambda jot_id: {"id": jot_id, "path": f"20-contexts/consulting/notes/{jot_id}.md",
+                        "routingStatus": "routed", "context": "consulting", "project": None},
     )
     result = chat_export.export_conversation(conv["id"])
     assert result["routingStatus"] == "routed"
-    assert result["context"] == "codeship"
+    assert result["context"] == "consulting"
     # the transcript and the citation made it into the prompt
     assert "rebrand" in captured["prompt"]
-    assert "[[20-contexts/codeship/decision]]" in captured["prompt"]
+    assert "[[20-contexts/consulting/decision]]" in captured["prompt"]
     # frontmatter marks provenance (file may have been "moved" by the fake router;
     # read via the inbox path captured before routing)
     assert result["jot_id"]
@@ -904,7 +904,7 @@ def test_export_route(client, tmp_chats_dir, auth_headers, monkeypatch):
     monkeypatch.setattr(
         "ghostbrain.api.routes.chat.repo_chat_export.export_conversation",
         lambda conv_id: {"jot_id": "j1", "path": "p", "routingStatus": "routed",
-                         "context": "codeship", "project": None, "title": "t"},
+                         "context": "consulting", "project": None, "title": "t"},
     )
     r = client.post(f"/v1/chat/{conv['id']}/export-jot", headers=auth_headers)
     assert r.status_code == 200
@@ -1154,8 +1154,8 @@ import type { Project } from '../../shared/api-types';
 
 const projects: Project[] = [
   {
-    id: 'codeship/poltergeist',
-    context: 'codeship',
+    id: 'consulting/poltergeist',
+    context: 'consulting',
     slug: 'poltergeist',
     name: 'Poltergeist',
     description: 'second brain',
@@ -1185,7 +1185,7 @@ describe('ProjectsSettings', () => {
   it('lists projects grouped under their context', async () => {
     renderSection();
     expect(await screen.findByText('Poltergeist')).toBeTruthy();
-    expect(screen.getByText('codeship')).toBeTruthy();
+    expect(screen.getByText('consulting')).toBeTruthy();
     expect(screen.getByText('second brain')).toBeTruthy();
   });
 
@@ -1210,7 +1210,7 @@ describe('ProjectsSettings', () => {
 - [ ] **Step 3: Implement.** In `settings.tsx`: add `'projects'` to the `SectionId` union and a `{ id: 'projects', label: 'projects', … }` entry to `SECTIONS` (match the existing entry shape — read it), render `{section === 'projects' && <ProjectsSettings />}`, and add an **exported** section component (export needed for the test):
 
 ```tsx
-const PROJECT_CONTEXTS = ['sanlam', 'codeship', 'reducedrecipes', 'personal'];
+const PROJECT_CONTEXTS = ['work', 'consulting', 'side-project', 'personal'];
 
 export function ProjectsSettings() {
   const projects = useProjects({ includeArchived: true });
@@ -1365,12 +1365,12 @@ Imports needed at the top of settings.tsx: `useProjects, useCreateProject, useUp
 ```tsx
 it('groups project jots under context → project', () => {
   const items = [
-    makeItem({ id: 'a', context: 'codeship', project: 'poltergeist', created: '2026-06-01T00:00:00Z' }),
-    makeItem({ id: 'b', context: 'codeship', project: null, created: '2026-06-02T00:00:00Z' }),
+    makeItem({ id: 'a', context: 'consulting', project: 'poltergeist', created: '2026-06-01T00:00:00Z' }),
+    makeItem({ id: 'b', context: 'consulting', project: null, created: '2026-06-02T00:00:00Z' }),
   ];
   render(<JotTree items={items} selectedId={null} onSelect={() => {}} />);
   expect(screen.getByText('poltergeist')).toBeTruthy();   // project node
-  expect(screen.getByText('codeship')).toBeTruthy();      // context node
+  expect(screen.getByText('consulting')).toBeTruthy();      // context node
 });
 ```
 
@@ -1425,7 +1425,7 @@ Render project nodes (sorted alphabetically) above the loose months inside each 
 
 - [ ] **Step 1: Read** `jots.tsx` (the re-route `<select>` at ~line 272 and `handleReroute` at ~line 172) and its test file.
 
-- [ ] **Step 2: Failing test** — append to `jots.test.tsx` (mirror its existing mock/client setup; add `/v1/projects` to the mocked GET routes returning one project `codeship/poltergeist`):
+- [ ] **Step 2: Failing test** — append to `jots.test.tsx` (mirror its existing mock/client setup; add `/v1/projects` to the mocked GET routes returning one project `consulting/poltergeist`):
 
 ```tsx
 it('re-route select offers project destinations', async () => {
@@ -1433,8 +1433,8 @@ it('re-route select offers project destinations', async () => {
   // ... follow the file's established way of opening a jot detail ...
   const select = await screen.findByDisplayValue('re-route…');
   const options = Array.from(select.querySelectorAll('option')).map((o) => o.getAttribute('value'));
-  expect(options).toContain('codeship');
-  expect(options).toContain('codeship/poltergeist');
+  expect(options).toContain('consulting');
+  expect(options).toContain('consulting/poltergeist');
 });
 ```
 
@@ -1531,9 +1531,9 @@ where `conversationEmpty` is `(conversation.data?.messages ?? []).every((m) => m
 cd $WT && GHOSTBRAIN_SCHEDULER_ENABLED=0 .venv/bin/python -m ghostbrain.api  # note READY port/token
 ```
 
-1. `POST /v1/projects {"context":"codeship","name":"Smoke Project","description":"smoke testing destination"}` → 200.
+1. `POST /v1/projects {"context":"consulting","name":"Smoke Project","description":"smoke testing destination"}` → 200.
 2. `POST /v1/notes {"body":"smoke note about the Smoke Project","route":true}` → expect it routed (LLM may or may not pick the project — both fine; assert no 500).
-3. `POST /v1/notes/{id}/route {"context":"codeship","project":"smoke-project"}` → 200, path under `projects/smoke-project/`.
+3. `POST /v1/notes/{id}/route {"context":"consulting","project":"smoke-project"}` → 200, path under `projects/smoke-project/`.
 4. Create a chat conversation, send one real message, then `POST /v1/chat/{id}/export-jot` → 200 with a jot id; `GET /v1/notes?source=manual` shows it with `source: chat-summary` filtering intact.
 5. Archive the project via PATCH; `GET /v1/projects` no longer lists it; re-route to it now 400s.
    Clean up: delete the smoke jots via `DELETE /v1/notes/{id}`, archive the smoke project.
