@@ -11,6 +11,8 @@ leftover file reads as "not running".
 from __future__ import annotations
 
 import json
+import logging
+import logging.handlers
 import os
 import sys
 from pathlib import Path
@@ -118,6 +120,34 @@ def descriptor_path() -> Path:
     return run_dir() / "sidecar.json"
 
 
+def setup_file_logging() -> logging.handlers.RotatingFileHandler:
+    """Attach a rotating file handler at <run_dir>/logs/sidecar.log.
+
+    Before this, the sidecar's only record was a 4KB in-memory stderr tail
+    held by the Electron parent — any incident that survived a restart was
+    undiagnosable. Bounded at 5MB × 3 backups so it can't eat the disk.
+    Idempotent: repeated calls return the already-installed handler.
+    """
+    root = logging.getLogger()
+    for h in root.handlers:
+        if getattr(h, "_ghostbrain_file_log", False):
+            return h  # type: ignore[return-value]
+    log_path = run_dir() / "logs" / "sidecar.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    handler = logging.handlers.RotatingFileHandler(
+        log_path, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+    )
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    )
+    handler.setLevel(logging.INFO)
+    handler._ghostbrain_file_log = True  # type: ignore[attr-defined]
+    root.addHandler(handler)
+    if root.level > logging.INFO or root.level == logging.NOTSET:
+        root.setLevel(logging.INFO)
+    return handler
+
+
 def write_descriptor(
     *, port: int, token: str, pid: int, version: str, started_at: str
 ) -> Path:
@@ -173,8 +203,21 @@ def load_descriptor() -> dict | None:
 
 
 def remove_descriptor() -> None:
-    """Best-effort delete. Never raises."""
+    """Best-effort delete of OUR OWN descriptor. Never raises.
+
+    Pid-guarded: only unlink when the file was written by this process.
+    Unguarded, any transient ghostbrain-api exit (health probe, second
+    instance losing the singleton race) deleted the live sidecar's
+    descriptor — every MCP client then failed with "Poltergeist isn't
+    running" while the sidecar was healthy (seen 2026-08-05).
+    """
     try:
+        body = json.loads(descriptor_path().read_text(encoding="utf-8"))
+        if int(body.get("pid", -1)) != os.getpid():
+            return
         descriptor_path().unlink(missing_ok=True)
-    except OSError:
+    except FileNotFoundError:
+        pass
+    except (OSError, ValueError):
+        # Unreadable/corrupt descriptor: it isn't provably ours — leave it.
         pass

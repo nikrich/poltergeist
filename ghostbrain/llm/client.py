@@ -17,6 +17,7 @@ import logging
 import os
 import re
 import shutil
+import signal
 import subprocess
 import time
 from pathlib import Path
@@ -195,20 +196,46 @@ def run(
 
 def _run_once(cmd: list[str], *, timeout_s: int) -> LLMResult:
     log.debug("running: %s", _redact(cmd))
+    # Popen + own process group instead of subprocess.run: claude spawns
+    # grandchildren (MCP servers, tool subprocesses), and run()'s timeout
+    # kills only the direct child — orphaned grandchildren then spin
+    # forever (the 2026-08-04 three-week 100%-CPU zombie). killpg takes
+    # out the whole group.
+    popen = subprocess.Popen(
+        cmd,
+        # Close stdin explicitly. Otherwise claude-cli waits 3s for piped
+        # input, prints a "no stdin data received" warning to stderr, and
+        # that warning then masks the real error in our exception text.
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env={**os.environ, "CLAUDE_CODE_NO_TELEMETRY": "1"},
+        start_new_session=True,
+    )
+
+    def _kill_group() -> None:
+        try:
+            os.killpg(os.getpgid(popen.pid), signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+        except Exception:  # noqa: BLE001 — cleanup must never raise past us
+            popen.kill()
+
     try:
-        proc = subprocess.run(
-            cmd,
-            # Close stdin explicitly. Otherwise claude-cli waits 3s for piped
-            # input, prints a "no stdin data received" warning to stderr, and
-            # that warning then masks the real error in our exception text.
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            timeout=timeout_s,
-            env={**os.environ, "CLAUDE_CODE_NO_TELEMETRY": "1"},
-        )
+        stdout, stderr = popen.communicate(timeout=timeout_s)
     except subprocess.TimeoutExpired as e:
+        _kill_group()
+        popen.wait()
+        log.warning("`claude -p` timed out after %ss — process group killed", timeout_s)
         raise LLMTimeout(f"`claude -p` timed out after {timeout_s}s") from e
+    except BaseException:
+        # Covers KeyboardInterrupt/GeneratorExit/cancellation: never leave
+        # a live claude group behind.
+        _kill_group()
+        popen.wait()
+        raise
+    proc = subprocess.CompletedProcess(cmd, popen.returncode, stdout, stderr)
 
     # Try to parse stdout as JSON before deciding what kind of failure (if
     # any) this is. claude emits structured error info on stdout — including

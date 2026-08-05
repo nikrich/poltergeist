@@ -94,10 +94,22 @@ def test_llmresult_falls_back_to_text_when_no_structured() -> None:
 
 
 class _FakeProc:
+    """Mimics subprocess.Popen for _run_once (communicate/wait/kill/pid)."""
+
     def __init__(self, *, returncode: int = 0, stdout: str = "", stderr: str = "") -> None:
         self.returncode = returncode
-        self.stdout = stdout
-        self.stderr = stderr
+        self.pid = 424242
+        self._stdout = stdout
+        self._stderr = stderr
+
+    def communicate(self, timeout: float | None = None) -> tuple[str, str]:
+        return self._stdout, self._stderr
+
+    def wait(self) -> int:
+        return self.returncode
+
+    def kill(self) -> None:
+        pass
 
 
 def _ok_payload() -> str:
@@ -120,7 +132,7 @@ def test_run_once_closes_stdin() -> None:
         captured["kwargs"] = kwargs
         return _FakeProc(stdout=_ok_payload())
 
-    with patch.object(llm_client.subprocess, "run", side_effect=fake_run):
+    with patch.object(llm_client.subprocess, "Popen", side_effect=fake_run):
         _run_once(["claude"], timeout_s=10)
 
     assert captured["kwargs"].get("stdin") == subprocess.DEVNULL
@@ -139,7 +151,7 @@ def test_run_once_surfaces_budget_error_from_stdout_json() -> None:
     stderr = "Warning: no stdin data received in 3s, proceeding without it."
     proc = _FakeProc(returncode=1, stdout=stdout, stderr=stderr)
 
-    with patch.object(llm_client.subprocess, "run", return_value=proc):
+    with patch.object(llm_client.subprocess, "Popen", return_value=proc):
         with pytest.raises(LLMError) as exc_info:
             _run_once(["claude"], timeout_s=10)
 
@@ -158,7 +170,7 @@ def test_run_once_detects_rate_limit_in_structured_json() -> None:
     })
     proc = _FakeProc(returncode=1, stdout=stdout, stderr="")
 
-    with patch.object(llm_client.subprocess, "run", return_value=proc):
+    with patch.object(llm_client.subprocess, "Popen", return_value=proc):
         with pytest.raises(LLMRateLimit):
             _run_once(["claude"], timeout_s=10)
 
@@ -168,7 +180,7 @@ def test_run_once_falls_back_to_stderr_when_no_json() -> None:
     emitting structured output), use stderr text in the error message."""
     proc = _FakeProc(returncode=2, stdout="", stderr="cli launch failure foo")
 
-    with patch.object(llm_client.subprocess, "run", return_value=proc):
+    with patch.object(llm_client.subprocess, "Popen", return_value=proc):
         with pytest.raises(LLMError) as exc_info:
             _run_once(["claude"], timeout_s=10)
 
@@ -179,7 +191,7 @@ def test_run_once_succeeds_with_valid_payload() -> None:
     """The happy path still works after the error-handling refactor."""
     proc = _FakeProc(returncode=0, stdout=_ok_payload())
 
-    with patch.object(llm_client.subprocess, "run", return_value=proc):
+    with patch.object(llm_client.subprocess, "Popen", return_value=proc):
         result = _run_once(["claude"], timeout_s=10)
 
     assert result.text == "hi"
