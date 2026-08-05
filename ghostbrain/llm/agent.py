@@ -49,6 +49,26 @@ def cancel_turn(key: str) -> bool:
     return True
 
 
+def kill_all_running() -> int:
+    """Reap every in-flight turn's process group. Returns how many.
+
+    Called from the sidecar's shutdown hook: without it, quitting the app
+    mid-turn orphans the claude subprocess tree (parent reparented to pid 1),
+    and an orphan that never exits spins forever — the 2026-08-04 zombie
+    burned three weeks of CPU and the account's rate limit that way.
+    """
+    with _running_lock:
+        entries = list(_running.items())
+        _running.clear()
+    for _key, entry in entries:
+        entry.cancelled.set()
+        try:
+            entry.kill()
+        except Exception:  # noqa: BLE001 — shutdown cleanup must not raise
+            pass
+    return len(entries)
+
+
 # tool name → (short name, human summary template over the tool input)
 TOOL_SUMMARIES: dict[str, tuple[str, str]] = {
     "mcp__poltergeist__poltergeist_search": ("search", "searched vault: {query}"),

@@ -233,6 +233,13 @@ def _run_api_server() -> int:
 
     token = secrets.token_hex(32)
     port = _pick_port()
+
+    # Persistent logs at <run_dir>/logs/sidecar.log — the in-memory stderr
+    # tail dies with the process, which made post-restart diagnosis of
+    # weekend incidents impossible.
+    from ghostbrain.api import runtime as _runtime
+
+    _runtime.setup_file_logging()
     app = create_app(token=token)
     # Keep the descriptor lock alive for the process lifetime by stashing it on
     # app.state (the OS frees it on exit/crash). None means another sidecar is
@@ -277,6 +284,16 @@ def _run_api_server() -> int:
             await scheduler.stop()
     else:
         app.state.scheduler = None
+
+    @app.on_event("shutdown")
+    async def _reap_chat_turns() -> None:
+        # Group-kill any in-flight chat turns so quitting the app can't
+        # orphan a claude subprocess tree (the 2026-08-04 zombie class).
+        from ghostbrain.llm import agent as _agent
+
+        reaped = _agent.kill_all_running()
+        if reaped:
+            log.warning("shutdown: reaped %d in-flight chat turn(s)", reaped)
 
     # Print the READY banner BEFORE uvicorn takes over output. Parent process
     # parses this single line to capture port + token. Suffix with a hint about
