@@ -224,6 +224,225 @@ def test_daemon_skips_already_processed(
     assert candidate is None
 
 
+class FakeBackend:
+    """Test double for AudioBackend: records every call so tests can assert
+    ordering (begin_route before start, stop before end_route) without any
+    real ffmpeg/SwitchAudioSource process."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple] = []
+
+    def preflight(self):
+        return True, []
+
+    def begin_meeting_route(self, device, fallback):
+        self.calls.append(("begin_route", device))
+        from ghostbrain.recorder.audio.base import RouteHandle
+        return RouteHandle(previous_output="Speakers", switched=True)
+
+    def end_meeting_route(self, handle):
+        self.calls.append(("end_route", handle.previous_output))
+
+    def start_capture(self, wav_path, *, log_path=None):
+        self.calls.append(("start", str(wav_path)))
+        from ghostbrain.recorder.audio_capture import CaptureHandle
+        return CaptureHandle(pid=4242, wav_path=wav_path)
+
+    def stop_capture(self, pid):
+        self.calls.append(("stop", pid))
+        return True
+
+    def capture_alive(self, pid):
+        return True
+
+
+def test_start_recording_uses_backend(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_start_recording routes + captures via the backend, no direct
+    audio_switcher/audio_capture calls."""
+    from ghostbrain.recorder import daemon, state as state_mod
+    backend = FakeBackend()
+    monkeypatch.setattr(daemon, "DEFAULT_RECORDINGS_DIR", tmp_path)
+    config = daemon.DaemonConfig(
+        poll_interval_s=30, end_grace_s=60, audio_device="Ghost Brain",
+        fallback_output="", policy=RecorderPolicy(), macos_accounts={},
+    )
+    state = state_mod.RecorderState()
+    candidate = daemon._Candidate(
+        event_id="ev1", title="standup", context="work",
+        start=datetime.now(timezone.utc),
+        end=datetime.now(timezone.utc) + timedelta(minutes=30),
+    )
+    daemon._start_recording(candidate, config, state, backend)
+    assert ("begin_route", config.audio_device) in backend.calls
+    assert any(c[0] == "start" for c in backend.calls)
+    assert state.active is not None and state.active.pid == 4242
+    # RouteHandle.previous_output still stashed under the legacy key so an
+    # old-version _finalize (or a downgrade) can restore correctly.
+    assert state.processed["_audio_before:ev1"] == "Speakers"
+
+
+def test_start_recording_ends_route_on_capture_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If start_capture raises, the route must be unwound through the
+    backend (backend.end_meeting_route), not a manual switch-back."""
+    from ghostbrain.recorder import daemon, state as state_mod
+
+    class FailingBackend(FakeBackend):
+        def start_capture(self, wav_path, *, log_path=None):
+            self.calls.append(("start", str(wav_path)))
+            raise RuntimeError("ffmpeg boom")
+
+    backend = FailingBackend()
+    monkeypatch.setattr(daemon, "DEFAULT_RECORDINGS_DIR", tmp_path)
+    config = daemon.DaemonConfig(
+        poll_interval_s=30, end_grace_s=60, audio_device="Ghost Brain",
+        fallback_output="", policy=RecorderPolicy(), macos_accounts={},
+    )
+    state = state_mod.RecorderState()
+    candidate = daemon._Candidate(
+        event_id="ev2", title="standup", context="work",
+        start=datetime.now(timezone.utc),
+        end=datetime.now(timezone.utc) + timedelta(minutes=30),
+    )
+    daemon._start_recording(candidate, config, state, backend)
+    assert backend.calls[-1] == ("end_route", "Speakers")
+    assert state.active is None
+    assert "ev2" in state.processed
+
+
+def test_finalize_stops_capture_and_restores_route(tmp_path: Path) -> None:
+    """_finalize stops via the backend and restores the previous output via
+    backend.end_meeting_route, using the value stashed at start."""
+    from ghostbrain.recorder import daemon, state as state_mod
+    backend = FakeBackend()
+    config = daemon.DaemonConfig(
+        poll_interval_s=30, end_grace_s=60, audio_device="Ghost Brain",
+        fallback_output="", policy=RecorderPolicy(), macos_accounts={},
+    )
+    active = state_mod.ActiveRecording(
+        event_id="ev3", title="standup", context="work", pid=999,
+        wav_path=str(tmp_path / "missing.wav"),
+        started_at=datetime.now(timezone.utc).isoformat(),
+        scheduled_end=datetime.now(timezone.utc).isoformat(),
+    )
+    state = state_mod.RecorderState(active=active)
+    state.processed["_audio_before:ev3"] = "MacBook Pro Speakers"
+
+    daemon._finalize(active, config, state, backend, reason="scheduled_end")
+
+    assert ("stop", 999) in backend.calls
+    assert ("end_route", "MacBook Pro Speakers") in backend.calls
+    # Legacy stash key must be popped so a restarted daemon doesn't reuse it.
+    assert "_audio_before:ev3" not in state.processed
+
+
+def test_finalize_pops_legacy_audio_before_key_for_in_flight_recording(
+    tmp_path: Path,
+) -> None:
+    """A recording started under the pre-backend daemon stashed the same
+    `_audio_before:{event_id}` key; _finalize must still pop + honor it so
+    an in-flight recording survives the upgrade."""
+    from ghostbrain.recorder import daemon, state as state_mod
+    backend = FakeBackend()
+    config = daemon.DaemonConfig(
+        poll_interval_s=30, end_grace_s=60, audio_device="Ghost Brain",
+        fallback_output="Fallback Speakers", policy=RecorderPolicy(),
+        macos_accounts={},
+    )
+    active = state_mod.ActiveRecording(
+        event_id="ev4", title="standup", context="work", pid=1000,
+        wav_path=str(tmp_path / "missing.wav"),
+        started_at=datetime.now(timezone.utc).isoformat(),
+        scheduled_end=datetime.now(timezone.utc).isoformat(),
+    )
+    state = state_mod.RecorderState(active=active)
+    state.processed["_audio_before:ev4"] = "Old Speakers"
+
+    daemon._finalize(active, config, state, backend, reason="daemon_shutdown")
+
+    assert ("end_route", "Old Speakers") in backend.calls
+    assert "_audio_before:ev4" not in state.processed
+
+
+def test_finalize_falls_back_to_config_when_no_stash(tmp_path: Path) -> None:
+    """No `_audio_before` stash (e.g. crash before it was written) falls
+    back to config.fallback_output."""
+    from ghostbrain.recorder import daemon, state as state_mod
+    backend = FakeBackend()
+    config = daemon.DaemonConfig(
+        poll_interval_s=30, end_grace_s=60, audio_device="Ghost Brain",
+        fallback_output="Fallback Speakers", policy=RecorderPolicy(),
+        macos_accounts={},
+    )
+    active = state_mod.ActiveRecording(
+        event_id="ev5", title="standup", context="work", pid=1001,
+        wav_path=str(tmp_path / "missing.wav"),
+        started_at=datetime.now(timezone.utc).isoformat(),
+        scheduled_end=datetime.now(timezone.utc).isoformat(),
+    )
+    state = state_mod.RecorderState(active=active)
+
+    daemon._finalize(active, config, state, backend, reason="scheduled_end")
+
+    assert ("end_route", "Fallback Speakers") in backend.calls
+
+
+def test_should_finalize_uses_backend_capture_alive() -> None:
+    """Liveness check goes through backend.capture_alive, not
+    audio_capture.is_running directly."""
+    from ghostbrain.recorder import daemon, state as state_mod
+    active = state_mod.ActiveRecording(
+        event_id="ev6", title="standup", context="work", pid=555,
+        wav_path="/tmp/x.wav",
+        started_at=datetime.now(timezone.utc).isoformat(),
+        scheduled_end=(datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat(),
+    )
+    config = daemon.DaemonConfig(
+        poll_interval_s=30, end_grace_s=60, audio_device="Ghost Brain",
+        fallback_output="", policy=RecorderPolicy(), macos_accounts={},
+    )
+
+    class DeadBackend(FakeBackend):
+        def capture_alive(self, pid):
+            self.calls.append(("alive", pid))
+            return False
+
+    backend = DeadBackend()
+    now = datetime.now(timezone.utc)
+    assert daemon._should_finalize(active, now, config, backend) is True
+    assert ("alive", 555) in backend.calls
+
+
+def test_run_once_uses_injected_backend_not_get_backend(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """run_once(config, state, backend) must use the injected backend and
+    never call get_backend() itself when one is supplied."""
+    from ghostbrain.recorder import daemon, state as state_mod
+    monkeypatch.setenv("GHOSTBRAIN_STATE_DIR", str(tmp_path))
+    monkeypatch.setattr(daemon, "DEFAULT_RECORDINGS_DIR", tmp_path)
+    monkeypatch.setattr(daemon, "manual_recovery_pass", lambda: [])
+
+    def _boom(*_a, **_kw):
+        raise AssertionError("get_backend() should not be called when a "
+                              "backend is injected")
+
+    monkeypatch.setattr(daemon, "get_backend", _boom)
+
+    config = daemon.DaemonConfig(
+        poll_interval_s=30, end_grace_s=60, audio_device="Ghost Brain",
+        fallback_output="", policy=RecorderPolicy(), macos_accounts={},
+    )
+    state = state_mod.RecorderState()
+    backend = FakeBackend()
+    # No calendar accounts configured -> _next_eligible_event short-circuits
+    # to None, so this tick only needs to prove get_backend() was never hit.
+    daemon.run_once(config, state, backend)
+
+
 def test_daemon_skips_event_starting_too_far_in_future(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, vault: Path,
 ) -> None:

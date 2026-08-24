@@ -27,7 +27,9 @@ import yaml
 
 from ghostbrain.connectors.calendar.macos import MacosCalendarConnector
 from ghostbrain.paths import queue_dir, state_dir, vault_path
-from ghostbrain.recorder import audio_capture, audio_switcher, state as state_mod
+from ghostbrain.recorder import state as state_mod
+from ghostbrain.recorder.audio import get_backend
+from ghostbrain.recorder.audio.base import AudioBackend, RouteHandle
 from ghostbrain.recorder.linker import TranscriptTooShort, link_transcript
 from ghostbrain.recorder.manual import run_recovery_pass as manual_recovery_pass
 from ghostbrain.recorder.policy import RecorderPolicy, should_record
@@ -114,12 +116,14 @@ def run_loop() -> None:
 
     DEFAULT_RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
 
+    backend = get_backend()
+
     signal.signal(signal.SIGINT, _handle_signal)
     signal.signal(signal.SIGTERM, _handle_signal)
 
     while _running:
         try:
-            run_once(config, state)
+            run_once(config, state, backend)
         except Exception:  # noqa: BLE001
             log.exception("daemon tick failed; will retry next loop")
         time.sleep(config.poll_interval_s)
@@ -129,7 +133,7 @@ def run_loop() -> None:
     if state.active is not None:
         log.info("shutdown with active recording; finalizing %s",
                  state.active.event_id)
-        _finalize(state.active, config, state, reason="daemon_shutdown")
+        _finalize(state.active, config, state, backend, reason="daemon_shutdown")
         state.active = None
         state_mod.save(state)
 
@@ -137,13 +141,18 @@ def run_loop() -> None:
     log.info("recorder daemon stopped")
 
 
-def run_once(config: DaemonConfig, state: state_mod.RecorderState) -> None:
+def run_once(
+    config: DaemonConfig,
+    state: state_mod.RecorderState,
+    backend: AudioBackend | None = None,
+) -> None:
     """One daemon tick: handle active recording end + maybe start a new one."""
+    backend = backend or get_backend()
     now = datetime.now(timezone.utc)
 
     if state.active is not None:
-        if _should_finalize(state.active, now, config):
-            _finalize(state.active, config, state, reason="scheduled_end")
+        if _should_finalize(state.active, now, config, backend):
+            _finalize(state.active, config, state, backend, reason="scheduled_end")
             state.active = None
             state_mod.save(state)
         else:
@@ -164,7 +173,7 @@ def run_once(config: DaemonConfig, state: state_mod.RecorderState) -> None:
     if candidate is None:
         return
 
-    _start_recording(candidate, config, state)
+    _start_recording(candidate, config, state, backend)
 
 
 # ---------------------------------------------------------------------------
@@ -176,11 +185,12 @@ def _should_finalize(
     active: state_mod.ActiveRecording,
     now: datetime,
     config: DaemonConfig,
+    backend: AudioBackend,
 ) -> bool:
     """Time to stop? Either the scheduled end (with grace) has passed, or
-    ffmpeg has died, or the WAV file disappeared."""
-    if not audio_capture.is_running(active.pid):
-        log.info("ffmpeg pid=%d no longer running for %s; finalizing",
+    capture has died, or the WAV file disappeared."""
+    if not backend.capture_alive(active.pid):
+        log.info("capture pid=%d no longer running for %s; finalizing",
                  active.pid, active.event_id)
         return True
 
@@ -197,37 +207,19 @@ def _start_recording(
     candidate: "_Candidate",
     config: DaemonConfig,
     state: state_mod.RecorderState,
+    backend: AudioBackend,
 ) -> None:
-    """Switch audio output, spawn ffmpeg, persist active state."""
-    # Capture the user's current output so we can restore it after.
-    try:
-        previous_output = audio_switcher.current_output()
-    except audio_switcher.AudioSwitcherError as e:
-        log.warning("could not read current audio output: %s", e)
-        previous_output = config.fallback_output
-
-    if previous_output and previous_output != config.audio_device:
-        try:
-            audio_switcher.switch_to(config.audio_device)
-        except audio_switcher.AudioSwitcherError as e:
-            log.warning("audio switch failed (%s); continuing — recording may "
-                        "still capture if Ghost Brain is current output", e)
-    else:
-        log.info("system output already %s; not switching", config.audio_device)
+    """Route audio to the capture device, spawn capture, persist active state."""
+    route = backend.begin_meeting_route(config.audio_device, config.fallback_output)
 
     wav_path = DEFAULT_RECORDINGS_DIR / _filename_for(candidate)
     log_path = DEFAULT_RECORDINGS_DIR / "ffmpeg.log"
 
     try:
-        handle = audio_capture.start_capture(wav_path, log_path=log_path)
+        handle = backend.start_capture(wav_path, log_path=log_path)
     except Exception as e:  # noqa: BLE001
-        log.exception("ffmpeg failed to start: %s", e)
-        # Restore audio if we changed it.
-        if previous_output and previous_output != config.audio_device:
-            try:
-                audio_switcher.switch_to(previous_output)
-            except audio_switcher.AudioSwitcherError:
-                pass
+        log.exception("capture failed to start: %s", e)
+        backend.end_meeting_route(route)
         audit_log("recorder_start_failed", candidate.event_id, error=str(e))
         # Mark processed so we don't retry every tick.
         state.processed[candidate.event_id] = datetime.now(timezone.utc).isoformat()
@@ -244,8 +236,9 @@ def _start_recording(
         started_at=datetime.now(timezone.utc).isoformat(),
         scheduled_end=scheduled_end.isoformat(),
     )
-    # Stash previous output in processed map under a special key.
-    state.processed[f"_audio_before:{candidate.event_id}"] = previous_output
+    # Stash previous output in processed map under the legacy key so an
+    # older-version _finalize (or a downgrade) can still restore it.
+    state.processed[f"_audio_before:{candidate.event_id}"] = route.previous_output
 
     state_mod.save(state)
     audit_log(
@@ -266,24 +259,24 @@ def _finalize(
     active: state_mod.ActiveRecording,
     config: DaemonConfig,
     state: state_mod.RecorderState,
+    backend: AudioBackend,
     *,
     reason: str,
 ) -> None:
-    """Stop ffmpeg, restore audio, transcribe, link to vault, mark processed."""
+    """Stop capture, restore audio, transcribe, link to vault, mark processed."""
     log.info("finalizing recording event=%s reason=%s", active.event_id, reason)
 
-    audio_capture.stop_capture(active.pid)
+    backend.stop_capture(active.pid)
 
-    # Restore audio output.
-    previous = state.processed.pop(
-        f"_audio_before:{active.event_id}", "",
-    )
-    target = previous or config.fallback_output
-    if target and target != config.audio_device:
-        try:
-            audio_switcher.switch_to(target)
-        except audio_switcher.AudioSwitcherError as e:
-            log.warning("could not restore audio output to %s: %s", target, e)
+    # Restore audio output. Pop the legacy stash key regardless of which
+    # daemon version wrote it, so an in-flight recording from an old build
+    # still restores correctly after an upgrade.
+    popped = state.processed.pop(f"_audio_before:{active.event_id}", "")
+    target = popped or config.fallback_output
+    backend.end_meeting_route(RouteHandle(
+        previous_output=target,
+        switched=bool(target and target != config.audio_device),
+    ))
 
     wav = Path(active.wav_path)
     state.processed[active.event_id] = datetime.now(timezone.utc).isoformat()
