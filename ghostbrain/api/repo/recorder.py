@@ -103,9 +103,26 @@ def _vault_relative(path: Path) -> str | None:
         return None
 
 
+def _source_exclusions() -> list[str]:
+    """Human-readable reasons a configured calendar isn't driving
+    auto-record (spec §4). Must never fail status() — any error loading
+    or parsing the vault's routing/recorder config degrades to []."""
+    from ghostbrain.recorder.daemon import DaemonConfig
+    from ghostbrain.recorder.sources import select_sources
+
+    try:
+        config = DaemonConfig.load()
+        _, exclusions = select_sources(config.routing, config.recorder_cfg)
+    except Exception as e:  # noqa: BLE001
+        log.warning("could not compute recorder source exclusions: %s", e)
+        return []
+    return exclusions
+
+
 def status() -> dict:
     """Snapshot the current recording phase across daemon + manual states."""
     _ensure_supported()
+    exclusions = _source_exclusions()
     daemon = _daemon_active()
     if daemon is not None:
         return {
@@ -116,6 +133,7 @@ def status() -> dict:
             "wavPath": daemon.get("wav_path"),
             "transcriptPath": None,
             "error": None,
+            "sourceExclusions": exclusions,
         }
     state = _read_state()
     if state is None:
@@ -127,6 +145,7 @@ def status() -> dict:
             "wavPath": None,
             "transcriptPath": None,
             "error": None,
+            "sourceExclusions": exclusions,
         }
     phase = state.get("phase", "idle")
     # If the state claims "recording" but capture died, the user (or a crash)
@@ -148,6 +167,7 @@ def status() -> dict:
         "wavPath": state.get("wavPath"),
         "transcriptPath": state.get("transcriptPath"),
         "error": state.get("error"),
+        "sourceExclusions": exclusions,
     }
 
 

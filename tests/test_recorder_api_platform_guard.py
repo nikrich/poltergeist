@@ -152,3 +152,50 @@ def test_status_promotes_stale_manual_pid_to_transcribing():
     mock_write.assert_called_once()
     written_state = mock_write.call_args[0][0]
     assert written_state["phase"] == "transcribing"
+
+
+def _fake_daemon_config(*, routing: dict, recorder_cfg: dict | None = None):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(routing=routing, recorder_cfg=recorder_cfg or {})
+
+
+def test_status_reports_microsoft_source_exclusion():
+    """status() surfaces select_sources()'s exclusion reasons via
+    sourceExclusions, so the Meetings tab can explain why a configured
+    calendar isn't driving auto-record (spec §4). Here microsoft is
+    configured but calendar_context is missing, so select_sources excludes
+    it. DaemonConfig.load() is mocked so this never touches the real
+    vault."""
+    fake_config = _fake_daemon_config(routing={"microsoft": {"some": "cfg"}})
+
+    with patch("ghostbrain.recorder.daemon.DaemonConfig.load", return_value=fake_config), \
+         patch("ghostbrain.api.repo.recorder._read_state", return_value=None), \
+         patch("ghostbrain.api.repo.recorder._daemon_active", return_value=None):
+        result = recorder_repo.status()
+
+    assert len(result["sourceExclusions"]) == 1
+    assert "calendar_context" in result["sourceExclusions"][0]
+
+
+def test_status_source_exclusions_empty_when_nothing_excluded():
+    fake_config = _fake_daemon_config(routing={})
+
+    with patch("ghostbrain.recorder.daemon.DaemonConfig.load", return_value=fake_config), \
+         patch("ghostbrain.api.repo.recorder._read_state", return_value=None), \
+         patch("ghostbrain.api.repo.recorder._daemon_active", return_value=None):
+        result = recorder_repo.status()
+
+    assert result["sourceExclusions"] == []
+
+
+def test_status_source_exclusions_default_to_empty_on_daemon_config_error():
+    """If DaemonConfig.load() raises (e.g. missing/corrupt vault config),
+    status() must not fail — sourceExclusions degrades to []."""
+    with patch("ghostbrain.recorder.daemon.DaemonConfig.load",
+               side_effect=RuntimeError("boom")), \
+         patch("ghostbrain.api.repo.recorder._read_state", return_value=None), \
+         patch("ghostbrain.api.repo.recorder._daemon_active", return_value=None):
+        result = recorder_repo.status()
+
+    assert result["sourceExclusions"] == []
