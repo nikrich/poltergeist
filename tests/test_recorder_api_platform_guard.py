@@ -3,7 +3,7 @@ audio backend is unsupported (Linux today) and must fall through to normal
 logic on any platform with a real backend (darwin, win32)."""
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -94,3 +94,61 @@ def test_recorder_functions_do_not_raise_unsupported_on_win32():
             recorder_repo.stop()
 
         assert recorder_repo.clear()["phase"] == "idle"
+
+
+def _manual_recording_state(*, pid: int) -> dict:
+    return {
+        "phase": "recording",
+        "pid": pid,
+        "wavPath": "/tmp/meeting.wav",
+        "title": "Standup",
+        "context": "work",
+        "parentPath": None,
+        "startedAt": "2026-08-25T08:00:00+00:00",
+        "transcriptPath": None,
+        "error": None,
+    }
+
+
+def test_status_consults_backend_capture_alive_for_manual_recording():
+    """status() must consult backend.capture_alive for the pid recorded in
+    manual.state when phase == "recording" — not just for daemon-owned
+    recordings (already covered by
+    ghostbrain/api/tests/test_recorder.py::test_stop_kills_daemon_owned_recording).
+    Isolated via the same monkeypatched _read_state/_write_state pattern used
+    elsewhere in this file — never touches ~/ghostbrain."""
+    fake_backend = MagicMock()
+    fake_backend.capture_alive.return_value = True
+
+    with patch("ghostbrain.recorder.audio.get_backend", return_value=fake_backend), \
+         patch("ghostbrain.api.repo.recorder._read_state",
+               return_value=_manual_recording_state(pid=4242)), \
+         patch("ghostbrain.api.repo.recorder._write_state") as mock_write, \
+         patch("ghostbrain.api.repo.recorder._daemon_active", return_value=None):
+        result = recorder_repo.status()
+
+    fake_backend.capture_alive.assert_called_once_with(4242)
+    assert result["phase"] == "recording"
+    mock_write.assert_not_called()
+
+
+def test_status_promotes_stale_manual_pid_to_transcribing():
+    """Same setup, but capture_alive is False (the process died without going
+    through /stop) — status() should promote phase to 'transcribing' and
+    persist that via _write_state, matching the pre-existing stale-pid
+    recovery behaviour (previously driven by audio_capture.is_running)."""
+    fake_backend = MagicMock()
+    fake_backend.capture_alive.return_value = False
+
+    with patch("ghostbrain.recorder.audio.get_backend", return_value=fake_backend), \
+         patch("ghostbrain.api.repo.recorder._read_state",
+               return_value=_manual_recording_state(pid=4242)), \
+         patch("ghostbrain.api.repo.recorder._write_state") as mock_write, \
+         patch("ghostbrain.api.repo.recorder._daemon_active", return_value=None):
+        result = recorder_repo.status()
+
+    fake_backend.capture_alive.assert_called_once_with(4242)
+    assert result["phase"] == "transcribing"
+    mock_write.assert_called_once()
+    written_state = mock_write.call_args[0][0]
+    assert written_state["phase"] == "transcribing"
