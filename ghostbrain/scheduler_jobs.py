@@ -342,8 +342,16 @@ async def worker_daemon(stop: asyncio.Event) -> None:
 
 
 def _model_present() -> bool:
-    from ghostbrain.recorder.transcribe import DEFAULT_MODEL_DIR
-    return any(DEFAULT_MODEL_DIR.glob("ggml-*.bin"))
+    """Delegates to transcribe._resolve_model so this honours
+    GHOSTBRAIN_WHISPER_MODEL the same way the daemon's actual transcription
+    call does — a globbed check of DEFAULT_MODEL_DIR alone reported "no
+    model" even when the env var pointed at a valid model elsewhere."""
+    from ghostbrain.recorder.transcribe import TranscribeError, _resolve_model
+    try:
+        _resolve_model(None)
+    except TranscribeError:
+        return False
+    return True
 
 
 def recorder_prereqs_ok() -> tuple[bool, list[str]]:

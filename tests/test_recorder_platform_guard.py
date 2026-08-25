@@ -42,6 +42,36 @@ def test_win32_with_deps_supported(monkeypatch, tmp_path):
     assert ok is True, missing
 
 
+def test_model_present_honors_whisper_model_env_var(monkeypatch, tmp_path):
+    """I4: _model_present() must delegate to transcribe._resolve_model(),
+    which honours GHOSTBRAIN_WHISPER_MODEL — a bare glob of DEFAULT_MODEL_DIR
+    reports "no model" even when the env var points at a perfectly valid
+    model living elsewhere."""
+    from ghostbrain.scheduler_jobs import _model_present
+
+    model = tmp_path / "custom-model.bin"
+    model.write_bytes(b"x")
+    monkeypatch.setenv("GHOSTBRAIN_WHISPER_MODEL", str(model))
+    # DEFAULT_MODEL_DIR is empty/nonexistent — the old glob-only check would
+    # report "missing" here regardless of the env var.
+    monkeypatch.setattr(
+        "ghostbrain.recorder.transcribe.DEFAULT_MODEL_DIR", tmp_path / "empty_dir",
+    )
+
+    assert _model_present() is True
+
+
+def test_model_present_false_when_nothing_resolves(monkeypatch, tmp_path):
+    from ghostbrain.scheduler_jobs import _model_present
+
+    monkeypatch.delenv("GHOSTBRAIN_WHISPER_MODEL", raising=False)
+    monkeypatch.setattr(
+        "ghostbrain.recorder.transcribe.DEFAULT_MODEL_DIR", tmp_path / "empty_dir",
+    )
+
+    assert _model_present() is False
+
+
 def test_darwin_ffmpeg_check_still_fires():
     # NOTE: ghostbrain.recorder.audio.darwin.shutil and ghostbrain.scheduler_jobs.shutil
     # are the same stdlib `shutil` module object, so patching `.which` on both targets
