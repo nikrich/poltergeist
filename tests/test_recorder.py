@@ -482,3 +482,49 @@ def test_daemon_skips_event_starting_too_far_in_future(
         config, state, now, sources=[FakeSource(events)],
     )
     assert candidate is None
+
+
+class RaisingSource:
+    """Test double for MeetingSource: always raises from events()."""
+
+    id = "raising"
+
+    def events(self, now):
+        raise RuntimeError("boom")
+
+
+def test_next_eligible_event_skips_source_that_raises(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, vault: Path,
+) -> None:
+    """A misbehaving source must not abort the whole tick; the good
+    source's event should still be found eligible."""
+    monkeypatch.setenv("GHOSTBRAIN_STATE_DIR", str(tmp_path))
+    import importlib
+    from ghostbrain.recorder import state as state_mod
+    importlib.reload(state_mod)
+    from ghostbrain.recorder.daemon import DaemonConfig, _next_eligible_event
+
+    now = datetime(2026, 5, 8, 10, 30, tzinfo=timezone.utc)
+    good_event = _candidate_event(
+        event_id="ev-good",
+        title="Real meeting",
+        account="Calendar",
+        start=now - timedelta(minutes=2),
+        end=now + timedelta(minutes=28),
+    )
+
+    config = DaemonConfig(
+        poll_interval_s=30, end_grace_s=60,
+        audio_device="Ghost Brain", fallback_output="",
+        policy=RecorderPolicy(),
+        macos_accounts={"Calendar": "sanlam"},
+    )
+    state = state_mod.RecorderState()
+
+    events = events_from_connector_dicts([good_event], config.macos_accounts)
+    candidate = _next_eligible_event(
+        config, state, now, sources=[RaisingSource(), FakeSource(events)],
+    )
+
+    assert candidate is not None
+    assert candidate.event_id == "ev-good"

@@ -267,3 +267,42 @@ def test_microsoft_source_serves_cache_on_auth_error(monkeypatch):
     # Fourth call at t0+301s+301s: backoff window expired, attempts again
     src.events(t0 + timedelta(seconds=602))
     assert calls["n"] == 3                                     # auth attempted again
+
+
+def test_select_sources_from_configured_blocks():
+    from ghostbrain.recorder.sources import select_sources
+    routing = {
+        "calendar": {"macos": {"accounts": {"Work": "w"}},
+                     "google": {"accounts": {"a@x.com": "w"}}},
+        "microsoft": {"client_id": "c", "calendar_context": "sanlam"},
+    }
+    sources, excluded = select_sources(routing, {}, platform="win32")
+    ids = sorted(s.id for s in sources)
+    assert ids == ["google", "microsoft"]          # macos excluded off-darwin
+    assert any("macos" in r for r in excluded)
+
+    sources, _ = select_sources(routing, {}, platform="darwin")
+    assert sorted(s.id for s in sources) == ["google", "macos", "microsoft"]
+
+
+def test_select_sources_microsoft_needs_context():
+    from ghostbrain.recorder.sources import select_sources
+    sources, excluded = select_sources({"microsoft": {"client_id": "c"}}, {}, platform="win32")
+    assert sources == []
+    assert any("calendar_context" in r for r in excluded)
+
+
+def test_select_sources_override_pins_list():
+    from ghostbrain.recorder.sources import select_sources
+    routing = {"calendar": {"google": {"accounts": {"a@x.com": "w"}}},
+               "microsoft": {"client_id": "c", "calendar_context": "s"}}
+    sources, _ = select_sources(routing, {"meeting_sources": ["google"]}, platform="win32")
+    assert [s.id for s in sources] == ["google"]
+
+
+def test_dedupe_events_first_wins():
+    from ghostbrain.recorder.sources import dedupe_events
+    now = datetime.now(timezone.utc)
+    a = MeetingEvent("e1", "from-google", "w", now, now + timedelta(minutes=30))
+    b = MeetingEvent("e1", "from-elsewhere", "w", now, now + timedelta(minutes=30))
+    assert [e.title for e in dedupe_events([a, b])] == ["from-google"]

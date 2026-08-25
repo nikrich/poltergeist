@@ -32,8 +32,8 @@ from ghostbrain.recorder.audio.base import AudioBackend, RouteHandle
 from ghostbrain.recorder.linker import TranscriptTooShort, link_transcript
 from ghostbrain.recorder.manual import run_recovery_pass as manual_recovery_pass
 from ghostbrain.recorder.policy import RecorderPolicy, should_record
+from ghostbrain.recorder.sources import dedupe_events, select_sources
 from ghostbrain.recorder.sources.base import MeetingSource
-from ghostbrain.recorder.sources.macos import MacosSource
 from ghostbrain.recorder.transcribe import TranscribeError, transcribe
 from ghostbrain.worker.audit import audit_log
 
@@ -62,6 +62,8 @@ class DaemonConfig:
     fallback_output: str       # restore target if no original captured
     policy: RecorderPolicy
     macos_accounts: dict[str, str]
+    routing: dict = dataclasses.field(default_factory=dict)
+    recorder_cfg: dict = dataclasses.field(default_factory=dict)
 
     @classmethod
     def load(cls) -> "DaemonConfig":
@@ -94,6 +96,8 @@ class DaemonConfig:
             fallback_output=str(rec.get("fallback_output") or ""),
             policy=policy,
             macos_accounts=dict(accounts),
+            routing=routing,
+            recorder_cfg=rec,
         )
 
 
@@ -150,10 +154,8 @@ def run_once(
 ) -> None:
     """One daemon tick: handle active recording end + maybe start a new one."""
     backend = backend or get_backend()
-    sources = (
-        sources if sources is not None
-        else ([MacosSource(config.macos_accounts)] if config.macos_accounts else [])
-    )
+    if sources is None:
+        sources, _ = select_sources(config.routing, config.recorder_cfg)
     now = datetime.now(timezone.utc)
 
     if state.active is not None:
@@ -369,34 +371,41 @@ def _next_eligible_event(
     """Query the configured meeting sources for events in
     [now-60s, now+...] and pick one we haven't recorded yet."""
     candidates: list[_Candidate] = []
+    merged: list = []
     for source in sources:
-        for ev in source.events(now):
-            event_id = ev.event_id
-            if event_id in state.processed:
-                continue
-            if event_id.startswith("_audio_before:"):
-                continue
+        try:
+            merged.extend(source.events(now))
+        except Exception as e:  # noqa: BLE001
+            log.warning("source %s failed to produce events: %s",
+                        getattr(source, "id", source), e)
 
-            # In progress, or starting in next 60s.
-            if not (ev.start - timedelta(seconds=60) <= now < ev.end):
-                continue
+    for ev in dedupe_events(merged):
+        event_id = ev.event_id
+        if event_id in state.processed:
+            continue
+        if event_id.startswith("_audio_before:"):
+            continue
 
-            ok, reason = should_record(
-                title=ev.title, context=ev.context, policy=config.policy,
-            )
-            if not ok:
-                log.info("skipping %s: %s", ev.title, reason)
-                # Mark so we don't keep evaluating it every tick.
-                state.processed[event_id] = now.isoformat()
-                continue
+        # In progress, or starting in next 60s.
+        if not (ev.start - timedelta(seconds=60) <= now < ev.end):
+            continue
 
-            candidates.append(_Candidate(
-                event_id=event_id,
-                title=ev.title,
-                context=ev.context,
-                start=ev.start,
-                end=ev.end,
-            ))
+        ok, reason = should_record(
+            title=ev.title, context=ev.context, policy=config.policy,
+        )
+        if not ok:
+            log.info("skipping %s: %s", ev.title, reason)
+            # Mark so we don't keep evaluating it every tick.
+            state.processed[event_id] = now.isoformat()
+            continue
+
+        candidates.append(_Candidate(
+            event_id=event_id,
+            title=ev.title,
+            context=ev.context,
+            start=ev.start,
+            end=ev.end,
+        ))
 
     if not candidates:
         return None
