@@ -122,13 +122,19 @@ def run_loop() -> None:
     DEFAULT_RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
 
     backend = get_backend()
+    # Resolve meeting sources once per daemon lifetime, not per tick — remote
+    # sources (google, microsoft) throttle their own fetches internally
+    # (~5 min refresh window), but that only works if the same source objects
+    # persist across ticks. Rebuilding them every tick (the old `sources=None`
+    # default) reset each source's cache every 30s and defeated the throttle.
+    sources, _ = select_sources(config.routing, config.recorder_cfg)
 
     signal.signal(signal.SIGINT, _handle_signal)
     signal.signal(signal.SIGTERM, _handle_signal)
 
     while _running:
         try:
-            run_once(config, state, backend)
+            run_once(config, state, backend, sources)
         except Exception:  # noqa: BLE001
             log.exception("daemon tick failed; will retry next loop")
         time.sleep(config.poll_interval_s)

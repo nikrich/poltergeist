@@ -528,3 +528,108 @@ def test_next_eligible_event_skips_source_that_raises(
 
     assert candidate is not None
     assert candidate.event_id == "ev-good"
+
+
+# ---------------------------------------------------------------------------
+# C1: sources built once per daemon lifetime (not rebuilt every tick)
+# ---------------------------------------------------------------------------
+
+
+class CountingCachingSource:
+    """Mimics GoogleSource/MicrosoftSource's own refresh-window cache: a
+    fetch only happens once per `refresh_s`. Reusing the SAME instance
+    across ticks is what makes that throttle effective."""
+
+    id = "counting"
+
+    def __init__(self, counter: dict, *, refresh_s: int = 300) -> None:
+        self._counter = counter
+        self._refresh_s = refresh_s
+        self._cache: list = []
+        self._fetched_at = None
+
+    def events(self, now):
+        if (self._fetched_at is not None
+                and (now - self._fetched_at).total_seconds() < self._refresh_s):
+            return self._cache
+        self._counter["n"] += 1
+        self._fetched_at = now
+        return self._cache
+
+
+def test_run_once_reuses_injected_sources_across_ticks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the same `sources` list is passed to run_once on consecutive
+    ticks (as the fixed run_loop/recorder_daemon now do), a caching source's
+    own refresh window suppresses the second fetch."""
+    from ghostbrain.recorder import daemon, state as state_mod
+
+    monkeypatch.setattr(daemon, "DEFAULT_RECORDINGS_DIR", tmp_path)
+    monkeypatch.setattr(daemon, "manual_recovery_pass", lambda: [])
+
+    counter = {"n": 0}
+    source = CountingCachingSource(counter)
+    config = daemon.DaemonConfig(
+        poll_interval_s=30, end_grace_s=60, audio_device="Ghost Brain",
+        fallback_output="", policy=RecorderPolicy(), macos_accounts={},
+    )
+    state = state_mod.RecorderState()
+    backend = FakeBackend()
+
+    daemon.run_once(config, state, backend, sources=[source])
+    daemon.run_once(config, state, backend, sources=[source])
+
+    assert counter["n"] == 1
+
+
+def test_run_loop_builds_sources_once_per_lifetime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, vault: Path,
+) -> None:
+    """run_loop must call select_sources exactly once (before the while
+    loop), never rebuilding sources on each tick — that was C1: rebuilding
+    fresh source objects every 30s tick reset each source's own refresh-
+    window cache, so remote sources (google/microsoft) got fetched on every
+    tick instead of at most every 5 minutes."""
+    from ghostbrain.recorder import daemon, state as state_mod
+
+    monkeypatch.setattr(daemon, "DEFAULT_RECORDINGS_DIR", tmp_path)
+    monkeypatch.setattr(daemon, "manual_recovery_pass", lambda: [])
+    monkeypatch.setattr(
+        daemon.DaemonConfig, "load",
+        staticmethod(lambda: daemon.DaemonConfig(
+            poll_interval_s=0, end_grace_s=60, audio_device="Ghost Brain",
+            fallback_output="", policy=RecorderPolicy(), macos_accounts={},
+        )),
+    )
+    monkeypatch.setattr(state_mod, "load", lambda: state_mod.RecorderState())
+    monkeypatch.setattr(state_mod, "prune_processed", lambda *_a, **_kw: None)
+    monkeypatch.setattr(state_mod, "save", lambda *_a, **_kw: None)
+
+    backend = FakeBackend()
+    monkeypatch.setattr(daemon, "get_backend", lambda: backend)
+
+    calls = {"n": 0}
+
+    def fake_select_sources(routing, recorder_cfg):
+        calls["n"] += 1
+        return [], []
+
+    monkeypatch.setattr(daemon, "select_sources", fake_select_sources)
+
+    ticks = {"n": 0}
+
+    def fake_sleep(_seconds):
+        ticks["n"] += 1
+        if ticks["n"] >= 2:
+            daemon._running = False
+
+    monkeypatch.setattr(daemon.time, "sleep", fake_sleep)
+    daemon._running = True
+    try:
+        daemon.run_loop()
+    finally:
+        daemon._running = True  # restore module default for other tests
+
+    assert ticks["n"] == 2
+    assert calls["n"] == 1

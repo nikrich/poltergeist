@@ -375,14 +375,20 @@ async def recorder_daemon(stop: asyncio.Event) -> None:
     # to import on every sidecar start.
     from ghostbrain.recorder import state as state_mod
     from ghostbrain.recorder.daemon import DaemonConfig, run_once
+    from ghostbrain.recorder.sources import select_sources
 
     config = await asyncio.to_thread(DaemonConfig.load)
     state = await asyncio.to_thread(state_mod.load)
+    # Resolve sources once per daemon lifetime — see daemon.run_loop for why
+    # rebuilding them every tick defeats the remote sources' own throttling.
+    sources, _ = await asyncio.to_thread(
+        select_sources, config.routing, config.recorder_cfg,
+    )
     log.info("in-process recorder started. poll=%ss", config.poll_interval_s)
 
     while not stop.is_set():
         try:
-            await asyncio.to_thread(run_once, config, state)
+            await asyncio.to_thread(run_once, config, state, None, sources)
         except Exception:  # noqa: BLE001 — never let the recorder kill the sidecar
             log.exception("recorder run_once failed; backing off")
             try:
