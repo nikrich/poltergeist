@@ -9,6 +9,8 @@
 # Output: desktop/resources/sidecar/ghostbrain-api/  (--onedir layout)
 # Electron-builder picks this up via `extraResources` in electron-builder.yml.
 
+import sys
+
 from PyInstaller.utils.hooks import (
     collect_all,
     collect_submodules,
@@ -111,6 +113,18 @@ binaries += collect_dynamic_libs('tokenizers')
 # Also any native libs picked up by collect_all for the ML stack.
 binaries += _tr_bins + _st_bins + _hf_bins
 binaries += _mcp_bins
+
+# pyaudiowpatch (WASAPI loopback capture — the `recorder-win` extra) is
+# win32-only and imported exclusively inside ghostbrain/recorder/audio/
+# wasapi.py, lazily. It isn't installed on macOS/Linux builds at all, so
+# guard both the platform and the collector call — collect_dynamic_libs on
+# an absent package would otherwise break those builds.
+if sys.platform == 'win32':
+    try:
+        binaries += collect_dynamic_libs('pyaudiowpatch')
+        hiddenimports += ['pyaudiowpatch']
+    except ImportError:
+        pass
 
 a = Analysis(
     ['../ghostbrain/api/__main__.py'],
