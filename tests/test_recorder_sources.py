@@ -133,3 +133,58 @@ def test_google_source_backs_off_after_fetch_error(monkeypatch):
     # Fourth call at t0+301s+301s: backoff window expired, fetches again
     src.events(t0 + timedelta(seconds=602))
     assert FlakyConnector.calls == 3                          # fetch attempted again
+
+
+def test_microsoft_source_maps_graph_events(monkeypatch):
+    from ghostbrain.recorder.sources import microsoft as ms
+
+    monkeypatch.setattr(ms, "get_token", lambda config: "tok")
+
+    class FakeClient:
+        def __init__(self, token):
+            assert token == "tok"
+        def get_all(self, path, params, max_items=100):
+            assert path == "/me/calendarView"
+            assert "startDateTime" in params and "endDateTime" in params
+            return [{
+                "id": "AAA",
+                "subject": "access meeting",
+                "start": {"dateTime": "2026-08-24T09:00:00.0000000", "timeZone": "UTC"},
+                "end": {"dateTime": "2026-08-24T09:30:00.0000000", "timeZone": "UTC"},
+            }]
+
+    monkeypatch.setattr(ms, "GraphClient", FakeClient)
+    src = ms.MicrosoftSource({"client_id": "x"}, "sanlam", refresh_s=300)
+    events = src.events(datetime(2026, 8, 24, 9, 5, tzinfo=timezone.utc))
+    assert src.id == "microsoft"
+    assert len(events) == 1
+    assert events[0].context == "sanlam"
+    assert events[0].event_id == "msgraph:AAA"
+    assert events[0].start == datetime(2026, 8, 24, 9, 0, tzinfo=timezone.utc)
+
+
+def test_microsoft_source_serves_cache_on_auth_error(monkeypatch):
+    from ghostbrain.recorder.sources import microsoft as ms
+
+    calls = {"n": 0}
+    def flaky_token(config):
+        calls["n"] += 1
+        if calls["n"] > 1:
+            raise RuntimeError("consent revoked")
+        return "tok"
+    monkeypatch.setattr(ms, "get_token", flaky_token)
+
+    class FakeClient:
+        def __init__(self, token): pass
+        def get_all(self, path, params, max_items=100):
+            return [{
+                "id": "AAA", "subject": "m",
+                "start": {"dateTime": "2026-08-24T09:00:00", "timeZone": "UTC"},
+                "end": {"dateTime": "2026-08-24T09:30:00", "timeZone": "UTC"},
+            }]
+    monkeypatch.setattr(ms, "GraphClient", FakeClient)
+
+    src = ms.MicrosoftSource({}, "sanlam", refresh_s=0)
+    t0 = datetime.now(timezone.utc)
+    assert len(src.events(t0)) == 1
+    assert len(src.events(t0 + timedelta(seconds=1))) == 1
