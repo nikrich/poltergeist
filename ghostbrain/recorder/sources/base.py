@@ -42,8 +42,18 @@ def events_from_connector_dicts(
     out: list[MeetingEvent] = []
     for ev in raw:
         meta = ev.get("metadata") or {}
-        start = _parse_iso(str(meta.get("start") or ""))
-        end = _parse_iso(str(meta.get("end") or ""))
+        if meta.get("isAllDay"):
+            continue
+        start_raw = str(meta.get("start") or "")
+        end_raw = str(meta.get("end") or "")
+        # Date-only values (no "T", e.g. "2026-08-24") are all-day events
+        # that didn't carry an isAllDay flag — _parse_iso would otherwise
+        # accept them as midnight UTC, putting them "in progress" for a
+        # full 24h and triggering an unwanted recording.
+        if "T" not in start_raw or "T" not in end_raw:
+            continue
+        start = _parse_iso(start_raw)
+        end = _parse_iso(end_raw)
         if start is None or end is None:
             continue
         context = account_contexts.get(str(meta.get("account") or ""), "")

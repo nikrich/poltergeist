@@ -35,7 +35,7 @@ class MicrosoftSource:
             raw = client.get_all("/me/calendarView", {
                 "startDateTime": (now - timedelta(hours=1)).isoformat(),
                 "endDateTime": (now + timedelta(hours=1)).isoformat(),
-                "$select": "id,subject,start,end",
+                "$select": "id,subject,start,end,isCancelled",
                 "$top": 50,
             }, max_items=100)
         except Exception as e:  # noqa: BLE001
@@ -47,6 +47,8 @@ class MicrosoftSource:
         return self._cache
 
     def _map(self, item: dict) -> MeetingEvent | None:
+        if item.get("isCancelled"):
+            return None
         start = self._graph_dt(item.get("start") or {})
         end = self._graph_dt(item.get("end") or {})
         if start is None or end is None:
@@ -63,6 +65,11 @@ class MicrosoftSource:
     def _graph_dt(block: dict) -> datetime | None:
         raw, tz = str(block.get("dateTime") or ""), str(block.get("timeZone") or "UTC")
         if not raw:
+            return None
+        if "T" not in raw:
+            # Date-only value (all-day event) — treat like base.py's
+            # events_from_connector_dicts date-only guard: accepting it as
+            # midnight UTC would put the event "in progress" for 24h.
             return None
         if tz != "UTC":
             log.warning("non-UTC calendarView timezone %r; skipping event", tz)

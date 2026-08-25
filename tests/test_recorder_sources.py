@@ -39,6 +39,28 @@ def test_drops_missing_times():
     assert events_from_connector_dicts([raw], {"a@x.com": "work"}) == []
 
 
+def test_drops_all_day_event_flagged_via_metadata():
+    """I7: metadata.isAllDay truthy must drop the event even though its
+    start/end times themselves parse fine."""
+    raw = _raw()
+    raw["metadata"]["isAllDay"] = True
+    assert events_from_connector_dicts([raw], {"a@x.com": "work"}) == []
+
+
+def test_drops_date_only_start_or_end():
+    """I7: a date-only start/end (no 'T', e.g. "2026-08-24") is an all-day
+    event that didn't carry an isAllDay flag. _parse_iso used to accept it
+    as midnight UTC, putting the event "in progress" for a full 24h."""
+    raw = _raw()
+    raw["metadata"]["start"] = "2026-08-24"
+    raw["metadata"]["end"] = "2026-08-25"
+    assert events_from_connector_dicts([raw], {"a@x.com": "work"}) == []
+
+    raw2 = _raw()
+    raw2["metadata"]["end"] = "2026-08-25"  # only end is date-only
+    assert events_from_connector_dicts([raw2], {"a@x.com": "work"}) == []
+
+
 def test_macos_source_wraps_connector(monkeypatch):
     from ghostbrain.recorder.sources.macos import MacosSource
 
@@ -230,6 +252,64 @@ def test_microsoft_source_drops_events_without_times(monkeypatch):
     src = ms.MicrosoftSource({}, "sanlam", refresh_s=300)
     events = src.events(datetime(2026, 8, 24, 9, 5, tzinfo=timezone.utc))
     assert [e.event_id for e in events] == ["msgraph:OK"]
+
+
+def test_microsoft_source_selects_isCancelled_and_skips_cancelled_events(monkeypatch):
+    """I7: cancelled Graph events must not surface as recordable meetings,
+    and $select must request isCancelled so the field is actually present
+    to check."""
+    from ghostbrain.recorder.sources import microsoft as ms
+
+    monkeypatch.setattr(ms, "get_token", lambda config: "tok")
+    seen_params = {}
+
+    class FakeClient:
+        def __init__(self, token): pass
+        def get_all(self, path, params, max_items=100):
+            seen_params.update(params)
+            return [
+                {
+                    "id": "CANCELLED", "subject": "cancelled meeting",
+                    "isCancelled": True,
+                    "start": {"dateTime": "2026-08-24T09:00:00.0000000", "timeZone": "UTC"},
+                    "end": {"dateTime": "2026-08-24T09:30:00.0000000", "timeZone": "UTC"},
+                },
+                {
+                    "id": "OK", "subject": "active meeting",
+                    "isCancelled": False,
+                    "start": {"dateTime": "2026-08-24T09:00:00.0000000", "timeZone": "UTC"},
+                    "end": {"dateTime": "2026-08-24T09:30:00.0000000", "timeZone": "UTC"},
+                },
+            ]
+
+    monkeypatch.setattr(ms, "GraphClient", FakeClient)
+    src = ms.MicrosoftSource({}, "sanlam", refresh_s=300)
+    events = src.events(datetime(2026, 8, 24, 9, 5, tzinfo=timezone.utc))
+
+    assert [e.event_id for e in events] == ["msgraph:OK"]
+    assert "isCancelled" in seen_params["$select"]
+
+
+def test_microsoft_source_skips_date_only_start_or_end(monkeypatch):
+    """I7: a date-only dateTime (all-day event) must not be treated as
+    midnight UTC — that put the event "in progress" for a full 24h."""
+    from ghostbrain.recorder.sources import microsoft as ms
+
+    monkeypatch.setattr(ms, "get_token", lambda config: "tok")
+
+    class FakeClient:
+        def __init__(self, token): pass
+        def get_all(self, path, params, max_items=100):
+            return [{
+                "id": "ALLDAY", "subject": "all day thing",
+                "start": {"dateTime": "2026-08-24", "timeZone": "UTC"},
+                "end": {"dateTime": "2026-08-25", "timeZone": "UTC"},
+            }]
+
+    monkeypatch.setattr(ms, "GraphClient", FakeClient)
+    src = ms.MicrosoftSource({}, "sanlam", refresh_s=300)
+    events = src.events(datetime(2026, 8, 24, 9, 5, tzinfo=timezone.utc))
+    assert events == []
 
 
 def test_microsoft_source_serves_cache_on_auth_error(monkeypatch):
