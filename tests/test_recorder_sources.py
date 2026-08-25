@@ -160,7 +160,76 @@ def test_microsoft_source_maps_graph_events(monkeypatch):
     assert len(events) == 1
     assert events[0].context == "sanlam"
     assert events[0].event_id == "msgraph:AAA"
+    assert events[0].title == "access meeting"
     assert events[0].start == datetime(2026, 8, 24, 9, 0, tzinfo=timezone.utc)
+    assert events[0].end == datetime(2026, 8, 24, 9, 30, tzinfo=timezone.utc)
+
+
+def test_microsoft_source_skips_non_utc_events(monkeypatch, caplog):
+    from ghostbrain.recorder.sources import microsoft as ms
+
+    monkeypatch.setattr(ms, "get_token", lambda config: "tok")
+
+    class FakeClient:
+        def __init__(self, token): pass
+        def get_all(self, path, params, max_items=100):
+            return [
+                {
+                    "id": "UTC1", "subject": "utc meeting",
+                    "start": {"dateTime": "2026-08-24T09:00:00.0000000", "timeZone": "UTC"},
+                    "end": {"dateTime": "2026-08-24T09:30:00.0000000", "timeZone": "UTC"},
+                },
+                {
+                    "id": "PST1", "subject": "pst meeting",
+                    "start": {"dateTime": "2026-08-24T02:00:00.0000000", "timeZone": "Pacific Standard Time"},
+                    "end": {"dateTime": "2026-08-24T02:30:00.0000000", "timeZone": "Pacific Standard Time"},
+                },
+            ]
+
+    monkeypatch.setattr(ms, "GraphClient", FakeClient)
+    src = ms.MicrosoftSource({}, "sanlam", refresh_s=300)
+    with caplog.at_level("WARNING", logger="ghostbrain.recorder.sources.microsoft"):
+        events = src.events(datetime(2026, 8, 24, 9, 5, tzinfo=timezone.utc))
+
+    assert len(events) == 1
+    assert events[0].event_id == "msgraph:UTC1"
+    assert any("non-UTC" in r.message for r in caplog.records)
+
+
+def test_microsoft_source_drops_events_without_times(monkeypatch):
+    from ghostbrain.recorder.sources import microsoft as ms
+
+    monkeypatch.setattr(ms, "get_token", lambda config: "tok")
+
+    class FakeClient:
+        def __init__(self, token): pass
+        def get_all(self, path, params, max_items=100):
+            return [
+                {
+                    "id": "NOSTART", "subject": "missing start block",
+                    "end": {"dateTime": "2026-08-24T09:30:00.0000000", "timeZone": "UTC"},
+                },
+                {
+                    "id": "EMPTYEND", "subject": "empty end block",
+                    "start": {"dateTime": "2026-08-24T09:00:00.0000000", "timeZone": "UTC"},
+                    "end": {},
+                },
+                {
+                    "id": "EMPTYSTARTDT", "subject": "empty start dateTime",
+                    "start": {"dateTime": "", "timeZone": "UTC"},
+                    "end": {"dateTime": "2026-08-24T09:30:00.0000000", "timeZone": "UTC"},
+                },
+                {
+                    "id": "OK", "subject": "well formed",
+                    "start": {"dateTime": "2026-08-24T09:00:00.0000000", "timeZone": "UTC"},
+                    "end": {"dateTime": "2026-08-24T09:30:00.0000000", "timeZone": "UTC"},
+                },
+            ]
+
+    monkeypatch.setattr(ms, "GraphClient", FakeClient)
+    src = ms.MicrosoftSource({}, "sanlam", refresh_s=300)
+    events = src.events(datetime(2026, 8, 24, 9, 5, tzinfo=timezone.utc))
+    assert [e.event_id for e in events] == ["msgraph:OK"]
 
 
 def test_microsoft_source_serves_cache_on_auth_error(monkeypatch):
@@ -184,7 +253,17 @@ def test_microsoft_source_serves_cache_on_auth_error(monkeypatch):
             }]
     monkeypatch.setattr(ms, "GraphClient", FakeClient)
 
-    src = ms.MicrosoftSource({}, "sanlam", refresh_s=0)
+    src = ms.MicrosoftSource({}, "sanlam", refresh_s=300)
     t0 = datetime.now(timezone.utc)
+    # First call: success, get_token count = 1, cache populated
     assert len(src.events(t0)) == 1
-    assert len(src.events(t0 + timedelta(seconds=1))) == 1
+    assert calls["n"] == 1
+    # Second call at t0+301s: get_token raises, count = 2, returns stale cache
+    assert len(src.events(t0 + timedelta(seconds=301))) == 1
+    assert calls["n"] == 2                                     # auth attempted
+    # Third call at t0+301s+10s: must NOT attempt (still within backoff window)
+    assert len(src.events(t0 + timedelta(seconds=311))) == 1
+    assert calls["n"] == 2                                     # no new attempt
+    # Fourth call at t0+301s+301s: backoff window expired, attempts again
+    src.events(t0 + timedelta(seconds=602))
+    assert calls["n"] == 3                                     # auth attempted again
