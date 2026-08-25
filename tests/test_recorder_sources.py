@@ -101,3 +101,35 @@ def test_google_source_keeps_cache_on_fetch_error(monkeypatch):
     t0 = datetime.now(timezone.utc)
     assert len(src.events(t0)) == 1
     assert len(src.events(t0 + timedelta(seconds=1))) == 1   # stale cache, not []
+
+
+def test_google_source_backs_off_after_fetch_error(monkeypatch):
+    from ghostbrain.recorder.sources.google import GoogleSource
+
+    class FlakyConnector:
+        def __init__(self, config, queue_dir, state_dir):
+            pass
+        calls = 0
+        def fetch(self, since):
+            FlakyConnector.calls += 1
+            if FlakyConnector.calls > 1:
+                raise RuntimeError("token expired")
+            return [_raw()]
+
+    monkeypatch.setattr(
+        "ghostbrain.recorder.sources.google.GoogleCalendarConnector", FlakyConnector
+    )
+    src = GoogleSource({"a@x.com": "work"}, refresh_s=300)
+    t0 = datetime.now(timezone.utc)
+    # First call: success, fetch count = 1, cache populated
+    assert len(src.events(t0)) == 1
+    assert FlakyConnector.calls == 1
+    # Second call at t0+301s: fetch raises, fetch count = 2, returns stale cache
+    src.events(t0 + timedelta(seconds=301))
+    assert FlakyConnector.calls == 2                          # fetch attempted
+    # Third call at t0+301s+10s: must NOT fetch (still within backoff window)
+    assert len(src.events(t0 + timedelta(seconds=311))) == 1
+    assert FlakyConnector.calls == 2                          # no new fetch
+    # Fourth call at t0+301s+301s: backoff window expired, fetches again
+    src.events(t0 + timedelta(seconds=602))
+    assert FlakyConnector.calls == 3                          # fetch attempted again
