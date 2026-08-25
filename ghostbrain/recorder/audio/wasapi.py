@@ -19,8 +19,18 @@ from ghostbrain.recorder.audio_capture import CaptureHandle
 
 log = logging.getLogger("ghostbrain.recorder.audio.wasapi")
 
-_CHUNK = 480  # 10 ms at 48 kHz
 _ACTIVE: dict[int, "_CaptureThread"] = {}
+
+
+def _chunk_for(rate: int) -> int:
+    """~10 ms worth of samples at `rate`. Each stream is opened/read with
+    ITS OWN chunk size (not a single fixed one shared across streams) —
+    loopback and mic commonly run at different rates (e.g. 48 kHz system
+    output vs a 16 kHz BT-headset mic), and reading a fixed sample count
+    from both means very different wall-clock time per read (10 ms vs
+    30 ms), so the faster stream's buffer overruns while the slower read
+    blocks."""
+    return max(1, rate // 100)
 
 
 class _CaptureThread(threading.Thread):
@@ -45,37 +55,39 @@ class _CaptureThread(threading.Thread):
             loop_dev = audio.get_default_wasapi_loopback()
             loop_rate = int(loop_dev["defaultSampleRate"])
             loop_ch = int(loop_dev["maxInputChannels"])
+            loop_chunk = _chunk_for(loop_rate)
             loop_stream = audio.open(
                 format=pa.paInt16, channels=loop_ch, rate=loop_rate,
                 input=True, input_device_index=loop_dev["index"],
-                frames_per_buffer=_CHUNK,
+                frames_per_buffer=loop_chunk,
             )
 
             # Mic acquisition is best-effort: some machines (desktops,
             # conference rooms) have no default input device at all. Losing
             # the mic must not lose the loopback (system-audio) capture.
-            mic_rate = mic_ch = None
+            mic_rate = mic_ch = mic_chunk = None
             try:
                 mic_dev = audio.get_default_input_device_info()
                 mic_rate = int(mic_dev["defaultSampleRate"])
                 mic_ch = max(1, int(mic_dev["maxInputChannels"]))
+                mic_chunk = _chunk_for(mic_rate)
                 mic_stream = audio.open(
                     format=pa.paInt16, channels=mic_ch, rate=mic_rate,
                     input=True, input_device_index=mic_dev["index"],
-                    frames_per_buffer=_CHUNK,
+                    frames_per_buffer=mic_chunk,
                 )
             except Exception as exc:  # noqa: BLE001 — no default input device
                 log.warning("no default input device; recording system audio only: %s", exc)
                 mic_stream = None
 
             while not self._stop_event.is_set():
-                loop_raw = loop_stream.read(_CHUNK, exception_on_overflow=False)
+                loop_raw = loop_stream.read(loop_chunk, exception_on_overflow=False)
                 loop_f = np.frombuffer(loop_raw, dtype=np.int16).astype(np.float32) / 32768.0
                 loop_pcm = to_mono_16k(loop_f, loop_rate, loop_ch)
                 if mic_stream is None:
                     mixed = loop_pcm
                 else:
-                    mic_raw = mic_stream.read(_CHUNK, exception_on_overflow=False)
+                    mic_raw = mic_stream.read(mic_chunk, exception_on_overflow=False)
                     mic_f = np.frombuffer(mic_raw, dtype=np.int16).astype(np.float32) / 32768.0
                     mixed = mix(loop_pcm, to_mono_16k(mic_f, mic_rate, mic_ch))
                 writer.append(mixed)
