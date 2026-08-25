@@ -120,11 +120,13 @@ def test_status_consults_backend_capture_alive_for_manual_recording():
     fake_backend = MagicMock()
     fake_backend.capture_alive.return_value = True
 
-    with patch("ghostbrain.recorder.audio.get_backend", return_value=fake_backend), \
+    with patch("ghostbrain.recorder.audio.sys") as mock_sys, \
+         patch("ghostbrain.recorder.audio.get_backend", return_value=fake_backend), \
          patch("ghostbrain.api.repo.recorder._read_state",
                return_value=_manual_recording_state(pid=4242)), \
          patch("ghostbrain.api.repo.recorder._write_state") as mock_write, \
          patch("ghostbrain.api.repo.recorder._daemon_active", return_value=None):
+        mock_sys.platform = "darwin"
         result = recorder_repo.status()
 
     fake_backend.capture_alive.assert_called_once_with(4242)
@@ -140,11 +142,13 @@ def test_status_promotes_stale_manual_pid_to_transcribing():
     fake_backend = MagicMock()
     fake_backend.capture_alive.return_value = False
 
-    with patch("ghostbrain.recorder.audio.get_backend", return_value=fake_backend), \
+    with patch("ghostbrain.recorder.audio.sys") as mock_sys, \
+         patch("ghostbrain.recorder.audio.get_backend", return_value=fake_backend), \
          patch("ghostbrain.api.repo.recorder._read_state",
                return_value=_manual_recording_state(pid=4242)), \
          patch("ghostbrain.api.repo.recorder._write_state") as mock_write, \
          patch("ghostbrain.api.repo.recorder._daemon_active", return_value=None):
+        mock_sys.platform = "darwin"
         result = recorder_repo.status()
 
     fake_backend.capture_alive.assert_called_once_with(4242)
@@ -169,9 +173,11 @@ def test_status_reports_microsoft_source_exclusion():
     vault."""
     fake_config = _fake_daemon_config(routing={"microsoft": {"some": "cfg"}})
 
-    with patch("ghostbrain.recorder.daemon.DaemonConfig.load", return_value=fake_config), \
+    with patch("ghostbrain.recorder.audio.sys") as mock_sys, \
+         patch("ghostbrain.recorder.daemon.DaemonConfig.load", return_value=fake_config), \
          patch("ghostbrain.api.repo.recorder._read_state", return_value=None), \
          patch("ghostbrain.api.repo.recorder._daemon_active", return_value=None):
+        mock_sys.platform = "darwin"
         result = recorder_repo.status()
 
     assert len(result["sourceExclusions"]) == 1
@@ -181,9 +187,11 @@ def test_status_reports_microsoft_source_exclusion():
 def test_status_source_exclusions_empty_when_nothing_excluded():
     fake_config = _fake_daemon_config(routing={})
 
-    with patch("ghostbrain.recorder.daemon.DaemonConfig.load", return_value=fake_config), \
+    with patch("ghostbrain.recorder.audio.sys") as mock_sys, \
+         patch("ghostbrain.recorder.daemon.DaemonConfig.load", return_value=fake_config), \
          patch("ghostbrain.api.repo.recorder._read_state", return_value=None), \
          patch("ghostbrain.api.repo.recorder._daemon_active", return_value=None):
+        mock_sys.platform = "darwin"
         result = recorder_repo.status()
 
     assert result["sourceExclusions"] == []
@@ -192,10 +200,12 @@ def test_status_source_exclusions_empty_when_nothing_excluded():
 def test_status_source_exclusions_default_to_empty_on_daemon_config_error():
     """If DaemonConfig.load() raises (e.g. missing/corrupt vault config),
     status() must not fail — sourceExclusions degrades to []."""
-    with patch("ghostbrain.recorder.daemon.DaemonConfig.load",
+    with patch("ghostbrain.recorder.audio.sys") as mock_sys, \
+         patch("ghostbrain.recorder.daemon.DaemonConfig.load",
                side_effect=RuntimeError("boom")), \
          patch("ghostbrain.api.repo.recorder._read_state", return_value=None), \
          patch("ghostbrain.api.repo.recorder._daemon_active", return_value=None):
+        mock_sys.platform = "darwin"
         result = recorder_repo.status()
 
     assert result["sourceExclusions"] == []

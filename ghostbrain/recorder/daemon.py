@@ -1,13 +1,23 @@
 """Autonomous meeting recorder daemon.
 
-Polls Apple Calendar every ``poll_interval_s`` seconds. When an eligible
-meeting is in-progress (or about to start), starts ffmpeg recording from
-BlackHole + mic, switches system audio output to the Multi-Output Device
-that includes BlackHole, and tracks the active recording in a state file.
+Platform-agnostic: audio capture/routing goes through the ``AudioBackend``
+protocol (``ghostbrain.recorder.audio`` — ffmpeg + BlackHole/Multi-Output
+Device switching on macOS, in-process WASAPI loopback + mic mixing on
+Windows), and calendar events come from whatever ``MeetingSource``s
+``select_sources()`` (``ghostbrain.recorder.sources``) resolves from
+``routing.yaml`` — Apple Calendar (macOS only), Google, and Microsoft 365,
+merged and de-duplicated. Both are resolved once per daemon lifetime (by
+``run_loop`` / ``scheduler_jobs.recorder_daemon``) and passed into
+``run_once`` on every tick, so remote sources' own refresh-window caches
+stay effective across ticks.
 
-When the meeting's scheduled-end + grace passes, stops ffmpeg, restores
-the user's previous audio output device, transcribes the WAV, and links
-the transcript to the calendar event note in the vault.
+Polls every ``poll_interval_s`` seconds. When an eligible meeting is
+in-progress (or about to start), routes audio to the capture device,
+starts capture, and tracks the active recording in a state file.
+
+When the meeting's scheduled-end + grace passes, stops capture, restores
+the previous audio route, transcribes the WAV, and links the transcript
+to the calendar event note in the vault.
 
 Eligibility is decided by ``recorder.policy.should_record`` from the
 ``recorder`` block in ``vault/90-meta/config.yaml``.

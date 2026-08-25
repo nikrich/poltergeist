@@ -32,7 +32,7 @@ import yaml
 
 from ghostbrain.llm.client import LLMError, run as llm_run
 from ghostbrain.paths import vault_path
-from ghostbrain.recorder.audio_capture import is_running
+from ghostbrain.recorder.audio import get_backend
 from ghostbrain.recorder.transcribe import TranscribeError, transcribe
 
 log = logging.getLogger("ghostbrain.recorder.manual")
@@ -257,7 +257,7 @@ def run_recovery_pass(config: ManualConfig | None = None) -> list[Path]:
 
     now = time.time()
     state_pid = _stale_pid_from_state(cfg.recordings_dir.parent / "manual.state")
-    if state_pid is not None and is_running(state_pid):
+    if state_pid is not None and get_backend().capture_alive(state_pid):
         # Real active recording — leave the directory alone.
         return []
 
