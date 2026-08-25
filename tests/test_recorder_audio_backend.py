@@ -188,6 +188,43 @@ def test_wasapi_capture_writes_equal_length_16k_chunks_for_mismatched_rates(
         assert abs(f.getnframes() - iterations * 160) <= 160
 
 
+def test_wasapi_start_capture_surfaces_startup_failure_synchronously(monkeypatch, tmp_path):
+    """I3: PyAudio()/loopback-open failures used to happen entirely inside
+    the capture thread, outside its try block — the exception went to
+    threading.excepthook, no WAV was ever created, and start_capture()
+    returned normally, so the daemon believed recording had started. A
+    startup failure must now raise synchronously from start_capture(), and
+    must leave no _ACTIVE entry or lingering thread behind."""
+    import threading
+    import time
+
+    fake = types.ModuleType("pyaudiowpatch")
+    fake.paInt16 = 8
+
+    class _BoomPyAudio:
+        def __init__(self):
+            raise RuntimeError("no audio device")
+
+    fake.PyAudio = _BoomPyAudio
+    monkeypatch.setitem(sys.modules, "pyaudiowpatch", fake)
+
+    from ghostbrain.recorder.audio.wasapi import _ACTIVE, WasapiBackend
+    backend = WasapiBackend()
+
+    with pytest.raises(RuntimeError, match="no audio device"):
+        backend.start_capture(tmp_path / "m.wav")
+
+    assert os.getpid() not in _ACTIVE
+
+    for _ in range(50):
+        if not any(t.name == "wasapi-capture" and t.is_alive()
+                   for t in threading.enumerate()):
+            break
+        time.sleep(0.01)
+    else:
+        pytest.fail("wasapi-capture thread still alive after startup failure")
+
+
 def test_wasapi_preflight_reports_missing_dep(monkeypatch):
     monkeypatch.setitem(sys.modules, "pyaudiowpatch", None)
     import ghostbrain.recorder.audio.wasapi as w

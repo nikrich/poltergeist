@@ -41,6 +41,13 @@ class _CaptureThread(threading.Thread):
         # private _stop() method that join() relies on internally — an
         # attribute named `_stop` shadows it and breaks join().
         self._stop_event = threading.Event()
+        # Set once streams are open (success) or startup failed (failure —
+        # check start_error). start_capture() waits on this so a startup
+        # failure (e.g. pa.PyAudio() or the loopback open() raising) is
+        # reported synchronously to the caller instead of vanishing into
+        # threading.excepthook while the daemon believes recording started.
+        self._started_event = threading.Event()
+        self.start_error: Exception | None = None
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -48,10 +55,12 @@ class _CaptureThread(threading.Thread):
     def run(self) -> None:
         import pyaudiowpatch as pa
 
-        audio = pa.PyAudio()
-        writer = IncrementalWavWriter(self.wav_path)
+        audio = None
+        writer = None
         loop_stream = mic_stream = None
         try:
+            audio = pa.PyAudio()
+            writer = IncrementalWavWriter(self.wav_path)
             loop_dev = audio.get_default_wasapi_loopback()
             loop_rate = int(loop_dev["defaultSampleRate"])
             loop_ch = int(loop_dev["maxInputChannels"])
@@ -61,7 +70,26 @@ class _CaptureThread(threading.Thread):
                 input=True, input_device_index=loop_dev["index"],
                 frames_per_buffer=loop_chunk,
             )
+        except Exception as exc:  # noqa: BLE001 — startup failure, surface synchronously
+            log.exception("wasapi capture failed to start")
+            self.start_error = exc
+            self._started_event.set()
+            if loop_stream is not None:
+                try:
+                    loop_stream.stop_stream()
+                    loop_stream.close()
+                except Exception:  # noqa: BLE001
+                    pass
+            if writer is not None:
+                writer.close()
+            if audio is not None:
+                audio.terminate()
+            return
 
+        # Streams are open — start_capture() can now return successfully.
+        self._started_event.set()
+
+        try:
             # Mic acquisition is best-effort: some machines (desktops,
             # conference rooms) have no default input device at all. Losing
             # the mic must not lose the loopback (system-audio) capture.
@@ -127,6 +155,15 @@ class WasapiBackend:
     def start_capture(self, wav_path: Path, *, log_path: Path | None = None) -> CaptureHandle:
         thread = _CaptureThread(wav_path)
         thread.start()
+        if not thread._started_event.wait(timeout=2.0):
+            thread.stop()
+            thread.join(timeout=2.0)
+            raise RuntimeError(
+                "wasapi capture did not start within 2s (device busy or "
+                "unresponsive)"
+            )
+        if thread.start_error is not None:
+            raise RuntimeError(f"wasapi capture failed to start: {thread.start_error}")
         _ACTIVE[os.getpid()] = thread
         log.info("wasapi capture started → %s", wav_path.name)
         return CaptureHandle(pid=os.getpid(), wav_path=wav_path)
