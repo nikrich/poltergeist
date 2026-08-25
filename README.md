@@ -72,7 +72,7 @@ Daily digest at <vault>/10-daily/<date>.md
 
 Everything in the pipeline is inspectable: events are JSON files, notes are markdown, and every routing decision is written to a JSONL audit log. See [SPEC §2](./spec/SPEC.md#section-2--system-overview) for the full architecture.
 
-**Under the hood:** Python 3.11+, an in-app asyncio scheduler (no broker, no Docker), a filesystem queue, and Obsidian as the storage layer. Cross-platform — connectors, worker, digests, and the desktop app run on macOS, Linux, and Windows ([per-OS notes](./docs/install/)). The meeting recorder is macOS-only for now.
+**Under the hood:** Python 3.11+, an in-app asyncio scheduler (no broker, no Docker), a filesystem queue, and Obsidian as the storage layer. Cross-platform — connectors, worker, digests, and the desktop app run on macOS, Linux, and Windows ([per-OS notes](./docs/install/)). The meeting recorder supports macOS and Windows; Linux is unsupported.
 
 ## Quick start
 
