@@ -41,3 +41,10 @@ def test_wav_writer_playable_without_close(tmp_path: Path):
         assert r.getnchannels() == 1
         assert r.getnframes() == 16000
     w.close()
+
+
+def test_to_mono_16k_empty_input_returns_empty():
+    """Empty buffers from WASAPI at stream start/stop must return empty, not crash."""
+    out = to_mono_16k(np.zeros(0, dtype=np.float32), src_rate=48000, src_channels=2)
+    assert out.dtype == np.int16
+    assert len(out) == 0

@@ -12,6 +12,8 @@ TARGET_RATE = 16000
 
 def to_mono_16k(frames: np.ndarray, src_rate: int, src_channels: int) -> np.ndarray:
     """float32 interleaved [-1,1] → int16 mono 16 kHz."""
+    if len(frames) == 0:
+        return np.array([], dtype=np.int16)
     if src_channels > 1:
         frames = frames.reshape(-1, src_channels).mean(axis=1)
     if src_rate != TARGET_RATE:
