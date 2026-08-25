@@ -1,6 +1,9 @@
 """AudioBackend factory + darwin delegation. WASAPI thread tests live here too (Task 4)."""
 from __future__ import annotations
 
+import os
+import sys
+import types
 from pathlib import Path
 from unittest.mock import patch
 
@@ -57,3 +60,58 @@ def test_darwin_capture_delegates(tmp_path: Path):
     with patch("ghostbrain.recorder.audio.darwin.audio_capture") as cap:
         DarwinBackend().start_capture(tmp_path / "x.wav")
         cap.start_capture.assert_called_once_with(tmp_path / "x.wav", log_path=None)
+
+
+def _fake_pyaudiowpatch(monkeypatch, frames_per_read=480):
+    """Install a minimal fake pyaudiowpatch into sys.modules."""
+    fake = types.ModuleType("pyaudiowpatch")
+    fake.paInt16 = 8
+
+    class _Stream:
+        def __init__(self):
+            self.closed = False
+        def read(self, n, exception_on_overflow=False):
+            import numpy as np
+            return np.zeros(n, dtype=np.float32).tobytes()
+        def stop_stream(self): pass
+        def close(self): self.closed = True
+
+    class _PyAudio:
+        def get_default_wasapi_loopback(self):
+            return {"index": 7, "defaultSampleRate": 48000.0, "maxInputChannels": 2}
+        def get_default_input_device_info(self):
+            return {"index": 1, "defaultSampleRate": 44100.0, "maxInputChannels": 1}
+        def open(self, **kwargs):
+            return _Stream()
+        def terminate(self): pass
+
+    fake.PyAudio = _PyAudio
+    monkeypatch.setitem(sys.modules, "pyaudiowpatch", fake)
+    return fake
+
+
+def test_wasapi_route_is_noop(monkeypatch):
+    _fake_pyaudiowpatch(monkeypatch)
+    from ghostbrain.recorder.audio.wasapi import WasapiBackend
+    handle = WasapiBackend().begin_meeting_route("Ghost Brain", "")
+    assert handle.switched is False
+
+
+def test_wasapi_capture_thread_lifecycle(monkeypatch, tmp_path):
+    _fake_pyaudiowpatch(monkeypatch)
+    from ghostbrain.recorder.audio.wasapi import WasapiBackend
+    backend = WasapiBackend()
+    handle = backend.start_capture(tmp_path / "m.wav")
+    assert handle.pid == os.getpid()
+    assert backend.capture_alive(handle.pid) is True
+    assert backend.stop_capture(handle.pid) is True
+    assert backend.capture_alive(handle.pid) is False
+    assert (tmp_path / "m.wav").exists()
+
+
+def test_wasapi_preflight_reports_missing_dep(monkeypatch):
+    monkeypatch.setitem(sys.modules, "pyaudiowpatch", None)
+    import ghostbrain.recorder.audio.wasapi as w
+    ok, missing = w.WasapiBackend().preflight()
+    assert ok is False
+    assert any("pyaudiowpatch" in m for m in missing)
