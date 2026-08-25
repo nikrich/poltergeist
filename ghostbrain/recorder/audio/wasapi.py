@@ -43,30 +43,42 @@ class _CaptureThread(threading.Thread):
         loop_stream = mic_stream = None
         try:
             loop_dev = audio.get_default_wasapi_loopback()
-            mic_dev = audio.get_default_input_device_info()
             loop_rate = int(loop_dev["defaultSampleRate"])
             loop_ch = int(loop_dev["maxInputChannels"])
-            mic_rate = int(mic_dev["defaultSampleRate"])
-            mic_ch = max(1, int(mic_dev["maxInputChannels"]))
             loop_stream = audio.open(
                 format=pa.paInt16, channels=loop_ch, rate=loop_rate,
                 input=True, input_device_index=loop_dev["index"],
                 frames_per_buffer=_CHUNK,
             )
-            mic_stream = audio.open(
-                format=pa.paInt16, channels=mic_ch, rate=mic_rate,
-                input=True, input_device_index=mic_dev["index"],
-                frames_per_buffer=_CHUNK,
-            )
+
+            # Mic acquisition is best-effort: some machines (desktops,
+            # conference rooms) have no default input device at all. Losing
+            # the mic must not lose the loopback (system-audio) capture.
+            mic_rate = mic_ch = None
+            try:
+                mic_dev = audio.get_default_input_device_info()
+                mic_rate = int(mic_dev["defaultSampleRate"])
+                mic_ch = max(1, int(mic_dev["maxInputChannels"]))
+                mic_stream = audio.open(
+                    format=pa.paInt16, channels=mic_ch, rate=mic_rate,
+                    input=True, input_device_index=mic_dev["index"],
+                    frames_per_buffer=_CHUNK,
+                )
+            except Exception as exc:  # noqa: BLE001 — no default input device
+                log.warning("no default input device; recording system audio only: %s", exc)
+                mic_stream = None
+
             while not self._stop_event.is_set():
                 loop_raw = loop_stream.read(_CHUNK, exception_on_overflow=False)
-                mic_raw = mic_stream.read(_CHUNK, exception_on_overflow=False)
                 loop_f = np.frombuffer(loop_raw, dtype=np.int16).astype(np.float32) / 32768.0
-                mic_f = np.frombuffer(mic_raw, dtype=np.int16).astype(np.float32) / 32768.0
-                writer.append(mix(
-                    to_mono_16k(loop_f, loop_rate, loop_ch),
-                    to_mono_16k(mic_f, mic_rate, mic_ch),
-                ))
+                loop_pcm = to_mono_16k(loop_f, loop_rate, loop_ch)
+                if mic_stream is None:
+                    mixed = loop_pcm
+                else:
+                    mic_raw = mic_stream.read(_CHUNK, exception_on_overflow=False)
+                    mic_f = np.frombuffer(mic_raw, dtype=np.int16).astype(np.float32) / 32768.0
+                    mixed = mix(loop_pcm, to_mono_16k(mic_f, mic_rate, mic_ch))
+                writer.append(mixed)
         except Exception:  # noqa: BLE001 — device unplug/change ends the stream
             log.exception("wasapi capture ended with error; WAV kept for recovery")
         finally:

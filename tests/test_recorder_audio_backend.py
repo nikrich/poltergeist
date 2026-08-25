@@ -62,8 +62,13 @@ def test_darwin_capture_delegates(tmp_path: Path):
         cap.start_capture.assert_called_once_with(tmp_path / "x.wav", log_path=None)
 
 
-def _fake_pyaudiowpatch(monkeypatch, frames_per_read=480):
-    """Install a minimal fake pyaudiowpatch into sys.modules."""
+def _fake_pyaudiowpatch(monkeypatch, frames_per_read=480, mic=True):
+    """Install a minimal fake pyaudiowpatch into sys.modules.
+
+    mic=False simulates a machine with no default input device: calling
+    get_default_input_device_info() raises OSError, as pyaudiowpatch does
+    when there's no default input (common on desktops/conference rooms).
+    """
     fake = types.ModuleType("pyaudiowpatch")
     fake.paInt16 = 8
 
@@ -80,6 +85,8 @@ def _fake_pyaudiowpatch(monkeypatch, frames_per_read=480):
         def get_default_wasapi_loopback(self):
             return {"index": 7, "defaultSampleRate": 48000.0, "maxInputChannels": 2}
         def get_default_input_device_info(self):
+            if not mic:
+                raise OSError("no default input")
             return {"index": 1, "defaultSampleRate": 44100.0, "maxInputChannels": 1}
         def open(self, **kwargs):
             return _Stream()
@@ -115,3 +122,19 @@ def test_wasapi_preflight_reports_missing_dep(monkeypatch):
     ok, missing = w.WasapiBackend().preflight()
     assert ok is False
     assert any("pyaudiowpatch" in m for m in missing)
+
+
+def test_wasapi_capture_continues_without_mic(monkeypatch, tmp_path):
+    import time
+    import wave
+
+    _fake_pyaudiowpatch(monkeypatch, mic=False)
+    from ghostbrain.recorder.audio.wasapi import WasapiBackend
+    backend = WasapiBackend()
+    wav_path = tmp_path / "m.wav"
+    handle = backend.start_capture(wav_path)
+    time.sleep(0.1)  # let the capture loop write a few loopback-only chunks
+    assert backend.stop_capture(handle.pid) is True
+
+    with wave.open(str(wav_path), "rb") as f:
+        assert f.getnframes() > 0
