@@ -6,11 +6,11 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
 from ghostbrain.recorder.policy import RecorderPolicy, should_record
+from ghostbrain.recorder.sources.base import events_from_connector_dicts
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +134,18 @@ def _candidate_event(
     }
 
 
+class FakeSource:
+    """Test double for MeetingSource: returns a fixed list of MeetingEvents."""
+
+    id = "fake"
+
+    def __init__(self, events) -> None:
+        self._events = events
+
+    def events(self, now):
+        return self._events
+
+
 def test_daemon_picks_in_progress_eligible_event(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, vault: Path,
 ) -> None:
@@ -170,13 +182,12 @@ def test_daemon_picks_in_progress_eligible_event(
     )
     state = state_mod.RecorderState()
 
-    fake_connector = MagicMock()
-    fake_connector.fetch.return_value = [focus_event, in_progress]
-    with patch(
-        "ghostbrain.recorder.daemon.MacosCalendarConnector",
-        return_value=fake_connector,
-    ):
-        candidate = _next_eligible_event(config, state, now)
+    events = events_from_connector_dicts(
+        [focus_event, in_progress], config.macos_accounts,
+    )
+    candidate = _next_eligible_event(
+        config, state, now, sources=[FakeSource(events)],
+    )
 
     assert candidate is not None
     assert candidate.event_id == "ev-real"
@@ -213,13 +224,10 @@ def test_daemon_skips_already_processed(
         processed={"ev-done": now.isoformat()},
     )
 
-    fake_connector = MagicMock()
-    fake_connector.fetch.return_value = [event]
-    with patch(
-        "ghostbrain.recorder.daemon.MacosCalendarConnector",
-        return_value=fake_connector,
-    ):
-        candidate = _next_eligible_event(config, state, now)
+    events = events_from_connector_dicts([event], config.macos_accounts)
+    candidate = _next_eligible_event(
+        config, state, now, sources=[FakeSource(events)],
+    )
 
     assert candidate is None
 
@@ -469,11 +477,8 @@ def test_daemon_skips_event_starting_too_far_in_future(
     )
     state = state_mod.RecorderState()
 
-    fake_connector = MagicMock()
-    fake_connector.fetch.return_value = [future]
-    with patch(
-        "ghostbrain.recorder.daemon.MacosCalendarConnector",
-        return_value=fake_connector,
-    ):
-        candidate = _next_eligible_event(config, state, now)
+    events = events_from_connector_dicts([future], config.macos_accounts)
+    candidate = _next_eligible_event(
+        config, state, now, sources=[FakeSource(events)],
+    )
     assert candidate is None

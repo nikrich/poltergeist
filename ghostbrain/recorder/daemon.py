@@ -25,14 +25,15 @@ from typing import Any
 
 import yaml
 
-from ghostbrain.connectors.calendar.macos import MacosCalendarConnector
-from ghostbrain.paths import queue_dir, state_dir, vault_path
+from ghostbrain.paths import vault_path
 from ghostbrain.recorder import state as state_mod
 from ghostbrain.recorder.audio import get_backend
 from ghostbrain.recorder.audio.base import AudioBackend, RouteHandle
 from ghostbrain.recorder.linker import TranscriptTooShort, link_transcript
 from ghostbrain.recorder.manual import run_recovery_pass as manual_recovery_pass
 from ghostbrain.recorder.policy import RecorderPolicy, should_record
+from ghostbrain.recorder.sources.base import MeetingSource
+from ghostbrain.recorder.sources.macos import MacosSource
 from ghostbrain.recorder.transcribe import TranscribeError, transcribe
 from ghostbrain.worker.audit import audit_log
 
@@ -145,9 +146,14 @@ def run_once(
     config: DaemonConfig,
     state: state_mod.RecorderState,
     backend: AudioBackend | None = None,
+    sources: list[MeetingSource] | None = None,
 ) -> None:
     """One daemon tick: handle active recording end + maybe start a new one."""
     backend = backend or get_backend()
+    sources = (
+        sources if sources is not None
+        else ([MacosSource(config.macos_accounts)] if config.macos_accounts else [])
+    )
     now = datetime.now(timezone.utc)
 
     if state.active is not None:
@@ -169,7 +175,7 @@ def run_once(
             audit_log("manual_recording_recovered", str(path))
             log.info("recovered manual recording: %s", path.name)
 
-    candidate = _next_eligible_event(config, state, now)
+    candidate = _next_eligible_event(config, state, now, sources)
     if candidate is None:
         return
 
@@ -358,64 +364,39 @@ def _next_eligible_event(
     config: DaemonConfig,
     state: state_mod.RecorderState,
     now: datetime,
+    sources: list[MeetingSource],
 ) -> _Candidate | None:
-    """Query Apple Calendar for events in [now-30s, now+60s] and pick one
-    we haven't recorded yet."""
-    if not config.macos_accounts:
-        return None
-
-    connector = MacosCalendarConnector(
-        config={
-            "accounts": config.macos_accounts,
-            "lookahead_hours": 1,  # narrow scan; we filter below
-        },
-        queue_dir=queue_dir(),
-        state_dir=state_dir(),
-    )
-    try:
-        events = connector.fetch(now)
-    except Exception as e:  # noqa: BLE001
-        log.warning("calendar query failed: %s", e)
-        return None
-
+    """Query the configured meeting sources for events in
+    [now-60s, now+...] and pick one we haven't recorded yet."""
     candidates: list[_Candidate] = []
-    for ev in events:
-        meta = ev.get("metadata") or {}
-        event_id = ev.get("id", "")
-        if event_id in state.processed:
-            continue
-        if event_id.startswith("_audio_before:"):
-            continue
+    for source in sources:
+        for ev in source.events(now):
+            event_id = ev.event_id
+            if event_id in state.processed:
+                continue
+            if event_id.startswith("_audio_before:"):
+                continue
 
-        start = _parse_iso(str(meta.get("start") or ""))
-        end = _parse_iso(str(meta.get("end") or ""))
-        if start is None or end is None:
-            continue
-        # In progress, or starting in next 60s.
-        if not (start - timedelta(seconds=60) <= now < end):
-            continue
+            # In progress, or starting in next 60s.
+            if not (ev.start - timedelta(seconds=60) <= now < ev.end):
+                continue
 
-        title = str(ev.get("title") or "")
-        context = config.macos_accounts.get(meta.get("account", ""), "")
-        if not context:
-            continue
+            ok, reason = should_record(
+                title=ev.title, context=ev.context, policy=config.policy,
+            )
+            if not ok:
+                log.info("skipping %s: %s", ev.title, reason)
+                # Mark so we don't keep evaluating it every tick.
+                state.processed[event_id] = now.isoformat()
+                continue
 
-        ok, reason = should_record(
-            title=title, context=context, policy=config.policy,
-        )
-        if not ok:
-            log.info("skipping %s: %s", title, reason)
-            # Mark so we don't keep evaluating it every tick.
-            state.processed[event_id] = now.isoformat()
-            continue
-
-        candidates.append(_Candidate(
-            event_id=event_id,
-            title=title,
-            context=context,
-            start=start,
-            end=end,
-        ))
+            candidates.append(_Candidate(
+                event_id=event_id,
+                title=ev.title,
+                context=ev.context,
+                start=ev.start,
+                end=ev.end,
+            ))
 
     if not candidates:
         return None
@@ -423,19 +404,6 @@ def _next_eligible_event(
     # Earliest start wins.
     candidates.sort(key=lambda c: c.start)
     return candidates[0]
-
-
-def _parse_iso(value: str) -> datetime | None:
-    if not value:
-        return None
-    try:
-        if "T" in value:
-            return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(
-                timezone.utc
-            )
-        return datetime.fromisoformat(value).replace(tzinfo=timezone.utc)
-    except ValueError:
-        return None
 
 
 def _filename_for(c: _Candidate) -> str:
