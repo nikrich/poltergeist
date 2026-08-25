@@ -10,7 +10,6 @@ import asyncio
 import json
 import logging
 import shutil
-import sys
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -336,24 +335,34 @@ async def worker_daemon(stop: asyncio.Event) -> None:
 
 # ---------------------------------------------------------------------------
 # Recorder daemon — same approach: loop here, atomic ops imported from the
-# existing module. Gated on a dep check (ffmpeg + Apple Calendar config) so
-# users without the prereqs see the recorder disabled rather than crash.
+# existing module. Gated on a dep check (per-backend audio prereqs + shared
+# transcription prereqs) so users without the prereqs see the recorder
+# disabled rather than crash.
 # ---------------------------------------------------------------------------
 
 
+def _model_present() -> bool:
+    from ghostbrain.recorder.transcribe import DEFAULT_MODEL_DIR
+    return any(DEFAULT_MODEL_DIR.glob("ggml-*.bin"))
+
+
 def recorder_prereqs_ok() -> tuple[bool, list[str]]:
-    """Returns (ok, missing) — `missing` lists human-readable prereq gaps."""
-    missing: list[str] = []
-    if sys.platform != "darwin":
+    """Backend preflight + shared transcription prereqs."""
+    from ghostbrain.recorder.audio import get_backend
+
+    ok, missing = get_backend().preflight()
+    missing = list(missing)
+    if shutil.which("whisper-cli") is None:
         missing.append(
-            "recorder is macOS-only today (needs BlackHole + SwitchAudioSource); "
-            "Linux/Windows support is tracked in docs/install/"
+            "whisper-cli not on PATH (macOS: brew install whisper-cpp; "
+            "Windows: install whisper.cpp and add it to PATH)"
         )
-        return (False, missing)
-    if shutil.which("ffmpeg") is None:
-        missing.append("ffmpeg not on PATH (install via Homebrew: brew install ffmpeg)")
-    # BlackHole detection is slow + flaky; we let the daemon surface that on
-    # first attempt instead of probing here.
+    if not _model_present():
+        missing.append(
+            "no whisper model in ~/ghostbrain/recorder/models/ (any ggml-*.bin); "
+            "on corporate networks download it via browser/approved channel, "
+            "not curl"
+        )
     return (not missing, missing)
 
 
