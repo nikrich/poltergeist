@@ -163,7 +163,7 @@ calendar:
       you@gmail.com: personal
 
 microsoft:
-  calendar_context: sanlam   # required for the Microsoft source to activate
+  calendar_context: work   # required for the Microsoft source to activate
 ```
 
 Without `microsoft.calendar_context` set, the Microsoft calendar source is
