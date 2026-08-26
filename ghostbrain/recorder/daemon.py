@@ -1,13 +1,23 @@
 """Autonomous meeting recorder daemon.
 
-Polls Apple Calendar every ``poll_interval_s`` seconds. When an eligible
-meeting is in-progress (or about to start), starts ffmpeg recording from
-BlackHole + mic, switches system audio output to the Multi-Output Device
-that includes BlackHole, and tracks the active recording in a state file.
+Platform-agnostic: audio capture/routing goes through the ``AudioBackend``
+protocol (``ghostbrain.recorder.audio`` — ffmpeg + BlackHole/Multi-Output
+Device switching on macOS, in-process WASAPI loopback + mic mixing on
+Windows), and calendar events come from whatever ``MeetingSource``s
+``select_sources()`` (``ghostbrain.recorder.sources``) resolves from
+``routing.yaml`` — Apple Calendar (macOS only), Google, and Microsoft 365,
+merged and de-duplicated. Both are resolved once per daemon lifetime (by
+``run_loop`` / ``scheduler_jobs.recorder_daemon``) and passed into
+``run_once`` on every tick, so remote sources' own refresh-window caches
+stay effective across ticks.
 
-When the meeting's scheduled-end + grace passes, stops ffmpeg, restores
-the user's previous audio output device, transcribes the WAV, and links
-the transcript to the calendar event note in the vault.
+Polls every ``poll_interval_s`` seconds. When an eligible meeting is
+in-progress (or about to start), routes audio to the capture device,
+starts capture, and tracks the active recording in a state file.
+
+When the meeting's scheduled-end + grace passes, stops capture, restores
+the previous audio route, transcribes the WAV, and links the transcript
+to the calendar event note in the vault.
 
 Eligibility is decided by ``recorder.policy.should_record`` from the
 ``recorder`` block in ``vault/90-meta/config.yaml``.
@@ -25,12 +35,15 @@ from typing import Any
 
 import yaml
 
-from ghostbrain.connectors.calendar.macos import MacosCalendarConnector
-from ghostbrain.paths import queue_dir, state_dir, vault_path
-from ghostbrain.recorder import audio_capture, audio_switcher, state as state_mod
+from ghostbrain.paths import vault_path
+from ghostbrain.recorder import state as state_mod
+from ghostbrain.recorder.audio import get_backend
+from ghostbrain.recorder.audio.base import AudioBackend, RouteHandle
 from ghostbrain.recorder.linker import TranscriptTooShort, link_transcript
 from ghostbrain.recorder.manual import run_recovery_pass as manual_recovery_pass
 from ghostbrain.recorder.policy import RecorderPolicy, should_record
+from ghostbrain.recorder.sources import dedupe_events, select_sources
+from ghostbrain.recorder.sources.base import MeetingSource
 from ghostbrain.recorder.transcribe import TranscribeError, transcribe
 from ghostbrain.worker.audit import audit_log
 
@@ -59,6 +72,8 @@ class DaemonConfig:
     fallback_output: str       # restore target if no original captured
     policy: RecorderPolicy
     macos_accounts: dict[str, str]
+    routing: dict = dataclasses.field(default_factory=dict)
+    recorder_cfg: dict = dataclasses.field(default_factory=dict)
 
     @classmethod
     def load(cls) -> "DaemonConfig":
@@ -91,6 +106,8 @@ class DaemonConfig:
             fallback_output=str(rec.get("fallback_output") or ""),
             policy=policy,
             macos_accounts=dict(accounts),
+            routing=routing,
+            recorder_cfg=rec,
         )
 
 
@@ -114,12 +131,20 @@ def run_loop() -> None:
 
     DEFAULT_RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
 
+    backend = get_backend()
+    # Resolve meeting sources once per daemon lifetime, not per tick — remote
+    # sources (google, microsoft) throttle their own fetches internally
+    # (~5 min refresh window), but that only works if the same source objects
+    # persist across ticks. Rebuilding them every tick (the old `sources=None`
+    # default) reset each source's cache every 30s and defeated the throttle.
+    sources, _ = select_sources(config.routing, config.recorder_cfg)
+
     signal.signal(signal.SIGINT, _handle_signal)
     signal.signal(signal.SIGTERM, _handle_signal)
 
     while _running:
         try:
-            run_once(config, state)
+            run_once(config, state, backend, sources)
         except Exception:  # noqa: BLE001
             log.exception("daemon tick failed; will retry next loop")
         time.sleep(config.poll_interval_s)
@@ -129,7 +154,7 @@ def run_loop() -> None:
     if state.active is not None:
         log.info("shutdown with active recording; finalizing %s",
                  state.active.event_id)
-        _finalize(state.active, config, state, reason="daemon_shutdown")
+        _finalize(state.active, config, state, backend, reason="daemon_shutdown")
         state.active = None
         state_mod.save(state)
 
@@ -137,13 +162,21 @@ def run_loop() -> None:
     log.info("recorder daemon stopped")
 
 
-def run_once(config: DaemonConfig, state: state_mod.RecorderState) -> None:
+def run_once(
+    config: DaemonConfig,
+    state: state_mod.RecorderState,
+    backend: AudioBackend | None = None,
+    sources: list[MeetingSource] | None = None,
+) -> None:
     """One daemon tick: handle active recording end + maybe start a new one."""
+    backend = backend or get_backend()
+    if sources is None:
+        sources, _ = select_sources(config.routing, config.recorder_cfg)
     now = datetime.now(timezone.utc)
 
     if state.active is not None:
-        if _should_finalize(state.active, now, config):
-            _finalize(state.active, config, state, reason="scheduled_end")
+        if _should_finalize(state.active, now, config, backend):
+            _finalize(state.active, config, state, backend, reason="scheduled_end")
             state.active = None
             state_mod.save(state)
         else:
@@ -160,11 +193,11 @@ def run_once(config: DaemonConfig, state: state_mod.RecorderState) -> None:
             audit_log("manual_recording_recovered", str(path))
             log.info("recovered manual recording: %s", path.name)
 
-    candidate = _next_eligible_event(config, state, now)
+    candidate = _next_eligible_event(config, state, now, sources)
     if candidate is None:
         return
 
-    _start_recording(candidate, config, state)
+    _start_recording(candidate, config, state, backend)
 
 
 # ---------------------------------------------------------------------------
@@ -176,11 +209,12 @@ def _should_finalize(
     active: state_mod.ActiveRecording,
     now: datetime,
     config: DaemonConfig,
+    backend: AudioBackend,
 ) -> bool:
     """Time to stop? Either the scheduled end (with grace) has passed, or
-    ffmpeg has died, or the WAV file disappeared."""
-    if not audio_capture.is_running(active.pid):
-        log.info("ffmpeg pid=%d no longer running for %s; finalizing",
+    capture has died, or the WAV file disappeared."""
+    if not backend.capture_alive(active.pid):
+        log.info("capture pid=%d no longer running for %s; finalizing",
                  active.pid, active.event_id)
         return True
 
@@ -197,37 +231,19 @@ def _start_recording(
     candidate: "_Candidate",
     config: DaemonConfig,
     state: state_mod.RecorderState,
+    backend: AudioBackend,
 ) -> None:
-    """Switch audio output, spawn ffmpeg, persist active state."""
-    # Capture the user's current output so we can restore it after.
-    try:
-        previous_output = audio_switcher.current_output()
-    except audio_switcher.AudioSwitcherError as e:
-        log.warning("could not read current audio output: %s", e)
-        previous_output = config.fallback_output
-
-    if previous_output and previous_output != config.audio_device:
-        try:
-            audio_switcher.switch_to(config.audio_device)
-        except audio_switcher.AudioSwitcherError as e:
-            log.warning("audio switch failed (%s); continuing — recording may "
-                        "still capture if Ghost Brain is current output", e)
-    else:
-        log.info("system output already %s; not switching", config.audio_device)
+    """Route audio to the capture device, spawn capture, persist active state."""
+    route = backend.begin_meeting_route(config.audio_device, config.fallback_output)
 
     wav_path = DEFAULT_RECORDINGS_DIR / _filename_for(candidate)
     log_path = DEFAULT_RECORDINGS_DIR / "ffmpeg.log"
 
     try:
-        handle = audio_capture.start_capture(wav_path, log_path=log_path)
+        handle = backend.start_capture(wav_path, log_path=log_path)
     except Exception as e:  # noqa: BLE001
-        log.exception("ffmpeg failed to start: %s", e)
-        # Restore audio if we changed it.
-        if previous_output and previous_output != config.audio_device:
-            try:
-                audio_switcher.switch_to(previous_output)
-            except audio_switcher.AudioSwitcherError:
-                pass
+        log.exception("capture failed to start: %s", e)
+        backend.end_meeting_route(route)
         audit_log("recorder_start_failed", candidate.event_id, error=str(e))
         # Mark processed so we don't retry every tick.
         state.processed[candidate.event_id] = datetime.now(timezone.utc).isoformat()
@@ -244,8 +260,9 @@ def _start_recording(
         started_at=datetime.now(timezone.utc).isoformat(),
         scheduled_end=scheduled_end.isoformat(),
     )
-    # Stash previous output in processed map under a special key.
-    state.processed[f"_audio_before:{candidate.event_id}"] = previous_output
+    # Stash previous output in processed map under the legacy key so an
+    # older-version _finalize (or a downgrade) can still restore it.
+    state.processed[f"_audio_before:{candidate.event_id}"] = route.previous_output
 
     state_mod.save(state)
     audit_log(
@@ -266,24 +283,24 @@ def _finalize(
     active: state_mod.ActiveRecording,
     config: DaemonConfig,
     state: state_mod.RecorderState,
+    backend: AudioBackend,
     *,
     reason: str,
 ) -> None:
-    """Stop ffmpeg, restore audio, transcribe, link to vault, mark processed."""
+    """Stop capture, restore audio, transcribe, link to vault, mark processed."""
     log.info("finalizing recording event=%s reason=%s", active.event_id, reason)
 
-    audio_capture.stop_capture(active.pid)
+    backend.stop_capture(active.pid)
 
-    # Restore audio output.
-    previous = state.processed.pop(
-        f"_audio_before:{active.event_id}", "",
-    )
-    target = previous or config.fallback_output
-    if target and target != config.audio_device:
-        try:
-            audio_switcher.switch_to(target)
-        except audio_switcher.AudioSwitcherError as e:
-            log.warning("could not restore audio output to %s: %s", target, e)
+    # Restore audio output. Pop the legacy stash key regardless of which
+    # daemon version wrote it, so an in-flight recording from an old build
+    # still restores correctly after an upgrade.
+    popped = state.processed.pop(f"_audio_before:{active.event_id}", "")
+    target = popped or config.fallback_output
+    backend.end_meeting_route(RouteHandle(
+        previous_output=target,
+        switched=bool(target and target != config.audio_device),
+    ))
 
     wav = Path(active.wav_path)
     state.processed[active.event_id] = datetime.now(timezone.utc).isoformat()
@@ -365,63 +382,45 @@ def _next_eligible_event(
     config: DaemonConfig,
     state: state_mod.RecorderState,
     now: datetime,
+    sources: list[MeetingSource],
 ) -> _Candidate | None:
-    """Query Apple Calendar for events in [now-30s, now+60s] and pick one
-    we haven't recorded yet."""
-    if not config.macos_accounts:
-        return None
-
-    connector = MacosCalendarConnector(
-        config={
-            "accounts": config.macos_accounts,
-            "lookahead_hours": 1,  # narrow scan; we filter below
-        },
-        queue_dir=queue_dir(),
-        state_dir=state_dir(),
-    )
-    try:
-        events = connector.fetch(now)
-    except Exception as e:  # noqa: BLE001
-        log.warning("calendar query failed: %s", e)
-        return None
-
+    """Query the configured meeting sources for events in
+    [now-60s, now+...] and pick one we haven't recorded yet."""
     candidates: list[_Candidate] = []
-    for ev in events:
-        meta = ev.get("metadata") or {}
-        event_id = ev.get("id", "")
+    merged: list = []
+    for source in sources:
+        try:
+            merged.extend(source.events(now))
+        except Exception as e:  # noqa: BLE001
+            log.warning("source %s failed to produce events: %s",
+                        getattr(source, "id", source), e)
+
+    for ev in dedupe_events(merged):
+        event_id = ev.event_id
         if event_id in state.processed:
             continue
         if event_id.startswith("_audio_before:"):
             continue
 
-        start = _parse_iso(str(meta.get("start") or ""))
-        end = _parse_iso(str(meta.get("end") or ""))
-        if start is None or end is None:
-            continue
         # In progress, or starting in next 60s.
-        if not (start - timedelta(seconds=60) <= now < end):
-            continue
-
-        title = str(ev.get("title") or "")
-        context = config.macos_accounts.get(meta.get("account", ""), "")
-        if not context:
+        if not (ev.start - timedelta(seconds=60) <= now < ev.end):
             continue
 
         ok, reason = should_record(
-            title=title, context=context, policy=config.policy,
+            title=ev.title, context=ev.context, policy=config.policy,
         )
         if not ok:
-            log.info("skipping %s: %s", title, reason)
+            log.info("skipping %s: %s", ev.title, reason)
             # Mark so we don't keep evaluating it every tick.
             state.processed[event_id] = now.isoformat()
             continue
 
         candidates.append(_Candidate(
             event_id=event_id,
-            title=title,
-            context=context,
-            start=start,
-            end=end,
+            title=ev.title,
+            context=ev.context,
+            start=ev.start,
+            end=ev.end,
         ))
 
     if not candidates:
@@ -430,19 +429,6 @@ def _next_eligible_event(
     # Earliest start wins.
     candidates.sort(key=lambda c: c.start)
     return candidates[0]
-
-
-def _parse_iso(value: str) -> datetime | None:
-    if not value:
-        return None
-    try:
-        if "T" in value:
-            return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(
-                timezone.utc
-            )
-        return datetime.fromisoformat(value).replace(tzinfo=timezone.utc)
-    except ValueError:
-        return None
 
 
 def _filename_for(c: _Candidate) -> str:

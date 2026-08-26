@@ -303,7 +303,11 @@ jobs:
         shell: bash
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[api,semantic]"
+          # recorder-win pulls in pyaudiowpatch (WASAPI loopback capture) so
+          # the packaged Windows sidecar can run the meeting recorder — this
+          # extra is a no-op on macOS/Linux (its dependency is
+          # sys_platform == 'win32' only), which is why only this job adds it.
+          pip install -e ".[api,semantic,recorder-win]"
           pip install pyinstaller==6.11.1
           # Last setuptools that ships pkg_resources, which PyInstaller
           # 6.11.1's bootstrap hook needs (see the mac step for the story).

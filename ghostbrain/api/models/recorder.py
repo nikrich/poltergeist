@@ -24,3 +24,7 @@ class RecorderStatus(BaseModel):
     wavPath: str | None = None
     transcriptPath: str | None = None  # vault-relative once transcribed
     error: str | None = None
+    # Human-readable reasons a configured calendar isn't driving auto-record
+    # (e.g. microsoft.calendar_context missing in routing.yaml). See
+    # ghostbrain.recorder.sources.select_sources.
+    sourceExclusions: list[str] = []

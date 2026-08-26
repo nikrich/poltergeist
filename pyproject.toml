@@ -67,6 +67,12 @@ mcp = [
     "mcp>=1.2.0,<2",  # 2.0 removed mcp.server.fastmcp; ghostbrain.mcp is written against 1.x
     "httpx>=0.27.0",
 ]
+recorder-win = [
+    # WASAPI loopback capture; Windows only. Imported exclusively inside
+    # ghostbrain/recorder/audio/wasapi.py.
+    "pyaudiowpatch>=0.2.12; sys_platform == 'win32'",
+    "numpy>=1.26",
+]
 
 [project.scripts]
 ghostbrain-bootstrap = "ghostbrain.bootstrap:main"

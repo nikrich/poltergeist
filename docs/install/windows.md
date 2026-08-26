@@ -113,7 +113,86 @@ Wire up the hook to capture Claude Code sessions. Add this to `%USERPROFILE%\.cl
 
 Replace `C:\path\to\ghost-brain` with your actual clone path.
 
+## Meeting recorder
+
+The recorder is fully supported on Windows via WASAPI loopback — no
+BlackHole-equivalent driver, no admin rights, and no device switching.
+Loopback taps the default output device directly, so `recorder.audio_device`
+in `<vault>\90-meta\config.yaml` is ignored on Windows (it only applies to
+the macOS backend, which switches system output to a Multi-Output Device).
+
+### Install the recorder extra
+
+```powershell
+pip install -e ".[dev,api,recorder-win]"
+```
+
+If you're running the packaged desktop app instead of a dev checkout, the
+Windows installer already bundles this — no extra step needed.
+
+### Install whisper.cpp
+
+Transcription runs `whisper-cli` locally; nothing is downloaded at runtime.
+
+1. Install [whisper.cpp](https://github.com/ggml-org/whisper.cpp) and put
+   `whisper-cli.exe` on your `PATH`.
+2. Download a `ggml-*.bin` model (e.g. `ggml-small.en.bin`) via your browser
+   or your org's approved download channel, and place it at
+   `%USERPROFILE%\ghostbrain\recorder\models\`. **On corporate networks with
+   TLS-intercepting proxies (Zscaler etc.), do not `curl`/`Invoke-WebRequest`
+   the model at runtime — it will hang silently behind the proxy.** A
+   manual browser download avoids that entirely.
+   - To use a model living somewhere else, set `GHOSTBRAIN_WHISPER_MODEL` to
+     its full path instead of moving it into the default directory.
+
+Recorder preflight (surfaced in the desktop app's Meetings tab, and via
+`recorder_prereqs_ok()`) checks for `pyaudiowpatch`, `whisper-cli` on PATH,
+and a model file, and reports exactly which piece is missing.
+
+### Wire up a calendar source
+
+Auto-record picks up meetings from whatever calendar sources are configured
+in `<vault>\90-meta\routing.yaml` — the same accounts you'd configure for
+the calendar connector (see [Calendar](../../README.md#calendar-phase-11)
+in the README), plus Microsoft 365:
+
+```yaml
+calendar:
+  google:
+    accounts:
+      you@gmail.com: personal
+
+microsoft:
+  calendar_context: work   # required for the Microsoft source to activate
+```
+
+Without `microsoft.calendar_context` set, the Microsoft calendar source is
+excluded (Apple Calendar isn't an option on Windows at all — that source is
+darwin-only). Exclusion reasons for every configured-but-inactive source
+show up in the recorder status response as `sourceExclusions`, which the
+Meetings tab surfaces so it's clear why a calendar isn't driving
+auto-record.
+
+To restrict auto-record to specific sources (e.g. only `google`, ignoring
+a configured `microsoft` block), pin the list explicitly in
+`<vault>\90-meta\config.yaml`:
+
+```yaml
+recorder:
+  meeting_sources: [google]
+```
+
+### Manual recording and the standalone CLI
+
+WASAPI capture runs as an in-process thread, not a separate OS process
+(unlike ffmpeg on macOS) — a backend can only see and stop a recording that
+its own process started. If you run `ghostbrain-recorder` (the daemon) as a
+standalone process (e.g. via Task Scheduler, see Option B above) alongside
+the desktop app, any recording either one starts — calendar-driven or
+manual — is invisible to the other's Meetings tab and can't be stopped from
+it. Run one or the other, not both, to avoid a recording you can't see or
+stop.
+
 ## What's not supported yet
 
-- **Meeting recorder** — requires platform-specific audio capture (BlackHole on macOS, PulseAudio/PipeWire on Linux). Not wired for Windows yet. The desktop app's Meetings tab returns "unsupported" on Windows.
 - **Apple Calendar connector** — macOS-only. Use the Google Calendar connector instead (see README).

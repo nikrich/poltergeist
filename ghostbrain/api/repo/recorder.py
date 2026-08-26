@@ -22,13 +22,11 @@ import dataclasses
 import json
 import logging
 import os
-import sys
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
 from ghostbrain.paths import vault_path
-from ghostbrain.recorder import audio_capture
 from ghostbrain.recorder import state as daemon_state
 from ghostbrain.recorder.manual import load_config as load_manual_config, recover_one
 
@@ -49,8 +47,16 @@ class RecorderNotActive(Exception):
 
 
 class RecorderUnsupportedError(Exception):
-    """Raised on non-darwin platforms — recorder is macOS-only at runtime."""
+    """Raised when the current platform has no audio backend at runtime."""
     pass
+
+
+def _ensure_supported() -> None:
+    from ghostbrain.recorder.audio import UnsupportedBackend, get_backend
+
+    backend = get_backend()
+    if isinstance(backend, UnsupportedBackend):
+        raise RecorderUnsupportedError(backend.platform_message)
 
 
 def _read_state() -> dict | None:
@@ -80,10 +86,12 @@ def _clear_state() -> None:
 
 def _daemon_active() -> dict | None:
     """Daemon-owned (calendar-driven) recording info, if one is live."""
+    from ghostbrain.recorder.audio import get_backend
+
     ds = daemon_state.load()
     if ds.active is None:
         return None
-    if not audio_capture.is_running(ds.active.pid):
+    if not get_backend().capture_alive(ds.active.pid):
         return None
     return ds.active.to_dict()
 
@@ -95,12 +103,26 @@ def _vault_relative(path: Path) -> str | None:
         return None
 
 
+def _source_exclusions() -> list[str]:
+    """Human-readable reasons a configured calendar isn't driving
+    auto-record (spec §4). Must never fail status() — any error loading
+    or parsing the vault's routing/recorder config degrades to []."""
+    from ghostbrain.recorder.daemon import DaemonConfig
+    from ghostbrain.recorder.sources import select_sources
+
+    try:
+        config = DaemonConfig.load()
+        _, exclusions = select_sources(config.routing, config.recorder_cfg)
+    except Exception as e:  # noqa: BLE001
+        log.warning("could not compute recorder source exclusions: %s", e)
+        return []
+    return exclusions
+
+
 def status() -> dict:
     """Snapshot the current recording phase across daemon + manual states."""
-    if sys.platform != "darwin":
-        raise RecorderUnsupportedError(
-            "recorder is macOS-only today (needs BlackHole + SwitchAudioSource)"
-        )
+    _ensure_supported()
+    exclusions = _source_exclusions()
     daemon = _daemon_active()
     if daemon is not None:
         return {
@@ -111,6 +133,7 @@ def status() -> dict:
             "wavPath": daemon.get("wav_path"),
             "transcriptPath": None,
             "error": None,
+            "sourceExclusions": exclusions,
         }
     state = _read_state()
     if state is None:
@@ -122,14 +145,17 @@ def status() -> dict:
             "wavPath": None,
             "transcriptPath": None,
             "error": None,
+            "sourceExclusions": exclusions,
         }
     phase = state.get("phase", "idle")
-    # If the state claims "recording" but ffmpeg died, the user (or a crash)
-    # stopped ffmpeg without going through our /stop endpoint. Promote to
+    # If the state claims "recording" but capture died, the user (or a crash)
+    # stopped it without going through our /stop endpoint. Promote to
     # "transcribing" so the next /stop call (or daemon recovery) handles it.
     if phase == "recording":
+        from ghostbrain.recorder.audio import get_backend
+
         pid = state.get("pid")
-        if not (isinstance(pid, int) and audio_capture.is_running(pid)):
+        if not (isinstance(pid, int) and get_backend().capture_alive(pid)):
             phase = "transcribing"
             state["phase"] = phase
             _write_state(state)
@@ -141,6 +167,7 @@ def status() -> dict:
         "wavPath": state.get("wavPath"),
         "transcriptPath": state.get("transcriptPath"),
         "error": state.get("error"),
+        "sourceExclusions": exclusions,
     }
 
 
@@ -189,10 +216,7 @@ def _current_calendar_event() -> dict | None:
 
 
 def start(title: str | None, context: str | None) -> dict:
-    if sys.platform != "darwin":
-        raise RecorderUnsupportedError(
-            "recorder is macOS-only today (needs BlackHole + SwitchAudioSource)"
-        )
+    _ensure_supported()
     with _lock:
         if _daemon_active() is not None:
             raise RecorderBusy("calendar-driven recording is in progress")
@@ -221,10 +245,12 @@ def start(title: str | None, context: str | None) -> dict:
         )
         parent_path = active_event["rel_path"] if active_event else None
 
+        from ghostbrain.recorder.audio import get_backend
+
         timestamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
         wav_path = RECORDINGS_DIR / f"meeting-{timestamp}-manual.wav"
         log_path = RECORDINGS_DIR / "ffmpeg.log"
-        handle = audio_capture.start_capture(wav_path, log_path=log_path)
+        handle = get_backend().start_capture(wav_path, log_path=log_path)
 
         state = {
             "phase": "recording",
@@ -246,18 +272,18 @@ def start(title: str | None, context: str | None) -> dict:
 
 
 def stop() -> dict:
-    if sys.platform != "darwin":
-        raise RecorderUnsupportedError(
-            "recorder is macOS-only today (needs BlackHole + SwitchAudioSource)"
-        )
+    _ensure_supported()
+    from ghostbrain.recorder.audio import get_backend
+
+    backend = get_backend()
     with _lock:
-        # Daemon-owned (calendar-driven) recording: SIGINT ffmpeg and let
+        # Daemon-owned (calendar-driven) recording: stop capture and let
         # the recorder daemon's next tick run _finalize (transcribe, link
         # to vault, restore audio output). status() drops the daemon
         # record as soon as the pid is gone, so the UI flips to idle.
         ds = daemon_state.load()
-        if ds.active is not None and audio_capture.is_running(ds.active.pid):
-            audio_capture.stop_capture(ds.active.pid)
+        if ds.active is not None and backend.capture_alive(ds.active.pid):
+            backend.stop_capture(ds.active.pid)
             return status()
 
         state = _read_state()
@@ -267,7 +293,7 @@ def stop() -> dict:
         if state.get("phase") == "recording":
             pid = state.get("pid")
             if isinstance(pid, int):
-                audio_capture.stop_capture(pid)
+                backend.stop_capture(pid)
             state["phase"] = "transcribing"
             _write_state(state)
 
@@ -328,10 +354,7 @@ def _transcribe_in_background(snapshot: dict) -> None:
 
 def clear() -> dict:
     """Acknowledge a 'done' recording. UI calls this to reset to idle."""
-    if sys.platform != "darwin":
-        raise RecorderUnsupportedError(
-            "recorder is macOS-only today (needs BlackHole + SwitchAudioSource)"
-        )
+    _ensure_supported()
     with _lock:
         state = _read_state()
         if state is None:

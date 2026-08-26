@@ -10,7 +10,6 @@ import asyncio
 import json
 import logging
 import shutil
-import sys
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -336,24 +335,42 @@ async def worker_daemon(stop: asyncio.Event) -> None:
 
 # ---------------------------------------------------------------------------
 # Recorder daemon — same approach: loop here, atomic ops imported from the
-# existing module. Gated on a dep check (ffmpeg + Apple Calendar config) so
-# users without the prereqs see the recorder disabled rather than crash.
+# existing module. Gated on a dep check (per-backend audio prereqs + shared
+# transcription prereqs) so users without the prereqs see the recorder
+# disabled rather than crash.
 # ---------------------------------------------------------------------------
 
 
+def _model_present() -> bool:
+    """Delegates to transcribe._resolve_model so this honours
+    GHOSTBRAIN_WHISPER_MODEL the same way the daemon's actual transcription
+    call does — a globbed check of DEFAULT_MODEL_DIR alone reported "no
+    model" even when the env var pointed at a valid model elsewhere."""
+    from ghostbrain.recorder.transcribe import TranscribeError, _resolve_model
+    try:
+        _resolve_model(None)
+    except TranscribeError:
+        return False
+    return True
+
+
 def recorder_prereqs_ok() -> tuple[bool, list[str]]:
-    """Returns (ok, missing) — `missing` lists human-readable prereq gaps."""
-    missing: list[str] = []
-    if sys.platform != "darwin":
+    """Backend preflight + shared transcription prereqs."""
+    from ghostbrain.recorder.audio import get_backend
+
+    ok, missing = get_backend().preflight()
+    missing = list(missing)
+    if shutil.which("whisper-cli") is None:
         missing.append(
-            "recorder is macOS-only today (needs BlackHole + SwitchAudioSource); "
-            "Linux/Windows support is tracked in docs/install/"
+            "whisper-cli not on PATH (macOS: brew install whisper-cpp; "
+            "Windows: install whisper.cpp and add it to PATH)"
         )
-        return (False, missing)
-    if shutil.which("ffmpeg") is None:
-        missing.append("ffmpeg not on PATH (install via Homebrew: brew install ffmpeg)")
-    # BlackHole detection is slow + flaky; we let the daemon surface that on
-    # first attempt instead of probing here.
+    if not _model_present():
+        missing.append(
+            "no whisper model in ~/ghostbrain/recorder/models/ (any ggml-*.bin); "
+            "on corporate networks download it via browser/approved channel, "
+            "not curl"
+        )
     return (not missing, missing)
 
 
@@ -366,14 +383,20 @@ async def recorder_daemon(stop: asyncio.Event) -> None:
     # to import on every sidecar start.
     from ghostbrain.recorder import state as state_mod
     from ghostbrain.recorder.daemon import DaemonConfig, run_once
+    from ghostbrain.recorder.sources import select_sources
 
     config = await asyncio.to_thread(DaemonConfig.load)
     state = await asyncio.to_thread(state_mod.load)
+    # Resolve sources once per daemon lifetime — see daemon.run_loop for why
+    # rebuilding them every tick defeats the remote sources' own throttling.
+    sources, _ = await asyncio.to_thread(
+        select_sources, config.routing, config.recorder_cfg,
+    )
     log.info("in-process recorder started. poll=%ss", config.poll_interval_s)
 
     while not stop.is_set():
         try:
-            await asyncio.to_thread(run_once, config, state)
+            await asyncio.to_thread(run_once, config, state, None, sources)
         except Exception:  # noqa: BLE001 — never let the recorder kill the sidecar
             log.exception("recorder run_once failed; backing off")
             try:
