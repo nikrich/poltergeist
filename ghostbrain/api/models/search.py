@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 
 
 class SearchRequest(BaseModel):
-    q: str = Field(..., min_length=1, max_length=500)
+    q: str = Field(..., min_length=1, max_length=2_000)
     limit: int = Field(10, ge=1, le=50)
     # Only notes indexed within the last N days ("today" → 1, "this week" → 7).
     days: int | None = Field(None, ge=1, le=3650)
