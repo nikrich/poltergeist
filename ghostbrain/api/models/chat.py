@@ -43,7 +43,7 @@ class Conversation(BaseModel):
 
 
 class ChatMessageRequest(BaseModel):
-    text: str = Field("", max_length=4000)
+    text: str = Field("", max_length=100_000)
     attachment_paths: list[str] = Field(default_factory=list, max_length=10)
 
     @model_validator(mode="after")

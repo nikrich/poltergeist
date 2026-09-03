@@ -162,3 +162,29 @@ def test_export_route_maps_errors(client, tmp_chats_dir, auth_headers):
     assert (
         client.post("/v1/chat/nope/export-jot", headers=auth_headers).status_code == 404
     )
+
+
+def test_send_long_message_accepted(client, tmp_chats_dir, auth_headers, monkeypatch):
+    """Pasted content (e.g. a long Teams message) well past the old 4000-char
+    cap must be accepted — the model's limit is now 100_000."""
+    def fake_turn(prompt, *, session_id=None, **kw):
+        yield {"type": "done", "text": "ok", "session_id": "s-1"}
+
+    monkeypatch.setattr("ghostbrain.api.repo.chat.agent.run_chat_turn", fake_turn)
+    conv = client.post("/v1/chat", headers=auth_headers).json()
+    resp = client.post(
+        f"/v1/chat/{conv['id']}/messages",
+        json={"text": "x" * 20_000},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+
+
+def test_send_message_over_100k_rejected(client, tmp_chats_dir, auth_headers):
+    conv = client.post("/v1/chat", headers=auth_headers).json()
+    resp = client.post(
+        f"/v1/chat/{conv['id']}/messages",
+        json={"text": "x" * 100_001},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422

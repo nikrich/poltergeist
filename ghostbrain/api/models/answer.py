@@ -5,7 +5,7 @@ from ghostbrain.api.models.search import SearchHit
 
 
 class AnswerRequest(BaseModel):
-    q: str = Field(..., min_length=1, max_length=500)
+    q: str = Field(..., min_length=1, max_length=20_000)
     limit: int = Field(8, ge=1, le=20)
 
 
