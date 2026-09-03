@@ -200,6 +200,13 @@ def _current_calendar_event() -> dict | None:
             end_dt = datetime.fromisoformat(end_raw.replace("Z", "+00:00"))
         except ValueError:
             continue
+        # All-day entries (leave, room blocks) are written as date-only
+        # strings, which parse to *naive* datetimes. They aren't meetings to
+        # record against, and comparing naive with aware ``now`` raises
+        # TypeError — which used to escape this loop and 500 the whole
+        # /start request. Skip anything without a timezone.
+        if start_dt.tzinfo is None or end_dt.tzinfo is None:
+            continue
         if not (start_dt <= now <= end_dt):
             continue
         remaining = (end_dt - now).total_seconds()
