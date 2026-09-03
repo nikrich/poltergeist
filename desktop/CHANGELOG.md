@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.4.0](https://github.com/nikrich/poltergeist/compare/v1.3.3...v1.4.0) (2026-09-03)
+
+
+### Features
+
+* feat(recorder): Windows meeting recorder — WASAPI backend + calendar meeting sources (#113)
+
+### Bug Fixes
+
+* fix(api): raise long-input caps that 422'd real messages (#114)
+* fix(recorder): manual Record 500s when an all-day calendar event is in the vault (#115)
+
 ## [1.3.3](https://github.com/nikrich/poltergeist/compare/v1.3.2...v1.3.3) (2026-08-05)
 
 
