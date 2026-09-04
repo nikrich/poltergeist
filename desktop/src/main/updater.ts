@@ -36,7 +36,17 @@ function checkForUpdates(): void {
   });
 }
 
-export function installUpdater(): void {
+export interface UpdaterOptions {
+  // Runs synchronously right before quitAndInstall(). On macOS, Electron's
+  // updater installs by closing every window and terminating once they have
+  // all closed. The main window's close handler hides instead of closing
+  // unless the app is marked as quitting, which silently defeats that: the
+  // install never starts and Squirrel's ShipIt helper waits for an exit that
+  // never comes. index.ts uses this hook to flip its isQuitting flag.
+  beforeInstall?: () => void;
+}
+
+export function installUpdater(opts: UpdaterOptions = {}): void {
   if (!app.isPackaged) return;
 
   autoUpdater.autoDownload = false;
@@ -74,6 +84,7 @@ export function installUpdater(): void {
   });
 
   ipcMain.handle('gb:updates:install', () => {
+    opts.beforeInstall?.();
     autoUpdater.quitAndInstall();
   });
 

@@ -275,7 +275,9 @@ app.whenReady().then(async () => {
     meetingNotifier = installMeetingNotifier({ sidecar });
   }
 
-  installUpdater();
+  // beforeInstall flips isQuitting so the main window's hide-on-close handler
+  // lets Electron actually close it — otherwise quitAndInstall never proceeds.
+  installUpdater({ beforeInstall: () => { isQuitting = true; } });
 
   const hotkey = settings.getAll().hotkeys?.jotOverlay ?? 'Alt+J';
   installJotOverlay({
