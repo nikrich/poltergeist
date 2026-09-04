@@ -150,6 +150,20 @@ describe('installUpdater', () => {
     expect(autoUpdaterMock.quitAndInstall).toHaveBeenCalled();
   });
 
+  it('gb:updates:install runs beforeInstall before quitAndInstall', () => {
+    // macOS quitAndInstall closes every window and only terminates once they
+    // have all closed. The main window's close handler hides instead of
+    // closing unless the app is marked as quitting, so without this hook the
+    // install silently never starts (v1.3.3 → v1.4.0 sat for 18 hours).
+    const order: string[] = [];
+    autoUpdaterMock.quitAndInstall.mockImplementation(() => {
+      order.push('quitAndInstall');
+    });
+    installUpdater({ beforeInstall: () => order.push('beforeInstall') });
+    handlerFor('gb:updates:install')();
+    expect(order).toEqual(['beforeInstall', 'quitAndInstall']);
+  });
+
   it('swallows a failed checkForUpdates and retries on the next interval', async () => {
     autoUpdaterMock.checkForUpdates.mockRejectedValueOnce(new Error('offline'));
     installUpdater();
