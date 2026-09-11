@@ -184,6 +184,20 @@ SUBCOMMANDS: dict[str, str] = {
 }
 
 
+def _uvicorn_kwargs(app, port: int) -> dict:
+    return {
+        "app": app,
+        "host": "127.0.0.1",
+        "port": port,
+        # log_config=None: don't let uvicorn install its own logging config.
+        # Its default config sets propagate=False on the `uvicorn` logger, so
+        # ASGI tracebacks went to stderr only and never reached sidecar.log.
+        "log_config": None,
+        "log_level": "info",
+        "access_log": False,
+    }
+
+
 def _dispatch(name: str, rest: list[str]) -> int:
     import importlib
 
@@ -243,6 +257,13 @@ def _run_api_server() -> int:
     from ghostbrain.api import runtime as _runtime
 
     _runtime.setup_file_logging()
+    # uvicorn no longer installs its own logging config (log_config=None
+    # below), so nothing else guarantees a stderr handler on the root logger.
+    # The Electron parent tails this process's stderr for its in-memory log
+    # buffer — without a handler here that tail goes silent.
+    root = logging.getLogger()
+    if not any(isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler) for h in root.handlers):
+        root.addHandler(logging.StreamHandler(sys.stderr))
     app = create_app(token=token)
     # Keep the descriptor lock alive for the process lifetime by stashing it on
     # app.state (the OS frees it on exit/crash). None means another sidecar is
@@ -306,13 +327,7 @@ def _run_api_server() -> int:
         flush=True,
     )
 
-    uvicorn.run(
-        app,
-        host="127.0.0.1",
-        port=port,
-        log_level="info",
-        access_log=False,
-    )
+    uvicorn.run(**_uvicorn_kwargs(app, port))
     return 0
 
 
