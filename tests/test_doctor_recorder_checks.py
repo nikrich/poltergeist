@@ -17,15 +17,27 @@ def _which(present: set[str]):
     return lambda name: f"/opt/homebrew/bin/{name}" if name in present else None
 
 
+class _FakeBackend:
+    def __init__(self, ok: bool, missing: list[str]):
+        self._ok = ok
+        self._missing = missing
+
+    def preflight(self):
+        return self._ok, self._missing
+
+
 def test_ffmpeg_missing_is_automated_fix(darwin, monkeypatch):
-    monkeypatch.setattr(cr.shutil, "which", _which(set()))
+    monkeypatch.setattr(cr, "_backend",
+                        lambda: _FakeBackend(False, ["ffmpeg not on PATH (install via Homebrew: brew install ffmpeg)"]))
     r = cr.check_ffmpeg()
     assert r.status == "fail"
+    assert "ffmpeg not on PATH" in r.summary
     assert r.fix.kind == "automated"
     assert r.fix.command == "setup deps --only ffmpeg"
 
 
 def test_ffmpeg_present_ok(darwin, monkeypatch):
+    monkeypatch.setattr(cr, "_backend", lambda: _FakeBackend(True, []))
     monkeypatch.setattr(cr.shutil, "which", _which({"ffmpeg"}))
     assert cr.check_ffmpeg().status == "ok"
 

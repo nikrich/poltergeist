@@ -52,14 +52,18 @@ def _mac_or_windows(check_id: str) -> CheckResult | None:
 def check_ffmpeg() -> CheckResult:
     if (s := _mac_only("ffmpeg")) is not None:
         return s
+    # Reuse the backend's own preflight (same seam check_recorder_backend
+    # uses on Windows) instead of a second, separately-maintained PATH check.
+    ok, missing = _backend().preflight()
+    if not ok:
+        summary = missing[0] if missing else "ffmpeg not found on PATH"
+        return CheckResult(
+            id="ffmpeg", status="fail", summary=summary,
+            detail="ffmpeg captures BlackHole + microphone into the meeting WAV.",
+            fix=Fix(kind="automated", command="setup deps --only ffmpeg"),
+        )
     path = shutil.which("ffmpeg")
-    if path:
-        return CheckResult(id="ffmpeg", status="ok", summary=path)
-    return CheckResult(
-        id="ffmpeg", status="fail", summary="ffmpeg not found on PATH",
-        detail="ffmpeg captures BlackHole + microphone into the meeting WAV.",
-        fix=Fix(kind="automated", command="setup deps --only ffmpeg"),
-    )
+    return CheckResult(id="ffmpeg", status="ok", summary=path or "ffmpeg")
 
 
 @register("whisper-cli")
