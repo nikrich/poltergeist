@@ -9,23 +9,24 @@ from ghostbrain.api.auth import make_auth_middleware
 from ghostbrain.api.routes import activity as activity_routes
 from ghostbrain.api.routes import agenda as agenda_routes
 from ghostbrain.api.routes import answer as answer_routes
-from ghostbrain.api.routes import chat as chat_routes
-from ghostbrain.api.routes import doctor as doctor_routes
-from ghostbrain.api.routes import llm as llm_routes
-from ghostbrain.api.routes import mcp_servers as mcp_servers_routes
 from ghostbrain.api.routes import captures as captures_routes
+from ghostbrain.api.routes import chat as chat_routes
 from ghostbrain.api.routes import connector_auth as connector_auth_routes
 from ghostbrain.api.routes import connectors as connectors_routes
 from ghostbrain.api.routes import daily as daily_routes
 from ghostbrain.api.routes import docs as docs_routes
+from ghostbrain.api.routes import doctor as doctor_routes
+from ghostbrain.api.routes import health as health_routes
 from ghostbrain.api.routes import import_atlassian as import_routes
+from ghostbrain.api.routes import llm as llm_routes
+from ghostbrain.api.routes import mcp_servers as mcp_servers_routes
+from ghostbrain.api.routes import meetings as meetings_routes
 from ghostbrain.api.routes import notes as notes_routes
+from ghostbrain.api.routes import projects as projects_routes
 from ghostbrain.api.routes import recorder as recorder_routes
 from ghostbrain.api.routes import scheduler as scheduler_routes
 from ghostbrain.api.routes import search as search_routes
 from ghostbrain.api.routes import settings as settings_routes
-from ghostbrain.api.routes import meetings as meetings_routes
-from ghostbrain.api.routes import projects as projects_routes
 from ghostbrain.api.routes import suggestions as suggestions_routes
 from ghostbrain.api.routes import vault as vault_routes
 
@@ -75,6 +76,7 @@ def create_app(token: str) -> FastAPI:
     # (401 for unauthenticated + JSON 500 for the boom route).
     app.middleware("http")(make_auth_middleware(token))
     install_error_handling(app)
+    app.include_router(health_routes.router)
     app.include_router(vault_routes.router)
     app.include_router(connectors_routes.router)
     app.include_router(captures_routes.router)
