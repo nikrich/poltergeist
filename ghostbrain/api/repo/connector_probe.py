@@ -8,6 +8,7 @@ liveness/validation that needs the network happens on explicit user action
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
 
 from ghostbrain.paths import state_dir
@@ -110,13 +111,33 @@ def _claude_code_probe() -> ProbeResult:
     return ProbeResult("on")
 
 
+def _platform() -> str:
+    return sys.platform
+
+
+def _macos_calendar_authorized() -> bool | None:
+    from ghostbrain.api.auth.providers.local_grant import _macos_calendar_authorized as impl
+
+    return impl()
+
+
+def _load_routing() -> dict:
+    from ghostbrain.api.repo.routing import load_routing
+
+    return load_routing()
+
+
 def probe(connector_id: str) -> ProbeResult:
     if connector_id == "gmail":
         return _google_probe("gmail")
     if connector_id == "calendar":
-        # Google token OR macOS is always locally available; treat google token
-        # as the "on" signal, else off (macOS grant tracked separately in UI).
-        return _google_probe("google_calendar")
+        google = _google_probe("google_calendar")
+        if google.state == "on" or _platform() != "darwin":
+            return google
+        accounts = (((_load_routing().get("calendar") or {}).get("macos") or {}).get("accounts")) or {}
+        if accounts and _macos_calendar_authorized():
+            return ProbeResult("on")
+        return google
     if connector_id == "slack":
         return _slack_probe()
     if connector_id == "joplin":
