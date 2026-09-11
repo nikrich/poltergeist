@@ -16,7 +16,7 @@ def store(tmp_path, monkeypatch):
 @pytest.fixture
 def claude_json(tmp_path, monkeypatch):
     home = tmp_path / "home"
-    home.mkdir()
+    home.mkdir(exist_ok=True)
     monkeypatch.setattr(
         "ghostbrain.api.routes.mcp_servers.claude_config_path",
         lambda: home / ".claude.json",
