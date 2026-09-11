@@ -96,3 +96,18 @@ def test_go_live_fails_with_one_line_error(tmp_path: Path, monkeypatch, capsys):
     cfg.mkdir()  # Create config as a directory to cause a read error
     assert go_live.main([]) == 1
     assert "go-live failed" in capsys.readouterr().err
+
+
+def test_go_live_is_byte_stable_on_the_second_run(tmp_path: Path, monkeypatch, capsys):
+    vault = tmp_path / "vault"
+    monkeypatch.setenv("VAULT_PATH", str(vault))
+    (vault / "90-meta").mkdir(parents=True)
+    cfg = vault / "90-meta" / "config.yaml"
+    cfg.write_text("worker:\n  poll_interval_seconds: 5\n")
+    assert go_live.main([]) == 0
+    first = cfg.read_text()
+    assert first == "worker:\n  routing_mode: live\n  poll_interval_seconds: 5\n"
+    capsys.readouterr()
+    assert go_live.main([]) == 0
+    assert cfg.read_text() == first
+    assert "already live" in capsys.readouterr().out
