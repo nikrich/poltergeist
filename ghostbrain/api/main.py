@@ -63,17 +63,22 @@ def create_app(token: str) -> FastAPI:
         description="Read-only API for the ghostbrain desktop app.",
         version=API_VERSION,
     )
-    # Registration order matters: Starlette wraps middleware so the
-    # FIRST-registered `app.middleware("http")` call ends up OUTERMOST (it
-    # sees the request before anything else and the response after
-    # everything else), and each later registration nests one layer closer
-    # to the route. Auth must run first (outermost) so an unauthenticated
-    # request short-circuits with 401 before the route or the error handler
-    # ever sees it, so it is registered before install_error_handling here.
-    # The error handler still needs to be able to catch exceptions raised by
-    # route code, which it can from its position between auth and the
-    # router. Verified empirically via ghostbrain/api/tests/test_error_handler.py
-    # (401 for unauthenticated + JSON 500 for the boom route).
+    # Registration order matters, but not the way it looks: Starlette's
+    # add_middleware() inserts each new `app.middleware("http")` call at the
+    # FRONT of its internal list, and build_middleware_stack() then wraps
+    # that list in reverse — so the LAST-registered call ends up OUTERMOST
+    # (sees the request first, the response last), not the first-registered
+    # one. Concretely: install_error_handling()'s request-id middleware,
+    # registered second here, is outermost; auth, registered first, is
+    # nested one layer inside it, above the router.
+    #
+    # This doesn't break auth-before-everything-else in practice, because
+    # auth short-circuits an unauthenticated request by *returning* a 401
+    # JSONResponse rather than raising — so it never reaches the error
+    # handler's except clause, and the request-id middleware just stamps
+    # X-Request-ID on that 401 on its way back out. Verified empirically via
+    # ghostbrain/api/tests/test_error_handler.py (401 + X-Request-ID for an
+    # unauthenticated request, JSON 500 for the boom route once authed).
     app.middleware("http")(make_auth_middleware(token))
     install_error_handling(app)
     app.include_router(health_routes.router)
