@@ -33,7 +33,7 @@ export const useSettings = create<SettingsState>((set) => ({
 
   folderStructure: 'by-source',
 
-  schedulerEnabled: false,
+  schedulerEnabled: true,
   onboardingComplete: false,
 
   hotkeys: {

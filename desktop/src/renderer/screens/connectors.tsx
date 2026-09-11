@@ -38,6 +38,9 @@ const ROW_GRID = '32px minmax(0, 1fr) 100px 120px 120px 90px';
 
 const connectorIconSrc = (id: string): string => `assets/connectors/${id}.svg`;
 
+const SCHEDULER_OFF_MESSAGE =
+  'Scheduler is off — nothing syncs. Turn on "Run scheduler in-app" in Settings → background.';
+
 export function ConnectorsScreen() {
   const connectors = useConnectors();
   const scheduler = useSchedulerStatus({ intervalMs: 15_000 });
@@ -93,7 +96,7 @@ export function ConnectorsScreen() {
               icon={<Lucide name="refresh-cw" size={13} />}
               onClick={() => {
                 if (!schedulerEnabled) {
-                  stub(3);
+                  toast.info(SCHEDULER_OFF_MESSAGE);
                   return;
                 }
                 syncAll.mutate(undefined, {
@@ -470,7 +473,7 @@ function ConnectorDetailPanel({ c }: ConnectorDetailProps) {
                 icon={<Lucide name="refresh-cw" size={13} />}
                 onClick={() => {
                   if (!schedulerEnabled) {
-                    stub(3);
+                    toast.info(SCHEDULER_OFF_MESSAGE);
                     return;
                   }
                   syncOne.mutate(c.id, {
