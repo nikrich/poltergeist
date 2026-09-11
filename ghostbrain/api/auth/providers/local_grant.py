@@ -2,30 +2,21 @@
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from pathlib import Path
 
+from ghostbrain.api import claude_settings
 from ghostbrain.api.auth.providers.base import NextAction
 from ghostbrain.api.repo.routing import merge_routing
 
 
 def _claude_settings_path() -> Path:
     """Return path to ~/.claude/settings.json."""
-    return Path.home() / ".claude" / "settings.json"
+    return claude_settings.settings_path()
 
 
-def _write_json_atomic(path: Path, data: dict) -> None:
+def _write_json_atomic(path: Path, data: dict) -> None:  # kept for existing tests
     """Atomically write JSON data to a file using tempfile + rename."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".settings.", suffix=".json")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
-        os.replace(tmp, path)
-    except Exception:
-        Path(tmp).unlink(missing_ok=True)
-        raise
+    claude_settings.write_atomic(data)
 
 
 class ClaudeCodeProvider:
