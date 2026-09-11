@@ -114,22 +114,33 @@ def _find_uids() -> tuple[str, str]:
     scope_global = CA.kAudioObjectPropertyScopeGlobal
     scope_output = CA.kAudioObjectPropertyScopeOutput
 
-    raw_ids = _prop(CA.kAudioObjectSystemObject, CA.kAudioHardwarePropertyDevices, scope_global)
-    device_ids = struct.unpack(f"<{len(raw_ids) // 4}I", raw_ids) if raw_ids else ()
+    try:
+        raw_ids = _prop(CA.kAudioObjectSystemObject, CA.kAudioHardwarePropertyDevices, scope_global)
+        device_ids = struct.unpack(f"<{len(raw_ids) // 4}I", raw_ids) if raw_ids else ()
 
-    speakers = blackhole = None
-    for dev in device_ids:
-        name = _cfstring_prop(dev, CA.kAudioObjectPropertyName, scope_global)
-        uid = _cfstring_prop(dev, CA.kAudioDevicePropertyDeviceUID, scope_global)
-        if name == BLACKHOLE_DEVICE:
-            blackhole = uid
-        elif speakers is None:
-            transport = _uint32_prop(dev, CA.kAudioDevicePropertyTransportType, scope_global)
-            if transport == CA.kAudioDeviceTransportTypeBuiltIn:
-                # built-in output (not the built-in mic): must have output streams
-                streams = _prop(dev, CA.kAudioDevicePropertyStreams, scope_output)
-                if streams:
-                    speakers = uid
+        speakers = blackhole = None
+        for dev in device_ids:
+            name = _cfstring_prop(dev, CA.kAudioObjectPropertyName, scope_global)
+            uid = _cfstring_prop(dev, CA.kAudioDevicePropertyDeviceUID, scope_global)
+            if name == BLACKHOLE_DEVICE:
+                blackhole = uid
+            elif speakers is None:
+                # HDMI/DisplayPort outputs have their own (non-builtin) transport
+                # types, so this check naturally excludes them too.
+                transport = _uint32_prop(dev, CA.kAudioDevicePropertyTransportType, scope_global)
+                if transport == CA.kAudioDeviceTransportTypeBuiltIn:
+                    # built-in output (not the built-in mic): must have output streams
+                    streams = _prop(dev, CA.kAudioDevicePropertyStreams, scope_output)
+                    if streams:
+                        speakers = uid
+    except DeviceNotFound:
+        raise
+    except Exception as e:
+        # A shape/type mismatch in the CoreAudio binding (e.g. a decode helper
+        # getting back something other than what we expect) must not escape as
+        # a raw traceback — main() turns any RuntimeError into a one-line failure.
+        raise RuntimeError(f"CoreAudio enumeration failed: {e!r}") from e
+
     if blackhole is None:
         raise DeviceNotFound(BLACKHOLE_DEVICE)
     if speakers is None:
@@ -141,7 +152,12 @@ def _create(description: dict) -> int:
     """Create the aggregate device; return the OSStatus (0 = success)."""
     import CoreAudio as CA
 
-    err, _device_id = CA.AudioHardwareCreateAggregateDevice(description, None)
+    try:
+        err, _device_id = CA.AudioHardwareCreateAggregateDevice(description, None)
+    except Exception as e:
+        # Guard against the binding returning an unexpected shape (e.g. not a
+        # 2-tuple) — surface it as a one-line failure instead of a traceback.
+        raise RuntimeError(f"AudioHardwareCreateAggregateDevice returned an unexpected result: {e!r}") from e
     return int(err)
 
 
@@ -173,7 +189,9 @@ def main(argv: list[str] | None = None) -> int:
     except ImportError:
         print(f"CoreAudio bindings unavailable in this build; {_MANUAL_RECIPE}", file=sys.stderr)
         return 1
-    except (OSError, RuntimeError) as e:
+    except Exception as e:  # noqa: BLE001 — covers OSError/RuntimeError from CoreAudio and
+        # any unexpected shape (e.g. TypeError unpacking a binding result that didn't match
+        # what we expected) — never let a raw traceback reach the user here.
         print(f"audio-device failed: {e}", file=sys.stderr)
         return 1
     desc = build_description(name, speakers_uid=speakers_uid, blackhole_uid=blackhole_uid)
@@ -182,7 +200,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     try:
         status = _create(desc)
-    except (OSError, RuntimeError) as e:
+    except Exception as e:  # noqa: BLE001 — see above
         print(f"audio-device failed: {e}", file=sys.stderr)
         return 1
     if status != 0:

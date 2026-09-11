@@ -63,3 +63,22 @@ def test_non_darwin(monkeypatch, capsys):
     monkeypatch.setattr(ad, "_platform", lambda: "linux")
     assert ad.main([]) == 1
     assert "macOS only" in capsys.readouterr().err
+
+
+def test_unexpected_create_return_shape_is_one_line_failure(monkeypatch, capsys):
+    monkeypatch.setattr(ad, "_platform", lambda: "darwin")
+    monkeypatch.setattr(ad, "_configured_name", lambda: "Ghost Brain")
+    monkeypatch.setattr(ad, "_existing_output_names", lambda: [])
+    monkeypatch.setattr(ad, "_find_uids", lambda: ("S", "B"))
+    monkeypatch.setattr(ad, "_create", lambda desc: (_ for _ in ()).throw(TypeError("cannot unpack non-iterable int object")))
+    assert ad.main([]) == 1
+    assert "audio-device failed" in capsys.readouterr().err
+
+
+def test_enumeration_type_error_is_one_line_failure(monkeypatch, capsys):
+    monkeypatch.setattr(ad, "_platform", lambda: "darwin")
+    monkeypatch.setattr(ad, "_configured_name", lambda: "Ghost Brain")
+    monkeypatch.setattr(ad, "_existing_output_names", lambda: [])
+    monkeypatch.setattr(ad, "_find_uids", lambda: (_ for _ in ()).throw(TypeError("bad pointer")))
+    assert ad.main([]) == 1
+    assert "audio-device failed" in capsys.readouterr().err
