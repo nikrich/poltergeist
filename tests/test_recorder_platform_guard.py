@@ -20,7 +20,7 @@ def test_linux_unsupported():
 def test_win32_missing_deps_lists_actionable_items(monkeypatch):
     monkeypatch.setitem(sys.modules, "pyaudiowpatch", None)
     with patch("ghostbrain.recorder.audio.sys") as mock_sys, \
-         patch("ghostbrain.scheduler_jobs.shutil.which", return_value=None):
+         patch("ghostbrain.recorder.prereqs.shutil.which", return_value=None):
         mock_sys.platform = "win32"
         ok, missing = recorder_prereqs_ok()
     assert ok is False
@@ -33,10 +33,10 @@ def test_win32_with_deps_supported(monkeypatch, tmp_path):
     monkeypatch.setitem(sys.modules, "pyaudiowpatch", types.ModuleType("pyaudiowpatch"))
     model = tmp_path / "ggml-small.en.bin"
     model.write_bytes(b"x")
-    monkeypatch.setattr("ghostbrain.scheduler_jobs._model_present",
+    monkeypatch.setattr("ghostbrain.recorder.prereqs._model_present",
                         lambda: True)
     with patch("ghostbrain.recorder.audio.sys") as mock_sys, \
-         patch("ghostbrain.scheduler_jobs.shutil.which", return_value="/bin/whisper-cli"):
+         patch("ghostbrain.recorder.prereqs.shutil.which", return_value="/bin/whisper-cli"):
         mock_sys.platform = "win32"
         ok, missing = recorder_prereqs_ok()
     assert ok is True, missing
@@ -47,7 +47,7 @@ def test_model_present_honors_whisper_model_env_var(monkeypatch, tmp_path):
     which honours GHOSTBRAIN_WHISPER_MODEL — a bare glob of DEFAULT_MODEL_DIR
     reports "no model" even when the env var points at a perfectly valid
     model living elsewhere."""
-    from ghostbrain.scheduler_jobs import _model_present
+    from ghostbrain.recorder.prereqs import _model_present
 
     model = tmp_path / "custom-model.bin"
     model.write_bytes(b"x")
@@ -62,7 +62,7 @@ def test_model_present_honors_whisper_model_env_var(monkeypatch, tmp_path):
 
 
 def test_model_present_false_when_nothing_resolves(monkeypatch, tmp_path):
-    from ghostbrain.scheduler_jobs import _model_present
+    from ghostbrain.recorder.prereqs import _model_present
 
     monkeypatch.delenv("GHOSTBRAIN_WHISPER_MODEL", raising=False)
     monkeypatch.setattr(
@@ -73,17 +73,17 @@ def test_model_present_false_when_nothing_resolves(monkeypatch, tmp_path):
 
 
 def test_darwin_ffmpeg_check_still_fires():
-    # NOTE: ghostbrain.recorder.audio.darwin.shutil and ghostbrain.scheduler_jobs.shutil
+    # NOTE: ghostbrain.recorder.audio.darwin.shutil and ghostbrain.recorder.prereqs.shutil
     # are the same stdlib `shutil` module object, so patching `.which` on both targets
     # separately would have the second patch silently clobber the first. Use one
     # argument-aware patch instead so ffmpeg (darwin preflight) and whisper-cli
-    # (scheduler_jobs) can report different results.
+    # (prereqs) can report different results.
     def which_side_effect(tool):
         return None if tool == "ffmpeg" else "/bin/whisper-cli"
 
     with patch("ghostbrain.recorder.audio.sys") as mock_sys, \
-         patch("ghostbrain.scheduler_jobs.shutil.which", side_effect=which_side_effect), \
-         patch("ghostbrain.scheduler_jobs._model_present", lambda: True):
+         patch("ghostbrain.recorder.prereqs.shutil.which", side_effect=which_side_effect), \
+         patch("ghostbrain.recorder.prereqs._model_present", lambda: True):
         mock_sys.platform = "darwin"
         ok, missing = recorder_prereqs_ok()
     assert ok is False

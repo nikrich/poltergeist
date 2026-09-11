@@ -1,10 +1,13 @@
 """Recorder control endpoints — POST /v1/recorder/{start,stop,clear}, GET /v1/recorder/status."""
+import logging
+
 from fastapi import APIRouter, HTTPException
 
 from ghostbrain.api.models.recorder import RecorderStatus, StartRequest
 from ghostbrain.api.repo.recorder import (
     RecorderBusy,
     RecorderNotActive,
+    RecorderPrereqsMissing,
     RecorderUnsupportedError,
     clear,
     start,
@@ -12,6 +15,8 @@ from ghostbrain.api.repo.recorder import (
     stop,
 )
 from ghostbrain.recorder.audio_capture import AudioRoutingError
+
+log = logging.getLogger("ghostbrain.api.recorder_routes")
 
 router = APIRouter(prefix="/v1/recorder", tags=["recorder"])
 
@@ -32,14 +37,12 @@ def post_start(payload: StartRequest) -> dict:
         raise HTTPException(status_code=501, detail=str(e))
     except RecorderBusy as e:
         raise HTTPException(status_code=409, detail=str(e))
-    except AudioRoutingError as e:
-        # 412 Precondition Failed — request is well-formed, but the
-        # system isn't ready (audio output isn't routed to BlackHole).
-        # Distinct from 500 so the renderer can show a fixable hint
-        # ("switch macOS output to Ghost Brain") instead of a generic
-        # error toast.
+    except (AudioRoutingError, RecorderPrereqsMissing) as e:
+        # 412 Precondition Failed — well-formed request, system not ready; the
+        # detail names the exact fix (device to select, brew formula to install).
         raise HTTPException(status_code=412, detail=str(e))
-    except RuntimeError as e:
+    except (RuntimeError, OSError) as e:
+        log.exception("recorder start failed")
         raise HTTPException(status_code=500, detail=str(e))
 
 

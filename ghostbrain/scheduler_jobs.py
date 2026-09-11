@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import shutil
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -341,37 +340,9 @@ async def worker_daemon(stop: asyncio.Event) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _model_present() -> bool:
-    """Delegates to transcribe._resolve_model so this honours
-    GHOSTBRAIN_WHISPER_MODEL the same way the daemon's actual transcription
-    call does — a globbed check of DEFAULT_MODEL_DIR alone reported "no
-    model" even when the env var pointed at a valid model elsewhere."""
-    from ghostbrain.recorder.transcribe import TranscribeError, _resolve_model
-    try:
-        _resolve_model(None)
-    except TranscribeError:
-        return False
-    return True
-
-
-def recorder_prereqs_ok() -> tuple[bool, list[str]]:
-    """Backend preflight + shared transcription prereqs."""
-    from ghostbrain.recorder.audio import get_backend
-
-    ok, missing = get_backend().preflight()
-    missing = list(missing)
-    if shutil.which("whisper-cli") is None:
-        missing.append(
-            "whisper-cli not on PATH (macOS: brew install whisper-cpp; "
-            "Windows: install whisper.cpp and add it to PATH)"
-        )
-    if not _model_present():
-        missing.append(
-            "no whisper model in ~/ghostbrain/recorder/models/ (any ggml-*.bin); "
-            "on corporate networks download it via browser/approved channel, "
-            "not curl"
-        )
-    return (not missing, missing)
+# Moved to ghostbrain.recorder.prereqs; re-exported here for backward compat
+# (also used directly below by recorder_daemon).
+from ghostbrain.recorder.prereqs import recorder_prereqs_ok
 
 
 async def recorder_daemon(stop: asyncio.Event) -> None:

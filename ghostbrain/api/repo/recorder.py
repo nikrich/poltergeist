@@ -29,6 +29,7 @@ from pathlib import Path
 from ghostbrain.paths import vault_path
 from ghostbrain.recorder import state as daemon_state
 from ghostbrain.recorder.manual import load_config as load_manual_config, recover_one
+from ghostbrain.recorder.prereqs import recorder_prereqs_ok
 
 log = logging.getLogger("ghostbrain.api.recorder")
 
@@ -49,6 +50,10 @@ class RecorderNotActive(Exception):
 class RecorderUnsupportedError(Exception):
     """Raised when the current platform has no audio backend at runtime."""
     pass
+
+
+class RecorderPrereqsMissing(Exception):
+    """Raised when a required binary/model is absent; message is the preflight text."""
 
 
 def _ensure_supported() -> None:
@@ -224,6 +229,9 @@ def _current_calendar_event() -> dict | None:
 
 def start(title: str | None, context: str | None) -> dict:
     _ensure_supported()
+    ok, missing = recorder_prereqs_ok()
+    if not ok:
+        raise RecorderPrereqsMissing("; ".join(missing))
     with _lock:
         if _daemon_active() is not None:
             raise RecorderBusy("calendar-driven recording is in progress")
