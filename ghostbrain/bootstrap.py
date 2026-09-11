@@ -762,11 +762,12 @@ llm:
 
 worker:
   poll_interval_seconds: 5
-  # routing_mode: review_only | live
-  # review_only writes events to 00-inbox/raw only and audit-logs the
-  # routing decision; nothing lands under 20-contexts/<ctx>/. Flip to
-  # `live` after ~2 weeks of audit-log review.
-  routing_mode: review_only
+  # routing_mode: live | review_only
+  # live files each event under 20-contexts/<ctx>/ as it is routed.
+  # review_only keeps everything in 00-inbox/raw and only audit-logs the
+  # routing decision — useful for auditing a new connector; the app's
+  # meeting and calendar views look empty while it is on.
+  routing_mode: live
 
 profile:
   # Roots scanned by `ghostbrain-claude-md --all`. Each direct child that looks
