@@ -1,10 +1,38 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 from ghostbrain.doctor.fixes import bootstrap as bs
 from ghostbrain.doctor.fixes import cli_shim, go_live
+
+
+def test_binary_argv_frozen_is_just_the_running_executable(monkeypatch):
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", "/App/Contents/MacOS/ghostbrain-api")
+    assert cli_shim.binary_argv() == ["/App/Contents/MacOS/ghostbrain-api"]
+
+
+def test_binary_argv_source_install_with_sibling_console_script(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    python = tmp_path / "python"
+    python.write_text("")
+    console_script = tmp_path / "ghostbrain-api"
+    console_script.write_text("")
+    monkeypatch.setattr(sys, "executable", str(python))
+    assert cli_shim.binary_argv() == [str(console_script)]
+
+
+def test_binary_argv_source_install_falls_back_to_module_form(tmp_path: Path, monkeypatch):
+    """No sibling `ghostbrain-api` console script (the common `pip install -e`
+    case): must resolve to `<python> -m ghostbrain.api`, not bare `sys.executable`
+    — the old fallback made the shim exec a plain Python interpreter."""
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    python = tmp_path / "python"
+    python.write_text("")
+    monkeypatch.setattr(sys, "executable", str(python))
+    assert cli_shim.binary_argv() == [str(python), "-m", "ghostbrain.api"]
 
 
 def test_cli_shim_writes_exec_wrapper_to_first_writable_dir(tmp_path: Path, monkeypatch, capsys):
@@ -12,7 +40,7 @@ def test_cli_shim_writes_exec_wrapper_to_first_writable_dir(tmp_path: Path, monk
     local = tmp_path / "local-bin"
     monkeypatch.setattr(cli_shim, "CANDIDATES", lambda: [unwritable, local])
     monkeypatch.setattr(cli_shim, "_writable", lambda d: d == local)
-    monkeypatch.setattr(cli_shim, "binary_path", lambda: "/Applications/P.app/ghostbrain-api")
+    monkeypatch.setattr(cli_shim, "binary_argv", lambda: ["/Applications/P.app/ghostbrain-api"])
     monkeypatch.setenv("PATH", "/usr/bin")
     assert cli_shim.main([]) == 0
     shim = local / "poltergeist"
@@ -21,11 +49,21 @@ def test_cli_shim_writes_exec_wrapper_to_first_writable_dir(tmp_path: Path, monk
     assert "add" in capsys.readouterr().out  # PATH hint because local is not on PATH
 
 
+def test_cli_shim_quotes_each_argv_element_for_the_module_fallback(tmp_path: Path, monkeypatch):
+    d = tmp_path / "bin"
+    monkeypatch.setattr(cli_shim, "CANDIDATES", lambda: [d])
+    monkeypatch.setattr(cli_shim, "_writable", lambda _d: True)
+    monkeypatch.setattr(cli_shim, "binary_argv", lambda: ["/usr/bin/python3", "-m", "ghostbrain.api"])
+    assert cli_shim.main([]) == 0
+    shim = d / "poltergeist"
+    assert shim.read_text() == '#!/bin/sh\nexec "/usr/bin/python3" "-m" "ghostbrain.api" "$@"\n'
+
+
 def test_cli_shim_is_idempotent(tmp_path: Path, monkeypatch, capsys):
     d = tmp_path / "bin"
     monkeypatch.setattr(cli_shim, "CANDIDATES", lambda: [d])
     monkeypatch.setattr(cli_shim, "_writable", lambda _d: True)
-    monkeypatch.setattr(cli_shim, "binary_path", lambda: "/x/ghostbrain-api")
+    monkeypatch.setattr(cli_shim, "binary_argv", lambda: ["/x/ghostbrain-api"])
     assert cli_shim.main([]) == 0
     assert cli_shim.main([]) == 0
     assert "already" in capsys.readouterr().out
@@ -83,7 +121,7 @@ def test_cli_shim_refuses_when_target_is_a_directory(tmp_path: Path, monkeypatch
     (d / "poltergeist").mkdir(parents=True)
     monkeypatch.setattr(cli_shim, "CANDIDATES", lambda: [d])
     monkeypatch.setattr(cli_shim, "_writable", lambda _d: True)
-    monkeypatch.setattr(cli_shim, "binary_path", lambda: "/x/ghostbrain-api")
+    monkeypatch.setattr(cli_shim, "binary_argv", lambda: ["/x/ghostbrain-api"])
     assert cli_shim.main([]) == 1
     assert "is a directory" in capsys.readouterr().err
 

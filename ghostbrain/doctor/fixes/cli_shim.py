@@ -14,11 +14,24 @@ def CANDIDATES() -> list[Path]:  # noqa: N802, RUF100 — monkeypatched as a fun
     return [Path("/usr/local/bin"), Path.home() / ".local" / "bin"]
 
 
-def binary_path() -> str:
+def binary_argv() -> list[str]:
+    """Argv that re-invokes this build's `ghostbrain-api`.
+
+    - Frozen (PyInstaller) build: the running executable *is* ghostbrain-api.
+    - Source install with a sibling console script next to the interpreter
+      (e.g. an activated venv after `pip install -e .`): exec it directly.
+    - Plain source checkout with no console script on PATH (the common case
+      for `pip install -e` outside an activated venv): fall back to
+      `<python> -m ghostbrain.api`, which always resolves correctly. The old
+      code fell back to bare `sys.executable` here, which made the shim exec
+      a plain Python interpreter with no arguments.
+    """
     if getattr(sys, "frozen", False):
-        return sys.executable
+        return [sys.executable]
     candidate = Path(sys.executable).parent / "ghostbrain-api"
-    return str(candidate) if candidate.is_file() else sys.executable
+    if candidate.is_file():
+        return [str(candidate)]
+    return [sys.executable, "-m", "ghostbrain.api"]
 
 
 def _writable(d: Path) -> bool:
@@ -31,7 +44,8 @@ def _writable(d: Path) -> bool:
 
 def main(argv: list[str] | None = None) -> int:
     try:
-        script = f'#!/bin/sh\nexec "{binary_path()}" "$@"\n'
+        argv0 = " ".join(f'"{part}"' for part in binary_argv())
+        script = f'#!/bin/sh\nexec {argv0} "$@"\n'
         for d in CANDIDATES():
             if not _writable(d):
                 continue

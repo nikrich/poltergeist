@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import shlex
+import sys
 from pathlib import Path
 
 from ghostbrain.api import claude_settings as cs
@@ -52,6 +54,16 @@ def test_main_refuses_invalid_json(tmp_path: Path, monkeypatch, capsys):
     assert p.read_text() == "{broken"
 
 
-def test_hook_command_quotes_binary(monkeypatch):
-    monkeypatch.setattr(hook, "binary_path", lambda: "/Applications/Poltergeist.app/x/ghostbrain-api")
-    assert hook.hook_command() == '"/Applications/Poltergeist.app/x/ghostbrain-api" session-end'
+def test_hook_command_frozen_uses_the_bundled_executable(monkeypatch):
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", "/Applications/Poltergeist.app/x/ghostbrain-api")
+    assert hook.hook_command() == shlex.join(["/Applications/Poltergeist.app/x/ghostbrain-api", "session-end"])
+
+
+def test_hook_command_source_install_uses_the_module_form(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    python = tmp_path / "python"
+    python.write_text("")
+    monkeypatch.setattr(sys, "executable", str(python))
+    assert hook.hook_command() == shlex.join([str(python), "-m", "ghostbrain.api", "session-end"])
+    assert hook.hook_command().endswith("-m ghostbrain.api session-end")

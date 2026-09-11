@@ -1,16 +1,20 @@
 """`setup install-hook` — wire Claude Code's SessionEnd hook to this binary."""
 from __future__ import annotations
 
+import shlex
 import sys
 
 from ghostbrain.api import claude_settings
-from ghostbrain.doctor.fixes.cli_shim import binary_path
+from ghostbrain.doctor.fixes.cli_shim import binary_argv
 
-POLTERGEIST_MARKERS = ("session-end", "ghostbrain-api", "poltergeist")
+# I6 narrows this matching (per-command pruning, tighter "ours" test); kept
+# broad here so a `-m ghostbrain.api session-end` command still self-detects
+# as installed pending that follow-up.
+POLTERGEIST_MARKERS = ("session-end", "ghostbrain-api", "ghostbrain.api", "poltergeist")
 
 
 def hook_command() -> str:
-    return f'"{binary_path()}" session-end'
+    return shlex.join([*binary_argv(), "session-end"])
 
 
 def _is_ours(command: str) -> bool:
