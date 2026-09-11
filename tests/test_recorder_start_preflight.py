@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sys
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -23,6 +25,7 @@ def test_missing_prereqs_are_412_with_the_preflight_text(monkeypatch, client):
     assert "brew install ffmpeg" in r.json()["detail"]
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="patches the darwin capture path")
 def test_oserror_from_capture_is_500_with_detail_not_bare(monkeypatch, client):
     c, h = client
     monkeypatch.setattr(repo, "_ensure_supported", lambda: None)

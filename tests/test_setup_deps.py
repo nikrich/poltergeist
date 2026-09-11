@@ -1,6 +1,16 @@
 from __future__ import annotations
 
+import pytest
+
 from ghostbrain.doctor.fixes import deps
+
+
+@pytest.fixture(autouse=True)
+def _darwin(monkeypatch):
+    """These tests assume macOS by default; test_non_darwin_refuses overrides
+    this locally to exercise the non-darwin path. Without it, the whole file
+    fails on a non-darwin CI runner (main() short-circuits on _platform())."""
+    monkeypatch.setattr(deps, "_platform", lambda: "darwin")
 
 
 def _which(present: set[str]):

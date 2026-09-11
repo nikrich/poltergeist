@@ -26,6 +26,25 @@ jobs:
             tests/test_atlassian_import_refactor.py \
             tests/test_confluence_connector.py \
             tests/test_jira_connector.py \
+            tests/test_no_hardcoded_contexts.py \
+            tests/test_conftest_isolation.py \
+            tests/test_doctor_core.py \
+            tests/test_doctor_app_checks.py \
+            tests/test_doctor_recorder_checks.py \
+            tests/test_doctor_connector_checks.py \
+            tests/test_setup_dispatch.py \
+            tests/test_setup_deps.py \
+            tests/test_setup_fetch_model.py \
+            tests/test_setup_install_hook.py \
+            tests/test_setup_small_fixes.py \
+            tests/test_setup_audio_device.py \
+            tests/test_session_end.py \
+            tests/test_claude_settings.py \
+            tests/test_recorder_start_preflight.py \
+            tests/test_manual_transcribe_errors.py \
+            tests/test_bootstrap_routing_mode.py \
+            tests/test_connector_probe_calendar.py \
+            tests/test_logging_setup.py \
             -q
 
   desktop:
