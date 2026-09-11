@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import io
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from ghostbrain.hooks import session_end
 
-NOW = datetime(2026, 9, 11, 8, 30, 5, tzinfo=timezone.utc)
+NOW = datetime(2026, 9, 11, 8, 30, 5, tzinfo=UTC)
 
 
 def test_queues_event_and_snapshots_transcript(tmp_path: Path):
@@ -75,3 +75,48 @@ def test_session_end_is_registered_subcommand():
     from ghostbrain.api.__main__ import SUBCOMMANDS
 
     assert SUBCOMMANDS["session-end"] == "ghostbrain.hooks.session_end:main"
+
+
+def test_resolve_vault_prefers_the_vault_path_env_var(tmp_path: Path, monkeypatch):
+    from ghostbrain.doctor import desktop_config
+
+    monkeypatch.setenv("VAULT_PATH", str(tmp_path / "from-env"))
+    monkeypatch.setattr(desktop_config, "load", lambda: {"vaultPath": str(tmp_path / "from-desktop-config")})
+    assert session_end.resolve_vault() == (tmp_path / "from-env").resolve()
+
+
+def test_resolve_vault_falls_back_to_the_desktop_apps_configured_vault(tmp_path: Path, monkeypatch):
+    """The hook runs inside Claude Code's own environment, which never sees
+    VAULT_PATH — without this fallback a custom (non-default) desktop vault
+    silently lost every SessionEnd event to ~/ghostbrain/vault instead."""
+    from ghostbrain.doctor import desktop_config
+
+    monkeypatch.delenv("VAULT_PATH", raising=False)
+    monkeypatch.setattr(desktop_config, "load", lambda: {"vaultPath": str(tmp_path / "desktop-vault")})
+    assert session_end.resolve_vault() == (tmp_path / "desktop-vault").resolve()
+
+
+def test_resolve_vault_expands_a_leading_tilde_from_desktop_config(monkeypatch):
+    from ghostbrain.doctor import desktop_config
+
+    monkeypatch.delenv("VAULT_PATH", raising=False)
+    monkeypatch.setattr(desktop_config, "load", lambda: {"vaultPath": "~/notes/vault"})
+    assert session_end.resolve_vault() == (Path.home() / "notes" / "vault").resolve()
+
+
+def test_resolve_vault_falls_back_to_the_default_when_desktop_config_has_no_vault_path(tmp_path: Path, monkeypatch):
+    from ghostbrain.doctor import desktop_config
+
+    monkeypatch.delenv("VAULT_PATH", raising=False)
+    monkeypatch.setattr(desktop_config, "load", dict)
+    assert session_end.resolve_vault() == session_end.vault_path()
+
+
+def test_resolve_vault_ignores_a_non_string_or_blank_desktop_vault_path(monkeypatch):
+    from ghostbrain.doctor import desktop_config
+
+    monkeypatch.delenv("VAULT_PATH", raising=False)
+    monkeypatch.setattr(desktop_config, "load", lambda: {"vaultPath": "   "})
+    assert session_end.resolve_vault() == session_end.vault_path()
+    monkeypatch.setattr(desktop_config, "load", lambda: {"vaultPath": 42})
+    assert session_end.resolve_vault() == session_end.vault_path()

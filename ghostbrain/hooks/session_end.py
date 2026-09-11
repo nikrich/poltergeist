@@ -8,12 +8,34 @@ worker. Always exits 0: a hook failure must never break Claude Code.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
 from ghostbrain.paths import vault_path
+
+
+def resolve_vault() -> Path:
+    """Resolve the vault to queue SessionEnd events into.
+
+    The hook runs inside Claude Code's own environment, which never sets
+    VAULT_PATH — so without a fallback here, a user who pointed the desktop
+    app at a non-default vault (Settings -> vault path) silently lost every
+    SessionEnd event to the default ~/ghostbrain/vault instead.
+
+    Priority: VAULT_PATH env var (unchanged, e.g. for tests/scripts) > the
+    desktop app's configured vaultPath > vault_path()'s own default.
+    """
+    if os.environ.get("VAULT_PATH"):
+        return vault_path()
+    from ghostbrain.doctor import desktop_config
+
+    cfg_vault = desktop_config.load().get("vaultPath")
+    if isinstance(cfg_vault, str) and cfg_vault.strip():
+        return Path(cfg_vault).expanduser().resolve()
+    return vault_path()
 
 
 def handle(payload: dict, *, vault: Path, now: datetime) -> Path | None:
@@ -78,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"session-end: unreadable payload ({e}); skipping", file=sys.stderr)
         return 0
     try:
-        handle(payload, vault=vault_path(), now=datetime.now(UTC))
+        handle(payload, vault=resolve_vault(), now=datetime.now(UTC))
     except Exception as e:  # noqa: BLE001 — never fail the editor's hook
         print(f"session-end: failed ({e}); skipping", file=sys.stderr)
     return 0
