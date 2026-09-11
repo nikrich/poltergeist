@@ -14,7 +14,7 @@ import sys
 
 from ghostbrain.doctor.checks_recorder import BLACKHOLE_DEVICE
 
-AGGREGATE_UID = "tech.codeship.ghostbrain.multioutput"
+AGGREGATE_UID = "com.getpoltergeist.multioutput"
 
 
 class DeviceNotFound(RuntimeError):

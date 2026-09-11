@@ -2693,7 +2693,7 @@ def test_description_is_a_stacked_public_aggregate_with_drift_on_blackhole():
     desc = ad.build_description("Ghost Brain", speakers_uid="BuiltInSpeakerDevice", blackhole_uid="BlackHole2ch_UID")
     assert desc == {
         "name": "Ghost Brain",
-        "uid": "tech.codeship.ghostbrain.multioutput",
+        "uid": "com.getpoltergeist.multioutput",
         "stacked": 1,
         "private": 0,
         "master": "BuiltInSpeakerDevice",
@@ -2783,7 +2783,7 @@ import sys
 
 from ghostbrain.doctor.checks_recorder import BLACKHOLE_DEVICE
 
-AGGREGATE_UID = "tech.codeship.ghostbrain.multioutput"
+AGGREGATE_UID = "com.getpoltergeist.multioutput"
 
 
 class DeviceNotFound(RuntimeError):

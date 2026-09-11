@@ -138,7 +138,7 @@ prompt.
   `AudioHardwareCreateAggregateDevice` from `pyobjc-framework-CoreAudio` (new
   darwin-only dependency, added to `pyproject.toml` and collected in
   `packaging/sidecar.spec`). Description dictionary: name from
-  `recorder.audio_device`, uid `tech.codeship.ghostbrain.multioutput`, `stacked: 1`
+  `recorder.audio_device`, uid `com.getpoltergeist.multioutput`, `stacked: 1`
   (multi-output rather than aggregate), `private: 0` (persists, visible in Audio MIDI
   Setup), master = built-in output UID, subdevices = built-in output and BlackHole with
   `drift: 1` on BlackHole. Finds device UIDs by enumerating `kAudioHardwarePropertyDevices`
