@@ -6,10 +6,14 @@ from ghostbrain.api import runtime
 
 
 def test_file_logging_quiets_chatty_libraries():
-    runtime.setup_file_logging()
-    for name in ("httpx", "httpcore", "huggingface_hub", "transformers", "sentence_transformers", "filelock", "urllib3"):
-        assert logging.getLogger(name).level == logging.WARNING, name
-    assert set(runtime.QUIET_LOGGERS) >= {"httpx", "huggingface_hub"}
+    handler = runtime.setup_file_logging()
+    try:
+        for name in ("httpx", "httpcore", "huggingface_hub", "transformers", "sentence_transformers", "filelock", "urllib3"):
+            assert logging.getLogger(name).level == logging.WARNING, name
+        assert set(runtime.QUIET_LOGGERS) >= {"httpx", "huggingface_hub"}
+    finally:
+        logging.getLogger().removeHandler(handler)
+        handler.close()
 
 
 def test_uvicorn_is_left_to_propagate_to_root():
