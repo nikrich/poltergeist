@@ -21,18 +21,58 @@ def test_install_adds_entry_once(tmp_path: Path):
     assert hook.install(doc, cmd)["hooks"]["SessionEnd"] == [_entry(cmd)]
 
 
-def test_install_drops_stale_poltergeist_entries_keeps_others(tmp_path: Path):
+def test_install_prunes_only_the_stale_ours_command_keeps_the_sibling(tmp_path: Path):
+    """Pruning happens per command inside an entry's hooks list, not per
+    entry — a third-party hook sharing an entry with a stale ours command
+    must survive."""
     ok_bin = tmp_path / "bin"
     ok_bin.write_text("")
     doc = {"hooks": {"SessionEnd": [
-        _entry("/Users/dev/development/ghost-brain/orchestration/hooks/session-end.sh"),
-        _entry("/usr/local/bin/my-other-hook.sh"),
+        {"matcher": "*", "hooks": [
+            {"type": "command", "command": "/dead/ghostbrain-api session-end", "async": True},
+            {"type": "command", "command": "/usr/local/bin/other-hook.sh", "async": True},
+        ]},
     ], "PreToolUse": [_entry("keep")]}, "theme": "dark"}
     new = hook.install(doc, f'"{ok_bin}" session-end')
     cmds = cs.session_end_commands(new)
-    assert cmds == ["/usr/local/bin/my-other-hook.sh", f'"{ok_bin}" session-end']
+    assert cmds == ["/usr/local/bin/other-hook.sh", f'"{ok_bin}" session-end']
     assert new["hooks"]["PreToolUse"] == [_entry("keep")]
     assert new["theme"] == "dark"
+
+
+def test_install_never_prunes_a_third_party_hook_with_poltergeist_in_its_path(tmp_path: Path):
+    """A bare 'poltergeist' substring marker used to make this a false
+    positive: a user's own hook living under a directory named 'poltergeist'
+    is not ours, and must never be dropped even though the file is missing
+    (which would look 'stale' under the old broad match)."""
+    ok_bin = tmp_path / "bin"
+    ok_bin.write_text("")
+    doc = {"hooks": {"SessionEnd": [_entry("/home/me/poltergeist/notes.sh")]}}
+    new = hook.install(doc, f'"{ok_bin}" session-end')
+    cmds = cs.session_end_commands(new)
+    assert "/home/me/poltergeist/notes.sh" in cmds
+
+
+def test_install_never_prunes_a_third_party_hook_whose_script_is_named_session_end(tmp_path: Path):
+    """A bare 'session-end' substring marker used to make this a false
+    positive too: the command's last *token* must be the literal
+    subcommand 'session-end', not merely end with those characters."""
+    ok_bin = tmp_path / "bin"
+    ok_bin.write_text("")
+    doc = {"hooks": {"SessionEnd": [_entry("/some/tool/session-end.sh")]}}
+    new = hook.install(doc, f'"{ok_bin}" session-end')
+    cmds = cs.session_end_commands(new)
+    assert "/some/tool/session-end.sh" in cmds
+
+
+def test_install_drops_a_stale_ours_entry_entirely_when_it_empties_out(tmp_path: Path):
+    ok_bin = tmp_path / "bin"
+    ok_bin.write_text("")
+    doc = {"hooks": {"SessionEnd": [_entry("/dead/ghostbrain-api session-end")]}}
+    new = hook.install(doc, f'"{ok_bin}" session-end')
+    cmds = cs.session_end_commands(new)
+    assert cmds == [f'"{ok_bin}" session-end']
+    assert len(new["hooks"]["SessionEnd"]) == 1
 
 
 def test_main_writes_settings_and_is_idempotent(tmp_path: Path, monkeypatch, capsys):

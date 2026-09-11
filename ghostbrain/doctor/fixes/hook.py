@@ -7,18 +7,28 @@ import sys
 from ghostbrain.api import claude_settings
 from ghostbrain.doctor.fixes.cli_shim import binary_argv
 
-# I6 narrows this matching (per-command pruning, tighter "ours" test); kept
-# broad here so a `-m ghostbrain.api session-end` command still self-detects
-# as installed pending that follow-up.
-POLTERGEIST_MARKERS = ("session-end", "ghostbrain-api", "ghostbrain.api", "poltergeist")
-
 
 def hook_command() -> str:
     return shlex.join([*binary_argv(), "session-end"])
 
 
 def _is_ours(command: str) -> bool:
-    return any(m in command for m in POLTERGEIST_MARKERS)
+    """True only for a command this tool could plausibly have installed.
+
+    Deliberately narrow: a bare "poltergeist" or "session-end" substring
+    marker matched too much (a user's own `/home/me/poltergeist/notes.sh` or
+    `/some/tool/session-end.sh` hook), so `install-hook` could delete a
+    third-party hook it didn't own. "Ours" now requires the command's last
+    shlex token to be the literal `session-end` subcommand AND the command to
+    reference `ghostbrain-api` or `ghostbrain.api` somewhere.
+    """
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return False
+    if not tokens or tokens[-1] != "session-end":
+        return False
+    return any("ghostbrain-api" in t or "ghostbrain.api" in t for t in tokens)
 
 
 def install(doc: dict, command: str) -> dict:
@@ -27,14 +37,22 @@ def install(doc: dict, command: str) -> dict:
     kept: list[dict] = []
     present = False
     for entry in entries:
-        cmds = [h.get("command", "") for h in entry.get("hooks") or []]
-        if command in cmds:
-            present = True
-            kept.append(entry)
-            continue
-        stale = any(_is_ours(c) and not claude_settings.hook_command_exists(c) for c in cmds)
-        if not stale:
-            kept.append(entry)
+        entry_hooks = entry.get("hooks") or []
+        kept_hooks: list[dict] = []
+        for h in entry_hooks:
+            cmd = h.get("command", "")
+            if cmd == command:
+                present = True
+                kept_hooks.append(h)
+                continue
+            if _is_ours(cmd) and not claude_settings.hook_command_exists(cmd):
+                continue  # stale command of ours — drop just this one
+            kept_hooks.append(h)
+        if not kept_hooks:
+            continue  # entry emptied out by pruning — drop the whole entry
+        if kept_hooks != entry_hooks:
+            entry = {**entry, "hooks": kept_hooks}
+        kept.append(entry)
     if not present:
         kept.append({"matcher": "*", "hooks": [{"type": "command", "command": command, "async": True}]})
     hooks["SessionEnd"] = kept
