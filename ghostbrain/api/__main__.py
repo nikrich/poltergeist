@@ -180,6 +180,7 @@ SUBCOMMANDS: dict[str, str] = {
     "mcp": "ghostbrain.mcp.__main__:main",
     "doctor": "ghostbrain.doctor.cli:main",
     "setup": "ghostbrain.doctor.setup:main",
+    "session-end": "ghostbrain.hooks.session_end:main",
 }
 
 
