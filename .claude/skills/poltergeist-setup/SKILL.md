@@ -67,7 +67,9 @@ Gmail, Google Calendar, Apple Calendar, Microsoft 365, Joplin. For each:
 - Point them at the app's connector card (Connectors screen) for the
   credential step. The cards work.
 - Claude Code needs no credential: `"$PG" setup install-hook`.
-- Verify with `"$PG" <connector>-fetch` and confirm the routing block is
+- Verify with `"$PG" <connector>-fetch` (Microsoft 365 is `outlook-mail-fetch`,
+  `teams-chat-fetch`, `teams-meetings-fetch`; Google Calendar and Apple
+  Calendar are both `calendar-fetch`) and confirm the routing block is
   non-empty in `<vault>/90-meta/routing.yaml` (`github.orgs`, `gmail.accounts`,
   `calendar.macos.accounts`, `slack.workspaces`, ...). A connector that shows
   "on" with an empty block syncs nothing; add the org/account by hand, one
