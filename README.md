@@ -74,6 +74,18 @@ Everything in the pipeline is inspectable: events are JSON files, notes are mark
 
 **Under the hood:** Python 3.11+, an in-app asyncio scheduler (no broker, no Docker), a filesystem queue, and Obsidian as the storage layer. Cross-platform — connectors, worker, digests, and the desktop app run on macOS, Linux, and Windows ([per-OS notes](./docs/install/)). The meeting recorder supports macOS and Windows; Linux is unsupported.
 
+## Set up in five minutes with Claude Code
+
+1. [Download Poltergeist](https://github.com/nikrich/poltergeist/releases/latest) and open it once.
+2. Install the setup skill:
+   ```bash
+   npx skills add nikrich/poltergeist
+   ```
+   No Node? `curl -fsSL https://github.com/nikrich/poltergeist/archive/main.tar.gz | tar -xz --strip-components=3 -C ~/.claude/skills poltergeist-main/.claude/skills/poltergeist-setup`
+3. Open Claude Code anywhere and say **"set up Poltergeist"**.
+
+It runs the app's own `doctor`, installs what is missing with your consent (ffmpeg, whisper, the audio device, the Claude Code hook), and finishes with a real test recording. Prefer to do it by hand? `poltergeist doctor` prints the same checklist; see [docs/install/macos.md](docs/install/macos.md).
+
 ## Quick start
 
 Get your first connector flowing in about five minutes.
@@ -148,8 +160,6 @@ Commands below are subcommands — prefix with `ghostbrain-api ` (app) or `ghost
 | Claude Code | SessionEnd hook | — |
 
 Full per-connector walkthroughs — OAuth scopes, routing rules, scheduling, caveats — live in **[docs/connectors.md](./docs/connectors.md)**. For an agent-guided setup of any connector, use the `onboarding-poltergeist` skill in `.claude/skills/`.
-
-> Connectors are wired up from the CLI + `routing.yaml` for now — the desktop app's "connect" buttons are placeholders.
 
 ### 5. Keep it running
 
