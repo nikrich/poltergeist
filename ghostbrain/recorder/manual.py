@@ -221,16 +221,11 @@ def recover_one(
     log.info("recovering orphan manual recording: %s", wav.name)
     started = started_override or _parse_started_from_name(wav)
 
-    try:
-        txt_path = transcribe(wav)
-    except TranscribeError as e:
-        log.warning("transcribe failed for %s: %s", wav.name, e)
-        return None
+    txt_path = transcribe(wav)  # TranscribeError propagates: the caller decides how to surface it
 
     transcript_text = txt_path.read_text(encoding="utf-8")
     if not transcript_text.strip():
-        log.warning("empty transcript for %s; skipping", wav.name)
-        return None
+        raise TranscribeError(f"empty transcript for {wav.name}")
 
     title = title_override or _derive_title(transcript_text)
     duration_s = _duration_seconds(wav, started)
@@ -269,8 +264,8 @@ def run_recovery_pass(config: ManualConfig | None = None) -> list[Path]:
             continue
         try:
             result = recover_one(wav, cfg)
-        except Exception:  # noqa: BLE001
-            log.exception("recovery failed for %s", wav.name)
+        except TranscribeError as e:
+            log.warning("transcribe failed for %s: %s", wav.name, e)
             continue
         if result is not None:
             recovered.append(result)
