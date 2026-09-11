@@ -87,6 +87,29 @@ def test_switchaudio_missing_makes_dependent_checks_skip(darwin, monkeypatch):
     assert cr.check_audio_routing().status == "skip"
 
 
+def test_whisper_checks_run_on_windows_with_manual_fixes(monkeypatch, tmp_path: Path):
+    from ghostbrain.recorder import transcribe
+
+    monkeypatch.setattr(cr, "_platform", lambda: "win32")
+    monkeypatch.setattr(cr.shutil, "which", _which(set()))
+    monkeypatch.setattr(transcribe, "DEFAULT_MODEL_DIR", tmp_path)
+    monkeypatch.delenv("GHOSTBRAIN_WHISPER_MODEL", raising=False)
+    cli = cr.check_whisper_cli()
+    assert cli.status == "fail"
+    assert cli.fix.kind == "manual"
+    assert "docs/install/windows.md" in cli.fix.command
+    model = cr.check_whisper_model()
+    assert model.status == "fail"
+    assert model.fix.kind == "manual"
+    assert "docs/install/windows.md" in model.fix.command
+
+
+def test_whisper_checks_still_skip_on_linux(monkeypatch):
+    monkeypatch.setattr(cr, "_platform", lambda: "linux")
+    assert cr.check_whisper_cli().status == "skip"
+    assert cr.check_whisper_model().status == "skip"
+
+
 def test_mac_only_checks_skip_on_linux(monkeypatch):
     monkeypatch.setattr(cr, "_platform", lambda: "linux")
     for fn in (cr.check_ffmpeg, cr.check_whisper_cli, cr.check_whisper_model,

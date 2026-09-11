@@ -44,6 +44,10 @@ def _mac_only(check_id: str) -> CheckResult | None:
     return None if _platform() == "darwin" else _skip(check_id)
 
 
+def _mac_or_windows(check_id: str) -> CheckResult | None:
+    return None if _platform() in ("darwin", "win32") else _skip(check_id)
+
+
 @register("ffmpeg")
 def check_ffmpeg() -> CheckResult:
     if (s := _mac_only("ffmpeg")) is not None:
@@ -60,33 +64,43 @@ def check_ffmpeg() -> CheckResult:
 
 @register("whisper-cli")
 def check_whisper_cli() -> CheckResult:
-    if (s := _mac_only("whisper-cli")) is not None:
+    if (s := _mac_or_windows("whisper-cli")) is not None:
         return s
     path = shutil.which("whisper-cli")
     if path:
         return CheckResult(id="whisper-cli", status="ok", summary=path)
+    fix = (
+        Fix(kind="automated", command="setup deps --only whisper-cpp")
+        if _platform() == "darwin"
+        else Fix(kind="manual", command="install whisper.cpp and add whisper-cli to PATH — see docs/install/windows.md")
+    )
     return CheckResult(
         id="whisper-cli", status="fail", summary="whisper-cli not found on PATH",
         detail="whisper.cpp's CLI transcribes recordings locally.",
-        fix=Fix(kind="automated", command="setup deps --only whisper-cpp"),
+        fix=fix,
     )
 
 
 @register("whisper-model")
 def check_whisper_model() -> CheckResult:
-    if (s := _mac_only("whisper-model")) is not None:
+    if (s := _mac_or_windows("whisper-model")) is not None:
         return s
     from ghostbrain.recorder.transcribe import DEFAULT_MODEL_DIR, TranscribeError, _resolve_model
 
     try:
         model = _resolve_model(None)
     except TranscribeError as e:
+        fix = (
+            Fix(kind="automated", command="setup fetch-model",
+                note="downloads ggml-medium.en.bin (~1.5 GB); pass base.en or small.en for a smaller model")
+            if _platform() == "darwin"
+            else Fix(kind="manual", command="download a ggml-*.bin into ~/ghostbrain/recorder/models/ by hand — see docs/install/windows.md")
+        )
         return CheckResult(
             id="whisper-model", status="fail",
             summary=f"no ggml-*.bin in {DEFAULT_MODEL_DIR}",
             detail=str(e),
-            fix=Fix(kind="automated", command="setup fetch-model",
-                    note="downloads ggml-medium.en.bin (~1.5 GB); pass base.en or small.en for a smaller model"),
+            fix=fix,
         )
     return CheckResult(id="whisper-model", status="ok", summary=model.name, data={"model": str(model)})
 
