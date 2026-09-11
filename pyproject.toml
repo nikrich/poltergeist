@@ -102,6 +102,7 @@ ghostbrain-recorder-recover = "ghostbrain.recorder.recover_cli:main"
 ghostbrain-metrics = "ghostbrain.metrics.main:main"
 ghostbrain-semantic-refresh = "ghostbrain.semantic.main:main"
 ghostbrain-mcp = "ghostbrain.mcp.__main__:main"
+ghostbrain-doctor = "ghostbrain.doctor.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["ghostbrain*"]
