@@ -50,6 +50,7 @@ function vaultRoot(): string {
 
 const sidecar = new Sidecar(repoRoot(), {
   schedulerEnabled: settings.getAll().schedulerEnabled,
+  vaultPath: settings.getAll().vaultPath,
 });
 
 let trayController: TrayController | null = null;
@@ -172,9 +173,10 @@ ipcMain.handle('gb:settings:set', async (_e, key: unknown, value: unknown) => {
     return { ok: false, error: `Invalid value for ${key}: ${issue}` };
   }
   settings.setKey(key as keyof Settings, parsed.data as Settings[keyof Settings]);
-  if (key === 'schedulerEnabled') {
-    // Sidecar reads this from its launch env, so flipping it requires a restart.
-    sidecar.setSchedulerEnabled(parsed.data as boolean);
+  if (key === 'schedulerEnabled' || key === 'vaultPath') {
+    // Both are read from the sidecar's launch env, so changing either needs a restart.
+    if (key === 'schedulerEnabled') sidecar.setSchedulerEnabled(parsed.data as boolean);
+    if (key === 'vaultPath') sidecar.setVaultPath(parsed.data as string);
     try {
       await sidecar.stop();
       await sidecar.start();

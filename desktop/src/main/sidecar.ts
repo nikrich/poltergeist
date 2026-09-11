@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { app } from 'electron';
 
@@ -21,6 +22,27 @@ interface SpawnTarget {
   exe: string;
   args: string[];
   cwd: string;
+}
+
+export interface SidecarOptions {
+  schedulerEnabled?: boolean;
+  vaultPath?: string;
+}
+
+export function buildSidecarEnv(
+  base: NodeJS.ProcessEnv,
+  opts: { schedulerEnabled: boolean; vaultPath: string; extraPath: string },
+): NodeJS.ProcessEnv {
+  const inheritedPath = base.PATH ?? '';
+  const home = base.HOME ?? homedir();
+  const vault = opts.vaultPath.startsWith('~/') ? join(home, opts.vaultPath.slice(2)) : opts.vaultPath;
+  return {
+    ...base,
+    PATH: inheritedPath ? `${opts.extraPath}:${inheritedPath}` : opts.extraPath,
+    PYTHONUNBUFFERED: '1',
+    GHOSTBRAIN_SCHEDULER_ENABLED: opts.schedulerEnabled ? '1' : '0',
+    VAULT_PATH: vault,
+  };
 }
 
 const READY_LINE_RE = /^READY port=(\d+) token=([0-9a-f]+)/m;
@@ -81,13 +103,17 @@ export class Sidecar extends EventEmitter {
 
   constructor(
     private readonly cwd: string,
-    private readonly options: { schedulerEnabled?: boolean } = {},
+    private readonly options: SidecarOptions = {},
   ) {
     super();
   }
 
   setSchedulerEnabled(enabled: boolean): void {
     this.options.schedulerEnabled = enabled;
+  }
+
+  setVaultPath(path: string): void {
+    this.options.vaultPath = path;
   }
 
   getStatus(): Status {
@@ -160,15 +186,13 @@ export class Sidecar extends EventEmitter {
       const extraPath = ['/opt/homebrew/bin', '/usr/local/bin', userLocalBin]
         .filter(Boolean)
         .join(':');
-      const inheritedPath = process.env.PATH ?? '';
       const proc = spawn(exe, args, {
         cwd,
-        env: {
-          ...process.env,
-          PATH: inheritedPath ? `${extraPath}:${inheritedPath}` : extraPath,
-          PYTHONUNBUFFERED: '1',
-          GHOSTBRAIN_SCHEDULER_ENABLED: this.options.schedulerEnabled ? '1' : '0',
-        },
+        env: buildSidecarEnv(process.env, {
+          schedulerEnabled: this.options.schedulerEnabled ?? false,
+          vaultPath: this.options.vaultPath ?? '',
+          extraPath,
+        }),
       });
       this.proc = proc;
       this.stdoutBuf = '';
