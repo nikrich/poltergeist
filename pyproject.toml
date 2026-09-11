@@ -37,6 +37,9 @@ dependencies = [
     # macOS Calendar connector reads via EventKit (PyObjC) so recurring
     # events get expanded — AppleScript's `whose` predicate misses them.
     "pyobjc-framework-EventKit>=11.0; sys_platform == 'darwin'",
+    # `setup audio-device` builds the "Ghost Brain" multi-output device via
+    # AudioHardwareCreateAggregateDevice.
+    "pyobjc-framework-CoreAudio>=11.0; sys_platform == 'darwin'",
 ]
 
 [project.optional-dependencies]
