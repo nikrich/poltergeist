@@ -159,7 +159,7 @@ Commands below are subcommands — prefix with `ghostbrain-api ` (app) or `ghost
 | Microsoft (Outlook / Teams) | `microsoft-auth` | Entra app (client id + tenant id) |
 | Claude Code | SessionEnd hook | — |
 
-Full per-connector walkthroughs — OAuth scopes, routing rules, scheduling, caveats — live in **[docs/connectors.md](./docs/connectors.md)**. For an agent-guided setup of any connector, use the `onboarding-poltergeist` skill in `.claude/skills/`.
+Full per-connector walkthroughs — OAuth scopes, routing rules, scheduling, caveats — live in **[docs/connectors.md](./docs/connectors.md)**. For an agent-guided setup of any connector, use the `poltergeist-setup` Claude Code skill (see the section at the top of this README).
 
 ### 5. Keep it running
 

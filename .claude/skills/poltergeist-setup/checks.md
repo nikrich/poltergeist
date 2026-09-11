@@ -8,7 +8,7 @@ Confirms the desktop app is installed and its sidecar is up and answering `/heal
 
 ## vault
 
-Confirms `<vault>/90-meta/routing.yaml` exists, which is how doctor knows the vault has been bootstrapped. Missing it fails with an automated fix, `setup bootstrap`, which is idempotent and safe to re-run. A second failure mode is a mismatch: the desktop app's Settings vault path points somewhere other than the sidecar's vault, so the two disagree about where notes live — the fix is manual, set the app's vault path back to the sidecar's vault in Settings. If it fails twice after bootstrapping, check that `VAULT_PATH` isn't set to something stale in the environment the app was launched from.
+Confirms `<vault>/90-meta/routing.yaml` exists, which is how doctor knows the vault has been bootstrapped. Missing it fails with an automated fix, `setup bootstrap`, which is idempotent and safe to re-run. A second condition is a mismatch: the desktop app's Settings vault path points somewhere other than the sidecar's vault, so the two disagree about where notes live. This is reported as a `warn`, not a `fail`, since the sidecar's vault is still fully usable — set the app's vault path back to the sidecar's vault in Settings until the two are reconciled. If it fails twice, run `"$PG" setup bootstrap` once more and paste its output; if the path it prints is not where the user expects their vault, the desktop Settings vault path and the sidecar disagree.
 
 ## contexts
 
