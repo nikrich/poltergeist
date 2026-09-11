@@ -179,6 +179,7 @@ SUBCOMMANDS: dict[str, str] = {
     "semantic-refresh": "ghostbrain.semantic.main:main",
     "mcp": "ghostbrain.mcp.__main__:main",
     "doctor": "ghostbrain.doctor.cli:main",
+    "setup": "ghostbrain.doctor.setup:main",
 }
 
 

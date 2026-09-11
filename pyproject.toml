@@ -103,6 +103,7 @@ ghostbrain-metrics = "ghostbrain.metrics.main:main"
 ghostbrain-semantic-refresh = "ghostbrain.semantic.main:main"
 ghostbrain-mcp = "ghostbrain.mcp.__main__:main"
 ghostbrain-doctor = "ghostbrain.doctor.cli:main"
+ghostbrain-setup = "ghostbrain.doctor.setup:main"
 
 [tool.setuptools.packages.find]
 include = ["ghostbrain*"]
