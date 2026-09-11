@@ -9,9 +9,8 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from pathlib import Path
 
-from ghostbrain.paths import state_dir, vault_path
+from ghostbrain.paths import state_dir
 
 
 @dataclass
@@ -89,7 +88,7 @@ def _github_probe() -> ProbeResult:
         return ProbeResult("off")
     try:
         r = subprocess.run(
-            ["gh", "auth", "status"], capture_output=True, timeout=5, text=True
+            ["gh", "auth", "status"], capture_output=True, timeout=5, text=True, check=False
         )
     except (subprocess.SubprocessError, OSError):
         return ProbeResult("off")
@@ -97,16 +96,18 @@ def _github_probe() -> ProbeResult:
 
 
 def _claude_code_probe() -> ProbeResult:
-    settings = Path.home() / ".claude" / "settings.json"
-    if not settings.exists():
-        return ProbeResult("off")
-    try:
-        import json
+    from ghostbrain.api import claude_settings
 
-        hooks = json.loads(settings.read_text()).get("hooks", {})
-    except (OSError, ValueError):
+    try:
+        doc = claude_settings.load()
+    except ValueError:
+        return ProbeResult("err", error="settings.json is not valid JSON")
+    cmds = claude_settings.session_end_commands(doc)
+    if not cmds:
         return ProbeResult("off")
-    return ProbeResult("on") if "SessionEnd" in hooks else ProbeResult("off")
+    if not any(claude_settings.hook_command_exists(c) for c in cmds):
+        return ProbeResult("err", error="SessionEnd hook points at a missing script; run `poltergeist setup install-hook`")
+    return ProbeResult("on")
 
 
 def probe(connector_id: str) -> ProbeResult:

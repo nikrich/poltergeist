@@ -1,22 +1,10 @@
 """Local grant providers: Claude Code settings hook and macOS Calendar access."""
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 from ghostbrain.api import claude_settings
 from ghostbrain.api.auth.providers.base import NextAction
 from ghostbrain.api.repo.routing import merge_routing
-
-
-def _claude_settings_path() -> Path:
-    """Return path to ~/.claude/settings.json."""
-    return claude_settings.settings_path()
-
-
-def _write_json_atomic(path: Path, data: dict) -> None:  # kept for existing tests
-    """Atomically write JSON data to a file using tempfile + rename."""
-    claude_settings.write_atomic(data)
+from ghostbrain.doctor.fixes import hook
 
 
 class ClaudeCodeProvider:
@@ -26,9 +14,7 @@ class ClaudeCodeProvider:
 
     def start(self, connector_id, params):
         """Prompt for hook script and optional project path/context."""
-        default_script = str(
-            Path.home() / "development" / "ghost-brain" / "orchestration" / "hooks" / "session-end.sh"
-        )
+        default_script = hook.hook_command()
         return NextAction(
             kind="need_input",
             message="Poltergeist will add a SessionEnd hook to ~/.claude/settings.json.",
@@ -47,19 +33,15 @@ class ClaudeCodeProvider:
             session.status = "error"
             session.error = "Hook script path is required"
             return NextAction(kind="need_input", fields=[])
-        path = _claude_settings_path()
         try:
-            doc = json.loads(path.read_text()) if path.exists() else {}
-        except (OSError, ValueError):
-            doc = {}
-        hooks = doc.setdefault("hooks", {})
-        hooks["SessionEnd"] = [
-            {"matcher": "*", "hooks": [
-                {"type": "command", "command": script, "shell": "bash", "async": True}
-            ]}
-        ]
+            doc = claude_settings.load()
+        except ValueError:
+            session.status = "error"
+            session.error = "~/.claude/settings.json is not valid JSON; fix it by hand first"
+            return NextAction(kind="need_input", fields=[])
+        doc = hook.install(doc, script)
         try:
-            _write_json_atomic(path, doc)
+            claude_settings.write_atomic(doc)
         except OSError as e:
             session.status = "error"
             session.error = f"Could not write settings.json: {e}"
@@ -74,7 +56,6 @@ class ClaudeCodeProvider:
 
     def poll(self, connector_id, session):
         """No async polling needed for Claude Code provider."""
-        pass
 
     def account_label(self, session):
         """Return account label."""
