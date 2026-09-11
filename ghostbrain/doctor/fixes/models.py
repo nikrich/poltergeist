@@ -38,14 +38,16 @@ def download(name: str, dest_dir: Path, *, base_url: str = BASE_URL,
         with httpx.stream("GET", f"{base_url}/{filename}", follow_redirects=True, timeout=60.0) as resp:
             if resp.status_code != 200:
                 raise FetchError(f"HTTP {resp.status_code} for {filename}")
-            total = _content_length(resp) or 0
+            total = _content_length(resp)
+            if total is None:
+                raise FetchError("server sent no Content-Length; refusing an unverifiable download")
             done = 0
             with part.open("wb") as f:
                 for chunk in resp.iter_bytes(1024 * 1024):
                     f.write(chunk)
                     done += len(chunk)
                     progress(done, total)
-        if total and done != total:
+        if done != total:
             raise FetchError(f"download incomplete: {done} of {total} bytes")
         os.replace(part, final)
     except (httpx.HTTPError, OSError) as e:

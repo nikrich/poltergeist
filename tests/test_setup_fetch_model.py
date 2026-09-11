@@ -60,3 +60,19 @@ def test_main_respects_env_override(tmp_path: Path, monkeypatch, capsys):
 def test_main_rejects_unknown_model(capsys):
     assert models.main(["huge"]) == 2
     assert "base.en, small.en, medium.en" in capsys.readouterr().err
+
+
+def test_missing_content_length_is_refused(served, tmp_path: Path, monkeypatch):
+    base, srv = served
+    (srv / "ggml-base.en.bin").write_bytes(b"m" * 100)
+    monkeypatch.setattr(models, "_content_length", lambda resp: None)
+    with pytest.raises(models.FetchError, match="Content-Length"):
+        models.download("base.en", tmp_path / "models", base_url=base, progress=lambda d, t: None)
+    assert not list((tmp_path / "models").glob("*"))
+
+
+def test_http_404_is_failure_without_leftovers(served, tmp_path: Path):
+    base, _srv = served  # file deliberately not created
+    with pytest.raises(models.FetchError, match="HTTP 404"):
+        models.download("base.en", tmp_path / "models", base_url=base, progress=lambda d, t: None)
+    assert not list((tmp_path / "models").glob("*"))
