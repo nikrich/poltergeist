@@ -26,6 +26,11 @@ logs/
 packaging/build/
 desktop/resources/sidecar/
 
+# Native macOS capture helper — built by scripts/build-native-macos.sh
+desktop/resources/bin/
+native/macos/ghostbrain-capture/.build/
+native/macos/ghostbrain-capture/.swiftpm/
+
 # Claude Code linked worktrees (skills under .claude/skills/ ARE tracked)
 .claude/worktrees/
 .superpowers/

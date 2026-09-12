@@ -1,15 +1,19 @@
 """Manual-recording control for the desktop app.
 
-The sidecar owns the ffmpeg subprocess for manual sessions:
+The sidecar owns the capture subprocess (native ``ghostbrain-capture``
+helper or legacy ffmpeg) for manual sessions:
 
-- POST /v1/recorder/start spawns ffmpeg, persists ``manual.state`` so the
+- POST /v1/recorder/start spawns capture, persists ``manual.state`` so the
   daemon's orphan-recovery flow can rescue it if the desktop closes
   mid-recording.
-- POST /v1/recorder/stop SIGINTs ffmpeg and kicks off whisper transcription
+- POST /v1/recorder/stop SIGINTs capture and kicks off whisper transcription
   in a background thread, returning immediately. The UI polls /status.
 - GET /v1/recorder/status reports the current phase based on whether the
-  daemon owns a recording, whether ffmpeg is still alive for the manual
+  daemon owns a recording, whether capture is still alive for the manual
   state, or whether transcription is in flight / complete.
+- POST /v1/recorder/capture/target answers the native helper's "no meeting
+  window found" prompt (whole display / audio only / a specific window) by
+  writing the helper's control file.
 
 Background transcription writes the transcript markdown via
 ``ghostbrain.recorder.manual.recover_one``; once it returns, the state file
@@ -22,6 +26,7 @@ import dataclasses
 import json
 import logging
 import os
+import sys
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,7 +37,9 @@ from ghostbrain.recorder.manual import load_config as load_manual_config, recove
 
 log = logging.getLogger("ghostbrain.api.recorder")
 
-RECORDINGS_DIR = Path.home() / "ghostbrain" / "recorder" / "recordings"
+from ghostbrain.recorder.config import DEFAULT_RECORDINGS_DIR
+
+RECORDINGS_DIR = DEFAULT_RECORDINGS_DIR
 STATE_FILE = RECORDINGS_DIR.parent / "manual.state"
 
 _lock = threading.Lock()
@@ -134,6 +141,11 @@ def status() -> dict:
             "transcriptPath": None,
             "error": None,
             "sourceExclusions": exclusions,
+            "captureBackend": daemon.get("capture_backend") or None,
+            "awaitingTargetChoice": bool(daemon.get("awaiting_target_choice")),
+            "captureWindows": _capture_windows(
+                daemon.get("wav_path"), bool(daemon.get("awaiting_target_choice")),
+            ),
         }
     state = _read_state()
     if state is None:
@@ -146,6 +158,9 @@ def status() -> dict:
             "transcriptPath": None,
             "error": None,
             "sourceExclusions": exclusions,
+            "captureBackend": None,
+            "awaitingTargetChoice": False,
+            "captureWindows": [],
         }
     phase = state.get("phase", "idle")
     # If the state claims "recording" but capture died, the user (or a crash)
@@ -168,7 +183,26 @@ def status() -> dict:
         "transcriptPath": state.get("transcriptPath"),
         "error": state.get("error"),
         "sourceExclusions": exclusions,
+        "captureBackend": state.get("captureBackend"),
+        "awaitingTargetChoice": bool(
+            phase == "recording" and state.get("awaitingTargetChoice")
+        ),
+        "captureWindows": _capture_windows(
+            state.get("wavPath"), bool(phase == "recording" and state.get("awaitingTargetChoice")),
+        ),
     }
+
+
+def _capture_windows(wav_path: str | None, awaiting: bool) -> list[dict]:
+    """Pickable windows from the helper's catalog, only while a choice is pending."""
+    if not awaiting or not wav_path or sys.platform != "darwin":
+        return []
+    try:
+        from ghostbrain.recorder.audio import darwin_native
+        return darwin_native.list_windows(Path(wav_path))
+    except Exception as e:  # noqa: BLE001
+        log.warning("could not list capture windows: %s", e)
+        return []
 
 
 def _current_calendar_event() -> dict | None:
@@ -254,15 +288,18 @@ def start(title: str | None, context: str | None) -> dict:
 
         from ghostbrain.recorder.audio import get_backend
 
+        backend = get_backend()
         timestamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
         wav_path = RECORDINGS_DIR / f"meeting-{timestamp}-manual.wav"
-        log_path = RECORDINGS_DIR / "ffmpeg.log"
-        handle = get_backend().start_capture(wav_path, log_path=log_path)
+        log_path = RECORDINGS_DIR / "capture.log"
+        handle = backend.start_capture(wav_path, log_path=log_path)
 
         state = {
             "phase": "recording",
             "pid": handle.pid,
             "wavPath": str(handle.wav_path),
+            "captureBackend": getattr(backend, "name", None),
+            "awaitingTargetChoice": bool(getattr(handle, "awaiting_target_choice", False)),
             "title": chosen_title,  # may be null; LLM derives if stop-time title still missing
             "context": chosen_context,
             "parentPath": parent_path,  # vault-relative path of the linked calendar event
@@ -357,6 +394,52 @@ def _transcribe_in_background(snapshot: dict) -> None:
         })
         _write_state(current)
     log.info("manual recording transcribed: %s", rel or "(failed)")
+
+
+def request_capture_permissions() -> dict:
+    """Trigger the native helper's TCC prompts, then return the fresh probe."""
+    _ensure_supported()
+    if sys.platform != "darwin":
+        raise RecorderUnsupportedError("native capture permissions only apply on macOS")
+    from ghostbrain.recorder.audio import darwin_native
+
+    return darwin_native.request_permissions().to_dict()
+
+
+def set_capture_target(choice: str, window_id: int | None = None) -> dict:
+    """Answer the native helper's "no meeting window" prompt for whichever
+    recording (daemon- or manual-owned) is live, then return status().
+
+    ``choice`` is ``display`` / ``audio`` / ``window`` (+ ``window_id`` from
+    ``status().captureWindows``). Delivered via the helper's control file."""
+    _ensure_supported()
+    if sys.platform != "darwin":
+        raise RecorderUnsupportedError("capture target choice only applies on macOS")
+    from ghostbrain.recorder.audio import darwin_native, get_backend
+
+    backend = get_backend()
+
+    with _lock:
+        ds = daemon_state.load()
+        if ds.active is not None and backend.capture_alive(ds.active.pid):
+            darwin_native.write_control(Path(ds.active.wav_path), choice, window_id)
+            ds.active.awaiting_target_choice = False
+            daemon_state.save(ds)
+            return status()
+
+        state = _read_state()
+        if state is None or state.get("phase") != "recording":
+            raise RecorderNotActive("no recording to retarget")
+        pid = state.get("pid")
+        if not (isinstance(pid, int) and backend.capture_alive(pid)):
+            raise RecorderNotActive("capture process is not running")
+        wav = state.get("wavPath")
+        if not isinstance(wav, str) or not wav:
+            raise RecorderNotActive("recording has no wav path")
+        darwin_native.write_control(Path(wav), choice, window_id)
+        state["awaitingTargetChoice"] = False
+        _write_state(state)
+        return status()
 
 
 def clear() -> dict:

@@ -12,7 +12,9 @@ import {
   useCreateProject,
   useProjects,
   useRecorderSettings,
+  useRefreshSchedulerDiagnostics,
   useReindex,
+  useRequestCapturePermissions,
   useSchedulerDiagnostics,
   useSearchIndexStatus,
   useUpdateProject,
@@ -30,7 +32,14 @@ import type {
   TranscriptModel,
   Settings,
 } from '../../shared/types';
-import type { Project, UpdateProjectRequest } from '../../shared/api-types';
+import type {
+  CaptureBackend,
+  CaptureHelperDiagnostics,
+  CapturePermission,
+  Project,
+  SlideFallback,
+  UpdateProjectRequest,
+} from '../../shared/api-types';
 
 async function trySet<K extends keyof Settings>(
   setSetting: (k: K, v: Settings[K]) => Promise<{ ok: true } | { ok: false; error: string }>,
@@ -263,13 +272,52 @@ function PrivacySettings() {
   );
 }
 
-function MeetingSettings() {
+const PRIVACY_PANE_URL = 'x-apple.systempreferences:com.apple.preference.security';
+
+function permissionLabel(p: CapturePermission | undefined): string {
+  switch (p) {
+    case 'granted':
+      return 'granted';
+    case 'denied':
+      return 'denied';
+    case 'not_determined':
+      return 'not asked yet';
+    default:
+      return 'unknown';
+  }
+}
+
+async function openPrivacyPane(pane: 'Privacy_ScreenCapture' | 'Privacy_Microphone') {
+  const r = await window.gb.shell.openExternal(`${PRIVACY_PANE_URL}?${pane}`);
+  if (!r.ok) toast.error(r.error);
+}
+
+export function MeetingSettings() {
   const retention = useSettings((s) => s.audioRetention);
   const model = useSettings((s) => s.transcriptModel);
   const setSetting = useSettings((s) => s.set);
   const recorderQuery = useRecorderSettings();
   const updateRecorder = useUpdateRecorderSettings();
   const recorder = recorderQuery.data;
+  const platform = window.gb.platform;
+  const isMac = platform === 'darwin';
+  const isWin = platform === 'win32';
+  const diagnostics = useSchedulerDiagnostics();
+  const helper = diagnostics.data?.capture_helper ?? null;
+  // Prefer the settings view of the effective backend (updates on POST);
+  // fall back to the diagnostics probe while settings are still loading.
+  const effective = recorder?.capture_backend_effective ?? diagnostics.data?.effective_backend;
+  const effectiveNative = effective === 'native';
+  const effectiveBlackhole = effective === 'blackhole';
+  const fallingBack =
+    recorder !== undefined &&
+    recorder.capture_backend !== 'blackhole' &&
+    effective !== undefined &&
+    !effectiveNative;
+  const updateRecorderField = (vars: Parameters<typeof updateRecorder.mutateAsync>[0], what: string) =>
+    void updateRecorder.mutateAsync(vars).catch((e) =>
+      toast.error(e instanceof Error ? e.message : `failed to update ${what}`),
+    );
   const contexts = useContexts().data?.contexts ?? [];
   // Keep the stored value selectable even if routing.yaml no longer lists it.
   const manualContext = recorder?.manual_context ?? '';
@@ -319,6 +367,89 @@ function MeetingSettings() {
           </select>
         }
       />
+      {isMac && recorder && (
+        <>
+          <SettingRow
+            label="capture method"
+            sub={captureMethodSub(effective, fallingBack, helper)}
+            control={
+              <Segmented<CaptureBackend>
+                value={recorder.capture_backend}
+                options={[
+                  { value: 'auto', label: 'auto' },
+                  { value: 'native', label: 'native' },
+                  { value: 'blackhole', label: 'blackhole' },
+                ]}
+                onChange={(v) => updateRecorderField({ capture_backend: v }, 'capture method')}
+              />
+            }
+          />
+          <SettingRow
+            label="slide capture"
+            sub={
+              effectiveNative
+                ? 'sample key-frames from the meeting window and attach them to the transcript'
+                : 'requires the native capture method'
+            }
+            control={
+              <Toggle
+                on={recorder.capture_slides}
+                disabled={!effectiveNative}
+                onChange={(v) => updateRecorderField({ capture_slides: v }, 'slide capture')}
+              />
+            }
+          />
+          {effectiveNative && recorder.capture_slides && (
+            <>
+              <SettingRow
+                label="when no meeting window is found"
+                sub="what native capture does if it can't find a Teams/Zoom/Meet window to sample"
+                control={
+                  <select
+                    aria-label="when no meeting window is found"
+                    className={selectClass}
+                    value={recorder.slide_fallback}
+                    onChange={(e) =>
+                      updateRecorderField(
+                        { slide_fallback: e.target.value as SlideFallback },
+                        'slide fallback',
+                      )
+                    }
+                  >
+                    <option value="ask">ask</option>
+                    <option value="display">capture screen</option>
+                    <option value="audio">audio only</option>
+                  </select>
+                }
+              />
+              <SettingRow
+                label="slide sampling"
+                sub="frames per second sampled for slide detection · higher catches faster flips"
+                control={
+                  <select
+                    aria-label="slide sampling"
+                    className={selectClass}
+                    value={String(recorder.slide_fps)}
+                    onChange={(e) =>
+                      updateRecorderField({ slide_fps: Number(e.target.value) }, 'slide sampling')
+                    }
+                  >
+                    <option value="1">1 fps</option>
+                    <option value="2">2 fps</option>
+                  </select>
+                }
+              />
+            </>
+          )}
+        </>
+      )}
+      {isWin && (
+        <SettingRow
+          label="capture method"
+          sub="system audio is captured via WASAPI loopback · no extra drivers needed"
+          control={<span className="font-mono text-11 text-ink-2">WASAPI loopback</span>}
+        />
+      )}
       <SettingRow
         label="audio retention"
         sub="how long to keep raw audio after transcription · UI only for now"
@@ -349,6 +480,126 @@ function MeetingSettings() {
           </select>
         }
       />
+      {isMac && (
+        <NativeCaptureDiagnostics
+          helper={helper}
+          loading={diagnostics.isLoading}
+          effectiveBlackhole={effectiveBlackhole}
+          ffmpegAvailable={diagnostics.data?.ffmpeg_available}
+        />
+      )}
+    </div>
+  );
+}
+
+function captureMethodSub(
+  effective: string | undefined,
+  fallingBack: boolean,
+  helper: CaptureHelperDiagnostics | null,
+): string {
+  const parts: string[] = [];
+  parts.push(effective ? `in use: ${effective}` : 'in use: …');
+  if (fallingBack) {
+    parts.push(`falling back${helper?.reason ? ` — ${helper.reason}` : ''}`);
+  }
+  parts.push('applies to the next recording');
+  return parts.join(' · ');
+}
+
+function NativeCaptureDiagnostics({
+  helper,
+  loading,
+  effectiveBlackhole,
+  ffmpegAvailable,
+}: {
+  helper: CaptureHelperDiagnostics | null;
+  loading: boolean;
+  effectiveBlackhole: boolean;
+  ffmpegAvailable: boolean | undefined;
+}) {
+  const requestPermissions = useRequestCapturePermissions();
+  const refresh = useRefreshSchedulerDiagnostics();
+  const busy = requestPermissions.isPending || refresh.isPending;
+
+  const onGrant = async () => {
+    try {
+      const result = await requestPermissions.mutateAsync();
+      await openPrivacyPane('Privacy_ScreenCapture');
+      if (result.microphone === 'denied') {
+        toast.info('microphone access is denied — allow it under Privacy › Microphone too');
+        await openPrivacyPane('Privacy_Microphone');
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'failed to request capture permissions');
+    }
+  };
+  const onRecheck = () =>
+    void refresh.mutateAsync().catch((e) =>
+      toast.error(e instanceof Error ? e.message : 'failed to re-check capture helper'),
+    );
+
+  const value = (text: string) => <span className="font-mono text-11 text-ink-2">{text}</span>;
+  const permissionsMissing =
+    helper !== null &&
+    helper.found &&
+    (helper.screen_recording !== 'granted' || helper.microphone !== 'granted');
+
+  return (
+    <div className="mt-6">
+      <Eyebrow className="mb-1">native capture</Eyebrow>
+      <SettingRow
+        label="capture helper"
+        sub={
+          loading
+            ? 'probing…'
+            : helper?.found
+              ? helper.path ?? 'found'
+              : 'ghostbrain-capture not found · packaged builds ship it; pip users run scripts/build-native-macos.sh'
+        }
+        control={value(loading ? '…' : helper?.found ? 'found' : 'missing')}
+      />
+      <SettingRow
+        label="macOS version"
+        sub="native capture (ScreenCaptureKit) needs macOS 15 or newer"
+        control={value(
+          loading || !helper
+            ? '…'
+            : `${helper.macos_version || '?'} · ${helper.macos_supported ? 'supported' : 'unsupported'}`,
+        )}
+      />
+      <SettingRow
+        label="screen recording"
+        sub="needed to capture system audio and slide key-frames"
+        control={value(loading ? '…' : permissionLabel(helper?.screen_recording))}
+      />
+      <SettingRow
+        label="microphone"
+        sub="needed to capture your side of the conversation"
+        control={value(loading ? '…' : permissionLabel(helper?.microphone))}
+      />
+      {effectiveBlackhole && (
+        <SettingRow
+          label="ffmpeg available (blackhole method)"
+          sub="required for the blackhole capture method. install via `brew install ffmpeg`."
+          control={value(loading ? '…' : ffmpegAvailable ? 'yes' : 'no')}
+        />
+      )}
+      <div className="mt-3 flex gap-2">
+        <Btn
+          variant={permissionsMissing ? 'primary' : 'secondary'}
+          size="sm"
+          onClick={() => void onGrant()}
+          disabled={busy || helper === null || !helper.found}
+        >
+          {requestPermissions.isPending ? 'waiting for macOS…' : 'grant access'}
+        </Btn>
+        <Btn variant="ghost" size="sm" onClick={onRecheck} disabled={busy}>
+          {refresh.isPending ? 'checking…' : 're-check'}
+        </Btn>
+      </div>
+      {helper && !helper.ok && helper.reason && (
+        <p className="mt-2 text-11 leading-[1.4] text-ink-2">{helper.reason}</p>
+      )}
     </div>
   );
 }
@@ -389,19 +640,6 @@ function BackgroundSettings() {
             on={enabled}
             onChange={(v) => void trySet(setSetting, 'schedulerEnabled', v)}
           />
-        }
-      />
-      <SettingRow
-        label="ffmpeg available"
-        sub="required for the in-app meeting recorder. install via `brew install ffmpeg`."
-        control={
-          <span className="font-mono text-11 text-ink-2">
-            {diagnostics.isLoading
-              ? '…'
-              : diagnostics.data?.ffmpeg_available
-                ? 'yes'
-                : 'no'}
-          </span>
         }
       />
       {window.gb.platform === 'darwin' && <CliShimRow />}

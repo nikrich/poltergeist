@@ -28,17 +28,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import frontmatter
-import yaml
 
 from ghostbrain.llm.client import LLMError, run as llm_run
 from ghostbrain.paths import vault_path
+from ghostbrain.recorder import config as rcfg
+from ghostbrain.recorder import slides as slides_mod
 from ghostbrain.recorder.audio import get_backend
 from ghostbrain.recorder.transcribe import TranscribeError, transcribe
+from ghostbrain.recorder.wavinfo import wav_duration_seconds
 
 log = logging.getLogger("ghostbrain.recorder.manual")
 
-DEFAULT_RECORDINGS_DIR = Path.home() / "ghostbrain" / "recorder" / "recordings"
-DEFAULT_MANUAL_CONTEXT = "personal"
+DEFAULT_RECORDINGS_DIR = rcfg.DEFAULT_RECORDINGS_DIR
+DEFAULT_MANUAL_CONTEXT = str(rcfg.RECORDER_DEFAULTS["manual_context"])
 MIN_AGE_SECONDS = 60  # wait at least this long after last mtime before assuming a wav is "done"
 MIN_SIZE_BYTES = 100_000
 PROCESSED_MARKER_KEY = "manualRecordingId"  # stamp into the transcript frontmatter
@@ -49,23 +51,21 @@ class ManualConfig:
     enabled: bool
     context: str
     recordings_dir: Path
+    slide_min_words: int = int(rcfg.RECORDER_DEFAULTS["slide_min_words"])
 
 
 def load_config() -> ManualConfig:
-    cfg_file = vault_path() / "90-meta" / "config.yaml"
-    cfg: dict = {}
-    if cfg_file.exists():
-        cfg = yaml.safe_load(cfg_file.read_text(encoding="utf-8")) or {}
-    rec = cfg.get("recorder") or {}
+    rec = rcfg.load_recorder_block()
     return ManualConfig(
         enabled=bool(rec.get("manual_enabled", True)),
         context=str(rec.get("manual_context") or DEFAULT_MANUAL_CONTEXT),
         recordings_dir=Path(rec.get("recordings_dir") or DEFAULT_RECORDINGS_DIR),
+        slide_min_words=rcfg.slide_min_words_from(rec),
     )
 
 
 def _looks_alive(wav: Path, *, now: float) -> bool:
-    """Is ffmpeg likely still writing to this file?"""
+    """Is the capture process likely still writing to this file?"""
     try:
         mtime = wav.stat().st_mtime
     except OSError:
@@ -130,7 +130,10 @@ def _slugify(value: str) -> str:
 
 
 def _duration_seconds(wav: Path, fallback_started: datetime) -> float:
-    """Best-effort: mtime - mtime-of-creation. Falls back to mtime-of-now."""
+    """Prefer the WAV header (exact); fall back to mtime - start."""
+    from_header = wav_duration_seconds(wav)
+    if from_header > 0:
+        return from_header
     try:
         stats = wav.stat()
     except OSError:
@@ -235,7 +238,7 @@ def recover_one(
     title = title_override or _derive_title(transcript_text)
     duration_s = _duration_seconds(wav, started)
 
-    return _file_transcript(
+    note_path = _file_transcript(
         wav=wav,
         transcript_text=transcript_text,
         title=title,
@@ -244,6 +247,12 @@ def recover_one(
         duration_s=duration_s,
         parent_path=parent_path_override,
     )
+    # Slide key-frames from the native helper (no-op for other backends).
+    try:
+        slides_mod.attach_slides(note_path, wav, min_words=config.slide_min_words)
+    except Exception:  # noqa: BLE001
+        log.exception("attaching slides failed for %s", wav.name)
+    return note_path
 
 
 def run_recovery_pass(config: ManualConfig | None = None) -> list[Path]:
@@ -260,6 +269,12 @@ def run_recovery_pass(config: ManualConfig | None = None) -> list[Path]:
     if state_pid is not None and get_backend().capture_alive(state_pid):
         # Real active recording — leave the directory alone.
         return []
+
+    # Crash leftovers: frames dirs whose WAV is long gone.
+    try:
+        slides_mod.sweep_orphan_frames(cfg.recordings_dir, now=now)
+    except Exception:  # noqa: BLE001
+        log.exception("orphan frames sweep failed")
 
     recovered: list[Path] = []
     for wav in sorted(cfg.recordings_dir.glob("*-manual.wav")):

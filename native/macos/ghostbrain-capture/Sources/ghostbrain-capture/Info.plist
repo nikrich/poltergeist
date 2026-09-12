@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTD/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>tech.codeship.ghostbrain.capture</string>
+    <key>CFBundleName</key>
+    <string>ghostbrain-capture</string>
+    <key>CFBundleExecutable</key>
+    <string>ghostbrain-capture</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>15.0</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>Poltergeist records the audio of your meetings and captures presentation slides via ScreenCaptureKit.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Poltergeist records your microphone during meetings so your own voice is in the transcript.</string>
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>Poltergeist records system audio during meetings so the other participants are in the transcript.</string>
+</dict>
+</plist>

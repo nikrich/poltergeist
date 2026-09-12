@@ -177,6 +177,24 @@ export interface RecorderStatus {
   wavPath: string | null;
   transcriptPath: string | null;
   error: string | null;
+  /** Native capture found no meeting window and is waiting for a target choice. */
+  awaitingTargetChoice: boolean;
+  /** Backend in use for the active/last recording ("native" | "blackhole" | "wasapi"). */
+  captureBackend: string | null;
+  /** On-screen windows the helper can sample; populated only while awaitingTargetChoice. Front-to-back. */
+  captureWindows: CaptureWindow[];
+}
+
+export interface CaptureWindow {
+  windowId: number;
+  /** Bundle id / process name. */
+  app: string;
+  appName: string;
+  title: string;
+  width: number;
+  height: number;
+  /** The helper would have auto-picked this as a meeting window. */
+  candidate: boolean;
 }
 
 export interface StartRecordingRequest {
@@ -184,16 +202,55 @@ export interface StartRecordingRequest {
   context?: string;
 }
 
+/** User preference; `auto` picks native when the helper probe passes. */
+export type CaptureBackend = 'auto' | 'native' | 'blackhole';
+/** What the sidecar resolved `capture_backend` to on this machine. */
+export type CaptureBackendEffective = 'native' | 'blackhole' | 'wasapi' | 'unsupported';
+/** What to do when native capture finds no meeting window to sample slides from. */
+export type SlideFallback = 'ask' | 'display' | 'audio';
+
 export interface RecorderSettings {
   enabled: boolean;
   excluded_titles: string[];
   manual_context: string;
+  capture_backend: CaptureBackend;
+  capture_slides: boolean;
+  /** Slide key-frame sampling rate, 1..5. */
+  slide_fps: number;
+  slide_fallback: SlideFallback;
+  /** Read-only. */
+  capture_backend_effective: CaptureBackendEffective;
 }
 
 export interface UpdateRecorderSettings {
   enabled?: boolean;
   excluded_titles?: string[];
   manual_context?: string;
+  capture_backend?: CaptureBackend;
+  capture_slides?: boolean;
+  slide_fps?: number;
+  slide_fallback?: SlideFallback;
+}
+
+export type CapturePermission = 'granted' | 'denied' | 'not_determined' | 'unknown';
+
+/** Result of probing the native macOS capture helper (`ghostbrain-capture check`). */
+export interface CaptureHelperDiagnostics {
+  found: boolean;
+  path: string | null;
+  ok: boolean;
+  code: number | null;
+  reason: string;
+  macos_version: string;
+  macos_supported: boolean;
+  screen_recording: CapturePermission;
+  microphone: CapturePermission;
+}
+
+export interface SetCaptureTargetRequest {
+  choice: 'display' | 'audio' | 'window';
+  /** Required (positive) when choice is 'window'. */
+  window_id?: number;
 }
 
 export interface EventSnapshot {

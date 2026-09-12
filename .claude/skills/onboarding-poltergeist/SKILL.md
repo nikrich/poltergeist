@@ -51,6 +51,26 @@ Per-connector specifics (exact prerequisites, routing keys, gotchas) are in **`c
 | **microsoft** (outlook/teams) | Entra app (public client) → `client_id`+`tenant_id`; delegated scopes + admin consent | `ghostbrain-microsoft-auth` + `microsoft.*` blocks | `ghostbrain-teams-meetings-fetch` |
 | **claude_code** | none | wire SessionEnd hook → `orchestration/hooks/session-end.sh`; `claude_code.project_paths` | run a Claude session, check `00-inbox/raw/claude-code/` |
 
+## Meeting recorder
+
+Records system audio + mic, transcribes with whisper.cpp, links the transcript to the calendar event note. Full guide: `docs/install/macos.md#meeting-recorder` / `docs/install/windows.md#meeting-recorder`.
+
+| OS | Capture method | Prerequisites | Check |
+|---|---|---|---|
+| macOS 15+ | `native` (ScreenCaptureKit helper `ghostbrain-capture`, bundled in the app; from source: `scripts/build-native-macos.sh --install`) | Screen Recording + Microphone permission | `ghostbrain-capture check --json; echo $?` → 0 ok, 3 macOS too old, 4 screen denied, 5 mic denied |
+| macOS ≤ 14 or opt-in | `blackhole` | `brew install ffmpeg blackhole-2ch switchaudio-osx`; Multi-Output device named `Ghost Brain` | `ffmpeg -f avfoundation -list_devices true -i ""` lists BlackHole |
+| Windows | WASAPI loopback | `pip install -e ".[recorder-win]"` | — |
+| all | transcription | `whisper-cli` on PATH + a `ggml-*.bin` in `~/ghostbrain/recorder/models/` (browser download, not curl, on proxied networks) | `ghostbrain-recorder-recover --show-config` |
+
+`recorder:` keys in `config.yaml`: `capture_backend: auto|native|blackhole`, `capture_slides`, `slide_fps`, `slide_fallback: ask|display|audio`, `slide_min_words`, `enabled`, `excluded_titles`, `manual_context`.
+
+Verify a recording: tail `vault/90-meta/audit/*.jsonl` for `recording_started` → `transcript_linked` (→ `slides_linked` when slides were captured).
+
+Gotchas:
+- macOS lists an app under Screen Recording only after it has *attempted* capture — use the **grant access** button (Settings → meetings) or `ghostbrain-capture request-permissions`. Run from Terminal and the permission is attributed to Terminal, not Poltergeist.
+- `capture_backend: auto` falls back to blackhole silently when the helper is missing or unpermitted; the preflight/diagnostics text says why. A start that cannot proceed returns HTTP 412 with the reason.
+- With no Teams/Zoom/Meet *meeting* window on screen (chat/home windows don't count) the app asks which window to sample, or entire screen, or audio only; headless runs stay audio-only unless `slide_fallback: display`.
+
 ## Verify any connector
 
 ```bash

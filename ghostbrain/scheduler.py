@@ -15,6 +15,7 @@ import asyncio
 import json
 import logging
 import shutil
+import sys
 import threading
 import time
 from dataclasses import asdict, dataclass
@@ -194,14 +195,32 @@ def _launchd_plists() -> list[str]:
     return sorted(labels)
 
 
-def diagnostics() -> dict:
-    """Best-effort detection of conflicts. Used by the UI banner."""
+def diagnostics(*, refresh: bool = False) -> dict:
+    """Best-effort detection of conflicts + recorder capture readiness.
+    Used by the UI banner and the Meetings settings diagnostics rows.
+
+    ``refresh`` bypasses the native helper's probe cache (the user just
+    granted a permission and wants to see it reflected)."""
     plists = _launchd_plists()
     ffmpeg = shutil.which("ffmpeg") is not None
+    capture_helper: dict | None = None
+    effective_backend = "unsupported"
+    if sys.platform == "darwin":
+        try:
+            from ghostbrain.recorder.audio import darwin_native, resolve_capture_backend
+            capture_helper = darwin_native.probe(force=refresh).to_dict()
+            effective_backend = resolve_capture_backend()
+        except Exception as e:  # noqa: BLE001
+            log.warning("capture helper probe failed: %s", e)
+    elif sys.platform == "win32":
+        effective_backend = "wasapi"
     return {
         "active_launchd_plists": plists,
         "double_scheduling": bool(plists),
         "ffmpeg_available": ffmpeg,
+        "platform": sys.platform,
+        "effective_backend": effective_backend,
+        "capture_helper": capture_helper,
         # BlackHole detection: a virtual device shows up in `system_profiler
         # SPAudioDataType`, which is slow. Defer to recorder dep-check on demand.
     }

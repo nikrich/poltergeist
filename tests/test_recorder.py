@@ -607,7 +607,7 @@ def test_run_loop_builds_sources_once_per_lifetime(
     monkeypatch.setattr(state_mod, "save", lambda *_a, **_kw: None)
 
     backend = FakeBackend()
-    monkeypatch.setattr(daemon, "get_backend", lambda: backend)
+    monkeypatch.setattr(daemon, "get_backend", lambda **_kw: backend)
 
     calls = {"n": 0}
 

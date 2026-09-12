@@ -27,6 +27,7 @@ import type {
   JotsPage,
   MeetingsPage,
   Note,
+  CaptureHelperDiagnostics,
   RecorderSettings,
   RecorderStatus,
   Suggestion,
@@ -237,17 +238,37 @@ const SCHEDULER_STATUS = {
   },
 };
 
+const CAPTURE_HELPER: CaptureHelperDiagnostics = {
+  found: true,
+  path: '/Applications/Poltergeist.app/Contents/Resources/bin/ghostbrain-capture',
+  ok: true,
+  code: 0,
+  reason: 'ok',
+  macos_version: '15.5',
+  macos_supported: true,
+  screen_recording: 'granted',
+  microphone: 'granted',
+};
+
 const SCHEDULER_DIAGNOSTICS = {
   enabled: true,
   active_launchd_plists: [],
   double_scheduling: false,
   ffmpeg_available: true,
+  platform: 'darwin',
+  effective_backend: 'native',
+  capture_helper: CAPTURE_HELPER,
 };
 
 const RECORDER_SETTINGS: RecorderSettings = {
   enabled: true,
   excluded_titles: [],
   manual_context: '',
+  capture_backend: 'auto',
+  capture_slides: true,
+  slide_fps: 1,
+  slide_fallback: 'ask',
+  capture_backend_effective: 'native',
 };
 
 const RECORDER_STATUS: RecorderStatus = {
@@ -258,6 +279,9 @@ const RECORDER_STATUS: RecorderStatus = {
   wavPath: null,
   transcriptPath: null,
   error: null,
+  awaitingTargetChoice: false,
+  captureBackend: null,
+  captureWindows: [],
 };
 
 // Notes opened from captures / activity / jots resolve here.
@@ -341,6 +365,10 @@ export function handleDemoApi(method: string, path: string, body?: unknown): Api
       return ok({ ...RECORDER_SETTINGS, ...(body as object) });
     case 'GET /v1/recorder':
       return ok(RECORDER_STATUS);
+    case 'POST /v1/recorder':
+      if (s1 === 'capture' && seg[2] === 'request-permissions') return ok(CAPTURE_HELPER);
+      if (s1 === 'capture' && seg[2] === 'target') return ok(RECORDER_STATUS);
+      break;
     case 'GET /v1/chat':
       if (seg.length === 1) return ok(listConversations());
       return ok(getConversation(decodeURIComponent(s1)));
