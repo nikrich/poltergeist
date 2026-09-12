@@ -1,5 +1,7 @@
-"""macOS backend: existing ffmpeg/avfoundation capture + SwitchAudioSource
-routing, unchanged behavior, wrapped behind the AudioBackend protocol."""
+"""macOS legacy backend ("blackhole"): ffmpeg/avfoundation capture of a
+BlackHole virtual device + mic, with SwitchAudioSource routing. Kept for
+macOS < 15 and for users who prefer it; the default on macOS 15+ is the
+native ScreenCaptureKit helper in ``darwin_native.py``."""
 from __future__ import annotations
 
 import logging
@@ -14,10 +16,21 @@ log = logging.getLogger("ghostbrain.recorder.audio.darwin")
 
 
 class DarwinBackend:
+    name = "blackhole"
+
+    def __init__(self, *, native_fallback_reason: str = "") -> None:
+        # Set when ``capture_backend: auto`` landed here because the native
+        # helper is unavailable — surfaced in preflight so users learn *why*
+        # they are being asked for ffmpeg/BlackHole.
+        self.native_fallback_reason = native_fallback_reason
+
     def preflight(self) -> tuple[bool, list[str]]:
         missing: list[str] = []
         if shutil.which("ffmpeg") is None:
-            missing.append("ffmpeg not on PATH (install via Homebrew: brew install ffmpeg)")
+            msg = "ffmpeg not on PATH (install via Homebrew: brew install ffmpeg)"
+            if self.native_fallback_reason:
+                msg += f"; native capture unavailable: {self.native_fallback_reason}"
+            missing.append(msg)
         # BlackHole detection is slow + flaky; the route guard surfaces it at
         # start_capture instead of probing here (same trade-off as before).
         return (not missing, missing)

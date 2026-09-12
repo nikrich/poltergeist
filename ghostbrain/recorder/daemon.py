@@ -1,9 +1,9 @@
 """Autonomous meeting recorder daemon.
 
 Platform-agnostic: audio capture/routing goes through the ``AudioBackend``
-protocol (``ghostbrain.recorder.audio`` — ffmpeg + BlackHole/Multi-Output
-Device switching on macOS, in-process WASAPI loopback + mic mixing on
-Windows), and calendar events come from whatever ``MeetingSource``s
+protocol (``ghostbrain.recorder.audio`` — the native ScreenCaptureKit helper
+or, as fallback, ffmpeg + BlackHole/Multi-Output Device switching on macOS;
+in-process WASAPI loopback + mic mixing on Windows), and calendar events come from whatever ``MeetingSource``s
 ``select_sources()`` (``ghostbrain.recorder.sources``) resolves from
 ``routing.yaml`` — Apple Calendar (macOS only), Google, and Microsoft 365,
 merged and de-duplicated. Both are resolved once per daemon lifetime (by
@@ -31,11 +31,12 @@ import signal
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
 
 import yaml
 
 from ghostbrain.paths import vault_path
+from ghostbrain.recorder import config as rcfg
+from ghostbrain.recorder import slides as slides_mod
 from ghostbrain.recorder import state as state_mod
 from ghostbrain.recorder.audio import get_backend
 from ghostbrain.recorder.audio.base import AudioBackend, RouteHandle
@@ -50,10 +51,11 @@ from ghostbrain.worker.audit import audit_log
 log = logging.getLogger("ghostbrain.recorder.daemon")
 
 
-DEFAULT_POLL_INTERVAL_S = 30
-DEFAULT_END_GRACE_S = 60
-DEFAULT_AUDIO_DEVICE = "Ghost Brain"
-DEFAULT_RECORDINGS_DIR = Path.home() / "ghostbrain" / "recorder" / "recordings"
+DEFAULT_POLL_INTERVAL_S = int(rcfg.RECORDER_DEFAULTS["poll_interval_seconds"])
+DEFAULT_END_GRACE_S = int(rcfg.RECORDER_DEFAULTS["end_grace_seconds"])
+DEFAULT_AUDIO_DEVICE = str(rcfg.RECORDER_DEFAULTS["audio_device"])
+# Re-exported from recorder.config; tests monkeypatch this name.
+DEFAULT_RECORDINGS_DIR = rcfg.DEFAULT_RECORDINGS_DIR
 
 _running = True
 
@@ -74,15 +76,12 @@ class DaemonConfig:
     macos_accounts: dict[str, str]
     routing: dict = dataclasses.field(default_factory=dict)
     recorder_cfg: dict = dataclasses.field(default_factory=dict)
+    # Native backend: drop slides whose OCR text has fewer words than this.
+    slide_min_words: int = int(rcfg.RECORDER_DEFAULTS["slide_min_words"])
 
     @classmethod
     def load(cls) -> "DaemonConfig":
-        cfg_file = vault_path() / "90-meta" / "config.yaml"
-        cfg: dict[str, Any] = {}
-        if cfg_file.exists():
-            cfg = yaml.safe_load(cfg_file.read_text(encoding="utf-8")) or {}
-
-        rec = cfg.get("recorder") or {}
+        rec = rcfg.load_recorder_block()
         policy = RecorderPolicy(
             enabled=bool(rec.get("enabled", True)),
             excluded_titles=tuple(rec.get("excluded_titles") or ("Focus", "focus")),
@@ -108,6 +107,7 @@ class DaemonConfig:
             macos_accounts=dict(accounts),
             routing=routing,
             recorder_cfg=rec,
+            slide_min_words=rcfg.slide_min_words_from(rec),
         )
 
 
@@ -131,7 +131,8 @@ def run_loop() -> None:
 
     DEFAULT_RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
 
-    backend = get_backend()
+    backend = get_backend(recorder_cfg=config.recorder_cfg)
+    log.info("audio backend: %s", getattr(backend, "name", type(backend).__name__))
     # Resolve meeting sources once per daemon lifetime, not per tick — remote
     # sources (google, microsoft) throttle their own fetches internally
     # (~5 min refresh window), but that only works if the same source objects
@@ -169,6 +170,10 @@ def run_once(
     sources: list[MeetingSource] | None = None,
 ) -> None:
     """One daemon tick: handle active recording end + maybe start a new one."""
+    # No injected backend (in-app scheduler path): re-resolve from the on-disk
+    # config every tick so a `capture_backend` change in Settings applies to
+    # the next recording without a sidecar restart. The yaml read is tiny and
+    # the native helper probe is cached.
     backend = backend or get_backend()
     if sources is None:
         sources, _ = select_sources(config.routing, config.recorder_cfg)
@@ -237,7 +242,7 @@ def _start_recording(
     route = backend.begin_meeting_route(config.audio_device, config.fallback_output)
 
     wav_path = DEFAULT_RECORDINGS_DIR / _filename_for(candidate)
-    log_path = DEFAULT_RECORDINGS_DIR / "ffmpeg.log"
+    log_path = DEFAULT_RECORDINGS_DIR / "capture.log"
 
     try:
         handle = backend.start_capture(wav_path, log_path=log_path)
@@ -259,6 +264,8 @@ def _start_recording(
         wav_path=str(handle.wav_path),
         started_at=datetime.now(timezone.utc).isoformat(),
         scheduled_end=scheduled_end.isoformat(),
+        capture_backend=getattr(backend, "name", ""),
+        awaiting_target_choice=bool(getattr(handle, "awaiting_target_choice", False)),
     )
     # Stash previous output in processed map under the legacy key so an
     # older-version _finalize (or a downgrade) can still restore it.
@@ -308,6 +315,7 @@ def _finalize(
     if not wav.exists() or wav.stat().st_size < 100_000:
         log.warning("WAV %s missing or too small; skipping transcription", wav)
         audit_log("recording_discarded", active.event_id, reason="empty_wav")
+        slides_mod.cleanup_frames(wav)
         return
 
     try:
@@ -339,6 +347,7 @@ def _finalize(
                 p.unlink()
             except OSError:
                 pass
+        slides_mod.cleanup_frames(wav)
         return
     except Exception as e:  # noqa: BLE001
         log.exception("link failed for %s: %s", active.event_id, e)
@@ -352,6 +361,19 @@ def _finalize(
         parent=str(result.parent_event_path) if result.parent_event_path else None,
         title=active.title,
     )
+
+    # Slide key-frames (native backend only; no-op otherwise). Best-effort:
+    # a slides failure must never cost us the transcript that already landed.
+    try:
+        n_slides = slides_mod.attach_slides(
+            result.transcript_note, wav, min_words=config.slide_min_words,
+        )
+    except Exception as e:  # noqa: BLE001
+        log.exception("attaching slides failed for %s: %s", active.event_id, e)
+        n_slides = 0
+    if n_slides:
+        audit_log("slides_linked", active.event_id, count=n_slides,
+                  transcript=str(result.transcript_note))
 
     # Cleanup audio + raw .txt; the artifact note has the content.
     try:

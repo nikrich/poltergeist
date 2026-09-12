@@ -793,13 +793,26 @@ inverse_search:
   #   your-handle: [your-context, another-context]
   lookback_days: 7
 
-# Autonomous meeting recorder (Phase 12). Watches Apple Calendar, records
-# eligible meetings via BlackHole + mic, transcribes with whisper.cpp,
+# Autonomous meeting recorder (Phase 12). Watches your calendars, records
+# eligible meetings (system audio + mic), transcribes with whisper.cpp,
 # links transcripts to calendar event notes.
 recorder:
   enabled: true
   poll_interval_seconds: 30
   end_grace_seconds: 60
+  # macOS capture method. auto = native ScreenCaptureKit helper on macOS 15+
+  # (no BlackHole/ffmpeg needed), falling back to blackhole (ffmpeg + BlackHole
+  # + SwitchAudioSource) when the helper is missing or lacks permissions.
+  # Windows always uses WASAPI loopback and ignores this key.
+  capture_backend: auto
+  # Native only: save deduplicated slide key-frames + OCR text into the
+  # transcript note (needs the Screen Recording permission).
+  capture_slides: true
+  slide_fps: 1
+  # Native only: when no meeting-app window is on screen — ask (desktop
+  # prompt), display (capture the whole screen), or audio (never capture video).
+  slide_fallback: ask
+  # blackhole only: the Multi-Output device to switch to while recording.
   audio_device: "Ghost Brain"
   excluded_titles:
     - Focus

@@ -134,6 +134,8 @@ class _CaptureThread(threading.Thread):
 
 
 class WasapiBackend:
+    name = "wasapi"
+
     def preflight(self) -> tuple[bool, list[str]]:
         missing: list[str] = []
         try:
