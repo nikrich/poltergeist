@@ -50,7 +50,7 @@ Most "second brain" tools fail in one of two ways: they're **manual**, so you st
 | **Desktop app** | Digest reader, archive search, capture inbox, quick jots, connector health, built-in scheduler |
 | **Plugins** | Extend the desktop app with third-party plugins; install from folder, git, or the marketplace |
 
-> **Status: alpha.** All connectors above are live today. The meeting recorder and richer metrics are the main work in progress. Poltergeist is designed to be adopted incrementally — wire up only the connectors you want.
+> **Status: alpha.** All connectors above are live today. The meeting recorder records system audio + mic natively on macOS 15+ (ScreenCaptureKit, with slide key-frames OCR'd into the transcript) and on Windows (WASAPI); richer metrics are the main work in progress. Poltergeist is designed to be adopted incrementally — wire up only the connectors you want.
 
 ## How it works
 
@@ -72,7 +72,7 @@ Daily digest at <vault>/10-daily/<date>.md
 
 Everything in the pipeline is inspectable: events are JSON files, notes are markdown, and every routing decision is written to a JSONL audit log. See [SPEC §2](./spec/SPEC.md#section-2--system-overview) for the full architecture.
 
-**Under the hood:** Python 3.11+, an in-app asyncio scheduler (no broker, no Docker), a filesystem queue, and Obsidian as the storage layer. Cross-platform — connectors, worker, digests, and the desktop app run on macOS, Linux, and Windows ([per-OS notes](./docs/install/)). The meeting recorder supports macOS and Windows; Linux is unsupported.
+**Under the hood:** Python 3.11+, an in-app asyncio scheduler (no broker, no Docker), a filesystem queue, and Obsidian as the storage layer. Cross-platform — connectors, worker, digests, and the desktop app run on macOS, Linux, and Windows ([per-OS notes](./docs/install/)). The meeting recorder supports macOS ([native or BlackHole](./docs/install/macos.md#meeting-recorder)) and Windows; Linux is unsupported.
 
 ## Quick start
 

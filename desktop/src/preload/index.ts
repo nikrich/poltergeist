@@ -24,6 +24,9 @@ const bridge: GbBridge = {
   sidecar: {
     retry: () => ipcRenderer.invoke('gb:sidecar:retry'),
   },
+  recorder: {
+    notifyTargetChoice: () => ipcRenderer.invoke('gb:recorder:notifyTargetChoice'),
+  },
   chat: {
     send: (convId, text, attachmentPaths) =>
       ipcRenderer.invoke('gb:chat:send', convId, text, attachmentPaths),

@@ -12,6 +12,7 @@ from pathlib import Path
 
 from ghostbrain.recorder.linker import link_transcript
 from ghostbrain.recorder.transcribe import TranscribeError, transcribe
+from ghostbrain.recorder.wavinfo import wav_duration_seconds
 from ghostbrain.worker.audit import audit_log
 
 log = logging.getLogger("ghostbrain.recorder.main")
@@ -88,7 +89,7 @@ def _infer_start_and_duration(
     end time. Start = end - duration. The user can override via
     ``--started-at`` for replays.
     """
-    duration_s = _ffprobe_duration_seconds(wav)
+    duration_s = wav_duration_seconds(wav)
     if explicit_started_at:
         started = datetime.fromisoformat(explicit_started_at.replace("Z", "+00:00"))
         if started.tzinfo is None:
@@ -99,23 +100,6 @@ def _infer_start_and_duration(
     started = end_ts.fromtimestamp(end_ts.timestamp() - duration_s, tz=timezone.utc)
     return started, duration_s
 
-
-def _ffprobe_duration_seconds(wav: Path) -> float:
-    import subprocess
-    try:
-        out = subprocess.check_output(
-            [
-                "ffprobe", "-v", "error",
-                "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1",
-                str(wav),
-            ],
-            text=True, timeout=30,
-        ).strip()
-        return float(out)
-    except Exception as e:  # noqa: BLE001
-        log.warning("ffprobe failed: %s — assuming 0s duration", e)
-        return 0.0
 
 
 if __name__ == "__main__":

@@ -49,6 +49,21 @@ function devSidecar(repoRoot: string): SpawnTarget {
   return { exe, args: ['-m', 'ghostbrain.api'], cwd: repoRoot };
 }
 
+/**
+ * Path to the native macOS capture helper (ScreenCaptureKit), if present.
+ * Packaged builds ship it via electron-builder `extraResources` at
+ * resources/bin/ghostbrain-capture; dev builds use the SwiftPM release output
+ * under native/. The sidecar reads GHOSTBRAIN_CAPTURE_BIN to find it, falling
+ * back to its own discovery (PATH / ~/.local/bin) when unset.
+ */
+export function captureHelperPath(repoRoot: string): string | null {
+  if (process.platform !== 'darwin') return null;
+  const candidate = app.isPackaged
+    ? join(process.resourcesPath, 'bin', 'ghostbrain-capture')
+    : join(repoRoot, 'native', 'macos', 'ghostbrain-capture', '.build', 'release', 'ghostbrain-capture');
+  return existsSync(candidate) ? candidate : null;
+}
+
 function resolveSpawnTarget(repoRoot: string): SpawnTarget {
   // Packaged builds must use the bundled binary — they don't have a venv to
   // fall back to. Dev builds use the venv. If a dev tester ever wants to
@@ -161,6 +176,7 @@ export class Sidecar extends EventEmitter {
         .filter(Boolean)
         .join(':');
       const inheritedPath = process.env.PATH ?? '';
+      const captureBin = captureHelperPath(this.cwd);
       const proc = spawn(exe, args, {
         cwd,
         env: {
@@ -168,6 +184,7 @@ export class Sidecar extends EventEmitter {
           PATH: inheritedPath ? `${extraPath}:${inheritedPath}` : extraPath,
           PYTHONUNBUFFERED: '1',
           GHOSTBRAIN_SCHEDULER_ENABLED: this.options.schedulerEnabled ? '1' : '0',
+          ...(captureBin ? { GHOSTBRAIN_CAPTURE_BIN: captureBin } : {}),
         },
       });
       this.proc = proc;

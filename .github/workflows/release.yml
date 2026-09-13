@@ -97,7 +97,7 @@ jobs:
         github.event_name == 'workflow_dispatch' ||
         needs.release-please.outputs.release_created == 'true'
       )
-    runs-on: macos-14  # arm64 native
+    runs-on: macos-15  # arm64 native; macOS 15 SDK required by the ScreenCaptureKit capture helper
     # Apple's notary service queue varies. Most submissions finish in under
     # 10 minutes, but a 600MB+ bundle with thousands of inner code-signed
     # files can wait an hour when the queue is busy. 120 absorbs that.
@@ -160,6 +160,13 @@ jobs:
       - name: Smoke-test frozen sidecar (server + mcp)
         run: python scripts/smoke-sidecar.py desktop/resources/sidecar/ghostbrain-api/ghostbrain-api
 
+      - name: Build native capture helper
+        # Swift/ScreenCaptureKit helper → desktop/resources/bin/ghostbrain-capture,
+        # picked up by electron-builder's mac.extraResources and signed via mac.binaries.
+        run: |
+          xcodebuild -version
+          scripts/build-native-macos.sh
+
       - name: Install desktop deps
         working-directory: desktop
         run: npm ci
@@ -174,6 +181,21 @@ jobs:
       - name: Build + sign + notarize
         working-directory: desktop
         run: npm run pack
+
+      - name: Verify bundled capture helper signature
+        # The helper must be inside the .app, signed with the hardened runtime and
+        # inherit the audio-input entitlement, and the app's Info.plist must carry
+        # the TCC usage strings — otherwise mic/screen access is silently denied.
+        run: |
+          set -euo pipefail
+          app=$(ls -d desktop/dist/mac*/Poltergeist.app | head -1)
+          helper="$app/Contents/Resources/bin/ghostbrain-capture"
+          test -x "$helper"
+          codesign -dv --entitlements - "$helper" 2>&1 | tee /tmp/helper-codesign.txt
+          grep -q 'runtime' /tmp/helper-codesign.txt
+          grep -q 'com.apple.security.device.audio-input' /tmp/helper-codesign.txt
+          plutil -p "$app/Contents/Info.plist" | grep -E 'NS(ScreenCapture|Microphone|AudioCapture)UsageDescription'
+          "$helper" --version
 
       - name: Upload assets to release
         run: |

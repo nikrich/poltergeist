@@ -1,8 +1,9 @@
 """AudioBackend seam: per-platform capture + routing, one protocol.
 
 The daemon is platform-agnostic; each backend owns how system audio is
-reached (BlackHole route on macOS, WASAPI loopback on Windows) and how
-capture runs (ffmpeg subprocess vs in-process thread)."""
+reached (ScreenCaptureKit helper or BlackHole route on macOS, WASAPI
+loopback on Windows) and how capture runs (subprocess vs in-process
+thread)."""
 from __future__ import annotations
 
 import dataclasses
@@ -19,7 +20,15 @@ class RouteHandle:
     switched: bool
 
 
+class CaptureUnavailableError(RuntimeError):
+    """A capture precondition is unmet (permission not granted, macOS too
+    old, helper missing). Not a crash: the API maps it to HTTP 412 so the
+    desktop can show a fixable hint instead of a generic error toast."""
+
+
 class AudioBackend(Protocol):
+    name: str
+
     def preflight(self) -> tuple[bool, list[str]]: ...
     def begin_meeting_route(self, device: str, fallback: str) -> RouteHandle: ...
     def end_meeting_route(self, handle: RouteHandle) -> None: ...
@@ -31,6 +40,7 @@ class AudioBackend(Protocol):
 class UnsupportedBackend:
     """Placeholder for platforms with no audio backend (Linux today)."""
 
+    name = "unsupported"
     platform_message = (
         "recorder is not supported on this OS yet (audio backend missing); "
         "see docs/install/ for per-OS status"

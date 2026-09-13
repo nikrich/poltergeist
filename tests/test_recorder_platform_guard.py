@@ -83,8 +83,30 @@ def test_darwin_ffmpeg_check_still_fires():
 
     with patch("ghostbrain.recorder.audio.sys") as mock_sys, \
          patch("ghostbrain.scheduler_jobs.shutil.which", side_effect=which_side_effect), \
-         patch("ghostbrain.scheduler_jobs._model_present", lambda: True):
+         patch("ghostbrain.scheduler_jobs._model_present", lambda: True), \
+         patch("ghostbrain.recorder.config.load_recorder_block",
+               return_value={"capture_backend": "blackhole"}):
         mock_sys.platform = "darwin"
         ok, missing = recorder_prereqs_ok()
     assert ok is False
     assert any("ffmpeg" in m for m in missing)
+
+
+def test_darwin_native_check_fires_when_permission_missing():
+    from ghostbrain.recorder.audio import darwin_native
+    denied = darwin_native.HelperProbe(
+        found=True, path="/x/ghostbrain-capture", ok=False, code=4,
+        reason="Screen Recording permission not granted",
+        macos_version="15.1", macos_supported=True, screen_recording="denied",
+    )
+    with patch("ghostbrain.recorder.audio.sys") as mock_sys, \
+         patch("ghostbrain.scheduler_jobs.shutil.which", return_value="/bin/whisper-cli"), \
+         patch("ghostbrain.scheduler_jobs._model_present", lambda: True), \
+         patch("ghostbrain.recorder.audio.darwin_native.probe", return_value=denied), \
+         patch("ghostbrain.recorder.config.load_recorder_block",
+               return_value={"capture_backend": "native"}):
+        mock_sys.platform = "darwin"
+        ok, missing = recorder_prereqs_ok()
+    assert ok is False
+    assert any("Screen Recording" in m for m in missing)
+    assert not any("ffmpeg" in m for m in missing)

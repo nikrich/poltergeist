@@ -25,8 +25,24 @@ extraResources:
 
 mac:
   category: public.app-category.productivity
+  # TCC attributes permission prompts to the *responsible* process, which for the
+  # bundled ghostbrain-capture helper is this app — so the usage strings must
+  # live here, not only in the helper's embedded Info.plist.
   extendInfo:
     NSCameraUsageDescription: Poltergeist uses your camera to capture photos directly into jots.
+    NSScreenCaptureUsageDescription: Poltergeist records the audio of your meetings and captures presentation slides via ScreenCaptureKit.
+    NSMicrophoneUsageDescription: Poltergeist records your microphone during meetings so your own voice is in the transcript.
+    NSAudioCaptureUsageDescription: Poltergeist records system audio during meetings so the other participants are in the transcript.
+  # The native ScreenCaptureKit capture helper (native/macos/ghostbrain-capture),
+  # built by scripts/build-native-macos.sh into resources/bin/ before packaging.
+  # macOS-only, hence under mac: rather than the top-level extraResources.
+  extraResources:
+    - from: resources/bin
+      to: bin
+  # Signed explicitly with the hardened runtime + inherited entitlements
+  # (audio-input) so notarization accepts the nested Mach-O.
+  binaries:
+    - Contents/Resources/bin/ghostbrain-capture
   icon: build/icon.icns
   hardenedRuntime: true
   gatekeeperAssess: false

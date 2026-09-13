@@ -16,12 +16,14 @@ import { exportPdf, renderVaultHtmlToPdf } from './pdf-export';
 import { installTray, type TrayController } from './tray';
 import {
   installMeetingNotifier,
+  fireTargetChoiceNotification,
   type MeetingNotifierController,
 } from './meeting-notifier';
 import { installJotOverlay } from './jot-overlay';
 import { installUpdater } from './updater';
 import { installClipboardBridge } from './clipboard';
 import { installCliShim } from './cli-shim';
+import { isAllowedExternalUrl } from './external-url';
 import {
   registerGbAssetScheme,
   registerAssetProtocol,
@@ -223,9 +225,9 @@ ipcMain.handle('gb:shell:openExternal', async (_e, url: unknown) => {
   if (typeof url !== 'string' || url === '') {
     return { ok: false, error: 'openExternal: url must be a non-empty string' };
   }
-  // Allow only well-known external protocols so a stray markdown link can't
-  // trigger `file://` or `vscode://` style handoffs.
-  if (!/^(https?|mailto):/i.test(url)) {
+  // Allowlist lives in external-url.ts (http(s)/mailto everywhere; the macOS
+  // Privacy & Security deep link on darwin only).
+  if (!isAllowedExternalUrl(url, process.platform)) {
     return { ok: false, error: `openExternal: protocol not allowed: ${url.slice(0, 32)}` };
   }
   try {
@@ -473,6 +475,14 @@ ipcMain.handle('gb:docs:open-generated', (_e, path: unknown) => {
     return { ok: false as const, error: 'open-generated: expected a path string' };
   }
   return renderVaultHtmlToPdf(settings.getAll().vaultPath ?? '', path);
+});
+
+// The renderer polls /v1/recorder/status while recording; when the native
+// capture helper reports it found no meeting window it asks main to raise an
+// OS notification so a hidden/minimised window still surfaces the choice.
+ipcMain.handle('gb:recorder:notifyTargetChoice', () => {
+  fireTargetChoiceNotification({ onClick: showWindow });
+  return { ok: true };
 });
 
 ipcMain.handle('gb:tray:setFailing', (_e, names: unknown) => {

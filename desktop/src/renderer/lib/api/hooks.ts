@@ -25,9 +25,11 @@ import type {
   Note,
   Prep,
   Project,
+  CaptureHelperDiagnostics,
   RecorderSettings,
   RecorderStatus,
   SearchResponse,
+  SetCaptureTargetRequest,
   StartRecordingRequest,
   Suggestion,
   UpdateNoteBodyRequest,
@@ -240,6 +242,49 @@ export function useClearRecording() {
   });
 }
 
+/** Answer the native helper's "no meeting window found" prompt. 409 if idle. */
+export function useSetCaptureTarget() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: SetCaptureTargetRequest) =>
+      post<RecorderStatus>('/v1/recorder/capture/target', vars),
+    onSuccess: (data) => {
+      qc.setQueryData(['recorder', 'status'], data);
+    },
+  });
+}
+
+/**
+ * Trigger the macOS Screen Recording / Microphone permission prompts via the
+ * native helper. Blocks until the user answers (up to ~60 s), then hands back
+ * the fresh probe which is written straight into the diagnostics cache.
+ */
+export function useRequestCapturePermissions() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const helper = await post<CaptureHelperDiagnostics>(
+        '/v1/recorder/capture/request-permissions',
+      );
+      qc.setQueryData<SchedulerDiagnostics>(['scheduler', 'diagnostics'], (prev) =>
+        prev ? { ...prev, capture_helper: helper } : prev,
+      );
+      // Re-probe with refresh=1 rather than a plain invalidate: a normal GET
+      // could hand back the sidecar's 60 s cached probe and undo the update.
+      try {
+        const diagnostics = await get<SchedulerDiagnostics>(
+          '/v1/scheduler/diagnostics?refresh=1',
+        );
+        qc.setQueryData(['scheduler', 'diagnostics'], diagnostics);
+      } catch {
+        // best-effort — the helper result above is already in the cache
+      }
+      void qc.invalidateQueries({ queryKey: ['settings', 'recorder'] });
+      return helper;
+    },
+  });
+}
+
 export function useRecorderSettings() {
   return useQuery({
     queryKey: ['settings', 'recorder'],
@@ -287,6 +332,11 @@ export interface SchedulerDiagnostics {
   active_launchd_plists: string[];
   double_scheduling: boolean;
   ffmpeg_available: boolean;
+  platform: string;
+  /** Resolved capture backend ("native" | "blackhole" | "wasapi" | "unsupported"). */
+  effective_backend: string;
+  /** Native helper probe; null off macOS. */
+  capture_helper: CaptureHelperDiagnostics | null;
 }
 
 export function useSchedulerStatus(opts?: { intervalMs?: number }) {
@@ -304,6 +354,22 @@ export function useSchedulerDiagnostics() {
     queryFn: () => get<SchedulerDiagnostics>('/v1/scheduler/diagnostics'),
     staleTime: 60_000,
     refetchInterval: 60_000,
+  });
+}
+
+/**
+ * Re-probe the capture helper, bypassing the sidecar's 60 s probe cache
+ * (`?refresh=1`), and write the result into the diagnostics query cache.
+ * Also refreshes recorder settings since `capture_backend_effective` may move.
+ */
+export function useRefreshSchedulerDiagnostics() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => get<SchedulerDiagnostics>('/v1/scheduler/diagnostics?refresh=1'),
+    onSuccess: (data) => {
+      qc.setQueryData(['scheduler', 'diagnostics'], data);
+      void qc.invalidateQueries({ queryKey: ['settings', 'recorder'] });
+    },
   });
 }
 

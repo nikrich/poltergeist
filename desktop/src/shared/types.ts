@@ -72,6 +72,10 @@ export interface GbBridge {
   sidecar: {
     retry(): Promise<{ ok: true } | { ok: false; error: string }>;
   };
+  recorder: {
+    /** Raise an OS notification that native capture is waiting for a target choice. */
+    notifyTargetChoice(): Promise<{ ok: true }>;
+  };
   chat: {
     send(
       convId: string,
