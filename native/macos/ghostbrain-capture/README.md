@@ -27,7 +27,17 @@ swift test                      # XCTest, Core library only (no ScreenCaptureKit
 # from the repo root — stages desktop/resources/bin/ghostbrain-capture (gitignored)
 scripts/build-native-macos.sh
 scripts/build-native-macos.sh --install   # + ~/.local/bin, ad-hoc signed
+
+# once per clone: pre-push hook that builds + tests this package when a push touches it
+scripts/install-hooks.sh
 ```
+
+CI compiles this package on GitHub's `macos-15` runner (Xcode 16.4, **Swift
+6.1**). A newer local Xcode is stricter in some places and more lenient in
+others — notably it infers `Sendable` transfers 6.1 rejects — so a green local
+build is not proof of a green CI; the pre-push hook prints a warning when the
+versions differ. Prefer explicit `Sendable` / `@unchecked Sendable` boxes over
+relying on inference.
 
 Layout:
 

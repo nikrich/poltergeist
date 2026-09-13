@@ -219,6 +219,8 @@ pip install -e ".[dev]"
 
 This gives you the full `ghostbrain-*` CLI, the test suite, and the desktop app's Python sidecar in dev mode. Run the suites with `pytest tests/ -q` and `cd desktop && npm test`.
 
+Then run `scripts/install-hooks.sh` once: it points git at the versioned hooks in `scripts/hooks/`. The `pre-push` hook builds and tests the native macOS capture helper (`native/macos/ghostbrain-capture`) whenever a push touches it, and warns if your Swift toolchain differs from the CI runner's. Bypass a single push with `SKIP_NATIVE_PREPUSH=1 git push`.
+
 If you're a coding agent working on this repo: read [spec/SPEC.md](./spec/SPEC.md) end-to-end, determine the current phase from `git log --oneline`, work on the next phase only ([acceptance criteria in §9](./spec/SPEC.md#section-9--build-sequence-phased)), and commit each phase with its name in the message.
 
 ## License
