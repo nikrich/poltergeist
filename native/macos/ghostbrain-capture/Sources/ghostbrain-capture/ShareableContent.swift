@@ -3,8 +3,12 @@ import Foundation
 import GhostbrainCaptureCore
 import ScreenCaptureKit
 
+/// Immutable snapshot handed from the nonisolated `fetch()` to the main-actor
+/// session. `SCDisplay` / `SCWindow` are plain NSObject value holders that are
+/// never mutated after creation, hence `@unchecked Sendable` (Swift 6.1 on the
+/// CI runner rejects the transfer without it; 6.3 infers it).
 @available(macOS 15, *)
-struct Shareable {
+struct Shareable: @unchecked Sendable {
     let displays: [SCDisplay]
     /// Front-to-back, already filtered to what ScreenCaptureKit can see.
     let windows: [WindowDescriptor]
