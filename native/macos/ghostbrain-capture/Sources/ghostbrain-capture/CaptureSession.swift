@@ -189,7 +189,7 @@ final class CaptureSession {
             if options.micDevice != .none {
                 try stream.addStreamOutput(out, type: .microphone, sampleHandlerQueue: out.micQueue)
             }
-            try await stream.startCapture()
+            try await StreamBox(stream).start()
         } catch {
             let ns = error as NSError
             log.error("SCStream failed to start: \(ns.localizedDescription) (domain=\(ns.domain) code=\(ns.code))")
@@ -339,8 +339,8 @@ final class CaptureSession {
             case (.window(let a), .window(let b)) where a.windowID == b.windowID:
                 if a.frame.size != b.frame.size, let d = videoDisplay(for: videoMode) {
                     do {
-                        try await vs.updateConfiguration(makeVideoConfiguration(
-                            sourceSize: b.frame.size, scale: ShareableContent.pixelScale(of: d)))
+                        try await StreamBox(vs).update(ConfigBox(makeVideoConfiguration(
+                            sourceSize: b.frame.size, scale: ShareableContent.pixelScale(of: d))))
                     } catch {
                         log.warn("video updateConfiguration failed: \(error.localizedDescription)")
                     }
@@ -383,7 +383,7 @@ final class CaptureSession {
         let vs = SCStream(filter: filter, configuration: makeVideoConfiguration(sourceSize: sourceSize, scale: scale), delegate: delegate)
         do {
             try vs.addStreamOutput(out, type: .screen, sampleHandlerQueue: out.videoQueue)
-            try await vs.startCapture()
+            try await StreamBox(vs).start()
         } catch {
             let ns = error as NSError
             log.warn("video stream failed to start: \(ns.localizedDescription) (domain=\(ns.domain) code=\(ns.code))")
@@ -400,11 +400,10 @@ final class CaptureSession {
         videoStream = nil
         videoDelegate = nil
         videoStreamMode = .off
-        struct StreamBox: @unchecked Sendable { let stream: SCStream }
-        let box = StreamBox(stream: vs)
+        let box = StreamBox(vs)
         _ = await withTaskGroup(of: Bool.self) { group -> Bool in
             group.addTask {
-                do { try await box.stream.stopCapture() } catch {}
+                do { try await box.stop() } catch {}
                 return true
             }
             group.addTask {
@@ -689,11 +688,10 @@ final class CaptureSession {
 
         await stopVideoStream()
         if let stream, !skipStopCapture {
-            struct StreamBox: @unchecked Sendable { let stream: SCStream }
-            let box = StreamBox(stream: stream)
+            let box = StreamBox(stream)
             let stopped = await withTaskGroup(of: Bool.self) { group -> Bool in
                 group.addTask {
-                    do { try await box.stream.stopCapture() } catch {
+                    do { try await box.stop() } catch {
                         // Already stopped / never started is fine at this point.
                     }
                     return true
@@ -740,6 +738,25 @@ final class CaptureSession {
     }
 }
 
+
+/// `SCStream` / `SCStreamConfiguration` are not Sendable, but their async
+/// entry points hop off the main actor. Swift 6.1 (CI) refuses to send them
+/// directly; these boxes make the hand-off explicit. Each stream is owned and
+/// driven by the main-actor session only, so this is safe.
+@available(macOS 15, *)
+struct StreamBox: @unchecked Sendable {
+    let stream: SCStream
+    init(_ stream: SCStream) { self.stream = stream }
+    func start() async throws { try await stream.startCapture() }
+    func stop() async throws { try await stream.stopCapture() }
+    func update(_ config: ConfigBox) async throws { try await stream.updateConfiguration(config.config) }
+}
+
+@available(macOS 15, *)
+struct ConfigBox: @unchecked Sendable {
+    let config: SCStreamConfiguration
+    init(_ config: SCStreamConfiguration) { self.config = config }
+}
 
 /// Delegate for the video-only stream. Its stopping is not fatal (a pinned
 /// window was closed, a display disconnected) — the session re-resolves.
