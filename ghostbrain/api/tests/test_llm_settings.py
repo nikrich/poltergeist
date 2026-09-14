@@ -171,3 +171,20 @@ def test_switching_provider_and_models_together_keeps_the_new_models(tmp_path, m
     body = c.put("/v1/settings/llm",
                  json={"provider": "openai_http", "models": {"fast": "qwen3"}}, headers=h).json()
     assert body["models"] == {"fast": "qwen3", "balanced": None, "quality": None}
+
+
+def test_require_provider_wraps_any_probe_failure(monkeypatch):
+    """A provider adapter can raise more than LLMError (a JSONDecodeError from a
+    server answering HTML, an OSError from a dead socket). Every one of them has
+    to reach the caller as ProviderUnavailable, not as a 500."""
+    from ghostbrain.api.repo import settings as settings_repo
+    from ghostbrain.api.repo.settings import ProviderUnavailable
+
+    class Boom:
+        def probe(self):
+            raise ValueError("Expecting value: line 1 column 1 (char 0)")
+
+    monkeypatch.setattr(settings_repo, "get_provider", lambda: Boom())
+    settings_repo._probe_cache.clear()
+    with pytest.raises(ProviderUnavailable, match="Expecting value"):
+        settings_repo.require_provider()

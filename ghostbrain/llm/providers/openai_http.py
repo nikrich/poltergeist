@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import mimetypes
 import os
 import socket
@@ -16,6 +17,8 @@ import httpx
 
 from ghostbrain.llm.client import LLMError, LLMResult, LLMTimeout, _parse_json_tolerant
 from ghostbrain.llm.providers import base
+
+log = logging.getLogger("ghostbrain.llm.providers.openai_http")
 
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", "0.0.0.0"}
 
@@ -110,9 +113,14 @@ class OpenAiHttp:
         try:
             r = httpx.get(f"{self.base_url}/models", headers=self._headers(), timeout=3.0)
             r.raise_for_status()
-            listed = [m.get("id") for m in (r.json().get("data") or []) if m.get("id")]
         except httpx.HTTPError as e:
             return base.ProviderProbe(False, f"{self.base_url} is not answering ({e.__class__.__name__}); start Ollama or LM Studio, or fix llm.openai_http.base_url", {"base_url": self.base_url})
+        try:
+            listed = [m.get("id") for m in (r.json().get("data") or []) if m.get("id")]
+        except Exception:  # noqa: BLE001 — a proxy or captive portal answering
+            # 200 text/html raises out of r.json(); that is a failed probe to
+            # report, not an exception for the doctor check to trip over.
+            return base.ProviderProbe(False, f"{self.base_url}/models did not return JSON; check llm.openai_http.base_url points at an OpenAI-compatible server", {"base_url": self.base_url})
         missing = [t for t in base.TIERS if not self._models.get(t)]
         if missing:
             return base.ProviderProbe(False, f"no model set for tier(s): {', '.join(missing)} — pick them in Settings → AI provider", {"base_url": self.base_url, "models": listed})
@@ -138,7 +146,7 @@ class OpenAiHttp:
             return
         messages: list[dict] = [{"role": "system", "content": req.system_prompt or CHAT_SYSTEM_PROMPT}]
         for m in req.history or []:
-            messages.append({"role": m["role"], "content": m["text"]})
+            messages.append({"role": m["role"], "content": m.get("text", "")})
         messages.append({"role": "user", "content": req.prompt})
 
         cancelled = threading.Event()
@@ -197,11 +205,17 @@ class OpenAiHttp:
                         yield {"type": "error", "message": "stopped", "interrupted": True}
                         return
                     messages.append({"role": "tool", "tool_call_id": c["id"], "content": result})
-        except httpx.HTTPError as e:
+        except Exception as e:  # noqa: BLE001 — this generator OWNS the turn's
+            # terminal event: anything escaping here (a JSONDecodeError from a
+            # bad SSE line, an LLMError from garbage tool arguments, an OSError
+            # from the cancel path's socket shutdown) would end the stream with
+            # no done/error at all, hanging the renderer and losing the partial
+            # reply. Every failure becomes a terminal error event instead.
             if cancelled.is_set():
                 yield {"type": "error", "message": "stopped", "interrupted": True}
             else:
-                yield {"type": "error", "message": f"openai_http: {e}"}
+                log.warning("local chat turn failed", exc_info=True)
+                yield {"type": "error", "message": f"local model: {e}"}
         finally:
             client.close()
             if req.turn_key:
@@ -227,7 +241,14 @@ class OpenAiHttp:
                     payload = line[6:].strip()
                     if payload == "[DONE]":
                         break
-                    delta = ((json.loads(payload).get("choices") or [{}])[0]).get("delta") or {}
+                    try:
+                        chunk = json.loads(payload)
+                    except ValueError:
+                        # One malformed line is not worth losing the turn over:
+                        # local servers truncate and interleave under load.
+                        log.debug("skipping unparsable SSE payload: %.200s", payload)
+                        continue
+                    delta = ((chunk.get("choices") or [{}])[0]).get("delta") or {}
                     if delta.get("content"):
                         text_parts.append(delta["content"])
                         full.append(delta["content"])

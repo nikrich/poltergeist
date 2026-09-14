@@ -162,3 +162,41 @@ def test_chat_http_failure_is_error_event(server):
     p = OpenAiHttp("http://127.0.0.1:9/v1", "K", M); p._ollama = False
     events = list(p.chat(base.ChatRequest(prompt="q", tier="fast", session_id=None, turn_key="c4")))
     assert events[-1]["type"] == "error"
+
+
+# --- the stream always ends in a terminal event ---------------------------
+
+def test_chat_skips_a_garbage_sse_line_and_still_finishes(server):
+    """One unparsable SSE payload must not kill the turn: the renderer waits
+    for a terminal event forever, and the partial reply is lost. Skip the line
+    and keep streaming."""
+    body = (
+        f"data: {json.dumps({'choices': [{'delta': {'content': 'Hel'}}]})}\n\n"
+        "data: {not json at all\n\n"
+        f"data: {json.dumps({'choices': [{'delta': {'content': 'lo'}}]})}\n\n"
+        "data: [DONE]\n\n"
+    )
+    _Fake.turns = [body]
+    p = OpenAiHttp(server, "K", M); p._ollama = False
+    events = list(p.chat(base.ChatRequest(prompt="hi", tier="fast", session_id=None, turn_key="g1")))
+    assert events[-1] == {"type": "done", "text": "Hello", "session_id": "g1"}
+
+
+def test_chat_unparsable_tool_arguments_yield_an_error_event(server):
+    _Fake.turns = [_sse([
+        {"choices": [{"delta": {"tool_calls": [{"index": 0, "id": "c1", "function": {
+            "name": "poltergeist_search", "arguments": "<<<not json>>>"}}]}, "finish_reason": "tool_calls"}]},
+    ])]
+    p = OpenAiHttp(server, "K", M); p._ollama = False
+    events = list(p.chat(base.ChatRequest(prompt="q", tier="fast", session_id=None, turn_key="g2")))
+    assert events[-1]["type"] == "error"
+    assert "local model" in events[-1]["message"]
+
+
+def test_chat_history_entry_without_text_does_not_kill_the_turn(server):
+    _Fake.turns = [_sse([{"choices": [{"delta": {"content": "ok"}}]}])]
+    p = OpenAiHttp(server, "K", M); p._ollama = False
+    events = list(p.chat(base.ChatRequest(prompt="q", tier="fast", session_id=None, turn_key="g3",
+                                          history=[{"role": "user"}])))
+    assert events[-1]["type"] == "done"
+    assert _Fake.seen[0]["messages"][1] == {"role": "user", "content": ""}

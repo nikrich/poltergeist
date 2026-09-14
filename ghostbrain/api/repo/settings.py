@@ -14,7 +14,6 @@ from pathlib import Path
 
 import yaml
 
-from ghostbrain.llm.client import LLMError
 from ghostbrain.llm.providers import PROVIDER_IDS, get_provider
 from ghostbrain.recorder import config as rcfg
 
@@ -188,7 +187,10 @@ def require_provider() -> None:
     else:
         try:
             probe = get_provider().probe()
-        except LLMError as e:
+        except Exception as e:  # noqa: BLE001 — a probe can fail with more than
+            # LLMError (a JSONDecodeError from a server answering HTML, an
+            # OSError from a dead socket). Callers turn ProviderUnavailable
+            # into a 412 or a chat error event; an escaping exception is a 500.
             raise ProviderUnavailable(str(e)) from e
         _probe_cache[key] = (now, probe)
     if not probe.ok:

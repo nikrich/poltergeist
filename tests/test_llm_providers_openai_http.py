@@ -112,3 +112,33 @@ def test_image_paths_become_data_url_parts(server, tmp_path):
     content = _Fake.seen[-1]["body"]["messages"][-1]["content"]
     assert content[0] == {"type": "text", "text": "describe"}
     assert content[1]["type"] == "image_url" and content[1]["image_url"]["url"].startswith("data:image/png;base64,")
+
+
+def test_probe_against_a_server_that_answers_html_is_not_ok():
+    """A proxy or captive portal answering 200 text/html made r.json() raise a
+    JSONDecodeError straight out of probe(), which is not an httpx.HTTPError —
+    the doctor check and the settings panel both saw an exception, not a row."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    from ghostbrain.llm.providers.openai_http import OpenAiHttp
+
+    class _Html(BaseHTTPRequestHandler):
+        def log_message(self, *a): pass
+        def do_GET(self):
+            body = b"<html><body>hello</body></html>"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), _Html)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        url = f"http://127.0.0.1:{httpd.server_address[1]}/v1"
+        probe = OpenAiHttp(url, "K", {"fast": "m", "balanced": "m", "quality": "m"}).probe()
+        assert probe.ok is False
+        assert "JSON" in probe.reason
+    finally:
+        httpd.shutdown()
