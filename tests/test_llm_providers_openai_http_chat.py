@@ -270,3 +270,14 @@ def test_ollama_chat_streams_over_api_chat_with_a_tool_round(ollama, monkeypatch
         "poltergeist_search", "poltergeist_get_note", "poltergeist_ask", "poltergeist_write_doc"}
     # the tool result rides back as a plain tool message (no tool_call_id)
     assert _FakeOllama.seen[1]["messages"][-1] == {"role": "tool", "content": "RESULT(budget)"}
+
+
+def test_chat_restricts_the_tool_schemas_to_the_allowed_list(server):
+    from ghostbrain.api.repo.docs_assist import DOCS_ALLOWED_TOOLS
+
+    _Fake.turns = [_sse([{"choices": [{"delta": {"content": "ok"}}]}])]
+    p = OpenAiHttp(server, "K", M); p._ollama = False
+    list(p.chat(base.ChatRequest(prompt="q", tier="fast", session_id=None, turn_key="a1",
+                                 allowed_tools=DOCS_ALLOWED_TOOLS)))
+    assert [t["function"]["name"] for t in _Fake.seen[0]["tools"]] == [
+        "poltergeist_search", "poltergeist_get_note", "poltergeist_write_doc"]

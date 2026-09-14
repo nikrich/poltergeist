@@ -50,3 +50,22 @@ def test_probe_reports_missing_binary(monkeypatch):
     monkeypatch.setattr(llm_client, "_find_claude_binary", lambda: None)
     p = ClaudeCli().probe()
     assert p.ok is False and "claude" in p.reason
+
+
+def test_probe_detail_names_the_tier_map_under_tiers(monkeypatch):
+    """ProviderProbe.detail["models"] is a list[str] of server-side model ids
+    for openai_http but was a dict[tier, model] for the CLI adapters — two
+    shapes under one key, which the desktop types as string[]. The CLI adapters
+    report their tier map under "tiers" instead."""
+    import subprocess
+
+    from ghostbrain.llm import client as llm_client
+    from ghostbrain.llm.providers.claude_cli import ClaudeCli
+
+    monkeypatch.setattr(llm_client, "_find_claude_binary", lambda: "/fake/claude")
+    monkeypatch.setattr(subprocess, "run",
+                        lambda *a, **k: subprocess.CompletedProcess(a[0], 0, "2.1.0\n", ""))
+    probe = ClaudeCli().probe()
+    assert probe.ok is True
+    assert "models" not in probe.detail
+    assert probe.detail["tiers"] == {"fast": "haiku", "balanced": "sonnet", "quality": "opus"}

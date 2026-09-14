@@ -11,6 +11,12 @@ def _client():
     return TestClient(create_app("tok")), {"Authorization": "Bearer tok"}
 
 
+def settings_repo_probe_cache():
+    from ghostbrain.api.repo import settings as settings_repo
+
+    return settings_repo._probe_cache
+
+
 def test_get_and_put_llm_settings_roundtrip(tmp_path, monkeypatch):
     monkeypatch.setenv("VAULT_PATH", str(tmp_path))
     (tmp_path / "90-meta").mkdir(parents=True)
@@ -50,7 +56,7 @@ def test_providers_route_probes_all(monkeypatch):
     monkeypatch.setattr(
         route,
         "_probe_all",
-        lambda: {
+        lambda refresh=False: {
             "claude": base.ProviderProbe(True, "2.1.0"),
             "codex": base.ProviderProbe(False, "not installed"),
             "gemini": base.ProviderProbe(False, "not installed"),
@@ -79,6 +85,7 @@ def test_providers_route_degrades_when_one_provider_raises(monkeypatch):
         return WorkingProvider()
 
     monkeypatch.setattr(route, "get_provider", fake_get_provider)
+    settings_repo_probe_cache().clear()
     c, h = _client()
     body = c.get("/v1/llm/providers", headers=h).json()
     assert set(body["providers"]) == {"claude", "codex", "gemini", "openai_http"}
@@ -188,3 +195,51 @@ def test_require_provider_wraps_any_probe_failure(monkeypatch):
     settings_repo._probe_cache.clear()
     with pytest.raises(ProviderUnavailable, match="Expecting value"):
         settings_repo.require_provider()
+
+
+def test_providers_route_caches_each_probe_and_refresh_bypasses_it(monkeypatch, tmp_path):
+    """Four CLI spawns / HTTP round trips on every settings render is real
+    latency, so each provider's probe reuses require_provider's 60s cache. The
+    panel's explicit re-check sends refresh=1 to get a fresh answer after the
+    user has just installed or signed into a CLI."""
+    monkeypatch.setenv("VAULT_PATH", str(tmp_path))
+    from ghostbrain.api.routes import llm_providers as route
+
+    calls = {"n": 0}
+
+    class FakeProvider:
+        def probe(self):
+            calls["n"] += 1
+            return base.ProviderProbe(True, "ok")
+
+    monkeypatch.setattr(route, "get_provider", lambda cfg: FakeProvider())
+    settings_repo_probe_cache().clear()
+    c, h = _client()
+    assert c.get("/v1/llm/providers", headers=h).status_code == 200
+    assert calls["n"] == 4
+    c.get("/v1/llm/providers", headers=h)
+    assert calls["n"] == 4               # all four served from cache
+    c.get("/v1/llm/providers?refresh=1", headers=h)
+    assert calls["n"] == 8               # re-check bypasses it
+
+
+def test_require_provider_reuses_a_probe_the_providers_route_warmed(monkeypatch, tmp_path):
+    monkeypatch.setenv("VAULT_PATH", str(tmp_path))
+    from ghostbrain.api.repo import settings as settings_repo
+    from ghostbrain.api.routes import llm_providers as route
+
+    calls = {"n": 0}
+
+    class FakeProvider:
+        def probe(self):
+            calls["n"] += 1
+            return base.ProviderProbe(True, "ok")
+
+    monkeypatch.setattr(route, "get_provider", lambda cfg: FakeProvider())
+    monkeypatch.setattr(settings_repo, "get_provider", lambda: FakeProvider())
+    settings_repo._probe_cache.clear()
+    c, h = _client()
+    c.get("/v1/llm/providers", headers=h)
+    assert calls["n"] == 4
+    settings_repo.require_provider()
+    assert calls["n"] == 4

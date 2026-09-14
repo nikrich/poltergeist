@@ -36,8 +36,9 @@ def _active_provider() -> str:
 
     try:
         return load_llm_config().provider
-    except Exception:  # noqa: BLE001 — a bad llm block must not break chat here;
-        # require_provider() below reports the real problem to the user.
+    except Exception:
+        # A bad llm block must not break chat here — require_provider() below
+        # reports the real problem to the user.
         log.warning("could not read the active llm provider", exc_info=True)
         return ""
 

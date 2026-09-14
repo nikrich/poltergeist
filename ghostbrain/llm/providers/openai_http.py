@@ -148,6 +148,9 @@ class OpenAiHttp:
         for m in req.history or []:
             messages.append({"role": m["role"], "content": m.get("text", "")})
         messages.append({"role": "user", "content": req.prompt})
+        # Callers that narrow the toolset (docs-assist drops poltergeist_ask)
+        # must narrow it here too — this driver has no MCP allowlist to lean on.
+        tools = vault_tools.schemas_for(req.allowed_tools)
 
         cancelled = threading.Event()
         # Holds the live httpx.Response for whichever round is currently
@@ -188,7 +191,7 @@ class OpenAiHttp:
                 if _round == vault_tools.MAX_TOOL_ROUNDS:
                     yield {"type": "error", "message": f"gave up after {vault_tools.MAX_TOOL_ROUNDS} tool rounds"}
                     return
-                text, calls = yield from self._stream_once(model, messages, req.timeout_s, cancelled, response_cell, full)
+                text, calls = yield from self._stream_once(model, messages, tools, req.timeout_s, cancelled, response_cell, full)
                 if cancelled.is_set():
                     yield {"type": "error", "message": "stopped", "interrupted": True}
                     return
@@ -205,8 +208,9 @@ class OpenAiHttp:
                         yield {"type": "error", "message": "stopped", "interrupted": True}
                         return
                     messages.append(self._tool_message(c, result))
-        except Exception as e:  # noqa: BLE001 — this generator OWNS the turn's
-            # terminal event: anything escaping here (a JSONDecodeError from a
+        except Exception as e:
+            # This generator OWNS the turn's terminal event: anything escaping
+            # here (a JSONDecodeError from a
             # bad SSE line, an LLMError from garbage tool arguments, an OSError
             # from the cancel path's socket shutdown) would end the stream with
             # no done/error at all, hanging the renderer and losing the partial
@@ -245,13 +249,13 @@ class OpenAiHttp:
             return {"role": "tool", "content": result}
         return {"role": "tool", "tool_call_id": call["id"], "content": result}
 
-    def _stream_once(self, model, messages, timeout_s, cancelled, response_cell, full):
+    def _stream_once(self, model, messages, tools, timeout_s, cancelled, response_cell, full):
         """Stream one completion. Yields delta events; returns (text, tool_calls)."""
         if self.is_ollama():
-            return (yield from self._stream_ollama_once(model, messages, timeout_s, cancelled, response_cell, full))
-        return (yield from self._stream_openai_once(model, messages, timeout_s, cancelled, response_cell, full))
+            return (yield from self._stream_ollama_once(model, messages, tools, timeout_s, cancelled, response_cell, full))
+        return (yield from self._stream_openai_once(model, messages, tools, timeout_s, cancelled, response_cell, full))
 
-    def _stream_ollama_once(self, model, messages, timeout_s, cancelled, response_cell, full):
+    def _stream_ollama_once(self, model, messages, tools, timeout_s, cancelled, response_cell, full):
         """One round against Ollama's native /api/chat (NDJSON).
 
         The OpenAI-compat shim Ollama also serves does not stream tool calls
@@ -261,9 +265,7 @@ class OpenAiHttp:
         already an object. Normalised here into the same (text, tool_calls)
         shape the OpenAI path returns.
         """
-        from ghostbrain.llm.providers import vault_tools
-
-        body = {"model": model, "messages": messages, "stream": True, "tools": vault_tools.TOOL_SCHEMAS}
+        body = {"model": model, "messages": messages, "stream": True, "tools": tools}
         url = f"{self._origin()}/api/chat"
         text_parts: list[str] = []
         calls: list[dict] = []
@@ -305,11 +307,9 @@ class OpenAiHttp:
                 response_cell["response"] = None
         return "".join(text_parts), calls
 
-    def _stream_openai_once(self, model, messages, timeout_s, cancelled, response_cell, full):
+    def _stream_openai_once(self, model, messages, tools, timeout_s, cancelled, response_cell, full):
         """One round against an OpenAI-compatible /chat/completions (SSE)."""
-        from ghostbrain.llm.providers import vault_tools
-
-        body = {"model": model, "messages": messages, "stream": True, "tools": vault_tools.TOOL_SCHEMAS}
+        body = {"model": model, "messages": messages, "stream": True, "tools": tools}
         url = f"{self.base_url}/chat/completions"
         text_parts: list[str] = []
         calls: dict[int, dict] = {}

@@ -154,4 +154,4 @@ class ClaudeCli:
             return base.ProviderProbe(False, f"`claude --version` failed: {e}")
         if out.returncode != 0:
             return base.ProviderProbe(False, "`claude --version` failed; run `claude login`")
-        return base.ProviderProbe(True, out.stdout.strip(), {"binary": binary, "models": self.models()})
+        return base.ProviderProbe(True, out.stdout.strip(), {"binary": binary, "tiers": self.models()})

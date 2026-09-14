@@ -9,6 +9,7 @@ generalized for other providers, since only the Claude adapter uses it today.
 """
 from __future__ import annotations
 
+import logging
 import os
 import signal
 import subprocess
@@ -16,6 +17,25 @@ import threading
 from collections.abc import Callable, Iterator
 
 from ghostbrain.llm.providers import base
+
+log = logging.getLogger("ghostbrain.llm.providers.stream")
+
+
+def _feed_stdin(proc: subprocess.Popen, text: str) -> None:
+    """Write the prompt to the child and close its stdin, swallowing the
+    BrokenPipeError a child that already exited raises — the exit path
+    (returncode + stderr tail) is what reports that failure to the user."""
+    try:
+        assert proc.stdin is not None
+        proc.stdin.write(text)
+    except (OSError, ValueError):
+        log.debug("child closed stdin before the prompt was written", exc_info=True)
+    finally:
+        try:
+            if proc.stdin is not None:
+                proc.stdin.close()
+        except OSError:
+            pass
 
 
 def stream_subprocess(
@@ -54,10 +74,6 @@ def stream_subprocess(
         # blocked until the orphans exit. Group-kill (below) takes them all.
         start_new_session=True,
     )
-    if stdin_text is not None:
-        assert proc.stdin is not None
-        proc.stdin.write(stdin_text)
-        proc.stdin.close()
 
     def _kill_group() -> None:
         try:
@@ -86,6 +102,18 @@ def stream_subprocess(
     saw_any = False
     saw_terminal = False
     try:
+        # Fed from a helper thread, and INSIDE this try, for two reasons: a
+        # child that exits before reading (a CLI that rejects its flags) makes
+        # the write raise BrokenPipeError, which above the try left the process
+        # group alive and the turn still registered — a conversation stuck
+        # "busy" with nothing left to cancel it; and a prompt larger than the
+        # pipe buffer blocks the write while the child blocks writing stdout
+        # that nobody is reading yet. The thread is a daemon, so a killed group
+        # never holds up interpreter shutdown.
+        if stdin_text is not None:
+            threading.Thread(
+                target=_feed_stdin, args=(proc, stdin_text), daemon=True
+            ).start()
         assert proc.stdout is not None
         for raw in proc.stdout:
             for event in parse(raw):

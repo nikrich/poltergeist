@@ -47,3 +47,12 @@ def test_descriptions_are_verbatim_from_the_mcp_server():
     assert by_schema_name.keys() == registered.keys()
     for name, description in registered.items():
         assert by_schema_name[name] == description, f"{name} description diverged from mcp/__main__.py"
+
+
+def test_summary_for_falls_back_to_the_short_name_on_any_format_error():
+    """agent._tool_event catches everything when formatting a chip summary; the
+    local driver's equivalent must too, or a tool argument that upsets str.format
+    (an unexpected type, a stray brace) takes down the whole turn."""
+    assert vt.summary_for("poltergeist_search", {"query": object()}) == "search"
+    assert vt.summary_for("poltergeist_get_note", None) == "get_note"
+    assert vt.summary_for("not_a_vault_tool", {"x": 1}) == "not_a_vault_tool"

@@ -166,32 +166,47 @@ def update_llm_settings(**fields) -> dict:
     return get_llm_settings()
 
 
-# require_provider() caches the last probe result for _PROBE_TTL_S seconds,
-# keyed by the config values that determine which provider/models/endpoint
-# get probed — a chat/answer turn calls this at least once per request, and
-# a subprocess probe on every request would add real latency. The cache is
-# invalidated whenever update_llm_settings() writes a new config.
+# Probe results are cached for _PROBE_TTL_S seconds, keyed by the provider
+# plus the config values that determine what gets probed — a chat/answer turn
+# calls require_provider() at least once per request, the settings panel probes
+# all four providers at once, and every probe is a subprocess spawn or an HTTP
+# round trip. The cache is invalidated whenever update_llm_settings() writes a
+# new config, and bypassed by an explicit "re-check" from the UI.
 _PROBE_TTL_S = 60.0
 _probe_cache: dict[tuple, tuple[float, object]] = {}
+
+
+def probe_cache_key(provider_id: str, cfg) -> tuple:
+    return (provider_id, cfg.base_url, cfg.api_key_env, tuple(sorted(cfg.models.items())))
+
+
+def cached_probe(key: tuple, run, *, refresh: bool = False):
+    """``run()``'s result, reused for _PROBE_TTL_S seconds under ``key``.
+
+    A raising ``run`` is never cached — a transient failure must not pin the
+    provider as broken for a minute.
+    """
+    now = time.monotonic()
+    if not refresh:
+        hit = _probe_cache.get(key)
+        if hit is not None and now - hit[0] < _PROBE_TTL_S:
+            return hit[1]
+    probe = run()
+    _probe_cache[key] = (now, probe)
+    return probe
 
 
 def require_provider() -> None:
     from ghostbrain.llm.providers.config import load_llm_config
 
     cfg = load_llm_config()
-    key = (cfg.provider, cfg.base_url, cfg.api_key_env, tuple(sorted(cfg.models.items())))
-    now = time.monotonic()
-    cached = _probe_cache.get(key)
-    if cached is not None and now - cached[0] < _PROBE_TTL_S:
-        probe = cached[1]
-    else:
-        try:
-            probe = get_provider().probe()
-        except Exception as e:  # noqa: BLE001 — a probe can fail with more than
-            # LLMError (a JSONDecodeError from a server answering HTML, an
-            # OSError from a dead socket). Callers turn ProviderUnavailable
-            # into a 412 or a chat error event; an escaping exception is a 500.
-            raise ProviderUnavailable(str(e)) from e
-        _probe_cache[key] = (now, probe)
+    try:
+        probe = cached_probe(probe_cache_key(cfg.provider, cfg), lambda: get_provider().probe())
+    except Exception as e:
+        # A probe can fail with more than LLMError (a JSONDecodeError from a
+        # server answering HTML, an OSError from a dead socket). Callers turn
+        # ProviderUnavailable into a 412 or a chat error event; an escaping
+        # exception is a 500.
+        raise ProviderUnavailable(str(e)) from e
     if not probe.ok:
         raise ProviderUnavailable(probe.reason)

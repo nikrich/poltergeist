@@ -160,11 +160,15 @@ no CLI, free. This is the `openai_http` provider; the desktop calls it
     available locally; the MCP servers you've opted into from
     `~/ghostbrain/mcp-servers.json` are a Claude/Codex/Gemini-only feature
     in this release.
-  - **Ollama uses `/api/chat`, not `/v1/chat/completions`, for structured
-    output.** When a JSON schema is requested and the server turns out to
-    be Ollama (detected by probing `/api/tags`), Poltergeist sets `format:
-    <schema>` on Ollama's native `/api/chat` endpoint instead, since that's
-    the path Ollama actually enforces the schema on.
+  - **Ollama is driven through `/api/chat`, not `/v1/chat/completions`.**
+    When the server turns out to be Ollama (detected by probing
+    `/api/tags`), both structured batch calls and streaming chat turns go to
+    Ollama's native endpoint: it's the path Ollama actually enforces a
+    `format: <schema>` on, and the one that streams tool calls reliably. Its
+    NDJSON responses and object-valued tool `arguments` are normalised
+    internally, so the chat stream looks identical either way. LM Studio and
+    other OpenAI-compatible servers keep using `/v1/chat/completions` with
+    SSE.
 
 ## Chat and vault tools
 
@@ -197,9 +201,54 @@ are never written to.** Poltergeist only ever reads your existing login
 (symlinking or copying just the auth type/token) into a disposable run
 directory it regenerates on every turn.
 
-`allowed_tools` semantics don't change with the provider: vault tools are
-always available; your opted-in MCP servers from `mcp-servers.json` ride
-along on Claude, Codex, and Gemini, and never on local.
+`allowed_tools` semantics are honoured everywhere they can be: Claude passes
+the list as `--allowedTools`, Gemini as the vault server's `includeTools`,
+and the local driver simply omits the excluded tools from the function
+definitions it sends. **Codex is the exception** — its `config.toml` has no
+per-server tool allowlist, so a Codex chat turn always sees all four vault
+tools even when the caller asked for fewer (the docs assistant, which
+normally runs without `poltergeist_ask`).
+
+Your opted-in MCP servers from `mcp-servers.json` ride along on Claude,
+Codex, and Gemini, and never on local.
+
+Gemini's chat turns run with `--approval-mode=yolo`, which auto-approves
+every tool the CLI exposes. The generated workspace therefore switches off
+all of Gemini's built-in tools (`run_shell_command`, `write_file`,
+`read_file`, `web_fetch`, …) via `tools.core` and the legacy `coreTools`
+key, leaving only the MCP servers reachable — yolo then only ever
+auto-approves vault and user-server tools.
+
+## Provider switching
+
+A CLI session id belongs to the provider that minted it: `codex exec resume
+<id>` and `gemini --resume <id>` both reject a Claude session uuid, and vice
+versa. Poltergeist records which provider a conversation's session id came
+from, so switching provider mid-conversation starts a **fresh** session on
+the new provider and replays the recent transcript into the prompt instead
+of resuming. You lose the CLI-side memory of older turns, not the
+conversation — the visible history in the app is unchanged, and the next few
+turns carry it.
+
+The same recovery runs when a session id of the *current* provider goes
+stale (the CLI pruned it, or you cleared its state): the turn is retried once
+without a session, with the transcript prefixed.
+
+Model overrides follow the same rule. `llm.models` names models, and a model
+name only means something to one provider, so changing `llm.provider` clears
+`llm.models` — every tier falls back to the new provider's own default. Pick
+your local models again after switching back to `openai_http`.
+
+## `POST /v1/llm/run`
+
+The raw prompt runner plugins use is provider-agnostic as of this release.
+Its `model` field is no longer a Claude model name passed through to the
+CLI: it must be a **tier** (`fast`, `balanced`, `quality`) or one of the
+three aliases (`haiku`, `sonnet`, `opus`), which the active provider maps to
+one of its own models. Any other value — a literal `claude-sonnet-4`, a
+`gpt-5`, an Ollama tag — is a configuration error and comes back in the
+response's `error` field. Plugins that pinned a concrete model name need
+updating to a tier.
 
 ## Troubleshooting
 
@@ -217,7 +266,9 @@ event in the chat stream instead — you'll see it inline in the conversation
 rather than as a failed request.
 
 If you just fixed the provider (signed in, started Ollama, pulled a model)
-and doctor or chat still reports it as down, wait up to a minute: the probe
-result is cached for 60 seconds to avoid re-probing on every request, and
-clears immediately if you change `llm.provider` (or any other `llm.*`
-setting) from Settings.
+and doctor or chat still reports it as down, the probe result is cached for
+60 seconds to avoid re-probing on every request. The cache clears
+immediately when you change `llm.provider` (or any other `llm.*` setting)
+from Settings, and **Settings → AI provider → re-check** bypasses it
+outright (it sends `?refresh=1` to `GET /v1/llm/providers`). Otherwise, wait
+up to a minute.

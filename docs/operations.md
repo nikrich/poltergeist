@@ -119,16 +119,21 @@ ghostbrain-profile-decay [--date 2026-05-08]
 
 ## LLM client configuration
 
-`ghostbrain.llm.client.run()` shells out to `claude -p` so calls inherit your Claude subscription login — no API key required. To keep cost (and quota consumption) low it strips the default Claude Code system prompt with `--system-prompt` and pins a tiny auto-generated one. Models are configurable in `config.yaml`:
+`ghostbrain.llm.client.run()` no longer talks to one CLI. It dispatches to whichever provider `llm.provider` names in `config.yaml` — `claude`, `codex`, `gemini`, or `openai_http` (a local Ollama / LM Studio server). Installation, sign-in, per-provider limitations, and what `poltergeist doctor` checks are all in [LLM providers](llm-providers.md); this section only covers which model each role asks for.
+
+Every call site asks for a *tier* (`fast`, `balanced`, `quality`), and each provider maps tiers onto its own models. The Claude model names are accepted as tier aliases — `haiku` = fast, `sonnet` = balanced, `opus` = quality — so these keys mean the same thing on every provider:
 
 ```yaml
 llm:
-  router_model: haiku       # cheap routing fallback
-  extractor_model: sonnet   # extraction wants nuance
-  digest_model: sonnet
+  router_model: haiku       # frequent + classification
+  extractor_model: opus     # once/session — quality matters
+  digest_model: opus        # once/day — voice + synthesis matter
+  profile_model: opus       # confidence judgement on profile diffs
 ```
 
-A `--max-budget-usd` cap is set on each call as belt-and-suspenders. To use the metered Anthropic API instead of a subscription, see [SPEC §12.1](../spec/SPEC.md#121-llm-backend-and-costs).
+Those are the values `ghostbrain-bootstrap` seeds. Omitting a key falls back to `balanced` (`router_model` to `fast`). `llm.models.fast` / `.balanced` / `.quality` override a provider's default model for a tier; they are cleared whenever you switch providers, since a model name only means something to the provider it came from.
+
+On the Claude path, calls still inherit your Claude subscription login (no API key), the default Claude Code system prompt is stripped via `--system-prompt`, and a `--max-budget-usd` cap is set on each call as belt-and-suspenders. To use the metered Anthropic API instead of a subscription, see [SPEC §12.1](../spec/SPEC.md#121-llm-backend-and-costs).
 
 ## Verifying the install
 

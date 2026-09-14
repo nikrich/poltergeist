@@ -96,6 +96,11 @@ def write_codex_home(root: Path, *, model: str, mcp_argv: list[str], user_server
 
     Never writes into the user's real ~/.codex — root is a run-dir scratch
     directory dedicated to this provider.
+
+    NOTE: codex's config.toml has no per-server tool allowlist (gemini's
+    `includeTools` has no equivalent here), so a codex chat turn always sees
+    all four vault tools — ``ChatRequest.allowed_tools`` cannot be enforced on
+    this provider. docs-assist runs on codex with poltergeist_ask reachable.
     """
     root.mkdir(parents=True, exist_ok=True)
     lines = [f"model = {_toml_str(model)}", 'sandbox_mode = "read-only"', 'approval_policy = "never"', ""]
@@ -220,7 +225,7 @@ class CodexCli:
             return base.ProviderProbe(False, "codex is not logged in; run `codex login` (ChatGPT account)", {"binary": b, "stderr": err[-300:]})
         lines = out.strip().splitlines()
         last_line = lines[-1] if lines else "logged in"
-        return base.ProviderProbe(True, last_line, {"binary": b, "models": self.models()})
+        return base.ProviderProbe(True, last_line, {"binary": b, "tiers": self.models()})
 
     def chat(self, req: base.ChatRequest) -> Iterator[dict]:
         b = self._binary or find_codex_binary()
@@ -249,6 +254,11 @@ class CodexCli:
             # conversation on a stale thread id.
             if req.session_id and not saw_any and rc != 0:
                 raise agent.ResumeFailed(err[-300:] or "resume failed")
+            # codex can exit 0 after its agent_message without ever emitting
+            # turn.completed. The reply is already in hand — hand it over
+            # rather than replacing it with an empty "codex exited 0: ".
+            if rc == 0 and text_parts:
+                return [{"type": "done", "text": "".join(text_parts), "session_id": session}]
             return [{"type": "error", "message": f"codex exited {rc}: {err[-300:]}"}]
 
         for ev in stream_subprocess(cmd, timeout_s=req.timeout_s, turn_key=req.turn_key, parse=parser.feed,

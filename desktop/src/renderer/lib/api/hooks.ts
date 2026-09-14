@@ -782,3 +782,14 @@ export function useLlmProviders() {
     staleTime: 30_000,
   });
 }
+
+/** The "re-check" button. `refresh=1` bypasses the sidecar's 60s probe cache,
+ * which a plain refetch would otherwise be served from — the whole point of
+ * the button is to see the state *after* installing or signing into a CLI. */
+export function useRecheckLlmProviders() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => get<LlmProvidersResponse>('/v1/llm/providers?refresh=1'),
+    onSuccess: (data) => qc.setQueryData(['llm', 'providers'], data),
+  });
+}

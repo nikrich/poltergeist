@@ -90,7 +90,8 @@ def test_chat_resume_uses_exec_resume(monkeypatch, tmp_path: Path):
 def test_chat_missing_binary_is_error_event(monkeypatch):
     monkeypatch.setattr(cx, "find_codex_binary", lambda: None)
     events = list(cx.CodexCli(M).chat(base.ChatRequest(prompt="q", tier="fast", session_id=None, turn_key=None)))
-    assert events == [{"type": "error", "message": events[0]["message"]}] and "codex" in events[0]["message"]
+    assert len(events) == 1 and events[0]["type"] == "error"
+    assert "`codex` CLI not found" in events[0]["message"] and "codex login" in events[0]["message"]
 
 
 def test_chat_resume_rejected_raises_resume_failed(monkeypatch, tmp_path: Path):
@@ -126,3 +127,34 @@ def test_chat_nonzero_exit_without_session_is_an_error_event(monkeypatch, tmp_pa
     monkeypatch.setattr(cx, "_real_codex_home", lambda: tmp_path / "nohome")
     events = list(cx.CodexCli(M).chat(base.ChatRequest(prompt="q", tier="fast", session_id=None, turn_key=None)))
     assert events[-1]["type"] == "error" and "boom" in events[-1]["message"]
+
+
+def test_chat_clean_exit_without_turn_completed_still_yields_the_text(monkeypatch, tmp_path: Path):
+    """codex sometimes exits 0 after its agent_message without ever emitting
+    turn.completed. The reply is already in hand — surfacing `codex exited 0: `
+    threw it away and showed the user an empty error."""
+    def fake_stream(cmd, **kw):
+        yield from kw["parse"]('{"type":"thread.started","thread_id":"thr_9"}')
+        yield from kw["parse"]('{"type":"item.completed","item":{"type":"agent_message","text":"the answer"}}')
+        yield from kw["on_exit"](0, "", True)
+
+    monkeypatch.setattr(cx, "stream_subprocess", fake_stream)
+    monkeypatch.setattr(cx, "find_codex_binary", lambda: "/c")
+    monkeypatch.setattr(cx, "find_mcp_binary", lambda: ["/app/ghostbrain-api", "mcp"])
+    monkeypatch.setattr(cx, "_run_root", lambda: tmp_path / "run")
+    monkeypatch.setattr(cx, "_real_codex_home", lambda: tmp_path / "nohome")
+    events = list(cx.CodexCli(M).chat(base.ChatRequest(prompt="q", tier="fast", session_id=None, turn_key=None)))
+    assert events[-1] == {"type": "done", "text": "the answer", "session_id": "thr_9"}
+
+
+def test_chat_clean_exit_with_no_text_is_still_an_error(monkeypatch, tmp_path: Path):
+    def fake_stream(cmd, **kw):
+        yield from kw["on_exit"](0, "", False)
+
+    monkeypatch.setattr(cx, "stream_subprocess", fake_stream)
+    monkeypatch.setattr(cx, "find_codex_binary", lambda: "/c")
+    monkeypatch.setattr(cx, "find_mcp_binary", lambda: ["/app/ghostbrain-api", "mcp"])
+    monkeypatch.setattr(cx, "_run_root", lambda: tmp_path / "run")
+    monkeypatch.setattr(cx, "_real_codex_home", lambda: tmp_path / "nohome")
+    events = list(cx.CodexCli(M).chat(base.ChatRequest(prompt="q", tier="fast", session_id=None, turn_key=None)))
+    assert events[-1]["type"] == "error"

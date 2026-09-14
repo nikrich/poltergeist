@@ -53,6 +53,32 @@ TOOL_SCHEMAS: list[dict] = [
         {"title": {"type": "string"}, "html": {"type": "string"}}, ["title", "html"]),
 ]
 
+VAULT_TOOL_NAMES: list[str] = [t["function"]["name"] for t in TOOL_SCHEMAS]
+
+
+def allowed_vault_tool_names(allowed_tools: str | None) -> list[str] | None:
+    """Vault tools an ``allowed_tools`` spec permits, or None for "no limit".
+
+    Callers (docs-assist) write the spec in agent.py's Claude vocabulary —
+    MCP-prefixed names like ``mcp__poltergeist__poltergeist_ask``, mixed with
+    built-in tool names — so both the prefixed and the bare form are accepted
+    and everything that isn't a vault tool is ignored. Order follows
+    TOOL_SCHEMAS so the filtered list is stable.
+    """
+    if not allowed_tools:
+        return None
+    allowed = {t.strip() for t in allowed_tools.split(",") if t.strip()}
+    return [n for n in VAULT_TOOL_NAMES if n in allowed or f"mcp__poltergeist__{n}" in allowed]
+
+
+def schemas_for(allowed_tools: str | None) -> list[dict]:
+    """TOOL_SCHEMAS filtered by an ``allowed_tools`` spec."""
+    names = allowed_vault_tool_names(allowed_tools)
+    if names is None:
+        return list(TOOL_SCHEMAS)
+    return [t for t in TOOL_SCHEMAS if t["function"]["name"] in names]
+
+
 _DISPATCH = {
     "poltergeist_search": lambda c, a: tools.search(c, a["query"], limit=int(a.get("limit", 10)), days=a.get("days")),
     "poltergeist_get_note": lambda c, a: tools.get_note(c, a["path"]),
@@ -88,11 +114,17 @@ def short_name_for(name: str) -> str:
 
 
 def summary_for(name: str, arguments: dict) -> str:
+    """The chip summary agent.py's Claude path shows for this call.
+
+    Falls back to the short name on ANY formatting failure, matching
+    agent._tool_event — a chip label is cosmetic, and a tool argument that
+    upsets str.format or json.dumps must never take down the turn.
+    """
     entry = _tool_summary_entry(name)
     if not entry:
         return name
-    _, template = entry
+    short, template = entry
     try:
         return template.format(**{k: (v if isinstance(v, str) else json.dumps(v)) for k, v in (arguments or {}).items()})
-    except (KeyError, IndexError):
-        return template
+    except Exception:  # noqa: BLE001 — see docstring
+        return short

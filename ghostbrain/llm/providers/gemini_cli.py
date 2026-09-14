@@ -90,7 +90,8 @@ def supports_resume(binary: str) -> bool:
     return _resume_cache[binary]
 
 
-def write_gemini_workspace(root: Path, *, mcp_argv: list[str], user_servers: list[dict], auth_type: str | None) -> Path:
+def write_gemini_workspace(root: Path, *, mcp_argv: list[str], user_servers: list[dict], auth_type: str | None,
+                           include_tools: list[str] | None = None) -> Path:
     """Regenerate a per-turn workspace (`root/.gemini/settings.json`) fresh each turn.
 
     Never writes into the user's real ~/.gemini — root is a run-dir scratch
@@ -107,7 +108,7 @@ def write_gemini_workspace(root: Path, *, mcp_argv: list[str], user_servers: lis
             entry["includeTools"] = [t.strip() for t in s["tools"].split(",") if t.strip()]
         servers[s["name"]] = entry
     servers["poltergeist"] = {"command": mcp_argv[0], "args": list(mcp_argv[1:]), "trust": True,
-                              "includeTools": list(VAULT_TOOL_NAMES)}
+                              "includeTools": list(VAULT_TOOL_NAMES if include_tools is None else include_tools)}
     # Disable every built-in gemini tool (run_shell_command, write_file,
     # read_file, web_fetch, …): chat() runs with --approval-mode=yolo, which
     # auto-approves whatever is exposed, and a second brain has no business
@@ -229,7 +230,7 @@ class GeminiCli:
             _run([b, "--version"], 15)
         except (LLMError, OSError) as e:
             return base.ProviderProbe(False, f"gemini --version failed: {e}", {"binary": b, "auth": auth})
-        return base.ProviderProbe(True, f"gemini ({auth})", {"binary": b, "auth": auth, "models": self.models()})
+        return base.ProviderProbe(True, f"gemini ({auth})", {"binary": b, "auth": auth, "tiers": self.models()})
 
     def chat(self, req: base.ChatRequest) -> Iterator[dict]:
         from ghostbrain.llm import agent
@@ -246,8 +247,10 @@ class GeminiCli:
         if auth is None:
             yield {"type": "error", "message": "gemini is not signed in — run `gemini` and use /auth, or set GEMINI_API_KEY"}
             return
+        from ghostbrain.llm.providers import vault_tools
         ws = write_gemini_workspace(_run_root() / "gemini", mcp_argv=list(mcp), user_servers=req.user_servers,
-                                    auth_type=auth)
+                                    auth_type=auth,
+                                    include_tools=vault_tools.allowed_vault_tool_names(req.allowed_tools))
         resume = bool(req.session_id) and supports_resume(b)
         prompt = req.prompt
         if req.session_id and not resume and req.history:

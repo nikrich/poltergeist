@@ -13,6 +13,7 @@ import {
   useContexts,
   useCreateProject,
   useLlmProviders,
+  useRecheckLlmProviders,
   useLlmSettings,
   useProjects,
   useRecorderSettings,
@@ -268,6 +269,7 @@ function PrivacySettings() {
 export function AiProviderSettings() {
   const settingsQuery = useLlmSettings();
   const providersQuery = useLlmProviders();
+  const recheckProviders = useRecheckLlmProviders();
   const updateSettings = useUpdateLlmSettings();
 
   const data = settingsQuery.data;
@@ -317,15 +319,25 @@ export function AiProviderSettings() {
         sub={undefined}
         control={
           <div className="flex items-center gap-2">
-            {providersQuery.isFetching ? (
+            {providersQuery.isFetching || recheckProviders.isPending ? (
               <Pill tone="outline">checking…</Pill>
             ) : (
               <Pill tone={diagnostics?.ok ? 'moss' : 'oxblood'}>
                 {diagnostics?.reason ?? 'unknown'}
               </Pill>
             )}
-            <Btn variant="ghost" size="sm" onClick={() => void providersQuery.refetch()}>
-              re-check
+            <Btn
+              variant="ghost"
+              size="sm"
+              disabled={recheckProviders.isPending}
+              onClick={() =>
+                recheckProviders.mutate(undefined, {
+                  onError: (e) =>
+                    toast.error(e instanceof Error ? e.message : 'failed to re-check providers'),
+                })
+              }
+            >
+              {recheckProviders.isPending ? 'checking…' : 're-check'}
             </Btn>
           </div>
         }

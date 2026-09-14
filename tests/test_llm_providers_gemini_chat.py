@@ -178,3 +178,23 @@ def test_chat_nonzero_exit_without_session_is_an_error_event(monkeypatch, tmp_pa
     monkeypatch.setattr(gm, "_run_root", lambda: tmp_path / "run")
     events = list(gm.GeminiCli(M).chat(base.ChatRequest(prompt="q", tier="fast", session_id=None, turn_key=None)))
     assert events[-1]["type"] == "error" and "boom" in events[-1]["message"]
+
+
+def test_chat_restricts_include_tools_to_the_allowed_list(monkeypatch, tmp_path: Path):
+    """docs-assist runs its turns without poltergeist_ask. The gemini workspace
+    must reflect that, or the restriction only ever applied to the Claude path."""
+    from ghostbrain.api.repo.docs_assist import DOCS_ALLOWED_TOOLS
+
+    def fake_stream(cmd, **kw):
+        yield {"type": "done", "text": "ok", "session_id": ""}
+
+    monkeypatch.setattr(gm, "stream_subprocess", fake_stream)
+    monkeypatch.setattr(gm, "find_gemini_binary", lambda: "/g")
+    monkeypatch.setattr(gm, "supports_resume", lambda binary: True)
+    monkeypatch.setattr(gm, "read_gemini_auth", lambda: "oauth-personal")
+    monkeypatch.setattr(gm, "_run_root", lambda: tmp_path / "run")
+    list(gm.GeminiCli(M).chat(base.ChatRequest(prompt="q", tier="fast", session_id=None, turn_key=None,
+                                               allowed_tools=DOCS_ALLOWED_TOOLS)))
+    doc = json.loads((tmp_path / "run" / "gemini" / ".gemini" / "settings.json").read_text())
+    assert doc["mcpServers"]["poltergeist"]["includeTools"] == [
+        "poltergeist_search", "poltergeist_get_note", "poltergeist_write_doc"]
