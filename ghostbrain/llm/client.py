@@ -19,7 +19,6 @@ import re
 import shutil
 import signal
 import subprocess
-import time
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +61,14 @@ def _find_claude_binary() -> str | None:
         if c.is_file():
             return str(c)
     return None
+
+BINARY_MISSING_MESSAGE = (
+    "`claude` binary not found. Install Claude Code "
+    "(`npm i -g @anthropic-ai/claude-code`), or set "
+    "`GHOSTBRAIN_CLAUDE_BIN` to its absolute path. "
+    "Common install locations (~/.local/bin, /opt/homebrew/bin, "
+    "/usr/local/bin) are searched automatically."
+)
 
 MINIMAL_SYSTEM_PROMPT = (
     "You are an automation backend, not a chat assistant. The user's prompts "
@@ -111,6 +118,12 @@ class LLMResult:
         return _parse_json_tolerant(self.text)
 
 
+def _provider():
+    """Seam for tests; Task 3 replaces the body with get_provider()."""
+    from ghostbrain.llm.providers.claude_cli import ClaudeCli
+    return ClaudeCli()
+
+
 def run(
     prompt: str,
     *,
@@ -134,64 +147,13 @@ def run(
     budget_usd: hard cap for this call. Defaults to ``DEFAULT_BUDGET_USD``.
     timeout_s: subprocess timeout.
     """
-    binary = _find_claude_binary()
-    if binary is None:
-        raise LLMError(
-            "`claude` binary not found. Install Claude Code "
-            "(`npm i -g @anthropic-ai/claude-code`), or set "
-            "`GHOSTBRAIN_CLAUDE_BIN` to its absolute path. "
-            "Common install locations (~/.local/bin, /opt/homebrew/bin, "
-            "/usr/local/bin) are searched automatically."
-        )
+    from ghostbrain.llm.providers.base import CompletionRequest, to_tier
 
-    # When images are referenced, grant Claude Code's Read tool access to their
-    # directories. Without this, `--print` sandboxes file access to the cwd and
-    # refuses to read a vault asset ("The image file is outside the allowed
-    # working directories for this session"). `--add-dir` is VARIADIC, so it
-    # must be followed by another flag (here --output-format) — never the
-    # trailing prompt, which it would otherwise swallow as a directory.
-    add_dir: list[str] = []
-    if image_paths:
-        dirs = sorted({str(Path(p).resolve().parent) for p in image_paths})
-        add_dir = ["--add-dir", *dirs]
-
-    cmd: list[str] = [
-        binary,
-        "--print",
-        *add_dir,
-        "--output-format", "json",
-        "--model", model,
-        "--system-prompt", system_prompt or MINIMAL_SYSTEM_PROMPT,
-        "--no-session-persistence",
-        "--max-budget-usd", f"{budget_usd or DEFAULT_BUDGET_USD:.4f}",
-        "--exclude-dynamic-system-prompt-sections",
-    ]
-    if json_schema is not None:
-        cmd.extend(["--json-schema", json.dumps(json_schema)])
-
-    effective_prompt = prompt
-    if image_paths:
-        refs = "\n".join(f"- {p}" for p in image_paths)
-        effective_prompt = (
-            f"{prompt}\n\nRead the following image file(s) and use their contents:\n{refs}"
-        )
-    cmd.append(effective_prompt)
-
-    last_err: Exception | None = None
-    for attempt, delay in enumerate((0,) + RETRY_DELAYS_S):
-        if delay:
-            log.warning("LLM retry %d after %ds (last error: %s)",
-                        attempt, delay, last_err)
-            time.sleep(delay)
-        try:
-            return _run_once(cmd, timeout_s=timeout_s)
-        except LLMRateLimit as e:
-            last_err = e
-            continue
-        except LLMTimeout as e:
-            last_err = e
-            continue
-    raise LLMError(f"LLM call failed after {len(RETRY_DELAYS_S)} retries: {last_err}")
+    return _provider().complete(CompletionRequest(
+        prompt=prompt, tier=to_tier(model), json_schema=json_schema,
+        system_prompt=system_prompt, image_paths=image_paths,
+        timeout_s=timeout_s, budget_usd=budget_usd,
+    ))
 
 
 def _run_once(cmd: list[str], *, timeout_s: int) -> LLMResult:
