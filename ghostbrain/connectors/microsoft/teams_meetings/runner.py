@@ -23,12 +23,14 @@ def _build(routing: dict, queue_dir: Path, state_dir: Path):
     cfg = ms.get("teams_meetings")
     if cfg is None:
         return None
+    macos_accounts = ((routing.get("calendar") or {}).get("macos") or {}).get("accounts") or {}
     cfg = {
         **cfg,
         "client_id": ms.get("client_id"),
         "tenant_id": ms.get("tenant_id"),
         "scopes": ms.get("scopes"),
         "accounts": _accounts(),
+        "macos_calendars": dict(macos_accounts),
     }
     return TeamsMeetingsConnector(config=cfg, queue_dir=queue_dir, state_dir=state_dir)
 
