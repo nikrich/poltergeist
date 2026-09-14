@@ -120,8 +120,9 @@ class LLMResult:
 
 def _provider():
     """Seam for tests; Task 3 replaces the body with get_provider()."""
-    from ghostbrain.llm.providers.claude_cli import ClaudeCli
-    return ClaudeCli()
+    from ghostbrain.llm.providers import get_provider
+
+    return get_provider()
 
 
 def run(

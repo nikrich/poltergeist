@@ -753,13 +753,6 @@ thresholds:
   flag_for_review: 0.70
   reject_below: 0.50        # below this, drop the event
 
-llm:
-  # Aliases (`haiku`, `sonnet`, `opus`) are passed to `claude -p --model`.
-  router_model: haiku       # frequent + classification
-  extractor_model: opus     # once/session — quality matters
-  digest_model: opus        # once/day — voice + synthesis matter
-  profile_model: opus       # confidence judgement on profile diffs
-
 worker:
   poll_interval_seconds: 5
   # routing_mode: live | review_only
@@ -768,6 +761,18 @@ worker:
   # routing decision — useful for auditing a new connector; the app's
   # meeting and calendar views look empty while it is on.
   routing_mode: live
+
+llm:
+  # Which model provider runs routing, extraction, digests and chat.
+  # provider: claude        # claude | codex | gemini | openai_http
+  # models:                 # per-tier overrides (null = provider default)
+  #   fast: null
+  #   balanced: null
+  #   quality: null
+  # openai_http:
+  #   base_url: http://127.0.0.1:11434/v1   # Ollama; LM Studio is http://127.0.0.1:1234/v1
+  #   api_key_env: OPENAI_API_KEY           # only read when base_url is not localhost
+  {}
 
 profile:
   # Roots scanned by `ghostbrain-claude-md --all`. Each direct child that looks

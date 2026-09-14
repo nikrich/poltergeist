@@ -279,8 +279,16 @@ def _provider(*, binary: str | None = None, mcp_binary: str | list[str] | None =
     """Seam for tests; Task 3 replaces the body with get_provider(). ``binary``
     and ``mcp_binary`` are Claude-specific overrides — they only make sense
     for the ClaudeCli adapter and are ignored by any other provider."""
-    from ghostbrain.llm.providers.claude_cli import ClaudeCli
-    return ClaudeCli(binary=binary, mcp_binary=mcp_binary)
+    from ghostbrain.llm.client import LLMError
+    from ghostbrain.llm.providers import get_provider
+    from ghostbrain.llm.providers.config import load_llm_config
+
+    cfg = load_llm_config()
+    if cfg.provider == "claude":
+        from ghostbrain.llm.providers.claude_cli import ClaudeCli
+
+        return ClaudeCli(binary=binary, mcp_binary=mcp_binary)
+    raise LLMError(f"llm.provider {cfg.provider!r} is not implemented yet")
 
 
 def run_chat_turn(
