@@ -7,12 +7,15 @@ synonyms so existing config.yaml keys keep working.
 """
 from __future__ import annotations
 
+import logging
 import threading
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Literal, Protocol
 
 from ghostbrain.llm.client import LLMError, LLMResult
+
+log = logging.getLogger("ghostbrain.llm.providers")
 
 Tier = Literal["fast", "balanced", "quality"]
 TIERS: tuple[str, ...] = ("fast", "balanced", "quality")
@@ -106,7 +109,11 @@ def cancel_turn(key: str) -> bool:
 def kill_all_running() -> int:
     with _lock:
         entries = list(_running.values())
+        _running.clear()
     for e in entries:
         e.cancelled.set()
-        e.kill()
+        try:
+            e.kill()
+        except Exception:
+            log.warning("kill_all_running: kill() raised", exc_info=True)
     return len(entries)

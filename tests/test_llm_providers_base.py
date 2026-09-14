@@ -32,5 +32,26 @@ def test_turn_registry_cancel_and_kill_all():
     assert base.cancel_turn("nope") is False
     assert base.kill_all_running() == 1          # conv-2 still registered
     assert killed == ["conv-1", "conv-2"]
-    base.unregister_turn("conv-1"); base.unregister_turn("conv-2")
+    # kill_all_running clears the registry itself — no manual unregister needed.
+    assert base.kill_all_running() == 0
+
+
+def _raise() -> None:
+    raise RuntimeError("boom")
+
+
+def test_kill_all_running_continues_past_a_raising_kill():
+    """One misbehaving turn's kill() must not abort reaping the rest, and the
+    registry must still be cleared — a shutdown sweep can't be aborted by a
+    single bad actor."""
+    killed: list[str] = []
+    bad_cancelled = threading.Event()
+    good_cancelled = threading.Event()
+    base.register_turn("bad", cancelled=bad_cancelled, kill=_raise)
+    base.register_turn("good", cancelled=good_cancelled, kill=lambda: killed.append("good"))
+
+    assert base.kill_all_running() == 2
+    assert killed == ["good"]
+    assert bad_cancelled.is_set() and good_cancelled.is_set()
+    # Registry cleared even though "bad"'s kill() raised.
     assert base.kill_all_running() == 0
