@@ -153,3 +153,15 @@ def fake_atlassian(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(repo, "AtlassianClient", FakeClient)
     monkeypatch.setattr(repo, "auth_for_site", lambda host: ("u@example.com", "tok"))
     return registry
+
+
+@pytest.fixture(autouse=True)
+def isolate_manual_recorder_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Never read/write the developer's real ~/ghostbrain/recorder/manual.state
+    from the API tests — a live manual recording on the dev machine used to
+    flip these tests between 409 and 412."""
+    from ghostbrain.api.repo import recorder as repo
+    rec_dir = tmp_path / "recorder-recordings"
+    rec_dir.mkdir()
+    monkeypatch.setattr(repo, "RECORDINGS_DIR", rec_dir)
+    monkeypatch.setattr(repo, "STATE_FILE", rec_dir.parent / "manual.state")
