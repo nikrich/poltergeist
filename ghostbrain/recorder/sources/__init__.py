@@ -27,6 +27,9 @@ def select_sources(
         if plat == "darwin":
             from ghostbrain.recorder.sources.macos import MacosSource
             sources.append(MacosSource(dict(macos_accounts)))
+            warning = macos_calendar_access_warning()
+            if warning:
+                excluded.append(warning)
         else:
             excluded.append("macos: Apple Calendar source requires macOS")
 
@@ -47,6 +50,26 @@ def select_sources(
                 "(microsoft.calendar_context: <context>)"
             )
     return sources, excluded
+
+
+def macos_calendar_access_warning() -> str | None:
+    """Human-readable reason recurring meetings may be invisible: EventKit is
+    not authorized for this process, so the connector runs on the AppleScript
+    fallback, which returns only the master record of a recurring series.
+    None when access is fine or cannot be determined."""
+    try:
+        from ghostbrain.connectors.calendar.macos import eventkit_authorization_status
+        status = eventkit_authorization_status()
+    except Exception:  # noqa: BLE001
+        return None
+    if status in ("authorized", "unavailable"):
+        return None
+    where = ("System Settings › Privacy & Security › Calendars — enable "
+             "Poltergeist (or the terminal running the recorder)")
+    label = {"denied": "denied", "restricted": "restricted",
+             "not_determined": "not granted yet", "write_only": "write-only"}.get(status, status)
+    return (f"macos: Calendar access is {label}; recurring meetings are invisible to "
+            f"auto-record until it is granted ({where})")
 
 
 def dedupe_events(events: list[MeetingEvent]) -> list[MeetingEvent]:

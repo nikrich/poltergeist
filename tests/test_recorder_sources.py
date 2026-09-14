@@ -386,3 +386,51 @@ def test_dedupe_events_first_wins():
     a = MeetingEvent("e1", "from-google", "w", now, now + timedelta(minutes=30))
     b = MeetingEvent("e1", "from-elsewhere", "w", now, now + timedelta(minutes=30))
     assert [e.title for e in dedupe_events([a, b])] == ["from-google"]
+
+
+def test_select_sources_warns_when_calendar_access_not_authorized(monkeypatch):
+    from ghostbrain.recorder import sources as sources_mod
+    routing = {"calendar": {"macos": {"accounts": {"Calendar": "work"}}}}
+
+    monkeypatch.setattr(
+        "ghostbrain.connectors.calendar.macos.eventkit_authorization_status", lambda: "denied",
+    )
+    srcs, excluded = sources_mod.select_sources(routing, {}, platform="darwin")
+    assert [s.id for s in srcs] == ["macos"]           # still a source (JXA fallback works)
+    assert any("Calendar access is denied" in e and "recurring" in e for e in excluded)
+
+    monkeypatch.setattr(
+        "ghostbrain.connectors.calendar.macos.eventkit_authorization_status", lambda: "authorized",
+    )
+    _, excluded = sources_mod.select_sources(routing, {}, platform="darwin")
+    assert excluded == []
+
+    monkeypatch.setattr(
+        "ghostbrain.connectors.calendar.macos.eventkit_authorization_status", lambda: "not_determined",
+    )
+    _, excluded = sources_mod.select_sources(routing, {}, platform="darwin")
+    assert any("not granted yet" in e for e in excluded)
+
+
+def test_eventkit_authorization_status_maps_codes(monkeypatch):
+    import sys
+    import types
+    from ghostbrain.connectors.calendar import macos as mac
+
+    fake = types.ModuleType("EventKit")
+    fake.EKEntityTypeEvent = 0
+
+    class _Store:
+        code = 2
+        @classmethod
+        def authorizationStatusForEntityType_(cls, _t):
+            return cls.code
+    fake.EKEventStore = _Store
+    monkeypatch.setitem(sys.modules, "EventKit", fake)
+    for code, expected in [(0, "not_determined"), (1, "restricted"), (2, "denied"),
+                           (3, "authorized"), (4, "write_only"), (9, "unavailable")]:
+        _Store.code = code
+        assert mac.eventkit_authorization_status() == expected
+
+    monkeypatch.setitem(sys.modules, "EventKit", None)
+    assert mac.eventkit_authorization_status() == "unavailable"

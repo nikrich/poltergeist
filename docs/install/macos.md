@@ -100,7 +100,12 @@ kept.
 **Permissions**
 
 The helper needs **Screen Recording** (this single permission covers system
-audio *and* slides on macOS) and **Microphone**. macOS only lists an app under
+audio *and* slides on macOS) and **Microphone**. Auto-record additionally
+needs **Calendars** access for Poltergeist (System Settings › Privacy &
+Security › Calendars): without it the calendar connector falls back to
+AppleScript, which cannot expand recurring events, so recurring meetings never
+trigger a recording. The Meetings tab lists this under the source exclusions
+when access is missing. macOS only lists an app under
 Screen Recording after it has *tried* to capture once, so:
 
 1. In the desktop app: **Settings → meetings → native capture → grant access**.

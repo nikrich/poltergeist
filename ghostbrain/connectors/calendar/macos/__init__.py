@@ -32,6 +32,29 @@ DEFAULT_LOOKBACK_HOURS = 24
 OSASCRIPT_TIMEOUT_S = 180  # AppleScript whose-predicate is slow for recurring events
 
 
+def eventkit_authorization_status() -> str:
+    """Current EventKit authorization for this process, WITHOUT prompting.
+    One of ``authorized`` / ``denied`` / ``restricted`` / ``not_determined`` /
+    ``write_only`` / ``unavailable`` (PyObjC or EventKit missing, non-macOS).
+
+    macOS attributes the grant to the *responsible* app — inside the desktop
+    app that is Poltergeist.app, not python. Used by the recorder to explain
+    why recurring meetings are invisible (the JXA fallback cannot expand them).
+    """
+    try:
+        from EventKit import EKEntityTypeEvent, EKEventStore
+    except ImportError:
+        return "unavailable"
+    try:
+        status = int(EKEventStore.authorizationStatusForEntityType_(EKEntityTypeEvent))
+    except Exception:  # noqa: BLE001
+        return "unavailable"
+    # EKAuthorizationStatus: 0 notDetermined, 1 restricted, 2 denied,
+    # 3 authorized/fullAccess, 4 writeOnly (macOS 14+).
+    return {0: "not_determined", 1: "restricted", 2: "denied", 3: "authorized",
+            4: "write_only"}.get(status, "unavailable")
+
+
 def _fetch_via_eventkit(
     start: datetime, end: datetime, calendar_names: list[str],
 ) -> list[dict] | None:
@@ -75,8 +98,9 @@ def _fetch_via_eventkit(
     if granted[0] is False:
         log.warning(
             "EventKit access denied. Open System Settings → Privacy & "
-            "Security → Calendars and toggle access for the Python process. "
-            "Falling back to JXA (recurring events will be missed)."
+            "Security → Calendars and enable the app that runs Poltergeist "
+            "(Poltergeist.app for the desktop app, your terminal for a dev "
+            "checkout). Falling back to JXA (recurring events will be missed)."
         )
         return None
     if granted[0] is None:
