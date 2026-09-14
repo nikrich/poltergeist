@@ -188,3 +188,70 @@ def test_build_attachment_prompt_no_paths_returns_text_unchanged():
 
     assert build_attachment_prompt("hi", []) == "hi"
     assert build_attachment_prompt("hi", None) == "hi"
+
+
+def test_session_id_from_another_provider_is_not_reused(chats, monkeypatch):
+    """Session ids are per provider: codex's `exec resume <id>` and gemini's
+    `--resume <id>` both reject a claude session uuid. Switching provider
+    mid-conversation must therefore start a fresh session and replay the
+    transcript, not hand the stored id to the new driver."""
+    calls = []
+
+    def turn(prompt, *, session_id=None, **kw):
+        calls.append({"prompt": prompt, "session_id": session_id})
+        yield {"type": "session", "session_id": "thr_1"}
+        yield {"type": "done", "text": "ok", "session_id": "thr_1"}
+
+    monkeypatch.setattr(repo_chat.agent, "run_chat_turn", turn)
+    monkeypatch.setattr(repo_chat, "_active_provider", lambda: "codex")
+    monkeypatch.setattr(repo_chat, "require_provider", lambda: None)
+    conv = chat_store.create()
+    chat_store.append_user_message(conv, "first q")
+    chat_store.append_assistant_message(conv, "first a", [])
+    chat_store.set_session_id(conv, "claude-uuid", provider="claude")
+
+    events = list(repo_chat.send_message(conv["id"], "second q"))
+    assert events[-1]["type"] == "done"
+    assert len(calls) == 1
+    assert calls[0]["session_id"] is None
+    assert "first q" in calls[0]["prompt"] and "first a" in calls[0]["prompt"]
+    saved = chat_store.get(conv["id"])
+    assert saved["claude_session_id"] == "thr_1"
+    assert saved["session_provider"] == "codex"
+
+
+def test_session_id_of_the_active_provider_is_reused(chats, monkeypatch):
+    calls = []
+
+    def turn(prompt, *, session_id=None, **kw):
+        calls.append(session_id)
+        yield {"type": "done", "text": "ok", "session_id": "thr_1"}
+
+    monkeypatch.setattr(repo_chat.agent, "run_chat_turn", turn)
+    monkeypatch.setattr(repo_chat, "_active_provider", lambda: "codex")
+    monkeypatch.setattr(repo_chat, "require_provider", lambda: None)
+    conv = chat_store.create()
+    chat_store.append_user_message(conv, "first q")
+    chat_store.set_session_id(conv, "thr_0", provider="codex")
+    list(repo_chat.send_message(conv["id"], "second q"))
+    assert calls == ["thr_0"]
+
+
+def test_legacy_session_without_a_recorded_provider_counts_as_claude(chats, monkeypatch):
+    """Conversations written before session_provider existed can only hold a
+    claude session id — reuse it on claude, drop it on anything else."""
+    calls = []
+
+    def turn(prompt, *, session_id=None, **kw):
+        calls.append(session_id)
+        yield {"type": "done", "text": "ok", "session_id": "s"}
+
+    monkeypatch.setattr(repo_chat.agent, "run_chat_turn", turn)
+    monkeypatch.setattr(repo_chat, "require_provider", lambda: None)
+    monkeypatch.setattr(repo_chat, "_active_provider", lambda: "claude")
+    conv = chat_store.create()
+    chat_store.append_user_message(conv, "q")
+    chat_store.set_session_id(conv, "legacy-sess")
+    assert "session_provider" not in chat_store.get(conv["id"])
+    list(repo_chat.send_message(conv["id"], "again"))
+    assert calls == ["legacy-sess"]

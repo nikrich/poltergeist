@@ -91,3 +91,38 @@ def test_chat_missing_binary_is_error_event(monkeypatch):
     monkeypatch.setattr(cx, "find_codex_binary", lambda: None)
     events = list(cx.CodexCli(M).chat(base.ChatRequest(prompt="q", tier="fast", session_id=None, turn_key=None)))
     assert events == [{"type": "error", "message": events[0]["message"]}] and "codex" in events[0]["message"]
+
+
+def test_chat_resume_rejected_raises_resume_failed(monkeypatch, tmp_path: Path):
+    """A stale `codex exec resume <id>` exits non-zero having streamed nothing.
+    Raising ResumeFailed (exactly as the Claude driver does) is what lets
+    repo/chat.py retry the turn fresh — returning an error event instead left
+    the conversation permanently broken."""
+    import pytest
+
+    from ghostbrain.llm import agent
+
+    def fake_stream(cmd, **kw):
+        yield from kw["on_exit"](1, "no such session", False)
+
+    monkeypatch.setattr(cx, "stream_subprocess", fake_stream)
+    monkeypatch.setattr(cx, "find_codex_binary", lambda: "/c")
+    monkeypatch.setattr(cx, "find_mcp_binary", lambda: ["/app/ghostbrain-api", "mcp"])
+    monkeypatch.setattr(cx, "_run_root", lambda: tmp_path / "run")
+    monkeypatch.setattr(cx, "_real_codex_home", lambda: tmp_path / "nohome")
+    gen = cx.CodexCli(M).chat(base.ChatRequest(prompt="q", tier="fast", session_id="thr_stale", turn_key=None))
+    with pytest.raises(agent.ResumeFailed):
+        list(gen)
+
+
+def test_chat_nonzero_exit_without_session_is_an_error_event(monkeypatch, tmp_path: Path):
+    def fake_stream(cmd, **kw):
+        yield from kw["on_exit"](1, "boom", False)
+
+    monkeypatch.setattr(cx, "stream_subprocess", fake_stream)
+    monkeypatch.setattr(cx, "find_codex_binary", lambda: "/c")
+    monkeypatch.setattr(cx, "find_mcp_binary", lambda: ["/app/ghostbrain-api", "mcp"])
+    monkeypatch.setattr(cx, "_run_root", lambda: tmp_path / "run")
+    monkeypatch.setattr(cx, "_real_codex_home", lambda: tmp_path / "nohome")
+    events = list(cx.CodexCli(M).chat(base.ChatRequest(prompt="q", tier="fast", session_id=None, turn_key=None)))
+    assert events[-1]["type"] == "error" and "boom" in events[-1]["message"]

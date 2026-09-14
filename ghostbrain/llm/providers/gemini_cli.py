@@ -232,6 +232,7 @@ class GeminiCli:
         return base.ProviderProbe(True, f"gemini ({auth})", {"binary": b, "auth": auth, "models": self.models()})
 
     def chat(self, req: base.ChatRequest) -> Iterator[dict]:
+        from ghostbrain.llm import agent
         from ghostbrain.llm.agent import CHAT_SYSTEM_PROMPT, find_mcp_binary
         b = self._binary or find_gemini_binary()
         if b is None:
@@ -258,9 +259,18 @@ class GeminiCli:
             cmd += ["--resume", req.session_id]
         session = req.session_id or ""
         parts: list[str] = []
+
+        def _on_exit(rc: int, err: str, saw_any: bool) -> list[dict]:
+            # A rejected `--resume <id>` exits non-zero having streamed
+            # nothing. Raise (same contract as the Claude driver) so
+            # repo/chat.py retries the turn fresh instead of dead-ending the
+            # conversation on a stale session id.
+            if req.session_id and not saw_any and rc != 0:
+                raise agent.ResumeFailed(err[-300:] or "resume failed")
+            return [{"type": "error", "message": f"gemini exited {rc}: {err[-300:]}"}]
+
         for ev in stream_subprocess(cmd, timeout_s=req.timeout_s, turn_key=req.turn_key, parse=parse_stream_line,
-                                    on_exit=lambda rc, err, saw: [{"type": "error", "message": f"gemini exited {rc}: {err[-300:]}"}],
-                                    cwd=str(ws)):
+                                    on_exit=_on_exit, cwd=str(ws)):
             if ev["type"] == "session":
                 session = ev["session_id"]
             elif ev["type"] == "delta":

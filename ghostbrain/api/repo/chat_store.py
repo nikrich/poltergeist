@@ -175,7 +175,17 @@ def append_assistant_message(
     return conv
 
 
-def set_session_id(conv: dict, session_id: str) -> dict:
+def set_session_id(conv: dict, session_id: str, provider: str | None = None) -> dict:
+    """Record the CLI session id and which provider minted it.
+
+    Session ids are per provider — a claude uuid means nothing to `codex exec
+    resume` or `gemini --resume` — so the owning provider is stored alongside
+    it and read back by repo/chat.py before any resume is attempted. Omitting
+    ``provider`` leaves whatever is already recorded (conversations written
+    before this field existed can only hold a claude session).
+    """
     conv["claude_session_id"] = session_id
+    if provider is not None:
+        conv["session_provider"] = provider
     _write(conv)
     return conv

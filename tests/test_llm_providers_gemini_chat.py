@@ -143,3 +143,38 @@ def test_supports_resume_caches_per_binary(monkeypatch):
     assert gm.supports_resume("/g") is True
     assert gm.supports_resume("/g") is True
     assert len(calls) == 1
+
+
+def test_chat_resume_rejected_raises_resume_failed(monkeypatch, tmp_path: Path):
+    """A stale `gemini --resume <id>` exits non-zero having streamed nothing.
+    Raising ResumeFailed (exactly as the Claude driver does) is what lets
+    repo/chat.py retry the turn fresh — returning an error event instead left
+    the conversation permanently broken."""
+    import pytest
+
+    from ghostbrain.llm import agent
+
+    def fake_stream(cmd, **kw):
+        yield from kw["on_exit"](1, "no such session", False)
+
+    monkeypatch.setattr(gm, "stream_subprocess", fake_stream)
+    monkeypatch.setattr(gm, "find_gemini_binary", lambda: "/g")
+    monkeypatch.setattr(gm, "supports_resume", lambda binary: True)
+    monkeypatch.setattr(gm, "read_gemini_auth", lambda: "oauth-personal")
+    monkeypatch.setattr(gm, "_run_root", lambda: tmp_path / "run")
+    gen = gm.GeminiCli(M).chat(base.ChatRequest(prompt="q", tier="fast", session_id="gs-stale", turn_key=None))
+    with pytest.raises(agent.ResumeFailed):
+        list(gen)
+
+
+def test_chat_nonzero_exit_without_session_is_an_error_event(monkeypatch, tmp_path: Path):
+    def fake_stream(cmd, **kw):
+        yield from kw["on_exit"](1, "boom", False)
+
+    monkeypatch.setattr(gm, "stream_subprocess", fake_stream)
+    monkeypatch.setattr(gm, "find_gemini_binary", lambda: "/g")
+    monkeypatch.setattr(gm, "supports_resume", lambda binary: True)
+    monkeypatch.setattr(gm, "read_gemini_auth", lambda: "oauth-personal")
+    monkeypatch.setattr(gm, "_run_root", lambda: tmp_path / "run")
+    events = list(gm.GeminiCli(M).chat(base.ChatRequest(prompt="q", tier="fast", session_id=None, turn_key=None)))
+    assert events[-1]["type"] == "error" and "boom" in events[-1]["message"]

@@ -11,6 +11,7 @@ import time
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 
+from ghostbrain.llm import agent
 from ghostbrain.llm.agent import CHAT_SYSTEM_PROMPT, find_mcp_binary
 from ghostbrain.llm.client import LLMError, LLMResult, LLMTimeout, _parse_json_tolerant
 from ghostbrain.llm.providers import base
@@ -240,8 +241,18 @@ class CodexCli:
         session = req.session_id or ""
         text_parts: list[str] = []
         parser = CodexChatParser()
+
+        def _on_exit(rc: int, err: str, saw_any: bool) -> list[dict]:
+            # A rejected `exec resume <id>` exits non-zero having streamed
+            # nothing. Raise (same contract as the Claude driver) so
+            # repo/chat.py retries the turn fresh instead of dead-ending the
+            # conversation on a stale thread id.
+            if req.session_id and not saw_any and rc != 0:
+                raise agent.ResumeFailed(err[-300:] or "resume failed")
+            return [{"type": "error", "message": f"codex exited {rc}: {err[-300:]}"}]
+
         for ev in stream_subprocess(cmd, timeout_s=req.timeout_s, turn_key=req.turn_key, parse=parser.feed,
-                                    on_exit=lambda rc, err, saw: [{"type": "error", "message": f"codex exited {rc}: {err[-300:]}"}],
+                                    on_exit=_on_exit,
                                     env={"CODEX_HOME": str(home)}, stdin_text=stdin):
             if ev["type"] == "session":
                 session = ev["session_id"]
