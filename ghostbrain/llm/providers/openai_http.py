@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import base64
-import logging
 import mimetypes
 import os
 import time
@@ -15,7 +14,6 @@ import httpx
 from ghostbrain.llm.client import LLMError, LLMResult, LLMTimeout, _parse_json_tolerant
 from ghostbrain.llm.providers import base
 
-log = logging.getLogger("ghostbrain.llm.providers.openai_http")
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", "0.0.0.0"}
 
 
@@ -115,7 +113,9 @@ class OpenAiHttp:
         missing = [t for t in base.TIERS if not self._models.get(t)]
         if missing:
             return base.ProviderProbe(False, f"no model set for tier(s): {', '.join(missing)} — pick them in Settings → AI provider", {"base_url": self.base_url, "models": listed})
-        absent = [m for m in self._models.values() if listed and m not in listed]
+        if not listed:
+            return base.ProviderProbe(False, f"{self.base_url} lists no models; pull or load one (e.g. `ollama pull qwen3`) and pick it in Settings → AI provider", {"base_url": self.base_url, "models": []})
+        absent = [m for m in self._models.values() if m not in listed]
         if absent:
             return base.ProviderProbe(False, f"model(s) not installed on the server: {', '.join(sorted(set(absent)))}", {"base_url": self.base_url, "models": listed})
         return base.ProviderProbe(True, f"{self.base_url} ({'ollama' if self.is_ollama() else 'openai-compatible'})", {"base_url": self.base_url, "models": listed, "tiers": self.models()})

@@ -99,6 +99,12 @@ def test_probe_lists_models_and_requires_all_tiers(server):
     assert down.ok is False and "not answering" in down.reason
 
 
+def test_probe_fails_when_server_lists_no_models(server):
+    _Fake.script = {"models": []}
+    bad = OpenAiHttp(server, "K", MODELS).probe()
+    assert bad.ok is False and "lists no models" in bad.reason and bad.detail["models"] == []
+
+
 def test_image_paths_become_data_url_parts(server, tmp_path):
     img = tmp_path / "a.png"; img.write_bytes(b"\x89PNG\r\n\x1a\n")
     _Fake.script = {"reply": "seen", "models": list(MODELS.values())}
