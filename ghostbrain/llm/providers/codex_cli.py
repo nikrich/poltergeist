@@ -112,6 +112,8 @@ class CodexCli:
         text, thread, error = parse_exec_events(out.splitlines())
         if error or (rc != 0 and not text):
             raise LLMError(f"codex exec failed: {error or err.strip()[-500:] or f'exit {rc}'}")
+        if not text.strip():
+            raise LLMError("codex returned no output (no agent_message in the exec event stream)")
         structured = _parse_json_tolerant(text) if req.json_schema is not None else None
         return LLMResult(text=text, structured=structured, model=self._models[req.tier], cost_usd=0.0,
                          duration_ms=int((time.monotonic() - started) * 1000), session_id=thread or "", raw={"cmd": cmd})
@@ -120,10 +122,15 @@ class CodexCli:
         b = self._binary or find_codex_binary()
         if b is None:
             return base.ProviderProbe(False, "`codex` CLI not found; install with `npm i -g @openai/codex`, then `codex login`")
-        out, err, rc = _run([b, "login", "status"], None, 15)
+        try:
+            out, err, rc = _run([b, "login", "status"], None, 15)
+        except (LLMError, OSError) as e:
+            return base.ProviderProbe(False, f"codex login status failed: {e}", {"binary": b})
         if rc != 0:
             return base.ProviderProbe(False, "codex is not logged in; run `codex login` (ChatGPT account)", {"binary": b, "stderr": err[-300:]})
-        return base.ProviderProbe(True, (out or "logged in").strip().splitlines()[-1], {"binary": b, "models": self.models()})
+        lines = out.strip().splitlines()
+        last_line = lines[-1] if lines else "logged in"
+        return base.ProviderProbe(True, last_line, {"binary": b, "models": self.models()})
 
     def chat(self, req: base.ChatRequest) -> Iterator[dict]:
         raise LLMError("codex chat lands in Task 7")

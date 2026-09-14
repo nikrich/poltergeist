@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ghostbrain.llm.client import LLMError
+from ghostbrain.llm.client import LLMError, LLMTimeout
 from ghostbrain.llm.providers import base
 from ghostbrain.llm.providers import codex_cli as cx
 
@@ -70,3 +70,28 @@ def test_probe_missing_binary_and_logged_out(monkeypatch):
     monkeypatch.setattr(cx, "_run", lambda cmd, stdin_text, timeout_s: ("", "Not logged in", 1))
     pr = cx.CodexCli(M).probe()
     assert pr.ok is False and "codex login" in pr.reason
+
+
+def test_complete_raises_on_empty_output_even_without_schema(monkeypatch):
+    p = cx.CodexCli(M, binary="/c")
+    monkeypatch.setattr(cx, "_run", lambda cmd, stdin_text, timeout_s: ("", "", 0))
+    with pytest.raises(LLMError):
+        p.complete(base.CompletionRequest(prompt="x", tier="fast"))
+
+
+def test_probe_never_raises_when_run_raises(monkeypatch):
+    monkeypatch.setattr(cx, "find_codex_binary", lambda: "/c")
+
+    def _raise(cmd, stdin_text, timeout_s):
+        raise LLMTimeout("codex exec timed out after 15s")
+
+    monkeypatch.setattr(cx, "_run", _raise)
+    pr = cx.CodexCli(M).probe()
+    assert pr.ok is False and "codex login status failed" in pr.reason
+
+
+def test_probe_handles_whitespace_only_stdout(monkeypatch):
+    monkeypatch.setattr(cx, "find_codex_binary", lambda: "/c")
+    monkeypatch.setattr(cx, "_run", lambda cmd, stdin_text, timeout_s: ("   \n", "", 0))
+    pr = cx.CodexCli(M).probe()
+    assert pr.ok is True
