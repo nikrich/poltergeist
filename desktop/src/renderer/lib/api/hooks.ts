@@ -21,6 +21,8 @@ import type {
   DailyPage,
   HeatmapResponse,
   JotsPage,
+  LlmProvidersResponse,
+  LlmSettings,
   MeetingsPage,
   Note,
   Prep,
@@ -32,6 +34,7 @@ import type {
   SetCaptureTargetRequest,
   StartRecordingRequest,
   Suggestion,
+  UpdateLlmSettings,
   UpdateNoteBodyRequest,
   UpdateNoteBodyResponse,
   UpdateProjectRequest,
@@ -743,5 +746,35 @@ export function useSaveMcpServers() {
     mutationFn: (servers: McpServerWrite[]) =>
       put<{ servers: McpServersResponse['servers'] }>('/v1/chat/mcp-servers', { servers }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['chat', 'mcp-servers'] }),
+  });
+}
+
+// ── LLM providers ────────────────────────────────────────────────────────
+
+export function useLlmSettings() {
+  return useQuery({
+    queryKey: ['settings', 'llm'],
+    queryFn: () => get<LlmSettings>('/v1/settings/llm'),
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useUpdateLlmSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: UpdateLlmSettings) => put<LlmSettings>('/v1/settings/llm', vars),
+    onSuccess: (data) => {
+      qc.setQueryData(['settings', 'llm'], data);
+    },
+  });
+}
+
+/** Probes each provider CLI/HTTP endpoint — can take a few seconds, so this
+ * is cached for a while and only re-run on an explicit "re-check". */
+export function useLlmProviders() {
+  return useQuery({
+    queryKey: ['llm', 'providers'],
+    queryFn: () => get<LlmProvidersResponse>('/v1/llm/providers'),
+    staleTime: 30_000,
   });
 }

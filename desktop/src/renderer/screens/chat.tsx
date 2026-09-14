@@ -5,6 +5,7 @@ import { Btn } from '../components/Btn';
 import { Lucide } from '../components/Lucide';
 import { Eyebrow } from '../components/Eyebrow';
 import { TopBar } from '../components/TopBar';
+import { ProviderSwitcher } from '../components/ProviderSwitcher';
 import { MarkdownBody } from '../components/MarkdownBody';
 import { SkeletonRows } from '../components/SkeletonRows';
 import { PanelError } from '../components/PanelError';
@@ -113,7 +114,8 @@ export function ChatScreen() {
           title="chat"
           subtitle={conversation.data?.title ?? 'with poltergeist'}
           right={
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
+              <ProviderSwitcher />
               <Btn
                 variant="ghost"
                 size="sm"

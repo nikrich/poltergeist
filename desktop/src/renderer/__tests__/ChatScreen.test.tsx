@@ -11,14 +11,37 @@ import type {
   Conversation,
   ConversationSummary,
   ChatExportResponse,
+  LlmProvidersResponse,
+  LlmSettings,
 } from '../../shared/api-types';
 
 vi.mock('../lib/api/client', () => ({
   get: vi.fn(),
   post: vi.fn(),
   patch: vi.fn(),
+  put: vi.fn(),
   del: vi.fn(),
 }));
+
+// Fixtures for the ProviderSwitcher mounted in the chat header — the screen
+// doesn't exercise these directly, but the component always queries them.
+const llmSettings: LlmSettings = {
+  provider: 'claude',
+  models: { fast: null, balanced: null, quality: null },
+  base_url: 'http://127.0.0.1:11434/v1',
+  api_key_env: 'OPENAI_API_KEY',
+  effective_models: {},
+};
+
+const llmProviders: LlmProvidersResponse = {
+  active: 'claude',
+  providers: {
+    claude: { ok: true, reason: '2.1.0', detail: {} },
+    codex: { ok: true, reason: '0.9.0', detail: {} },
+    gemini: { ok: true, reason: '1.0.0', detail: {} },
+    openai_http: { ok: false, reason: 'not answering', detail: {} },
+  },
+};
 
 const summaries: ConversationSummary[] = [
   {
@@ -63,6 +86,8 @@ function renderChat() {
 function stubGet() {
   vi.mocked(client.get).mockImplementation((path: string) => {
     if (path === '/v1/chat') return Promise.resolve(summaries) as never;
+    if (path === '/v1/settings/llm') return Promise.resolve(llmSettings) as never;
+    if (path === '/v1/llm/providers') return Promise.resolve(llmProviders) as never;
     if (path.startsWith('/v1/chat/')) {
       return Promise.resolve(conversation) as never;
     }
@@ -76,6 +101,8 @@ function stubGet() {
 function renderChatWithMessages(messages: Conversation['messages']) {
   vi.mocked(client.get).mockImplementation((path: string) => {
     if (path === '/v1/chat') return Promise.resolve(summaries) as never;
+    if (path === '/v1/settings/llm') return Promise.resolve(llmSettings) as never;
+    if (path === '/v1/llm/providers') return Promise.resolve(llmProviders) as never;
     if (path.startsWith('/v1/chat/')) {
       return Promise.resolve({ ...conversation, messages }) as never;
     }

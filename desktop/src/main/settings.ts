@@ -2,12 +2,25 @@ import { app } from 'electron';
 import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, dirname } from 'node:path';
-import type { Settings } from '../shared/types';
+import type { LlmProvider, Settings } from '../shared/types';
 
 const SCHEMA_VERSION = 1;
 
 interface OnDisk extends Settings {
   version: number;
+}
+
+/** Normalizes a stored (possibly legacy or invalid) `llmProvider` value.
+ * Applied on load, before the value ever reaches zod validation, so
+ * existing users' `'anthropic'` / `'openai'` config.json values don't get
+ * rejected by the new four-provider enum. */
+export function migrateLlmProvider(value: unknown): LlmProvider {
+  if (value === 'anthropic') return 'claude';
+  if (value === 'openai') return 'codex';
+  if (value === 'claude' || value === 'codex' || value === 'gemini' || value === 'local') {
+    return value;
+  }
+  return 'claude';
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -22,7 +35,7 @@ export const DEFAULT_SETTINGS: Settings = {
   cloudSync: false,
   e2eEncryption: true,
   telemetry: false,
-  llmProvider: 'local',
+  llmProvider: 'claude',
 
   autoRecordFromCalendar: true,
   diarizeSpeakers: true,
@@ -51,7 +64,11 @@ function read(): Settings {
     const raw = readFileSync(path, 'utf-8');
     const parsed = JSON.parse(raw) as Partial<OnDisk>;
     if (parsed.version !== SCHEMA_VERSION) return { ...DEFAULT_SETTINGS };
-    return { ...DEFAULT_SETTINGS, ...parsed };
+    return {
+      ...DEFAULT_SETTINGS,
+      ...parsed,
+      llmProvider: migrateLlmProvider(parsed.llmProvider),
+    };
   } catch {
     return { ...DEFAULT_SETTINGS };
   }

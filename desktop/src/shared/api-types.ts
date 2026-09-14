@@ -541,3 +541,36 @@ export interface McpServerWrite {
   enabled: boolean;
   tools: string;
 }
+
+// ── LLM providers ────────────────────────────────────────────────────────
+
+export type LlmModelTier = 'fast' | 'balanced' | 'quality';
+
+export type SidecarProviderId = 'claude' | 'codex' | 'gemini' | 'openai_http';
+
+export interface LlmSettings {
+  provider: SidecarProviderId;
+  models: Record<LlmModelTier, string | null>;
+  base_url: string;
+  api_key_env: string;
+  effective_models: Record<string, string>;
+}
+
+/** PUT /v1/settings/llm payload: any subset of the settings. */
+export interface UpdateLlmSettings {
+  provider?: SidecarProviderId;
+  models?: Partial<Record<LlmModelTier, string | null>>;
+  base_url?: string;
+  api_key_env?: string;
+}
+
+export interface LlmProviderDiagnostics {
+  ok: boolean;
+  reason: string;
+  detail: { models?: string[] } & Record<string, unknown>;
+}
+
+export interface LlmProvidersResponse {
+  active: SidecarProviderId;
+  providers: Record<SidecarProviderId, LlmProviderDiagnostics>;
+}
