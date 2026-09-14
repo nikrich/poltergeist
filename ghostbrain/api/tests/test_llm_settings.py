@@ -135,3 +135,39 @@ def test_update_llm_settings_invalidates_probe_cache(tmp_path, monkeypatch):
     settings_repo.update_llm_settings(provider="codex")
     settings_repo.require_provider()
     assert calls["n"] == 2
+
+
+def test_switching_provider_clears_the_model_overrides(tmp_path, monkeypatch):
+    """llm.models is a single global namespace, and the settings panel writes it
+    from the local-only tier pickers. Leaving `qwen3` behind after a switch back
+    to claude would run `claude --model qwen3`, so a provider change drops the
+    overrides."""
+    monkeypatch.setenv("VAULT_PATH", str(tmp_path))
+    (tmp_path / "90-meta").mkdir(parents=True)
+    c, h = _client()
+    c.put("/v1/settings/llm",
+          json={"provider": "openai_http", "models": {"fast": "qwen3", "balanced": "qwen3", "quality": "qwen3"}},
+          headers=h)
+    body = c.put("/v1/settings/llm", json={"provider": "claude"}, headers=h).json()
+    assert body["models"] == {"fast": None, "balanced": None, "quality": None}
+    assert body["effective_models"] == {"fast": "haiku", "balanced": "sonnet", "quality": "opus"}
+    assert "qwen3" not in (tmp_path / "90-meta" / "config.yaml").read_text()
+
+
+def test_setting_the_same_provider_keeps_the_model_overrides(tmp_path, monkeypatch):
+    monkeypatch.setenv("VAULT_PATH", str(tmp_path))
+    (tmp_path / "90-meta").mkdir(parents=True)
+    c, h = _client()
+    c.put("/v1/settings/llm", json={"provider": "openai_http", "models": {"fast": "qwen3"}}, headers=h)
+    body = c.put("/v1/settings/llm", json={"provider": "openai_http"}, headers=h).json()
+    assert body["models"]["fast"] == "qwen3"
+
+
+def test_switching_provider_and_models_together_keeps_the_new_models(tmp_path, monkeypatch):
+    monkeypatch.setenv("VAULT_PATH", str(tmp_path))
+    (tmp_path / "90-meta").mkdir(parents=True)
+    c, h = _client()
+    c.put("/v1/settings/llm", json={"provider": "claude", "models": {"fast": "haiku"}}, headers=h)
+    body = c.put("/v1/settings/llm",
+                 json={"provider": "openai_http", "models": {"fast": "qwen3"}}, headers=h).json()
+    assert body["models"] == {"fast": "qwen3", "balanced": None, "quality": None}

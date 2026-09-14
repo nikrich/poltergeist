@@ -138,6 +138,14 @@ def update_llm_settings(**fields) -> dict:
         p = str(fields["provider"]).strip().lower()
         if p not in PROVIDER_IDS:
             raise ValueError(f"unknown provider {p!r}; expected one of {', '.join(PROVIDER_IDS)}")
+        # llm.models is one global namespace, not per provider, and the
+        # settings panel fills it from the local-only tier pickers. Carrying
+        # `qwen3` across a switch back to claude would run `claude --model
+        # qwen3`, so a provider change drops the overrides and each provider
+        # falls back to its own tier defaults. Cleared BEFORE the `models`
+        # field below is applied, so a PUT that sets both still wins.
+        if p != str(block.get("provider") or "claude").strip().lower():
+            block.pop("models", None)
         block["provider"] = p
     if fields.get("models") is not None:
         models = block.get("models") if isinstance(block.get("models"), dict) else {}
