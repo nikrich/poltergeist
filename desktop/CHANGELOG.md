@@ -1,5 +1,48 @@
 # Changelog
 
+## [1.6.0](https://github.com/nikrich/poltergeist/compare/v1.5.0...v1.6.0) (2026-09-14)
+
+
+### Features
+
+* feat(chat): drop the 100k character cap on chat messages
+* feat(local): stream Ollama chat over its native /api/chat endpoint
+* feat(desktop): AI provider settings panel with diagnostics and local model pickers; chat shows the active provider
+* feat(api): llm settings endpoints, GET /v1/llm/providers, and 412 gating when the provider is unusable
+* feat(doctor): llm-provider check replaces claude-cli; skill asks which provider the user has
+* feat(llm): gemini chat driver with per-turn workspace settings
+* feat(llm): gemini cli batch adapter
+* feat(llm): codex chat driver with isolated CODEX_HOME
+* feat(llm): codex cli batch adapter
+* feat(llm): local chat via an in-process tool loop over the four vault tools
+* feat(llm): openai_http batch adapter with Ollama format and OpenAI json_schema support
+* feat(llm): llm config block, per-provider tier defaults, get_provider()
+* feat(llm): provider protocol, tiers with Claude alias synonyms, shared turn registry
+
+### Bug Fixes
+
+* fix(codex): pre-approve MCP tools and honour allowed_tools via enabled_tools
+* fix(codex): no default model, tiers map to reasoning effort; UI fixes from live testing
+* fix(tests): make chat SSE and vault-tool description tests CI-independent
+* fix(llm): follow-up fixes across the provider adapters, route and docs
+* fix(local): always end a local chat turn with a terminal event
+* fix(bootstrap): restore the per-role model keys in the seeded llm block
+* fix(settings): drop the model overrides when the provider changes
+* fix(chat): never hand one provider's session id to another
+* fix(chat): load opted-in MCP servers once per turn for every provider
+* fix(gemini): disable gemini's built-in core tools in the chat workspace
+* fix(desktop): provider switch re-probes diagnostics and shows the selected provider's health
+* fix(desktop): settings panel can select an unavailable provider to configure it
+* fix(api): llm settings rejection test asserts; probe_all degrades per provider
+* fix(llm): gemini supports_resume uses the _run seam; clean error when signed out
+* fix(llm): codex chat parser holds per-turn state; toml strings keep raw unicode
+* fix(llm): codex adapter rejects empty output and probe never raises
+* fix(llm): interrupt in-flight streams on cancel, verbatim tool descriptions, one client per turn
+* fix(llm): openai_http probe fails when the server lists no models
+* fix(llm): agent._provider delegates non-Claude providers to get_provider and keeps tier overrides
+* fix(llm): kill_all_running clears the registry and never raises during shutdown
+* fix(tests): skip POSIX path-separator assertions in sidecar-env tests on win32
+
 ## [1.5.0](https://github.com/nikrich/poltergeist/compare/v1.4.0...v1.5.0) (2026-09-14)
 
 
