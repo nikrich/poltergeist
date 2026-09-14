@@ -172,3 +172,51 @@ def test_web_tools_are_allowlisted():
 
     assert "WebFetch" in ALLOWED_TOOLS
     assert "WebSearch" in ALLOWED_TOOLS
+
+
+# --- opted-in user MCP servers reach every provider ------------------------
+
+USER_SERVER = {"name": "mem", "command": "npx", "args": ["-y", "mem-mcp"],
+               "env": {"TOKEN": "t"}, "enabled": True, "tools": ""}
+
+
+def test_run_chat_turn_passes_opted_in_mcp_servers_to_the_provider(monkeypatch):
+    """Only the Claude driver ever loaded ~/ghostbrain/mcp-servers.json itself,
+    so a codex/gemini turn silently lost every server the user enabled.
+    run_chat_turn loads them once per turn and hands them to whichever driver
+    is active via ChatRequest.user_servers."""
+    captured: dict = {}
+
+    class FakeProvider:
+        id = "codex"
+
+        def chat(self, req):
+            captured["req"] = req
+            yield {"type": "done", "text": "ok", "session_id": ""}
+
+    monkeypatch.setattr(agent_mod.mcp_servers, "load_enabled", lambda: [USER_SERVER])
+    monkeypatch.setattr(agent_mod, "_provider", lambda **kw: FakeProvider())
+    list(run_chat_turn("q"))
+    assert captured["req"].user_servers == [USER_SERVER]
+
+
+def test_claude_chat_consumes_the_request_servers_without_reloading(monkeypatch, tmp_path: Path):
+    """The Claude driver must read ChatRequest.user_servers rather than loading
+    the file a second time — exactly one load per turn."""
+    from ghostbrain.llm import mcp_servers
+    from ghostbrain.llm.providers import base as provider_base
+    from ghostbrain.llm.providers import claude_cli
+
+    def boom():
+        raise AssertionError("ClaudeCli reloaded mcp-servers.json")
+
+    monkeypatch.setattr(mcp_servers, "load_enabled", boom)
+    captured: dict = {}
+    monkeypatch.setattr(claude_cli.agent, "build_chat_command",
+                        lambda *a, **kw: captured.update(kw) or ["claude"])
+    monkeypatch.setattr(claude_cli, "stream_subprocess",
+                        lambda cmd, **kw: iter([{"type": "done", "text": "", "session_id": ""}]))
+    req = provider_base.ChatRequest(prompt="q", tier="balanced", session_id=None, turn_key=None,
+                                    user_servers=[USER_SERVER])
+    list(claude_cli.ClaudeCli(binary="/fake/claude", mcp_binary="/fake/gb-mcp").chat(req))
+    assert captured["user_servers"] == [USER_SERVER]

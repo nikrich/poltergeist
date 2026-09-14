@@ -59,12 +59,18 @@ def test_chat_command_and_env(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(cx, "_run_root", lambda: tmp_path / "run")
     monkeypatch.setattr(cx, "_real_codex_home", lambda: tmp_path / "nohome")
     p = cx.CodexCli(M)
-    events = list(p.chat(base.ChatRequest(prompt="q", tier="balanced", session_id=None, turn_key="c1", system_prompt="sys")))
+    events = list(p.chat(base.ChatRequest(
+        prompt="q", tier="balanced", session_id=None, turn_key="c1", system_prompt="sys",
+        user_servers=[{"name": "mem", "command": "npx", "args": ["-y", "mem-mcp"], "env": {}, "tools": ""}])))
     assert events[-1]["type"] == "done"
     assert captured["cmd"][:3] == ["/c", "exec", "--json"] and captured["cmd"][-1] == "-"
     assert captured["kw"]["env"]["CODEX_HOME"] == str(tmp_path / "run" / "codex")
     assert captured["kw"]["stdin_text"].startswith("<instructions>\nsys")
-    assert (tmp_path / "run" / "codex" / "config.toml").exists()
+    # The servers the user opted into (run_chat_turn loads them onto the
+    # request) must land in the generated CODEX_HOME, not just poltergeist.
+    cfg = tomllib.loads((tmp_path / "run" / "codex" / "config.toml").read_text())
+    assert cfg["mcp_servers"]["mem"]["command"] == "npx"
+    assert "poltergeist" in cfg["mcp_servers"]
 
 
 def test_chat_resume_uses_exec_resume(monkeypatch, tmp_path: Path):

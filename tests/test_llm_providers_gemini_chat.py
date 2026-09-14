@@ -62,8 +62,15 @@ def test_chat_command_cwd_and_events(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(gm, "supports_resume", lambda binary: True)
     monkeypatch.setattr(gm, "read_gemini_auth", lambda: "oauth-personal")
     monkeypatch.setattr(gm, "_run_root", lambda: tmp_path / "run")
-    events = list(gm.GeminiCli(M).chat(base.ChatRequest(prompt="q", tier="balanced", session_id="gs-0", turn_key="c1", system_prompt="sys")))
+    events = list(gm.GeminiCli(M).chat(base.ChatRequest(
+        prompt="q", tier="balanced", session_id="gs-0", turn_key="c1", system_prompt="sys",
+        user_servers=[{"name": "mem", "command": "npx", "args": ["mem"], "env": {}, "tools": ""}])))
     cmd = captured["cmd"]
+    # The servers the user opted into (run_chat_turn loads them onto the
+    # request) must land in the generated workspace, not just poltergeist.
+    ws_doc = json.loads((tmp_path / "run" / "gemini" / ".gemini" / "settings.json").read_text())
+    assert ws_doc["mcpServers"]["mem"]["command"] == "npx"
+    assert "poltergeist" in ws_doc["mcpServers"]
     assert cmd[0] == "/g" and cmd[cmd.index("--output-format") + 1] == "stream-json"
     assert "--approval-mode=yolo" in cmd and cmd[cmd.index("-m") + 1] == "gemini-2.5-pro"
     assert cmd[cmd.index("--resume") + 1] == "gs-0"

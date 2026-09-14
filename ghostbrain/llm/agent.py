@@ -14,6 +14,7 @@ import subprocess  # noqa: F401 — kept so `agent.subprocess` exists for tests 
 import sys
 from pathlib import Path
 
+from ghostbrain.llm import mcp_servers
 from ghostbrain.llm.client import _find_claude_binary  # noqa: F401 — re-exported for tests/callers
 from ghostbrain.llm.providers.base import _lock as _running_lock  # noqa: F401
 from ghostbrain.llm.providers.base import (  # noqa: F401 — re-exported for tests/callers
@@ -313,6 +314,11 @@ def run_chat_turn(
     ``history`` is forwarded into the ChatRequest for drivers that need
     explicit conversational context (local/codex/gemini); the Claude driver
     ignores it since it resumes via ``--resume <session_id>`` instead.
+
+    The MCP servers the user opted into (``~/ghostbrain/mcp-servers.json``)
+    are loaded exactly ONCE here and handed to whichever driver is active —
+    previously only ClaudeCli loaded them, so a codex or gemini turn silently
+    dropped every one of them.
     """
     from ghostbrain.llm.providers.base import ChatRequest, to_tier
 
@@ -323,6 +329,7 @@ def run_chat_turn(
         turn_key=turn_key,
         system_prompt=system_prompt,
         allowed_tools=allowed_tools,
+        user_servers=mcp_servers.load_enabled(),
         history=history,
         timeout_s=timeout_s,
     )

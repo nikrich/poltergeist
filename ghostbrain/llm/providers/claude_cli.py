@@ -10,7 +10,7 @@ import time
 from collections.abc import Iterator
 from pathlib import Path
 
-from ghostbrain.llm import agent, mcp_servers
+from ghostbrain.llm import agent
 from ghostbrain.llm import client as llm_client
 from ghostbrain.llm.client import LLMError, LLMRateLimit, LLMResult, LLMTimeout
 from ghostbrain.llm.providers import base
@@ -105,8 +105,10 @@ class ClaudeCli:
 
         # User MCP servers ride along only on real chat turns (mcp_binary
         # present); explicit mcp_binary=None is the bare-run opt-out used by
-        # lifecycle tests.
-        user_servers = mcp_servers.load_enabled() if mcp_binary else None
+        # lifecycle tests. They arrive on the request — run_chat_turn loads
+        # them once per turn for every provider, so this driver never reads
+        # mcp-servers.json itself.
+        user_servers = list(req.user_servers) if mcp_binary else None
 
         cmd = agent.build_chat_command(
             binary, req.prompt,
