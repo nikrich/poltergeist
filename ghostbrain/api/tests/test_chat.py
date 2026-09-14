@@ -65,6 +65,14 @@ def test_missing_conversation_404s(client, tmp_chats_dir, auth_headers):
     )
 
 
+@pytest.fixture(autouse=True)
+def _provider_available(monkeypatch):
+    """These tests fake the chat turn itself; the provider probe that gates a
+    turn must not run the real CLI (absent on CI) and turn every turn into an
+    error event."""
+    monkeypatch.setattr("ghostbrain.api.repo.chat.require_provider", lambda: None)
+
+
 def test_send_message_streams_sse(client, tmp_chats_dir, auth_headers, monkeypatch):
     def fake_turn(prompt, *, session_id=None, **kw):
         yield {"type": "session", "session_id": "s-1"}

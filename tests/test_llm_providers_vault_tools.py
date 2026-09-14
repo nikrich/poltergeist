@@ -37,13 +37,19 @@ def test_descriptions_are_verbatim_from_the_mcp_server():
     descriptions must match exactly, not be paraphrased, since they steer
     tool selection for whichever model is behind the local chat loop."""
     import asyncio
+    import inspect
 
     from ghostbrain.mcp.__main__ import build_server
 
+    # Python 3.13+ dedents __doc__ at compile time; older interpreters keep the
+    # source indentation, so FastMCP's registered description differs only in
+    # leading whitespace. Compare the cleaned form on both sides.
     server = build_server(client=object())
-    registered = {t.name: t.description for t in asyncio.run(server.list_tools())}
+    registered = {t.name: inspect.cleandoc(t.description or "") for t in asyncio.run(server.list_tools())}
 
-    by_schema_name = {t["function"]["name"]: t["function"]["description"] for t in vt.TOOL_SCHEMAS}
+    by_schema_name = {
+        t["function"]["name"]: inspect.cleandoc(t["function"]["description"]) for t in vt.TOOL_SCHEMAS
+    }
     assert by_schema_name.keys() == registered.keys()
     for name, description in registered.items():
         assert by_schema_name[name] == description, f"{name} description diverged from mcp/__main__.py"
