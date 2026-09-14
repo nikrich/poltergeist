@@ -31,6 +31,13 @@ class SidecarClient:
         self._loader = loader
         self._http = http_client or httpx.Client(timeout=timeout)
 
+    def close(self) -> None:
+        """Release the underlying HTTP connection pool. Callers that build a
+        SidecarClient for the lifetime of one turn (e.g. the local chat tool
+        loop) should call this in a `finally` rather than leaking a client
+        per tool call."""
+        self._http.close()
+
     def _request(self, method: str, path: str, **kwargs: Any) -> dict:
         descriptor = self._loader()
         if not descriptor:

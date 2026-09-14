@@ -5,6 +5,7 @@ import base64
 import json
 import mimetypes
 import os
+import socket
 import threading
 import time
 from collections.abc import Iterator
@@ -126,6 +127,7 @@ class OpenAiHttp:
     def chat(self, req: base.ChatRequest) -> Iterator[dict]:
         from ghostbrain.llm.agent import CHAT_SYSTEM_PROMPT
         from ghostbrain.llm.providers import vault_tools
+        from ghostbrain.mcp.client import SidecarClient
 
         sid = req.session_id or req.turn_key or "local"
         yield {"type": "session", "session_id": sid}
@@ -138,35 +140,74 @@ class OpenAiHttp:
         for m in req.history or []:
             messages.append({"role": m["role"], "content": m["text"]})
         messages.append({"role": "user", "content": req.prompt})
+
         cancelled = threading.Event()
+        # Holds the live httpx.Response for whichever round is currently
+        # streaming, so `kill` (invoked by base.cancel_turn from another
+        # thread) can close the socket and unblock a read that's stalled
+        # waiting on the next chunk — checking `cancelled` only between
+        # rounds isn't enough, since a generator suspended at `yield` inside
+        # a blocking socket read won't see it until the read itself returns.
+        response_cell: dict[str, httpx.Response | None] = {"response": None}
+
+        def _kill() -> None:
+            resp = response_cell["response"]
+            if resp is None:
+                return
+            # resp.close() alone does NOT interrupt a read already blocked
+            # on the socket in the streaming thread (verified empirically —
+            # it just waits out the normal timeout); shutting down the raw
+            # socket first reliably wakes a blocked recv() cross-thread.
+            # network_stream/_sock are private httpcore/stdlib internals, so
+            # this degrades to a plain close() if either is unavailable.
+            sock = getattr(resp.extensions.get("network_stream"), "_sock", None)
+            if isinstance(sock, socket.socket):
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass  # already closed/not connected
+            resp.close()
+
         if req.turn_key:
-            base.register_turn(req.turn_key, cancelled=cancelled, kill=lambda: None)
+            base.register_turn(req.turn_key, cancelled=cancelled, kill=_kill)
         full: list[str] = []
+        client = SidecarClient()
         try:
             for _round in range(vault_tools.MAX_TOOL_ROUNDS + 1):
+                if cancelled.is_set():
+                    yield {"type": "error", "message": "stopped", "interrupted": True}
+                    return
                 if _round == vault_tools.MAX_TOOL_ROUNDS:
                     yield {"type": "error", "message": f"gave up after {vault_tools.MAX_TOOL_ROUNDS} tool rounds"}
                     return
-                text, calls = yield from self._stream_once(model, messages, req.timeout_s, cancelled, full)
+                text, calls = yield from self._stream_once(model, messages, req.timeout_s, cancelled, response_cell, full)
                 if cancelled.is_set():
-                    yield {"type": "error", "message": "stopped"}
+                    yield {"type": "error", "message": "stopped", "interrupted": True}
                     return
                 if not calls:
                     yield {"type": "done", "text": "".join(full), "session_id": sid}
                     return
                 messages.append({"role": "assistant", "content": text or None, "tool_calls": calls})
                 for c in calls:
-                    args = _parse_json_tolerant(c["function"]["arguments"] or "{}") if c["function"]["arguments"] else {}
-                    yield {"type": "tool", "name": c["function"]["name"], "summary": vault_tools.summary_for(c["function"]["name"], args)}
-                    result = vault_tools.call_tool(c["function"]["name"], args)
+                    args = _parse_json_tolerant(c["function"]["arguments"] or "{}")
+                    yield {"type": "tool", "name": vault_tools.short_name_for(c["function"]["name"]),
+                           "summary": vault_tools.summary_for(c["function"]["name"], args)}
+                    result = vault_tools.call_tool(c["function"]["name"], args, client=client)
+                    if cancelled.is_set():
+                        yield {"type": "error", "message": "stopped", "interrupted": True}
+                        return
                     messages.append({"role": "tool", "tool_call_id": c["id"], "content": result})
         except httpx.HTTPError as e:
-            yield {"type": "error", "message": f"openai_http: {e}"}
+            if cancelled.is_set():
+                yield {"type": "error", "message": "stopped", "interrupted": True}
+            else:
+                yield {"type": "error", "message": f"openai_http: {e}"}
         finally:
+            client.close()
             if req.turn_key:
                 base.unregister_turn(req.turn_key)
 
-    def _stream_once(self, model, messages, timeout_s, cancelled, full):
+    def _stream_once(self, model, messages, timeout_s, cancelled, response_cell, full):
         """Stream one completion. Yields delta events; returns (text, tool_calls)."""
         from ghostbrain.llm.providers import vault_tools
 
@@ -175,26 +216,30 @@ class OpenAiHttp:
         text_parts: list[str] = []
         calls: dict[int, dict] = {}
         with httpx.stream("POST", url, json=body, headers=self._headers(), timeout=timeout_s) as r:
-            r.raise_for_status()
-            for line in r.iter_lines():
-                if cancelled.is_set():
-                    break
-                if not line.startswith("data: "):
-                    continue
-                payload = line[6:].strip()
-                if payload == "[DONE]":
-                    break
-                delta = ((json.loads(payload).get("choices") or [{}])[0]).get("delta") or {}
-                if delta.get("content"):
-                    text_parts.append(delta["content"])
-                    full.append(delta["content"])
-                    yield {"type": "delta", "text": delta["content"]}
-                for tc in delta.get("tool_calls") or []:
-                    slot = calls.setdefault(tc.get("index", 0), {"id": tc.get("id", ""), "type": "function", "function": {"name": "", "arguments": ""}})
-                    if tc.get("id"):
-                        slot["id"] = tc["id"]
-                    fn = tc.get("function") or {}
-                    if fn.get("name"):
-                        slot["function"]["name"] = fn["name"]
-                    slot["function"]["arguments"] += fn.get("arguments") or ""
+            response_cell["response"] = r
+            try:
+                r.raise_for_status()
+                for line in r.iter_lines():
+                    if cancelled.is_set():
+                        break
+                    if not line.startswith("data: "):
+                        continue
+                    payload = line[6:].strip()
+                    if payload == "[DONE]":
+                        break
+                    delta = ((json.loads(payload).get("choices") or [{}])[0]).get("delta") or {}
+                    if delta.get("content"):
+                        text_parts.append(delta["content"])
+                        full.append(delta["content"])
+                        yield {"type": "delta", "text": delta["content"]}
+                    for tc in delta.get("tool_calls") or []:
+                        slot = calls.setdefault(tc.get("index", 0), {"id": tc.get("id", ""), "type": "function", "function": {"name": "", "arguments": ""}})
+                        if tc.get("id"):
+                            slot["id"] = tc["id"]
+                        fn = tc.get("function") or {}
+                        if fn.get("name"):
+                            slot["function"]["name"] = fn["name"]
+                        slot["function"]["arguments"] += fn.get("arguments") or ""
+            finally:
+                response_cell["response"] = None
         return "".join(text_parts), [calls[i] for i in sorted(calls)]

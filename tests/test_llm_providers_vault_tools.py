@@ -21,3 +21,29 @@ def test_call_tool_dispatches_to_mcp_tools(monkeypatch):
 def test_summary_matches_claude_tool_summaries():
     assert vt.summary_for("poltergeist_search", {"query": "q"}) == "searched vault: q"
     assert vt.summary_for("poltergeist_get_note", {"path": "a/b.md"}) == "read note: a/b.md"
+
+
+def test_short_name_matches_claude_tool_summaries():
+    assert vt.short_name_for("poltergeist_search") == "search"
+    assert vt.short_name_for("poltergeist_get_note") == "get_note"
+    assert vt.short_name_for("poltergeist_ask") == "ask"
+    assert vt.short_name_for("poltergeist_write_doc") == "write_doc"
+    assert vt.short_name_for("nope") == "nope"
+
+
+def test_descriptions_are_verbatim_from_the_mcp_server():
+    """vault_tools.TOOL_SCHEMAS is the local (non-MCP) mirror of the four
+    tools registered by ghostbrain.mcp.__main__.build_server — their
+    descriptions must match exactly, not be paraphrased, since they steer
+    tool selection for whichever model is behind the local chat loop."""
+    import asyncio
+
+    from ghostbrain.mcp.__main__ import build_server
+
+    server = build_server(client=object())
+    registered = {t.name: t.description for t in asyncio.run(server.list_tools())}
+
+    by_schema_name = {t["function"]["name"]: t["function"]["description"] for t in vt.TOOL_SCHEMAS}
+    assert by_schema_name.keys() == registered.keys()
+    for name, description in registered.items():
+        assert by_schema_name[name] == description, f"{name} description diverged from mcp/__main__.py"
