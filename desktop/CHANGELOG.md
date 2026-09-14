@@ -1,5 +1,50 @@
 # Changelog
 
+## [1.5.0](https://github.com/nikrich/poltergeist/compare/v1.4.0...v1.5.0) (2026-09-14)
+
+
+### Features
+
+* feat(doctor): capture-method check; BlackHole-path checks skip under native capture
+* feat(recorder): native macOS capture via ScreenCaptureKit with slide OCR (#117)
+* feat(skill): poltergeist-setup Claude Code skill; README opens with the five-minute setup
+* feat(setup): audio-device creates the multi-output device via CoreAudio (drift-corrected BlackHole)
+* feat(setup): install-hook wires SessionEnd to the bundled binary; probe reports err on a dead hook path
+* feat(hooks): session-end subcommand ports the Claude Code SessionEnd hook into the binary
+* feat(setup): cli-shim, go-live, and bootstrap fixes
+* feat(setup): fetch-model downloads a whisper.cpp ggml model with progress and size check
+* feat(setup): setup subcommand dispatcher and Homebrew deps installer
+* feat(api): GET /v1/doctor exposes the first-run checks
+* feat(doctor): connector, Claude Code hook, and CLI shim checks; shared claude settings helpers
+* feat(doctor): app, vault, contexts, claude-cli, scheduler, routing-mode checks
+* feat(doctor): recorder dependency checks (ffmpeg, whisper, BlackHole, multi-output device)
+* feat(doctor): check registry, table/JSON output, and doctor subcommand
+
+### Bug Fixes
+
+* fix(native): Shareable conforms to @unchecked Sendable so the helper builds on Swift 6.1
+* fix(hooks): session-end honors the desktop app's configured vault path
+* fix(desktop): buildSidecarEnv joins PATH with the platform delimiter
+* fix(doctor): install-hook no longer deletes third-party SessionEnd hooks
+* fix(doctor): binary_argv() resolves to `python -m ghostbrain.api`, not bare python
+* fix(tests): tear down the file-log handler in test_logging_setup
+* fix(doctor): drop a stale bundle-id prefix from the audio device UID
+* fix(api): add GET /health so the doctor's app check can succeed
+* fix(doctor): whisper-cli and model checks run on Windows with manual fixes
+* fix(api): log unhandled exceptions with a request id; let uvicorn reach the log file; quiet httpx/HF
+* fix(desktop): pass VAULT_PATH to the sidecar and restart it when the vault path changes
+* fix(desktop): scheduler on by default; 'sync now' explains the setting when it is off
+* fix(recorder): orphan recovery keeps sweeping after a non-transcription failure
+* fix(connectors): macOS calendar probe reports on when EventKit is authorized and accounts are mapped
+* fix(bootstrap): new vaults route live by default; review_only stays opt-in
+* fix(recorder): surface whisper/model errors instead of recording a silent 'done'
+* fix(recorder): preflight manual start (412 with the fix text); map OSError to 500 with detail
+* fix(setup): audio-device turns unexpected CoreAudio results into one-line failures
+* fix(setup): go-live rewrites the worker block byte-exactly so a second run is a no-op
+* fix(setup): scope go-live to the worker block; cli-shim handles a directory target; one-line failures
+* fix(setup): fetch-model refuses downloads without Content-Length; cover 404 and no-header paths
+* fix(desktop): Update → Restart never installed because hide-on-close blocked quitAndInstall (#116)
+
 ## [1.4.0](https://github.com/nikrich/poltergeist/compare/v1.3.3...v1.4.0) (2026-09-03)
 
 
