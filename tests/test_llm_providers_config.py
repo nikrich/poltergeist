@@ -50,3 +50,21 @@ def test_bootstrap_seeds_commented_llm_block(tmp_path: Path):
     root = bootstrap_mod.bootstrap(tmp_path / "vault")
     text = (root / "90-meta" / "config.yaml").read_text()
     assert "llm:" in text and "# provider: claude" in text and "openai_http" in text
+
+
+def test_agent_provider_delegates_to_get_provider_for_non_claude(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("VAULT_PATH", str(tmp_path))
+    _write(tmp_path, "llm:\n  provider: openai_http\n")
+    from ghostbrain.llm import agent
+
+    p = agent._provider()
+    assert p.id == "openai_http"
+
+
+def test_agent_provider_keeps_claude_tier_overrides(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("VAULT_PATH", str(tmp_path))
+    _write(tmp_path, "llm:\n  provider: claude\n  models:\n    fast: sonnet\n")
+    from ghostbrain.llm import agent
+
+    p = agent._provider()
+    assert p.models()["fast"] == "sonnet"
