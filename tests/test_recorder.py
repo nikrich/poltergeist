@@ -18,6 +18,15 @@ from ghostbrain.recorder.sources.base import events_from_connector_dicts
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _no_real_audit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests drive _start_recording/_finalize with fake backends; never
+    let their audit_log calls land in the developer's real vault."""
+    from ghostbrain.recorder import daemon
+    monkeypatch.setattr(daemon, "audit_log", lambda *a, **k: None)
+
+
+
 def test_policy_skips_focus_titles() -> None:
     policy = RecorderPolicy(excluded_titles=("Focus", "focus"))
     ok, reason = should_record(title="Focus", context="work", policy=policy)
