@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import base64
+import json
 import mimetypes
 import os
+import threading
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -120,5 +122,79 @@ class OpenAiHttp:
             return base.ProviderProbe(False, f"model(s) not installed on the server: {', '.join(sorted(set(absent)))}", {"base_url": self.base_url, "models": listed})
         return base.ProviderProbe(True, f"{self.base_url} ({'ollama' if self.is_ollama() else 'openai-compatible'})", {"base_url": self.base_url, "models": listed, "tiers": self.models()})
 
+    # -- chat --------------------------------------------------------------
     def chat(self, req: base.ChatRequest) -> Iterator[dict]:
-        raise LLMError("openai_http chat lands in Task 5")
+        from ghostbrain.llm.agent import CHAT_SYSTEM_PROMPT
+        from ghostbrain.llm.providers import vault_tools
+
+        sid = req.session_id or req.turn_key or "local"
+        yield {"type": "session", "session_id": sid}
+        try:
+            model = self._model_for(req.tier)
+        except LLMError as e:
+            yield {"type": "error", "message": str(e)}
+            return
+        messages: list[dict] = [{"role": "system", "content": req.system_prompt or CHAT_SYSTEM_PROMPT}]
+        for m in req.history or []:
+            messages.append({"role": m["role"], "content": m["text"]})
+        messages.append({"role": "user", "content": req.prompt})
+        cancelled = threading.Event()
+        if req.turn_key:
+            base.register_turn(req.turn_key, cancelled=cancelled, kill=lambda: None)
+        full: list[str] = []
+        try:
+            for _round in range(vault_tools.MAX_TOOL_ROUNDS + 1):
+                if _round == vault_tools.MAX_TOOL_ROUNDS:
+                    yield {"type": "error", "message": f"gave up after {vault_tools.MAX_TOOL_ROUNDS} tool rounds"}
+                    return
+                text, calls = yield from self._stream_once(model, messages, req.timeout_s, cancelled, full)
+                if cancelled.is_set():
+                    yield {"type": "error", "message": "stopped"}
+                    return
+                if not calls:
+                    yield {"type": "done", "text": "".join(full), "session_id": sid}
+                    return
+                messages.append({"role": "assistant", "content": text or None, "tool_calls": calls})
+                for c in calls:
+                    args = _parse_json_tolerant(c["function"]["arguments"] or "{}") if c["function"]["arguments"] else {}
+                    yield {"type": "tool", "name": c["function"]["name"], "summary": vault_tools.summary_for(c["function"]["name"], args)}
+                    result = vault_tools.call_tool(c["function"]["name"], args)
+                    messages.append({"role": "tool", "tool_call_id": c["id"], "content": result})
+        except httpx.HTTPError as e:
+            yield {"type": "error", "message": f"openai_http: {e}"}
+        finally:
+            if req.turn_key:
+                base.unregister_turn(req.turn_key)
+
+    def _stream_once(self, model, messages, timeout_s, cancelled, full):
+        """Stream one completion. Yields delta events; returns (text, tool_calls)."""
+        from ghostbrain.llm.providers import vault_tools
+
+        body = {"model": model, "messages": messages, "stream": True, "tools": vault_tools.TOOL_SCHEMAS}
+        url = f"{self.base_url}/chat/completions"
+        text_parts: list[str] = []
+        calls: dict[int, dict] = {}
+        with httpx.stream("POST", url, json=body, headers=self._headers(), timeout=timeout_s) as r:
+            r.raise_for_status()
+            for line in r.iter_lines():
+                if cancelled.is_set():
+                    break
+                if not line.startswith("data: "):
+                    continue
+                payload = line[6:].strip()
+                if payload == "[DONE]":
+                    break
+                delta = ((json.loads(payload).get("choices") or [{}])[0]).get("delta") or {}
+                if delta.get("content"):
+                    text_parts.append(delta["content"])
+                    full.append(delta["content"])
+                    yield {"type": "delta", "text": delta["content"]}
+                for tc in delta.get("tool_calls") or []:
+                    slot = calls.setdefault(tc.get("index", 0), {"id": tc.get("id", ""), "type": "function", "function": {"name": "", "arguments": ""}})
+                    if tc.get("id"):
+                        slot["id"] = tc["id"]
+                    fn = tc.get("function") or {}
+                    if fn.get("name"):
+                        slot["function"]["name"] = fn["name"]
+                    slot["function"]["arguments"] += fn.get("arguments") or ""
+        return "".join(text_parts), [calls[i] for i in sorted(calls)]
