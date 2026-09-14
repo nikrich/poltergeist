@@ -32,11 +32,11 @@ scripts/build-native-macos.sh --install   # + ~/.local/bin, ad-hoc signed
 scripts/install-hooks.sh
 ```
 
-CI compiles this package on GitHub's `macos-15` runner (Xcode 16.4, **Swift
-6.1**). A newer local Xcode is stricter in some places and more lenient in
-others — notably it infers `Sendable` transfers 6.1 rejects — so a green local
-build is not proof of a green CI; the pre-push hook prints a warning when the
-versions differ. Prefer explicit `Sendable` / `@unchecked Sendable` boxes over
+CI compiles this package on GitHub's `macos-15` runner with **Xcode 26 / Swift
+6.2** (selected explicitly in `ci.yml`; Xcode 16.4's Swift 6.1 rejects parts of
+`CaptureSession.swift` under strict concurrency). A different local toolchain
+can accept code CI rejects, so a green local build is not proof of a green CI;
+the pre-push hook prints a warning when the versions differ. Prefer explicit `Sendable` / `@unchecked Sendable` boxes over
 relying on inference.
 
 Layout:

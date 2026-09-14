@@ -11,9 +11,9 @@
 # when the local Swift major.minor differs from what CI uses.
 set -euo pipefail
 
-# Swift major.minor that GitHub's macos-15 runner ships (Xcode 16.4). Update
+# Swift major.minor CI compiles with (Xcode 26, selected in ci.yml). Update
 # when .github/workflows/ci.yml moves runners or pins an Xcode version.
-CI_SWIFT_VERSION="6.1"
+CI_SWIFT_VERSION="6.2"
 
 PKG_DIR="native/macos/ghostbrain-capture"
 WATCH_RE='^(native/|scripts/build-native-macos\.sh|scripts/hooks/pre-push|\.github/workflows/ci\.yml)'
