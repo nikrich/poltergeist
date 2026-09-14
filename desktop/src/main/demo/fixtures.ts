@@ -224,7 +224,7 @@ const DAILY: DailyPage = {
 const MEETINGS: MeetingsPage = {
   total: 32,
   items: [
-    { id: 'm1', title: 'Aurora standup', date: isoDay(0), dur: '28m', speakers: 4, tags: ['aurora'], path: 'meetings/aurora-standup.md' },
+    { id: 'm1', title: 'Aurora standup', date: isoDay(0), time: '09:30', dur: '28m', speakers: 4, tags: ['aurora'], path: 'meetings/aurora-standup.md' },
     { id: 'm2', title: 'Architecture review — vault indexing', date: isoDay(2), dur: '52m', speakers: 5, tags: ['architecture'], path: 'meetings/arch-review.md' },
   ],
 };
