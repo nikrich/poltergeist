@@ -1,9 +1,15 @@
 """Recorder dependency checks.
 
-macOS needs: ffmpeg (capture), whisper-cli + a ggml model (transcription),
-SwitchAudioSource (routing), BlackHole 2ch (virtual output), and a multi-output
-device named per `recorder.audio_device` so system audio reaches BlackHole
-while the user still hears it. Windows uses the WASAPI backend's own preflight.
+macOS records meetings one of two ways (`recorder.capture_backend:
+auto|native|blackhole`, see `ghostbrain/recorder/config.py`): the bundled
+ScreenCaptureKit helper (`native`, macOS 15+, needs Screen Recording +
+Microphone permission, no other dependencies), or the legacy ffmpeg +
+BlackHole + SwitchAudioSource + multi-output-device path (`blackhole`).
+`auto` (the default) picks native when it is ready, else falls back to
+blackhole. The `capture-method` check reports which one is in effect; the
+five checks below it (ffmpeg, whisper-cli/whisper-model excepted) only run
+when the BlackHole path is actually needed. Windows uses the WASAPI
+backend's own preflight.
 """
 from __future__ import annotations
 
@@ -13,7 +19,7 @@ import sys
 from ghostbrain.doctor import CheckResult, Fix, register
 
 IDS = (
-    "ffmpeg", "whisper-cli", "whisper-model", "switchaudio",
+    "capture-method", "ffmpeg", "whisper-cli", "whisper-model", "switchaudio",
     "blackhole", "audio-device", "audio-routing", "recorder-backend",
 )
 
@@ -36,6 +42,26 @@ def _configured_device() -> str:
     return DaemonConfig.load().audio_device
 
 
+def _effective_method() -> str:
+    """``"native"`` or ``"blackhole"`` — what capture will actually use."""
+    from ghostbrain.recorder.audio import resolve_capture_backend
+
+    return resolve_capture_backend()
+
+
+def _configured_method() -> str:
+    """``"auto"``, ``"native"``, or ``"blackhole"`` — what the config says."""
+    from ghostbrain.recorder.config import capture_backend_from, load_recorder_block
+
+    return capture_backend_from(load_recorder_block())
+
+
+def _probe_native():
+    from ghostbrain.recorder.audio import darwin_native
+
+    return darwin_native.probe()
+
+
 def _skip(check_id: str) -> CheckResult:
     return CheckResult(id=check_id, status="skip", summary="not applicable on this platform")
 
@@ -48,9 +74,94 @@ def _mac_or_windows(check_id: str) -> CheckResult | None:
     return None if _platform() in ("darwin", "win32") else _skip(check_id)
 
 
+def _blackhole_only(check_id: str) -> CheckResult | None:
+    """Like :func:`_mac_only`, plus a skip on macOS when native capture is
+    the effective method — the BlackHole-path checks don't apply then."""
+    if _platform() != "darwin":
+        return _skip(check_id)
+    if _effective_method() == "native":
+        return CheckResult(id=check_id, status="skip", summary="not needed with native capture")
+    return None
+
+
+def _native_capture_fix(probe) -> Fix:
+    if not probe.found:
+        return Fix(
+            kind="manual",
+            command=("the packaged app bundles the helper; from a source checkout run "
+                     "scripts/build-native-macos.sh --install, then re-run doctor"),
+        )
+    if not probe.macos_supported:
+        return Fix(
+            kind="manual",
+            command=("native capture needs macOS 15+; use the BlackHole path "
+                     "(set recorder.capture_backend: blackhole) or upgrade macOS"),
+        )
+    return Fix(
+        kind="manual",
+        command="Settings → meetings → diagnostics → grant access (Screen Recording + Microphone), then re-check",
+        note=("macOS lists an app under Screen Recording only after it has attempted "
+              "capture; grant from the app, not from Terminal"),
+    )
+
+
+@register("capture-method")
+def check_capture_method() -> CheckResult:
+    if (s := _mac_only("capture-method")) is not None:
+        return s
+
+    effective = _effective_method()
+    configured = _configured_method()
+    probe = None
+
+    def get_probe():
+        nonlocal probe
+        if probe is None:
+            probe = _probe_native()
+        return probe
+
+    if configured == "native":
+        p = get_probe()
+        if not p.ok:
+            return CheckResult(
+                id="capture-method", status="fail",
+                summary=f"native capture not ready: {p.reason}",
+                detail=("recorder.capture_backend is set to native, but the "
+                         "ScreenCaptureKit helper isn't ready to capture."),
+                fix=_native_capture_fix(p),
+                data={"method": effective, "configured": configured, "probe": p.to_dict()},
+            )
+
+    if effective == "native":
+        p = get_probe()
+        return CheckResult(
+            id="capture-method", status="ok",
+            summary=f"native — ScreenCaptureKit helper at {p.path}",
+            data={"method": "native", "configured": configured},
+        )
+
+    if configured == "blackhole":
+        return CheckResult(
+            id="capture-method", status="ok",
+            summary="blackhole (configured) — ffmpeg + BlackHole path",
+            data={"method": "blackhole", "configured": "blackhole"},
+        )
+
+    p = get_probe()
+    return CheckResult(
+        id="capture-method", status="warn",
+        summary=f"blackhole fallback — native helper unavailable: {p.reason}",
+        detail=("Native capture (ScreenCaptureKit) needs no ffmpeg, BlackHole, "
+                 "SwitchAudioSource, or multi-output device — once it's ready "
+                 "doctor will pick it up automatically."),
+        fix=_native_capture_fix(p),
+        data={"method": effective, "configured": configured, "probe": p.to_dict()},
+    )
+
+
 @register("ffmpeg")
 def check_ffmpeg() -> CheckResult:
-    if (s := _mac_only("ffmpeg")) is not None:
+    if (s := _blackhole_only("ffmpeg")) is not None:
         return s
     # Reuse the backend's own preflight (same seam check_recorder_backend
     # uses on Windows) instead of a second, separately-maintained PATH check.
@@ -111,7 +222,7 @@ def check_whisper_model() -> CheckResult:
 
 @register("switchaudio")
 def check_switchaudio() -> CheckResult:
-    if (s := _mac_only("switchaudio")) is not None:
+    if (s := _blackhole_only("switchaudio")) is not None:
         return s
     path = shutil.which("SwitchAudioSource")
     if path:
@@ -137,7 +248,7 @@ def _outputs() -> list[str] | None:
 
 @register("blackhole")
 def check_blackhole() -> CheckResult:
-    if (s := _mac_only("blackhole")) is not None:
+    if (s := _blackhole_only("blackhole")) is not None:
         return s
     outputs = _outputs()
     if outputs is None:
@@ -154,7 +265,7 @@ def check_blackhole() -> CheckResult:
 
 @register("audio-device")
 def check_audio_device() -> CheckResult:
-    if (s := _mac_only("audio-device")) is not None:
+    if (s := _blackhole_only("audio-device")) is not None:
         return s
     outputs = _outputs()
     if outputs is None:
@@ -172,7 +283,7 @@ def check_audio_device() -> CheckResult:
 
 @register("audio-routing")
 def check_audio_routing() -> CheckResult:
-    if (s := _mac_only("audio-routing")) is not None:
+    if (s := _blackhole_only("audio-routing")) is not None:
         return s
     if shutil.which("SwitchAudioSource") is None:
         return CheckResult(id="audio-routing", status="skip", summary="needs SwitchAudioSource first")

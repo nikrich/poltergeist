@@ -304,3 +304,18 @@ skill's test recording can actually surface errors.
 7. Docs: `docs/install/macos.md`, `docs/connectors.md`, `windows.md` corrections.
 8. The skill + README section + delete the old skill; verify both install commands.
 9. Release as 1.5.0 (the setup surface is a feature); acceptance run on a clean account.
+
+## Post-merge note: capture method (#117)
+
+PR #117 added native ScreenCaptureKit capture on macOS (`recorder.capture_backend:
+auto|native|blackhole`), which this design predates. `checks_recorder.py` gained a
+`capture-method` check, registered first, that reports the effective method (`native`
+needs no ffmpeg/BlackHole/SwitchAudioSource/multi-output device; `auto`, the default,
+falls back to `blackhole` when the native helper isn't ready). It is `ok` for native or
+for `blackhole` explicitly configured, `warn` for an `auto` fallback (a valid state),
+and `fail` only when `capture_backend: native` is explicitly set but the helper isn't
+ready. The five existing BlackHole-path checks (`ffmpeg`, `switchaudio`, `blackhole`,
+`audio-device`, `audio-routing`) now skip with "not needed with native capture" when
+the effective method is `native`, via a new `_blackhole_only` gate layered on the
+existing `_mac_only`. `whisper-cli`/`whisper-model` are unaffected — transcription is
+needed in every capture mode.

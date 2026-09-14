@@ -6,11 +6,21 @@ import pytest
 
 from ghostbrain.doctor import checks_recorder as cr
 from ghostbrain.recorder import audio_switcher
+from ghostbrain.recorder.audio import darwin_native
 
 
 @pytest.fixture
 def darwin(monkeypatch):
     monkeypatch.setattr(cr, "_platform", lambda: "darwin")
+
+
+@pytest.fixture(autouse=True)
+def default_capture_method(monkeypatch):
+    # Every existing test in this module predates capture_backend gating and
+    # assumes the BlackHole path is active — keep that meaning unless a test
+    # overrides these seams itself.
+    monkeypatch.setattr(cr, "_effective_method", lambda: "blackhole")
+    monkeypatch.setattr(cr, "_configured_method", lambda: "blackhole")
 
 
 def _which(present: set[str]):
@@ -124,10 +134,86 @@ def test_whisper_checks_still_skip_on_linux(monkeypatch):
 
 def test_mac_only_checks_skip_on_linux(monkeypatch):
     monkeypatch.setattr(cr, "_platform", lambda: "linux")
-    for fn in (cr.check_ffmpeg, cr.check_whisper_cli, cr.check_whisper_model,
-               cr.check_switchaudio, cr.check_blackhole, cr.check_audio_device,
-               cr.check_audio_routing):
+    for fn in (cr.check_capture_method, cr.check_ffmpeg, cr.check_whisper_cli,
+               cr.check_whisper_model, cr.check_switchaudio, cr.check_blackhole,
+               cr.check_audio_device, cr.check_audio_routing):
         assert fn().status == "skip", fn.__name__
+
+
+def test_native_effective_method_skips_blackhole_path_checks(darwin, monkeypatch):
+    monkeypatch.setattr(cr, "_effective_method", lambda: "native")
+    for fn in (cr.check_ffmpeg, cr.check_switchaudio, cr.check_blackhole,
+               cr.check_audio_device, cr.check_audio_routing):
+        r = fn()
+        assert r.status == "skip", fn.__name__
+        assert r.summary == "not needed with native capture", fn.__name__
+
+
+def test_capture_method_ok_native(darwin, monkeypatch):
+    monkeypatch.setattr(cr, "_effective_method", lambda: "native")
+    monkeypatch.setattr(cr, "_configured_method", lambda: "auto")
+    probe = darwin_native.HelperProbe(
+        found=True, path="/usr/local/bin/ghostbrain-capture", ok=True, code=0,
+        reason="ok", macos_version="15.1", macos_supported=True,
+        screen_recording="granted", microphone="granted",
+    )
+    monkeypatch.setattr(cr, "_probe_native", lambda: probe)
+    r = cr.check_capture_method()
+    assert r.status == "ok"
+    assert r.summary == f"native — ScreenCaptureKit helper at {probe.path}"
+    assert r.data == {"method": "native", "configured": "auto"}
+
+
+def test_capture_method_ok_blackhole_configured(darwin, monkeypatch):
+    monkeypatch.setattr(cr, "_effective_method", lambda: "blackhole")
+    monkeypatch.setattr(cr, "_configured_method", lambda: "blackhole")
+
+    def _boom():
+        raise AssertionError("probe should not be called when blackhole is configured")
+
+    monkeypatch.setattr(cr, "_probe_native", _boom)
+    r = cr.check_capture_method()
+    assert r.status == "ok"
+    assert r.summary == "blackhole (configured) — ffmpeg + BlackHole path"
+    assert r.data == {"method": "blackhole", "configured": "blackhole"}
+
+
+def test_capture_method_warn_auto_fallback(darwin, monkeypatch):
+    monkeypatch.setattr(cr, "_effective_method", lambda: "blackhole")
+    monkeypatch.setattr(cr, "_configured_method", lambda: "auto")
+    probe = darwin_native.HelperProbe(
+        found=False, path=None, ok=False, code=None,
+        reason=("ghostbrain-capture not found; set GHOSTBRAIN_CAPTURE_BIN or run "
+                "scripts/build-native-macos.sh --install"),
+        macos_version="15.1", macos_supported=True,
+    )
+    monkeypatch.setattr(cr, "_probe_native", lambda: probe)
+    r = cr.check_capture_method()
+    assert r.status == "warn"
+    assert r.summary == f"blackhole fallback — native helper unavailable: {probe.reason}"
+    assert r.fix.kind == "manual"
+    assert "build-native-macos.sh --install" in r.fix.command
+    assert r.data["probe"] == probe.to_dict()
+    assert r.data["method"] == "blackhole"
+    assert r.data["configured"] == "auto"
+
+
+def test_capture_method_fail_native_configured_not_ready(darwin, monkeypatch):
+    monkeypatch.setattr(cr, "_effective_method", lambda: "native")
+    monkeypatch.setattr(cr, "_configured_method", lambda: "native")
+    probe = darwin_native.HelperProbe(
+        found=True, path="/usr/local/bin/ghostbrain-capture", ok=False, code=5,
+        reason=("Microphone permission not granted — System Settings › Privacy "
+                "& Security › Microphone"),
+        macos_version="15.1", macos_supported=True,
+        screen_recording="granted", microphone="denied",
+    )
+    monkeypatch.setattr(cr, "_probe_native", lambda: probe)
+    r = cr.check_capture_method()
+    assert r.status == "fail"
+    assert r.summary == f"native capture not ready: {probe.reason}"
+    assert r.fix.kind == "manual"
+    assert "grant access" in r.fix.command
 
 
 def test_recorder_backend_check_surfaces_preflight_on_windows(monkeypatch):
