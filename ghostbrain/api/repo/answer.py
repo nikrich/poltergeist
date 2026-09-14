@@ -21,6 +21,7 @@ import frontmatter
 
 from ghostbrain import routing_config
 from ghostbrain.api.repo.search import search as semantic_search
+from ghostbrain.api.repo.settings import require_provider
 from ghostbrain.llm.client import LLMError, LLMTimeout, run as llm_run
 from ghostbrain.paths import vault_path
 from ghostbrain.worker.audit import audit_log
@@ -98,6 +99,7 @@ def _build_sources_block(hits: list[dict]) -> tuple[str, list[dict]]:
 def answer(q: str, limit: int = 8) -> dict:
     """Run the full RAG: search → load → synthesize."""
     import time
+    require_provider()
     started = time.time()
     response = _answer(q, limit)
     audit_log(

@@ -19,6 +19,7 @@ from ghostbrain.api.routes import doctor as doctor_routes
 from ghostbrain.api.routes import health as health_routes
 from ghostbrain.api.routes import import_atlassian as import_routes
 from ghostbrain.api.routes import llm as llm_routes
+from ghostbrain.api.routes import llm_providers as llm_providers_routes
 from ghostbrain.api.routes import mcp_servers as mcp_servers_routes
 from ghostbrain.api.routes import meetings as meetings_routes
 from ghostbrain.api.routes import notes as notes_routes
@@ -101,6 +102,7 @@ def create_app(token: str) -> FastAPI:
     app.include_router(mcp_servers_routes.router)  # before chat: its /v1/chat/{id} catch-all
     app.include_router(chat_routes.router)
     app.include_router(llm_routes.router)
+    app.include_router(llm_providers_routes.router)
     app.include_router(suggestions_routes.router)
     app.include_router(projects_routes.router)
     app.include_router(connector_auth_routes.router)

@@ -300,6 +300,7 @@ def run_chat_turn(
     turn_key: str | None = None,
     system_prompt: str | None = None,
     allowed_tools: str | None = None,
+    history: list[dict] | None = None,
 ):
     """Yield event dicts for one agentic chat turn.
 
@@ -308,6 +309,10 @@ def run_chat_turn(
     produced anything, which raises ResumeFailed so the caller can retry the
     turn without a session (we must not emit a terminal event in that case,
     the retry will produce its own).
+
+    ``history`` is forwarded into the ChatRequest for drivers that need
+    explicit conversational context (local/codex/gemini); the Claude driver
+    ignores it since it resumes via ``--resume <session_id>`` instead.
     """
     from ghostbrain.llm.providers.base import ChatRequest, to_tier
 
@@ -318,6 +323,7 @@ def run_chat_turn(
         turn_key=turn_key,
         system_prompt=system_prompt,
         allowed_tools=allowed_tools,
+        history=history,
         timeout_s=timeout_s,
     )
     yield from _provider(binary=binary, mcp_binary=mcp_binary).chat(req)

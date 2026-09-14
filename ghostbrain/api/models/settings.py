@@ -1,11 +1,43 @@
 """Vault-level user settings exposed to the desktop app."""
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 CaptureBackend = Literal["auto", "native", "blackhole"]
 EffectiveCaptureBackend = Literal["native", "blackhole", "wasapi", "unsupported"]
 SlideFallback = Literal["ask", "display", "audio"]
+
+LlmProviderId = Literal["claude", "codex", "gemini", "openai_http"]
+_LLM_TIERS = {"fast", "balanced", "quality"}
+
+
+class LlmSettings(BaseModel):
+    """The `llm:` block of <vault>/90-meta/config.yaml, plus the resolved
+    per-tier model names (defaults merged with any explicit overrides)."""
+
+    provider: LlmProviderId
+    models: dict[str, str | None]
+    base_url: str
+    api_key_env: str
+    effective_models: dict[str, str]
+
+
+class UpdateLlmSettings(BaseModel):
+    """Partial update — any omitted field is left untouched in the file."""
+
+    provider: LlmProviderId | None = None
+    models: dict[str, str | None] | None = None
+    base_url: str | None = None
+    api_key_env: str | None = None
+
+    @field_validator("models")
+    @classmethod
+    def _tiers_known(cls, v: dict[str, str | None] | None) -> dict[str, str | None] | None:
+        if v is not None:
+            unknown = set(v) - _LLM_TIERS
+            if unknown:
+                raise ValueError(f"unknown tier(s) {sorted(unknown)}: use fast | balanced | quality")
+        return v
 
 
 class RecorderSettings(BaseModel):

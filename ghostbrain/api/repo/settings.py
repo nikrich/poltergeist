@@ -9,10 +9,13 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import yaml
 
+from ghostbrain.llm.client import LLMError
+from ghostbrain.llm.providers import PROVIDER_IDS, get_provider
 from ghostbrain.recorder import config as rcfg
 
 # Defaults are owned by ghostbrain.recorder.config; this is a view for the
@@ -109,3 +112,76 @@ def update_recorder_settings(**fields) -> dict:
     config["recorder"] = recorder
     _write_yaml_atomic(config)
     return get_recorder_settings()
+
+
+class ProviderUnavailable(RuntimeError):
+    """Active LLM provider failed its probe; message is the user-facing reason."""
+
+
+def get_llm_settings() -> dict:
+    from ghostbrain.llm.providers.config import effective_models, load_llm_config
+
+    cfg = load_llm_config(_load_yaml())
+    return {
+        "provider": cfg.provider,
+        "models": cfg.models,
+        "base_url": cfg.base_url,
+        "api_key_env": cfg.api_key_env,
+        "effective_models": effective_models(cfg.provider, cfg),
+    }
+
+
+def update_llm_settings(**fields) -> dict:
+    config = _load_yaml()
+    block = config.get("llm") if isinstance(config.get("llm"), dict) else {}
+    if fields.get("provider") is not None:
+        p = str(fields["provider"]).strip().lower()
+        if p not in PROVIDER_IDS:
+            raise ValueError(f"provider must be one of {', '.join(PROVIDER_IDS)}")
+        block["provider"] = p
+    if fields.get("models") is not None:
+        models = block.get("models") if isinstance(block.get("models"), dict) else {}
+        for tier, model in fields["models"].items():
+            if tier not in ("fast", "balanced", "quality"):
+                raise ValueError(f"unknown tier {tier!r}")
+            models[tier] = (str(model).strip() or None) if model is not None else None
+        block["models"] = models
+    http = block.get("openai_http") if isinstance(block.get("openai_http"), dict) else {}
+    if fields.get("base_url") is not None:
+        http["base_url"] = str(fields["base_url"]).strip().rstrip("/")
+    if fields.get("api_key_env") is not None:
+        http["api_key_env"] = str(fields["api_key_env"]).strip()
+    if http:
+        block["openai_http"] = http
+    config["llm"] = block
+    _write_yaml_atomic(config)
+    _probe_cache.clear()
+    return get_llm_settings()
+
+
+# require_provider() caches the last probe result for _PROBE_TTL_S seconds,
+# keyed by the config values that determine which provider/models/endpoint
+# get probed — a chat/answer turn calls this at least once per request, and
+# a subprocess probe on every request would add real latency. The cache is
+# invalidated whenever update_llm_settings() writes a new config.
+_PROBE_TTL_S = 60.0
+_probe_cache: dict[tuple, tuple[float, object]] = {}
+
+
+def require_provider() -> None:
+    from ghostbrain.llm.providers.config import load_llm_config
+
+    cfg = load_llm_config()
+    key = (cfg.provider, cfg.base_url, cfg.api_key_env, tuple(sorted(cfg.models.items())))
+    now = time.monotonic()
+    cached = _probe_cache.get(key)
+    if cached is not None and now - cached[0] < _PROBE_TTL_S:
+        probe = cached[1]
+    else:
+        try:
+            probe = get_provider().probe()
+        except LLMError as e:
+            raise ProviderUnavailable(str(e)) from e
+        _probe_cache[key] = (now, probe)
+    if not probe.ok:
+        raise ProviderUnavailable(probe.reason)

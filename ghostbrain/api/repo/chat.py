@@ -11,6 +11,7 @@ import threading
 from typing import Iterator
 
 from ghostbrain.api.repo import chat_attachments, chat_store
+from ghostbrain.api.repo.settings import ProviderUnavailable, require_provider
 from ghostbrain.llm import agent
 
 log = logging.getLogger("ghostbrain.chat")
@@ -75,6 +76,11 @@ def send_message(
         prompt = build_attachment_prompt(text, attachment_paths)
         session_id = conv.get("claude_session_id")
         try:
+            require_provider()
+        except ProviderUnavailable as e:
+            yield {"type": "error", "message": str(e)}
+            return
+        try:
             yield from _stream_turn(conv, prompt, session_id)
         except agent.ResumeFailed as e:
             log.warning(
@@ -108,7 +114,17 @@ def cancel(conv_id: str) -> bool:
 def _stream_turn(conv: dict, prompt: str, session_id: str | None) -> Iterator[dict]:
     parts: list[str] = []
     tools: list[dict] = []
-    for event in agent.run_chat_turn(prompt, session_id=session_id, turn_key=conv["id"]):
+    # messages[-1] is the just-appended user message (see build_attachment_prompt's
+    # caller) — exclude it, then take the HISTORY_FALLBACK_MESSAGES before it. Only
+    # the local/codex/gemini drivers use this; the Claude driver resumes via
+    # --resume <session_id> instead and ignores it.
+    history = [
+        {"role": m["role"], "text": m["text"]}
+        for m in conv["messages"][-(HISTORY_FALLBACK_MESSAGES + 1) : -1]
+    ]
+    for event in agent.run_chat_turn(
+        prompt, session_id=session_id, turn_key=conv["id"], history=history
+    ):
         if event["type"] == "session":
             chat_store.set_session_id(conv, event["session_id"])
         elif event["type"] == "delta":
