@@ -1,0 +1,5 @@
+{"type":"init","session_id":"gs-1","model":"gemini-2.5-pro"}
+{"type":"tool_use","tool_name":"poltergeist_search","parameters":{"query":"budget"}}
+{"type":"tool_result","tool_name":"poltergeist_search","status":"success"}
+{"type":"message","role":"assistant","content":"The budget was approved."}
+{"type":"result","status":"success","stats":{"total_tokens":1200}}
