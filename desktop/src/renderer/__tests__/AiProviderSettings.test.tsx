@@ -84,6 +84,32 @@ describe('AiProviderSettings', () => {
     expect(await screen.findByLabelText(/fast model/i)).toBeInTheDocument();
     expect(screen.getAllByRole('option', { name: 'qwen3' }).length).toBeGreaterThan(0);
   });
+
+  it('re-probes diagnostics after a provider switch and shows the newly-selected provider\'s health', async () => {
+    stubApi(mixedProviders, makeSettings());
+    renderWith(<AiProviderSettings />);
+
+    expect(await screen.findByText(/2\.1\.0/)).toBeInTheDocument();
+
+    const providersCallCount = () =>
+      vi.mocked(client.get).mock.calls.filter(([path]) => path === '/v1/llm/providers').length;
+    const before = providersCallCount();
+
+    // codex.ok === false ("not installed") — switching to it from the
+    // settings panel (allowUnavailable) must still re-probe diagnostics
+    // (a second GET /v1/llm/providers) and show codex's own failing health,
+    // not the stale "2.1.0" reading left over from claude.
+    fireEvent.change(screen.getByLabelText(/provider/i), { target: { value: 'codex' } });
+    await waitFor(() =>
+      expect(client.put).toHaveBeenCalledWith('/v1/settings/llm', { provider: 'codex' }),
+    );
+
+    await waitFor(() => expect(providersCallCount()).toBeGreaterThan(before));
+
+    const pill = await screen.findByText('not installed');
+    expect(pill.className).toContain('oxblood');
+    expect(screen.queryByText('2.1.0')).not.toBeInTheDocument();
+  });
 });
 
 describe('ProviderSwitcher', () => {

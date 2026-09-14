@@ -765,6 +765,10 @@ export function useUpdateLlmSettings() {
     mutationFn: (vars: UpdateLlmSettings) => put<LlmSettings>('/v1/settings/llm', vars),
     onSuccess: (data) => {
       qc.setQueryData(['settings', 'llm'], data);
+      // A provider (or model) change can flip which provider is "active" and
+      // invalidates the cached diagnostics probe — re-run it so the panel
+      // doesn't keep showing the previous provider's health.
+      void qc.invalidateQueries({ queryKey: ['llm', 'providers'] });
     },
   });
 }

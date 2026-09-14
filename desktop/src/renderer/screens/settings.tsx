@@ -272,8 +272,14 @@ export function AiProviderSettings() {
 
   const data = settingsQuery.data;
   const diagnosticsMap = providersQuery.data?.providers;
-  const active = providersQuery.data?.active;
-  const diagnostics = active ? diagnosticsMap?.[active] : undefined;
+  // Key diagnostics off the provider the dropdown is currently showing
+  // (settings.provider updates immediately on a switch, via setQueryData in
+  // useUpdateLlmSettings) rather than providersQuery.data.active, which only
+  // catches up once the providers query refetches — using it directly would
+  // show the *previous* provider's health for a beat after every switch.
+  // Fall back to `active` only while settings are still loading.
+  const currentSidecarProvider = data?.provider ?? providersQuery.data?.active;
+  const diagnostics = currentSidecarProvider ? diagnosticsMap?.[currentSidecarProvider] : undefined;
   const provider = data ? fromSidecarProvider(data.provider) : null;
   const localModels = diagnosticsMap?.openai_http?.detail.models ?? [];
 
@@ -311,9 +317,13 @@ export function AiProviderSettings() {
         sub={undefined}
         control={
           <div className="flex items-center gap-2">
-            <Pill tone={diagnostics?.ok ? 'moss' : 'oxblood'}>
-              {diagnostics?.reason ?? (providersQuery.isFetching ? 'checking…' : 'unknown')}
-            </Pill>
+            {providersQuery.isFetching ? (
+              <Pill tone="outline">checking…</Pill>
+            ) : (
+              <Pill tone={diagnostics?.ok ? 'moss' : 'oxblood'}>
+                {diagnostics?.reason ?? 'unknown'}
+              </Pill>
+            )}
             <Btn variant="ghost" size="sm" onClick={() => void providersQuery.refetch()}>
               re-check
             </Btn>
