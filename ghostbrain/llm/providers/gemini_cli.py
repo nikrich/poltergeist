@@ -74,14 +74,17 @@ def _run_root() -> Path:
 def supports_resume(binary: str) -> bool:
     """Whether this `gemini` binary's CLI supports `--resume <session_id>`.
 
-    Cached per binary path — `gemini --help` is a real subprocess spawn, so
-    checking it once per turn would be wasteful; older CLIs that lack the
-    flag default to False on any failure (missing binary, timeout, etc.).
+    Routed through the file's `_run` seam (own process group, killed on
+    timeout) rather than a bare `subprocess.run` — a hung `gemini --help`
+    must not be left running. Cached per binary path — `gemini --help` is a
+    real subprocess spawn, so checking it once per turn would be wasteful;
+    older CLIs that lack the flag default to False on any failure (missing
+    binary, timeout, non-zero exit, etc.).
     """
     if binary not in _resume_cache:
         try:
-            out = subprocess.run([binary, "--help"], capture_output=True, text=True, timeout=10, check=False).stdout
-        except (OSError, subprocess.TimeoutExpired):
+            out, _err, _rc = _run([binary, "--help"], 10)
+        except (LLMError, OSError):
             out = ""
         _resume_cache[binary] = "--resume" in out
     return _resume_cache[binary]
@@ -232,8 +235,12 @@ class GeminiCli:
         if mcp is None:
             yield {"type": "error", "message": "Vault tools are unavailable: the ghostbrain-api mcp helper could not be found"}
             return
+        auth = read_gemini_auth()
+        if auth is None:
+            yield {"type": "error", "message": "gemini is not signed in — run `gemini` and use /auth, or set GEMINI_API_KEY"}
+            return
         ws = write_gemini_workspace(_run_root() / "gemini", mcp_argv=list(mcp), user_servers=req.user_servers,
-                                    auth_type=read_gemini_auth())
+                                    auth_type=auth)
         resume = bool(req.session_id) and supports_resume(b)
         prompt = req.prompt
         if req.session_id and not resume and req.history:

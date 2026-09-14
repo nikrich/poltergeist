@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from ghostbrain.llm.client import LLMTimeout
 from ghostbrain.llm.providers import base
 from ghostbrain.llm.providers import gemini_cli as gm
 
@@ -72,3 +73,52 @@ def test_chat_without_resume_support_prefixes_history(monkeypatch, tmp_path: Pat
     assert "--resume" not in captured["cmd"]
     prompt = captured["cmd"][captured["cmd"].index("-p") + 1]
     assert "user: first" in prompt and "assistant: reply" in prompt and prompt.rstrip().endswith("user: next")
+
+
+def test_chat_not_signed_in_is_clean_error(monkeypatch, tmp_path: Path):
+    called = {"stream": False}
+    def fake_stream(cmd, **kw):
+        called["stream"] = True
+        yield {"type": "done", "text": "ok", "session_id": ""}
+    monkeypatch.setattr(gm, "stream_subprocess", fake_stream)
+    monkeypatch.setattr(gm, "find_gemini_binary", lambda: "/g")
+    monkeypatch.setattr(gm, "read_gemini_auth", lambda: None)
+    monkeypatch.setattr(gm, "_run_root", lambda: tmp_path / "run")
+    events = list(gm.GeminiCli(M).chat(base.ChatRequest(prompt="q", tier="fast", session_id=None, turn_key="c3")))
+    assert events == [{"type": "error", "message": "gemini is not signed in — run `gemini` and use /auth, or set GEMINI_API_KEY"}]
+    assert called["stream"] is False
+    assert not (tmp_path / "run" / "gemini").exists()
+
+
+# --- supports_resume routes through the file's _run seam -------------------
+
+def test_supports_resume_true_when_help_mentions_resume(monkeypatch):
+    gm._resume_cache.clear()
+    monkeypatch.setattr(gm, "_run", lambda cmd, timeout_s: ("usage: gemini [...] --resume <id>\n", "", 0))
+    assert gm.supports_resume("/g") is True
+
+
+def test_supports_resume_false_when_help_lacks_resume(monkeypatch):
+    gm._resume_cache.clear()
+    monkeypatch.setattr(gm, "_run", lambda cmd, timeout_s: ("usage: gemini [...]\n", "", 0))
+    assert gm.supports_resume("/g") is False
+
+
+def test_supports_resume_false_on_run_failure_no_raise(monkeypatch):
+    gm._resume_cache.clear()
+    def fake_run(cmd, timeout_s):
+        raise LLMTimeout("gemini timed out after 10s")
+    monkeypatch.setattr(gm, "_run", fake_run)
+    assert gm.supports_resume("/g") is False
+
+
+def test_supports_resume_caches_per_binary(monkeypatch):
+    gm._resume_cache.clear()
+    calls = []
+    def fake_run(cmd, timeout_s):
+        calls.append(cmd)
+        return ("--resume\n", "", 0)
+    monkeypatch.setattr(gm, "_run", fake_run)
+    assert gm.supports_resume("/g") is True
+    assert gm.supports_resume("/g") is True
+    assert len(calls) == 1
