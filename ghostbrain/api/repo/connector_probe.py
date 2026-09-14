@@ -8,10 +8,10 @@ liveness/validation that needs the network happens on explicit user action
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
-from pathlib import Path
 
-from ghostbrain.paths import state_dir, vault_path
+from ghostbrain.paths import state_dir
 
 
 @dataclass
@@ -89,7 +89,7 @@ def _github_probe() -> ProbeResult:
         return ProbeResult("off")
     try:
         r = subprocess.run(
-            ["gh", "auth", "status"], capture_output=True, timeout=5, text=True
+            ["gh", "auth", "status"], capture_output=True, timeout=5, text=True, check=False
         )
     except (subprocess.SubprocessError, OSError):
         return ProbeResult("off")
@@ -97,25 +97,47 @@ def _github_probe() -> ProbeResult:
 
 
 def _claude_code_probe() -> ProbeResult:
-    settings = Path.home() / ".claude" / "settings.json"
-    if not settings.exists():
-        return ProbeResult("off")
-    try:
-        import json
+    from ghostbrain.api import claude_settings
 
-        hooks = json.loads(settings.read_text()).get("hooks", {})
-    except (OSError, ValueError):
+    try:
+        doc = claude_settings.load()
+    except ValueError:
+        return ProbeResult("err", error="settings.json is not valid JSON")
+    cmds = claude_settings.session_end_commands(doc)
+    if not cmds:
         return ProbeResult("off")
-    return ProbeResult("on") if "SessionEnd" in hooks else ProbeResult("off")
+    if not any(claude_settings.hook_command_exists(c) for c in cmds):
+        return ProbeResult("err", error="SessionEnd hook points at a missing script; run `poltergeist setup install-hook`")
+    return ProbeResult("on")
+
+
+def _platform() -> str:
+    return sys.platform
+
+
+def _macos_calendar_authorized() -> bool | None:
+    from ghostbrain.api.auth.providers.local_grant import _macos_calendar_authorized as impl
+
+    return impl()
+
+
+def _load_routing() -> dict:
+    from ghostbrain.api.repo.routing import load_routing
+
+    return load_routing()
 
 
 def probe(connector_id: str) -> ProbeResult:
     if connector_id == "gmail":
         return _google_probe("gmail")
     if connector_id == "calendar":
-        # Google token OR macOS is always locally available; treat google token
-        # as the "on" signal, else off (macOS grant tracked separately in UI).
-        return _google_probe("google_calendar")
+        google = _google_probe("google_calendar")
+        if google.state == "on" or _platform() != "darwin":
+            return google
+        accounts = (((_load_routing().get("calendar") or {}).get("macos") or {}).get("accounts")) or {}
+        if accounts and _macos_calendar_authorized():
+            return ProbeResult("on")
+        return google
     if connector_id == "slack":
         return _slack_probe()
     if connector_id == "joplin":

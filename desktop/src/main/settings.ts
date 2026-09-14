@@ -10,7 +10,7 @@ interface OnDisk extends Settings {
   version: number;
 }
 
-const defaults: Settings = {
+export const DEFAULT_SETTINGS: Settings = {
   theme: 'dark',
   density: 'comfortable',
   vaultPath: join(homedir(), 'ghostbrain', 'vault'),
@@ -32,7 +32,7 @@ const defaults: Settings = {
 
   folderStructure: 'by-source',
 
-  schedulerEnabled: false,
+  schedulerEnabled: true,
   onboardingComplete: false,
 
   hotkeys: {
@@ -46,14 +46,14 @@ function configPath(): string {
 
 function read(): Settings {
   const path = configPath();
-  if (!existsSync(path)) return { ...defaults };
+  if (!existsSync(path)) return { ...DEFAULT_SETTINGS };
   try {
     const raw = readFileSync(path, 'utf-8');
     const parsed = JSON.parse(raw) as Partial<OnDisk>;
-    if (parsed.version !== SCHEMA_VERSION) return { ...defaults };
-    return { ...defaults, ...parsed };
+    if (parsed.version !== SCHEMA_VERSION) return { ...DEFAULT_SETTINGS };
+    return { ...DEFAULT_SETTINGS, ...parsed };
   } catch {
-    return { ...defaults };
+    return { ...DEFAULT_SETTINGS };
   }
 }
 

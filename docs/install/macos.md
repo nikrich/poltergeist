@@ -72,6 +72,13 @@ meetings → capture method** in the desktop app):
 
 Whichever method you use, transcription needs whisper.cpp (see below).
 
+**Fastest path:** `poltergeist doctor` lists every missing piece with its fix, and
+`poltergeist setup <fix>` applies the ones that need no password. The
+`poltergeist-setup` Claude Code skill (README, top) walks you through the whole
+thing. `poltergeist` is the shim from Settings → background → "command line
+tool"; without it the same binary is
+`/Applications/Poltergeist.app/Contents/Resources/sidecar/ghostbrain-api/ghostbrain-api`.
+
 ### Native capture (macOS 15+, default)
 
 One helper process (`ghostbrain-capture`, Swift, ScreenCaptureKit) records
@@ -154,8 +161,11 @@ recorder:
 ### BlackHole capture (fallback, macOS ≤ 14)
 
 ```bash
-brew install ffmpeg blackhole-2ch switchaudio-osx
+poltergeist setup deps        # brew install ffmpeg whisper-cpp switchaudio-osx, then blackhole-2ch (asks for your password)
+poltergeist setup audio-device  # creates the "Ghost Brain" multi-output device via CoreAudio
 ```
+
+Or by hand: `brew install ffmpeg blackhole-2ch switchaudio-osx`, then:
 
 1. Open **Audio MIDI Setup**, create a **Multi-Output Device** containing your
    speakers/headphones **and** `BlackHole 2ch`, and name it `Ghost Brain`
@@ -174,8 +184,10 @@ Force this path with `recorder.capture_backend: blackhole`.
 
 ```bash
 brew install whisper-cpp
-mkdir -p ~/ghostbrain/recorder/models
+poltergeist setup fetch-model   # ggml-medium.en.bin (~1.5 GB); pass base.en or small.en for smaller
 ```
+
+Or download by hand:
 
 Download a `ggml-*.bin` model (e.g. `ggml-medium.en.bin`) with your browser
 or your organisation's approved channel and place it in
@@ -186,6 +198,7 @@ proxies, do not `curl` the model — it hangs silently.** Set
 ### Verify
 
 ```bash
+poltergeist doctor                            # every prerequisite, with its fix
 ghostbrain-recorder-recover --show-config     # effective recorder config
 tail -f "$VAULT_PATH/90-meta/audit/"*.jsonl   # look for recording_started, transcript_linked, slides_linked
 ```
@@ -195,13 +208,11 @@ In the desktop app, **Meetings** shows the active capture method, and
 
 ## Claude Code SessionEnd hook
 
-Add to `~/.claude/settings.json`:
-
-```json
-"hooks": {
-  "SessionEnd": [{
-    "matcher": "*",
-    "hooks": [{ "type": "command", "command": "/path/to/ghost-brain/orchestration/hooks/session-end.sh" }]
-  }]
-}
+```bash
+poltergeist setup install-hook
 ```
+
+writes a `SessionEnd` entry into `~/.claude/settings.json` that runs the bundled
+binary's `session-end` subcommand (the app's Claude Code connector card does the
+same). No script needs to be on disk; `poltergeist doctor` reports a hook whose
+command path has gone missing.

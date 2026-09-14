@@ -40,3 +40,6 @@ native/macos/ghostbrain-capture/.swiftpm/
 media/.raw/
 media/poltergeist-demo.webm
 .venv
+
+# local uv venv lock (CI uses pip)
+uv.lock

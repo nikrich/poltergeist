@@ -4,7 +4,9 @@ import GhostbrainCaptureCore
 import ScreenCaptureKit
 
 @available(macOS 15, *)
-struct Shareable {
+// SCDisplay / SCWindow are immutable NSObject handles; Swift 6.1 on the CI runner rejects
+// returning this struct across an isolation boundary without a Sendable conformance.
+struct Shareable: @unchecked Sendable {
     let displays: [SCDisplay]
     /// Front-to-back, already filtered to what ScreenCaptureKit can see.
     let windows: [WindowDescriptor]

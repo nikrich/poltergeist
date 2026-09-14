@@ -1,7 +1,8 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { homedir } from 'node:os';
+import { delimiter, join } from 'node:path';
 import { app } from 'electron';
 
 export interface SidecarInfo {
@@ -21,6 +22,46 @@ interface SpawnTarget {
   exe: string;
   args: string[];
   cwd: string;
+}
+
+export interface SidecarOptions {
+  schedulerEnabled?: boolean;
+  vaultPath?: string;
+}
+
+export function buildSidecarEnv(
+  base: NodeJS.ProcessEnv,
+  opts: { schedulerEnabled: boolean; vaultPath: string; extraPath: string },
+): NodeJS.ProcessEnv {
+  const inheritedPath = base.PATH ?? '';
+  const home = base.HOME ?? homedir();
+  const vault = opts.vaultPath.startsWith('~/') ? join(home, opts.vaultPath.slice(2)) : opts.vaultPath;
+  return {
+    ...base,
+    // Use the platform PATH delimiter (';' on Windows, ':' elsewhere), not a
+    // hardcoded ':' — a hardcoded colon mangles a Windows PATH.
+    PATH: inheritedPath ? `${opts.extraPath}${delimiter}${inheritedPath}` : opts.extraPath,
+    PYTHONUNBUFFERED: '1',
+    GHOSTBRAIN_SCHEDULER_ENABLED: opts.schedulerEnabled ? '1' : '0',
+    VAULT_PATH: vault,
+  };
+}
+
+/**
+ * Extra directories to prepend to PATH so the sidecar can shell out to
+ * `claude`, `whisper-cli`, `gh`, `ffmpeg`, etc. even when the app was
+ * launched with a stripped PATH (macOS launchd hands the .app just
+ * `/usr/bin:/bin:/usr/sbin:/sbin`).
+ *
+ * `/opt/homebrew/bin` (Apple Silicon) and `/usr/local/bin` (Intel + manual
+ * installs) are POSIX-only paths that don't exist on Windows, so they're
+ * skipped there. `~/.local/bin` (Claude Code's default install path) is
+ * kept on every platform.
+ */
+export function buildExtraPath(platform: NodeJS.Platform, home: string): string {
+  const userLocalBin = home ? join(home, '.local', 'bin') : '';
+  const posixExtras = platform === 'win32' ? [] : ['/opt/homebrew/bin', '/usr/local/bin'];
+  return [...posixExtras, userLocalBin].filter(Boolean).join(delimiter);
 }
 
 const READY_LINE_RE = /^READY port=(\d+) token=([0-9a-f]+)/m;
@@ -96,13 +137,17 @@ export class Sidecar extends EventEmitter {
 
   constructor(
     private readonly cwd: string,
-    private readonly options: { schedulerEnabled?: boolean } = {},
+    private readonly options: SidecarOptions = {},
   ) {
     super();
   }
 
   setSchedulerEnabled(enabled: boolean): void {
     this.options.schedulerEnabled = enabled;
+  }
+
+  setVaultPath(path: string): void {
+    this.options.vaultPath = path;
   }
 
   getStatus(): Status {
@@ -170,20 +215,16 @@ export class Sidecar extends EventEmitter {
       // (Intel + manual installs), or `~/.local/bin` (Claude Code's default
       // install path). Prepend those so the sidecar can shell out to them
       // regardless of how the app was launched (Dock, Finder, terminal).
-      const home = process.env.HOME ?? '';
-      const userLocalBin = home ? `${home}/.local/bin` : '';
-      const extraPath = ['/opt/homebrew/bin', '/usr/local/bin', userLocalBin]
-        .filter(Boolean)
-        .join(':');
-      const inheritedPath = process.env.PATH ?? '';
+      const extraPath = buildExtraPath(process.platform, process.env.HOME ?? '');
       const captureBin = captureHelperPath(this.cwd);
       const proc = spawn(exe, args, {
         cwd,
         env: {
-          ...process.env,
-          PATH: inheritedPath ? `${extraPath}:${inheritedPath}` : extraPath,
-          PYTHONUNBUFFERED: '1',
-          GHOSTBRAIN_SCHEDULER_ENABLED: this.options.schedulerEnabled ? '1' : '0',
+          ...buildSidecarEnv(process.env, {
+            schedulerEnabled: this.options.schedulerEnabled ?? false,
+            vaultPath: this.options.vaultPath ?? '',
+            extraPath,
+          }),
           ...(captureBin ? { GHOSTBRAIN_CAPTURE_BIN: captureBin } : {}),
         },
       });

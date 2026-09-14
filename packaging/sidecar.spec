@@ -126,6 +126,14 @@ if sys.platform == 'win32':
     except ImportError:
         pass
 
+# CoreAudio (pyobjc-framework-CoreAudio) backs `setup audio-device`'s
+# aggregate-device creation (ghostbrain/doctor/fixes/audio_device.py). It's a
+# lazy `import CoreAudio` inside that module, same as the EventKit calendar
+# connector's lazy imports, so PyInstaller's static analysis won't see it on
+# its own — list both the wrapper package and its compiled extension module.
+if sys.platform == 'darwin':
+    hiddenimports += ['CoreAudio', 'CoreAudio._CoreAudio']
+
 a = Analysis(
     ['../ghostbrain/api/__main__.py'],
     pathex=['..'],

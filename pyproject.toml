@@ -37,6 +37,9 @@ dependencies = [
     # macOS Calendar connector reads via EventKit (PyObjC) so recurring
     # events get expanded — AppleScript's `whose` predicate misses them.
     "pyobjc-framework-EventKit>=11.0; sys_platform == 'darwin'",
+    # `setup audio-device` builds the "Ghost Brain" multi-output device via
+    # AudioHardwareCreateAggregateDevice.
+    "pyobjc-framework-CoreAudio>=11.0; sys_platform == 'darwin'",
 ]
 
 [project.optional-dependencies]
@@ -102,6 +105,9 @@ ghostbrain-recorder-recover = "ghostbrain.recorder.recover_cli:main"
 ghostbrain-metrics = "ghostbrain.metrics.main:main"
 ghostbrain-semantic-refresh = "ghostbrain.semantic.main:main"
 ghostbrain-mcp = "ghostbrain.mcp.__main__:main"
+ghostbrain-doctor = "ghostbrain.doctor.cli:main"
+ghostbrain-setup = "ghostbrain.doctor.setup:main"
+ghostbrain-session-end = "ghostbrain.hooks.session_end:main"
 
 [tool.setuptools.packages.find]
 include = ["ghostbrain*"]

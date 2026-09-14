@@ -145,8 +145,8 @@ Transcription runs `whisper-cli` locally; nothing is downloaded at runtime.
    - To use a model living somewhere else, set `GHOSTBRAIN_WHISPER_MODEL` to
      its full path instead of moving it into the default directory.
 
-Recorder preflight (surfaced in the desktop app's Meetings tab, and via
-`recorder_prereqs_ok()`) checks for `pyaudiowpatch`, `whisper-cli` on PATH,
+Recorder preflight (`poltergeist doctor`, and the 412 the Record button returns
+when something is missing) checks for `pyaudiowpatch`, `whisper-cli` on PATH,
 and a model file, and reports exactly which piece is missing.
 
 ### Wire up a calendar source
@@ -169,9 +169,8 @@ microsoft:
 Without `microsoft.calendar_context` set, the Microsoft calendar source is
 excluded (Apple Calendar isn't an option on Windows at all — that source is
 darwin-only). Exclusion reasons for every configured-but-inactive source
-show up in the recorder status response as `sourceExclusions`, which the
-Meetings tab surfaces so it's clear why a calendar isn't driving
-auto-record.
+show up in the recorder status response as `sourceExclusions`
+(`GET /v1/recorder/status`); the desktop app does not display them yet.
 
 To restrict auto-record to specific sources (e.g. only `google`, ignoring
 a configured `microsoft` block), pin the list explicitly in

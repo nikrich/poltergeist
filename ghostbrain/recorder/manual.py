@@ -210,7 +210,10 @@ def recover_one(
     started_override: "datetime | None" = None,
     parent_path_override: str | None = None,
 ) -> Path | None:
-    """Recover a single orphan WAV. Returns the transcript path or None.
+    """Recover a single orphan WAV. Raises TranscribeError on whisper failure or empty transcript; returns the transcript path or None.
+
+    Returns None only when the WAV is already filed or not eligible for recovery.
+    Raises TranscribeError on transcription failures (whisper not found, empty transcript).
 
     `title_override` skips the LLM-title step (useful when the user provided
     a title up front). `started_override` skips the filename-based start-time
@@ -224,16 +227,11 @@ def recover_one(
     log.info("recovering orphan manual recording: %s", wav.name)
     started = started_override or _parse_started_from_name(wav)
 
-    try:
-        txt_path = transcribe(wav)
-    except TranscribeError as e:
-        log.warning("transcribe failed for %s: %s", wav.name, e)
-        return None
+    txt_path = transcribe(wav)  # TranscribeError propagates: the caller decides how to surface it
 
     transcript_text = txt_path.read_text(encoding="utf-8")
     if not transcript_text.strip():
-        log.warning("empty transcript for %s; skipping", wav.name)
-        return None
+        raise TranscribeError(f"empty transcript for {wav.name}")
 
     title = title_override or _derive_title(transcript_text)
     duration_s = _duration_seconds(wav, started)
@@ -284,7 +282,10 @@ def run_recovery_pass(config: ManualConfig | None = None) -> list[Path]:
             continue
         try:
             result = recover_one(wav, cfg)
-        except Exception:  # noqa: BLE001
+        except TranscribeError as e:
+            log.warning("transcribe failed for %s: %s", wav.name, e)
+            continue
+        except Exception:
             log.exception("recovery failed for %s", wav.name)
             continue
         if result is not None:

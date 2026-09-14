@@ -120,6 +120,13 @@ def descriptor_path() -> Path:
     return run_dir() / "sidecar.json"
 
 
+# Libraries that log every HTTP probe at INFO and bury real findings.
+QUIET_LOGGERS: tuple[str, ...] = (
+    "httpx", "httpcore", "huggingface_hub", "transformers",
+    "sentence_transformers", "filelock", "urllib3",
+)
+
+
 def setup_file_logging() -> logging.handlers.RotatingFileHandler:
     """Attach a rotating file handler at <run_dir>/logs/sidecar.log.
 
@@ -131,6 +138,8 @@ def setup_file_logging() -> logging.handlers.RotatingFileHandler:
     root = logging.getLogger()
     for h in root.handlers:
         if getattr(h, "_ghostbrain_file_log", False):
+            for name in QUIET_LOGGERS:
+                logging.getLogger(name).setLevel(logging.WARNING)
             return h  # type: ignore[return-value]
     log_path = run_dir() / "logs" / "sidecar.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -145,6 +154,8 @@ def setup_file_logging() -> logging.handlers.RotatingFileHandler:
     root.addHandler(handler)
     if root.level > logging.INFO or root.level == logging.NOTSET:
         root.setLevel(logging.INFO)
+    for name in QUIET_LOGGERS:
+        logging.getLogger(name).setLevel(logging.WARNING)
     return handler
 
 

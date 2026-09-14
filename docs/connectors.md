@@ -1,8 +1,8 @@
 # Connector setup
 
-Every Poltergeist connector follows the same shape: **create a credential → authenticate → add a block to `<vault>/90-meta/routing.yaml` → fetch.** This page is the full per-connector reference. For a guided, agent-driven walkthrough of any connector, use the `onboarding-poltergeist` skill in `.claude/skills/`.
+Every Poltergeist connector follows the same shape: **create a credential → authenticate → add a block to `<vault>/90-meta/routing.yaml` → fetch.** The desktop app's connector cards do the first three for most connectors; this page is the full per-connector reference. For a guided walkthrough, use the `poltergeist-setup` Claude Code skill (see the README).
 
-> **Note on command names.** CLI binaries and the Python package use the `ghostbrain-` prefix — Poltergeist's original codename. The commands below are correct as written.
+> **Command names.** Commands below are written as `poltergeist <sub>`, the shim the app installs from Settings → background → "command line tool". The same subcommands are available as `ghostbrain-api <sub>` (the bundled binary, at `/Applications/Poltergeist.app/Contents/Resources/sidecar/ghostbrain-api/ghostbrain-api` on macOS) and, on a `pip install` from source, as `ghostbrain-<sub>`.
 
 - [Claude Code sessions](#claude-code-sessions)
 - [GitHub](#github)
@@ -19,21 +19,7 @@ Poltergeist reads finished Claude Code sessions via a `SessionEnd` hook and proc
 SessionEnd hook → queue → worker → router → note generator → (extractor)
 ```
 
-**Wire up the hook** by adding this entry to `~/.claude/settings.json`:
-
-```json
-"hooks": {
-  "SessionEnd": [{
-    "matcher": "*",
-    "hooks": [{
-      "type": "command",
-      "command": "/path/to/poltergeist/orchestration/hooks/session-end.sh",
-      "shell": "bash",
-      "async": true
-    }]
-  }]
-}
-```
+**Wire up the hook** by running `poltergeist setup install-hook`, or use the app's Claude Code card, which does the same.
 
 The hook reads the standard SessionEnd payload from stdin (`session_id`, `transcript_path`, `cwd`, `reason`) and drops a normalized event into the queue. The worker picks it up within ~5 seconds.
 
@@ -62,8 +48,8 @@ Owners not in the map fall through to the LLM router (and likely `needs_review`)
 Run manually:
 
 ```bash
-ghostbrain-github-fetch                # queue events for the worker
-ghostbrain-github-fetch --dry-run      # preview without enqueueing
+poltergeist github-fetch                # queue events for the worker
+poltergeist github-fetch --dry-run      # preview without enqueueing
 ```
 
 PR notes land at `<vault>/20-contexts/<ctx>/github/prs/<owner>-<repo>-<number>.md`. Issues at `.../github/issues/`.
@@ -109,8 +95,8 @@ Find space keys in any Confluence page URL: `.../wiki/spaces/<KEY>/...`.
 Run manually:
 
 ```bash
-ghostbrain-jira-fetch [--dry-run]
-ghostbrain-confluence-fetch [--dry-run]
+poltergeist jira-fetch [--dry-run]
+poltergeist confluence-fetch [--dry-run]
 ```
 
 Schedule via launchd:
@@ -143,15 +129,15 @@ Polls your Google Calendar(s) hourly. Today's events appear in the morning diges
    ```
 5. Run the consent flow once per account:
    ```bash
-   ghostbrain-calendar-auth google you@gmail.com
-   ghostbrain-calendar-auth google you@workspace.com
+   poltergeist calendar-auth google you@gmail.com
+   poltergeist calendar-auth google you@workspace.com
    ```
    Each opens a browser; refresh tokens land at `~/.ghostbrain/state/google_calendar.<slug>.token`.
 
 ### Run
 
 ```bash
-ghostbrain-calendar-fetch [--dry-run]
+poltergeist calendar-fetch [--dry-run]
 ```
 
 Or schedule via launchd:
@@ -167,7 +153,7 @@ Polls every hour. Events land at `<vault>/20-contexts/<ctx>/calendar/<file>.md`.
 Google External-app + Test mode expires refresh tokens after ~7 days. For long-term use either:
 
 - Publish your OAuth consent screen (button on the consent screen page). Calendar.readonly scope may not require formal verification for single-user personal apps.
-- Re-run `ghostbrain-calendar-auth google <email>` weekly.
+- Re-run `poltergeist calendar-auth google <email>` weekly.
 
 ## Gmail
 
@@ -193,14 +179,14 @@ Reuses the same OAuth client you set up for the calendar connector. If you skipp
    ```
 2. Run consent once per account:
    ```bash
-   ghostbrain-gmail-auth you@gmail.com
+   poltergeist gmail-auth you@gmail.com
    ```
    Refresh token lands at `~/.ghostbrain/state/gmail.<slug>.token`.
 
 ### Run
 
 ```bash
-ghostbrain-gmail-fetch [--dry-run]
+poltergeist gmail-fetch [--dry-run]
 ```
 
 Threads land in `<vault>/00-inbox/raw/gmail/` and route to `<vault>/20-contexts/<ctx>/gmail/`.
@@ -233,7 +219,7 @@ Polls one or more Slack workspaces for `@`-mentions of the authenticated user ov
 3. **Install to Workspace** → approve. Copy the **User OAuth Token** (starts with `xoxp-`).
 4. Save the token:
    ```bash
-   ghostbrain-slack-token-add <slug> xoxp-...your-token...
+   poltergeist slack-token-add <slug> xoxp-...your-token...
    ```
    The slug is whatever you'll use in `routing.yaml`. The CLI verifies the token by calling `auth.test` and writes it 0600 to `~/.ghostbrain/state/slack.<slug>.token`.
 5. Configure the workspace in `<vault>/90-meta/routing.yaml`:
@@ -253,7 +239,7 @@ Repeat for each workspace.
 ### Run
 
 ```bash
-ghostbrain-slack-fetch [--dry-run]
+poltergeist slack-fetch [--dry-run]
 ```
 
 Mentions land in `<vault>/00-inbox/raw/slack/` and route to `<vault>/20-contexts/<ctx>/slack/`. Each note's frontmatter carries `workspace_slug`, `channel_name`, `user_name`, `permalink`, `is_dm`, `thread_ts` — Dataview-friendly.

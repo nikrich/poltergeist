@@ -1,6 +1,7 @@
 """Recorder control endpoints — POST /v1/recorder/{start,stop,clear},
 GET /v1/recorder/status, plus the native-capture helpers under
 /v1/recorder/capture/*."""
+import logging
 from fastapi import APIRouter, HTTPException
 
 from ghostbrain.api.models.recorder import (
@@ -12,6 +13,7 @@ from ghostbrain.api.models.recorder import (
 from ghostbrain.api.repo.recorder import (
     RecorderBusy,
     RecorderNotActive,
+    RecorderPrereqsMissing,
     RecorderUnsupportedError,
     clear,
     request_capture_permissions,
@@ -22,6 +24,8 @@ from ghostbrain.api.repo.recorder import (
 )
 from ghostbrain.recorder.audio.base import CaptureUnavailableError
 from ghostbrain.recorder.audio_capture import AudioRoutingError
+
+log = logging.getLogger("ghostbrain.api.recorder_routes")
 
 router = APIRouter(prefix="/v1/recorder", tags=["recorder"])
 
@@ -42,14 +46,15 @@ def post_start(payload: StartRequest) -> dict:
         raise HTTPException(status_code=501, detail=str(e))
     except RecorderBusy as e:
         raise HTTPException(status_code=409, detail=str(e))
-    except (AudioRoutingError, CaptureUnavailableError) as e:
+    except (AudioRoutingError, CaptureUnavailableError, RecorderPrereqsMissing) as e:
         # 412 Precondition Failed — request is well-formed, but the system
-        # isn't ready: output isn't routed to BlackHole (legacy path), or the
-        # native helper lacks Screen Recording / Microphone permission.
-        # Distinct from 500 so the renderer can show a fixable hint instead
-        # of a generic error toast.
+        # isn't ready: output isn't routed to BlackHole (legacy path), the
+        # native helper lacks Screen Recording / Microphone permission, or a
+        # prerequisite binary/model is missing. The detail names the exact fix,
+        # distinct from 500 so the renderer can show a fixable hint.
         raise HTTPException(status_code=412, detail=str(e))
-    except RuntimeError as e:
+    except (RuntimeError, OSError) as e:
+        log.exception("recorder start failed")
         raise HTTPException(status_code=500, detail=str(e))
 
 
