@@ -14,9 +14,9 @@ Confirms `<vault>/90-meta/routing.yaml` exists, which is how doctor knows the va
 
 Confirms `routing.yaml` has at least one entry in its `contexts:` list — these are the buckets (e.g. `work`, `personal`) that filed notes route into, and the value doctor reports back is exactly that list. An empty list fails with a manual fix: add a `contexts:` list to `90-meta/routing.yaml`. If it fails twice, open the file directly and check for a YAML indentation error under `contexts:` rather than retrying the same edit.
 
-## claude-cli
+## llm-provider
 
-Confirms the `claude` CLI is on PATH and `claude --version` succeeds. Every LLM call in Poltergeist — chat, digests, routing — shells out to `claude -p`, billed to the user's existing Claude subscription rather than a separate API key. The fix is manual: `npm install -g @anthropic-ai/claude-code && claude login`. If it fails twice after that, run `claude` interactively to see whether login is actually completing, since a half-finished device-code flow leaves `--version` working but `-p` calls failing later.
+Confirms whichever LLM provider `llm.provider` in `90-meta/config.yaml` names (`claude`, `codex`, `gemini`, or `openai_http`) is actually usable — every routing, extraction, digest, and chat call in Poltergeist goes through it. `ok` reports the provider and its three model tiers (`fast`, `balanced`, `quality`). The fix is manual and provider-specific: `claude` → `npm install -g @anthropic-ai/claude-code && claude login`; `codex` → `npm i -g @openai/codex && codex login`; `gemini` → `npm i -g @google/gemini-cli`, then run `gemini` once and choose Login with Google; `openai_http` → set the base URL and pick a model for each tier under Settings → AI provider. A `config.yaml` naming a provider that isn't one of the four fails with a different fix: edit `llm.provider` in `90-meta/config.yaml` to one of `claude | codex | gemini | openai_http`. If it fails twice with the same provider already logged in elsewhere, paste the check's summary (the probe's reason) and the `llm.provider` value from `config.yaml` — the probe reason usually names exactly what's missing (binary not found vs. not signed in vs. bad base URL).
 
 ## scheduler
 

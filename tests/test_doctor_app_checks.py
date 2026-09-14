@@ -91,14 +91,45 @@ def test_contexts_empty_vs_present(monkeypatch):
     assert r.data["contexts"] == ["personal", "work"]
 
 
-def test_claude_cli(monkeypatch):
-    monkeypatch.setattr(ca.shutil, "which", lambda n: None)
-    r = ca.check_claude_cli()
-    assert r.status == "fail"
-    assert "claude.ai" in r.fix.command or "npm install -g @anthropic-ai/claude-code" in r.fix.command
-    monkeypatch.setattr(ca.shutil, "which", lambda n: "/usr/local/bin/claude")
-    monkeypatch.setattr(ca, "_claude_version", lambda: "2.1.0")
-    assert ca.check_claude_cli().status == "ok"
+def test_llm_provider_ok_reports_models(monkeypatch):
+    from ghostbrain.llm.providers import base
+
+    class Fake:
+        id = "codex"
+        def models(self): return {"fast": "gpt-5-mini", "balanced": "gpt-5", "quality": "gpt-5"}
+        def probe(self): return base.ProviderProbe(True, "logged in", {"binary": "/c"})
+    monkeypatch.setattr(ca, "_llm_provider", lambda: Fake())
+    r = ca.check_llm_provider()
+    assert r.status == "ok" and r.summary.startswith("codex: logged in") and "fast=gpt-5-mini" in r.summary
+    assert r.data["provider"] == "codex"
+
+
+def test_llm_provider_fail_names_the_login_fix(monkeypatch):
+    from ghostbrain.llm.providers import base
+
+    class Fake:
+        id = "gemini"
+        def models(self): return {}
+        def probe(self): return base.ProviderProbe(False, "gemini is not signed in")
+    monkeypatch.setattr(ca, "_llm_provider", lambda: Fake())
+    r = ca.check_llm_provider()
+    assert r.status == "fail" and r.fix.kind == "manual" and "gemini-cli" in r.fix.command
+
+
+def test_llm_provider_unknown_config_is_fail(monkeypatch):
+    from ghostbrain.llm.client import LLMError
+    def boom():
+        raise LLMError("llm.provider 'bard' is not one of claude, codex, gemini, openai_http")
+    monkeypatch.setattr(ca, "_llm_provider", boom)
+    r = ca.check_llm_provider()
+    assert r.status == "fail" and "llm.provider" in r.fix.command
+
+
+def test_registration_replaced_claude_cli():
+    from ghostbrain import doctor
+    ids = [i for i, _ in doctor.CHECKS]
+    assert "claude-cli" not in ids
+    assert ids.index("llm-provider") == ids.index("contexts") + 1
 
 
 def test_scheduler_from_desktop_config(monkeypatch):

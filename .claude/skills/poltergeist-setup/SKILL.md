@@ -25,14 +25,21 @@ once, and stop.
 ## 2. Run doctor
 
 `"$PG" doctor --json`. Render every check as one line: ✔ ok, ✘ fail, ! warn,
-- skip, then the summary. Read `checks.md` for what each id means. If nothing
-is `fail`, go to step 4.
+- skip, then the summary. Read `checks.md` for what each id means. If the
+`llm-provider` check failed, ask the user which provider they actually have:
+Claude Code, ChatGPT/Codex, Gemini, or a local Ollama/LM Studio (which routes
+through `openai_http`). If that differs from the check's `data.provider`, tell
+them to switch it in Settings → AI provider (or `llm.provider` in
+`90-meta/config.yaml`) before continuing to fix anything else — the login fix
+for the wrong provider won't help. If nothing is `fail`, go to step 4.
 
 ## 3. Walk the failures, one per turn, in the order doctor lists them
 
 For each `fail` (then each `warn` the user cares about):
 
 - One sentence: what it is and why the recorder or sync needs it.
+- For `llm-provider`, confirm the provider named in the summary is the one
+  the user actually uses (see step 2) before offering its login fix.
 - Show the fix command from the JSON (`fix.command`).
 - `automated` → run `"$PG" <fix.command>` after the user says yes. Stream the
   output; brew installs take minutes.
