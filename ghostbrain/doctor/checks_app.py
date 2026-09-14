@@ -147,7 +147,7 @@ def check_llm_provider() -> CheckResult:
             fix=Fix(kind="manual", command=_LOGIN_FIX.get(provider.id, "edit llm.provider in 90-meta/config.yaml (claude | codex | gemini | openai_http)")),
         )
     models = provider.models()
-    tiers = " ".join(f"{t}={models.get(t, '?')}" for t in ("fast", "balanced", "quality"))
+    tiers = " ".join(f"{t}={models.get(t) or 'default'}" for t in ("fast", "balanced", "quality"))
     data = {"provider": provider.id, "models": models, "probe": probe.detail}
     if not probe.ok:
         return CheckResult(

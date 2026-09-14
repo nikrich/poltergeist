@@ -34,8 +34,25 @@ def test_completion_command_shape(tmp_path: Path):
     assert cmd[cmd.index("--sandbox") + 1] == "read-only"
     assert cmd[cmd.index("-m") + 1] == "gpt-5"
     assert cmd[cmd.index("--output-schema") + 1] == str(tmp_path / "schema.json")
-    assert "-c" in cmd and 'model_reasoning_effort="high"' in cmd   # quality tier only
-    assert cmd[-1] == "-"                                            # prompt on stdin
+    assert cmd[cmd.index("-c") + 1] == 'model_reasoning_effort="high"'   # quality tier
+    assert cmd[-1] == "-"                                                 # prompt on stdin
+
+
+def test_no_pinned_model_means_no_dash_m_and_effort_per_tier():
+    """Codex's catalog differs per account ("gpt-5" is rejected on ChatGPT
+    accounts), so with no `llm.models` override the CLI's own default model
+    runs and the tiers become reasoning effort."""
+    p = cx.CodexCli({}, binary="/c")
+    for tier, effort in (("fast", "low"), ("balanced", "medium"), ("quality", "high")):
+        cmd = p.build_completion_command(base.CompletionRequest(prompt="x", tier=tier), schema_path=None)
+        assert "-m" not in cmd
+        assert cmd[cmd.index("-c") + 1] == f'model_reasoning_effort="{effort}"'
+
+
+def test_error_message_unwraps_codex_json_error_envelope():
+    line = '{"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The \'gpt-5\' model is not supported when using Codex with a ChatGPT account."}}'
+    assert cx._error_message(f"warning: something\n{line}\n", "fallback").startswith("The 'gpt-5' model is not supported")
+    assert cx._error_message("plain stderr text", "fallback") == "fallback"
 
 
 def test_stdin_text_prepends_system_prompt():

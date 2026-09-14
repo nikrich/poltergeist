@@ -8,7 +8,10 @@ from ghostbrain.llm.providers import PROVIDER_IDS
 
 TIER_DEFAULTS: dict[str, dict[str, str]] = {
     "claude": {"fast": "haiku", "balanced": "sonnet", "quality": "opus"},
-    "codex": {"fast": "gpt-5-mini", "balanced": "gpt-5", "quality": "gpt-5"},
+    # Codex's model catalog differs per account and changes often ("gpt-5" is
+    # rejected on ChatGPT accounts). No default: the CLI's own current model is
+    # used and the tiers map to reasoning effort; `llm.models` pins a model.
+    "codex": {},
     "gemini": {"fast": "gemini-2.5-flash", "balanced": "gemini-2.5-pro", "quality": "gemini-2.5-pro"},
     "openai_http": {},
 }

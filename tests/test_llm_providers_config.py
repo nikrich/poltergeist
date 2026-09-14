@@ -26,7 +26,8 @@ def test_overrides_and_openai_http_fields(tmp_path: Path, monkeypatch):
     _write(tmp_path, "llm:\n  provider: codex\n  models:\n    quality: gpt-5-pro\n  openai_http:\n    base_url: http://127.0.0.1:1234/v1\n    api_key_env: LMSTUDIO_KEY\n")
     cfg = pcfg.load_llm_config()
     assert cfg.provider == "codex"
-    assert pcfg.effective_models("codex", cfg) == {"fast": "gpt-5-mini", "balanced": "gpt-5", "quality": "gpt-5-pro"}
+    # codex has no default model names (the CLI's own default runs); only the override shows.
+    assert pcfg.effective_models("codex", cfg) == {"quality": "gpt-5-pro"}
     assert cfg.base_url == "http://127.0.0.1:1234/v1" and cfg.api_key_env == "LMSTUDIO_KEY"
 
 

@@ -45,7 +45,7 @@ so switching providers doesn't require touching any other config:
 | provider | fast | balanced | quality |
 |---|---|---|---|
 | `claude` | `haiku` | `sonnet` | `opus` |
-| `codex` | `gpt-5-mini` | `gpt-5` | `gpt-5` (reasoning effort set to high) |
+| `codex` | CLI default model, reasoning effort `low` | CLI default model, effort `medium` | CLI default model, effort `high` |
 | `gemini` | `gemini-2.5-flash` | `gemini-2.5-pro` | `gemini-2.5-pro` |
 | `openai_http` | none by default — pick a model for all three tiers, or the doctor check fails |
 

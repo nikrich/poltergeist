@@ -91,7 +91,32 @@ def _toml_str(s: str) -> str:
     return json.dumps(s, ensure_ascii=False)
 
 
-def write_codex_home(root: Path, *, model: str, mcp_argv: list[str], user_servers: list[dict], real_home: Path) -> Path:
+REASONING_EFFORT = {"fast": "low", "balanced": "medium", "quality": "high"}
+
+
+def _error_message(stderr_tail: str, fallback: str) -> str:
+    """Pull `error.message` out of a JSON error line codex printed, else the fallback.
+
+    codex reports API rejections as one JSON object on stderr/stdout
+    (`{"type":"error","status":400,"error":{"type":..,"message":..}}`); the
+    user should see the sentence, not the envelope.
+    """
+    for line in reversed(stderr_tail.strip().splitlines()):
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            ev = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        msg = ((ev.get("error") or {}).get("message")) or ev.get("message")
+        if msg:
+            return str(msg)
+    return fallback
+
+
+def write_codex_home(root: Path, *, model: str | None, mcp_argv: list[str], user_servers: list[dict], real_home: Path,
+                     reasoning_effort: str | None = None) -> Path:
     """Regenerate an isolated CODEX_HOME (config.toml + auth.json symlink) fresh each turn.
 
     Never writes into the user's real ~/.codex — root is a run-dir scratch
@@ -103,7 +128,12 @@ def write_codex_home(root: Path, *, model: str, mcp_argv: list[str], user_server
     this provider. docs-assist runs on codex with poltergeist_ask reachable.
     """
     root.mkdir(parents=True, exist_ok=True)
-    lines = [f"model = {_toml_str(model)}", 'sandbox_mode = "read-only"', 'approval_policy = "never"', ""]
+    lines = []
+    if model:
+        lines.append(f"model = {_toml_str(model)}")
+    if reasoning_effort:
+        lines.append(f"model_reasoning_effort = {_toml_str(reasoning_effort)}")
+    lines += ['sandbox_mode = "read-only"', 'approval_policy = "never"', ""]
     lines += ["[mcp_servers.poltergeist]", f"command = {_toml_str(mcp_argv[0])}",
               "args = [" + ", ".join(_toml_str(a) for a in mcp_argv[1:]) + "]", "required = true", ""]
     for s in user_servers:
@@ -184,10 +214,11 @@ class CodexCli:
         return req.prompt
 
     def build_completion_command(self, req: base.CompletionRequest, schema_path: Path | None) -> list[str]:
-        cmd = [self._bin(), "exec", "--json", "--sandbox", "read-only", "--skip-git-repo-check", "--ephemeral",
-               "-m", self._models[req.tier]]
-        if req.tier == "quality":
-            cmd += ["-c", 'model_reasoning_effort="high"']
+        cmd = [self._bin(), "exec", "--json", "--sandbox", "read-only", "--skip-git-repo-check", "--ephemeral"]
+        model = self._models.get(req.tier)
+        if model:
+            cmd += ["-m", model]
+        cmd += ["-c", f'model_reasoning_effort="{REASONING_EFFORT[req.tier]}"']
         if schema_path is not None:
             cmd += ["--output-schema", str(schema_path)]
         cmd.append("-")
@@ -206,11 +237,12 @@ class CodexCli:
             out, err, rc = _run(cmd, self.stdin_text(req), req.timeout_s)
         text, thread, error = parse_exec_events(out.splitlines())
         if error or (rc != 0 and not text):
-            raise LLMError(f"codex exec failed: {error or err.strip()[-500:] or f'exit {rc}'}")
+            raise LLMError(f"codex exec failed: {error or _error_message(err, err.strip()[-500:] or f'exit {rc}')}")
         if not text.strip():
             raise LLMError("codex returned no output (no agent_message in the exec event stream)")
         structured = _parse_json_tolerant(text) if req.json_schema is not None else None
-        return LLMResult(text=text, structured=structured, model=self._models[req.tier], cost_usd=0.0,
+        return LLMResult(text=text, structured=structured, model=self._models.get(req.tier) or "codex-default",
+                         cost_usd=0.0,
                          duration_ms=int((time.monotonic() - started) * 1000), session_id=thread or "", raw={"cmd": cmd})
 
     def probe(self) -> base.ProviderProbe:
@@ -236,8 +268,9 @@ class CodexCli:
         if mcp is None:
             yield {"type": "error", "message": "Vault tools are unavailable: the ghostbrain-api mcp helper could not be found"}
             return
-        home = write_codex_home(_run_root() / "codex", model=self._models[req.tier], mcp_argv=list(mcp),
-                                user_servers=req.user_servers, real_home=_real_codex_home())
+        home = write_codex_home(_run_root() / "codex", model=self._models.get(req.tier), mcp_argv=list(mcp),
+                                user_servers=req.user_servers, real_home=_real_codex_home(),
+                                reasoning_effort=REASONING_EFFORT.get(req.tier))
         cmd = [b, "exec"]
         if req.session_id:
             cmd += ["resume", req.session_id]
@@ -259,7 +292,7 @@ class CodexCli:
             # rather than replacing it with an empty "codex exited 0: ".
             if rc == 0 and text_parts:
                 return [{"type": "done", "text": "".join(text_parts), "session_id": session}]
-            return [{"type": "error", "message": f"codex exited {rc}: {err[-300:]}"}]
+            return [{"type": "error", "message": _error_message(err, f"codex exited {rc}: {err[-300:]}")}]
 
         for ev in stream_subprocess(cmd, timeout_s=req.timeout_s, turn_key=req.turn_key, parse=parser.feed,
                                     on_exit=_on_exit,

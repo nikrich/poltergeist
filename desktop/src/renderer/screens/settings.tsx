@@ -89,6 +89,12 @@ const SECTIONS: Array<{ id: SectionId; label: string; icon: string }> = [
 const selectClass =
   'cursor-pointer rounded-sm border border-hairline-2 bg-vellum px-[10px] py-[6px] font-mono text-11 text-ink-0';
 
+const TIER_HINTS: Record<LlmModelTier, string> = {
+  fast: 'routing and small extractions; blank keeps the provider default',
+  balanced: 'chat and transcript summaries',
+  quality: 'digests and the profile',
+};
+
 export function SettingsScreen() {
   const [section, setSection] = useState<SectionId>('display');
   return (
@@ -343,35 +349,41 @@ export function AiProviderSettings() {
         }
       />
       {provider === 'local' && (
-        <>
-          <SettingRow
-            label="base URL"
-            sub="OpenAI-compatible endpoint, e.g. http://127.0.0.1:11434/v1"
-            control={
-              <input
-                aria-label="base URL"
-                className={selectClass}
-                value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
-                onBlur={saveBaseUrl}
-              />
-            }
-          />
-          {(['fast', 'balanced', 'quality'] as const).map((tier) => (
+        <SettingRow
+          label="base URL"
+          sub="OpenAI-compatible endpoint, e.g. http://127.0.0.1:11434/v1"
+          control={
+            <input
+              aria-label="base URL"
+              className={selectClass}
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              onBlur={saveBaseUrl}
+            />
+          }
+        />
+      )}
+      {provider &&
+        (['fast', 'balanced', 'quality'] as const).map((tier) => {
+          // Only a local server can list its models; the CLI providers take a
+          // free-text model id and fall back to their own default when blank.
+          const listed = provider === 'local' ? localModels : [];
+          const fallback = data?.effective_models[tier] ?? 'provider default';
+          return (
             <SettingRow
-              key={tier}
+              key={`${provider}-${tier}`}
               label={`${tier} model`}
-              sub={undefined}
+              sub={TIER_HINTS[tier]}
               control={
-                localModels.length > 0 ? (
+                listed.length > 0 ? (
                   <select
                     aria-label={`${tier} model`}
                     className={selectClass}
                     value={data?.models[tier] ?? ''}
                     onChange={(e) => updateTierModel(tier, e.target.value)}
                   >
-                    <option value="" />
-                    {localModels.map((m) => (
+                    <option value="">{fallback}</option>
+                    {listed.map((m) => (
                       <option key={m} value={m}>
                         {m}
                       </option>
@@ -381,15 +393,15 @@ export function AiProviderSettings() {
                   <input
                     aria-label={`${tier} model`}
                     className={selectClass}
+                    placeholder={fallback}
                     defaultValue={data?.models[tier] ?? ''}
                     onBlur={(e) => updateTierModel(tier, e.target.value)}
                   />
                 )
               }
             />
-          ))}
-        </>
-      )}
+          );
+        })}
     </div>
   );
 }

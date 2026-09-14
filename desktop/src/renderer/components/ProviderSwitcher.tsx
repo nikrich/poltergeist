@@ -8,6 +8,12 @@ import type { LlmProvider } from '../../shared/types';
 
 const RENDERER_PROVIDERS: LlmProvider[] = ['claude', 'codex', 'gemini', 'local'];
 
+/** First clause of a probe reason, capped, so an option label stays one short line. */
+export function shortReason(reason: string): string {
+  const clause = (reason.split(/[;(]/)[0] ?? '').trim();
+  return clause.length > 36 ? `${clause.slice(0, 35)}…` : clause;
+}
+
 const selectClass =
   'cursor-pointer rounded-sm border border-hairline-2 bg-vellum px-[10px] py-[6px] font-mono text-11 text-ink-0 disabled:cursor-not-allowed disabled:opacity-60';
 
@@ -62,7 +68,7 @@ export function ProviderSwitcher({ allowUnavailable = false }: Props) {
   return (
     <select
       aria-label="provider"
-      className={selectClass}
+      className={`${selectClass} max-w-[240px] truncate`}
       value={value}
       onChange={(e) => handleChange(e.target.value as LlmProvider)}
     >
@@ -70,9 +76,18 @@ export function ProviderSwitcher({ allowUnavailable = false }: Props) {
       {RENDERER_PROVIDERS.map((p) => {
         const diagnostics = providers?.[toSidecarProvider(p)];
         const failed = diagnostics ? !diagnostics.ok : false;
-        const label = failed ? `${p} — ${diagnostics?.reason}` : p;
+        const reason = diagnostics?.reason ?? '';
+        // A native <select> sizes itself to its widest option, so the label
+        // carries only the gist of the failure; the full reason is the tooltip
+        // and the settings status row.
+        const label = failed ? `${p} — ${shortReason(reason)}` : p;
         return (
-          <option key={p} value={p} disabled={failed && !allowUnavailable}>
+          <option
+            key={p}
+            value={p}
+            disabled={failed && !allowUnavailable}
+            title={failed ? reason : undefined}
+          >
             {label}
           </option>
         );
