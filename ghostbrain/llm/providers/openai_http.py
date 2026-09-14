@@ -195,7 +195,7 @@ class OpenAiHttp:
                 if not calls:
                     yield {"type": "done", "text": "".join(full), "session_id": sid}
                     return
-                messages.append({"role": "assistant", "content": text or None, "tool_calls": calls})
+                messages.append(self._assistant_message(text, calls))
                 for c in calls:
                     args = _parse_json_tolerant(c["function"]["arguments"] or "{}")
                     yield {"type": "tool", "name": vault_tools.short_name_for(c["function"]["name"]),
@@ -204,7 +204,7 @@ class OpenAiHttp:
                     if cancelled.is_set():
                         yield {"type": "error", "message": "stopped", "interrupted": True}
                         return
-                    messages.append({"role": "tool", "tool_call_id": c["id"], "content": result})
+                    messages.append(self._tool_message(c, result))
         except Exception as e:  # noqa: BLE001 — this generator OWNS the turn's
             # terminal event: anything escaping here (a JSONDecodeError from a
             # bad SSE line, an LLMError from garbage tool arguments, an OSError
@@ -221,8 +221,92 @@ class OpenAiHttp:
             if req.turn_key:
                 base.unregister_turn(req.turn_key)
 
+    # -- conversation shapes ---------------------------------------------
+    # Internally a tool call always looks like OpenAI's: an id, a name, and
+    # `arguments` as a JSON *string*. Ollama's /api/chat wants neither the id
+    # nor the string — it takes `arguments` as an object and matches tool
+    # results positionally — so the two helpers below convert on the way back
+    # out, leaving one shape for the rest of the loop to reason about.
+
+    def _assistant_message(self, text: str, calls: list[dict]) -> dict:
+        if not self.is_ollama():
+            return {"role": "assistant", "content": text or None, "tool_calls": calls}
+        out = []
+        for c in calls:
+            try:
+                args = json.loads(c["function"]["arguments"] or "{}")
+            except ValueError:
+                args = {}
+            out.append({"function": {"name": c["function"]["name"], "arguments": args}})
+        return {"role": "assistant", "content": text or "", "tool_calls": out}
+
+    def _tool_message(self, call: dict, result: str) -> dict:
+        if self.is_ollama():
+            return {"role": "tool", "content": result}
+        return {"role": "tool", "tool_call_id": call["id"], "content": result}
+
     def _stream_once(self, model, messages, timeout_s, cancelled, response_cell, full):
         """Stream one completion. Yields delta events; returns (text, tool_calls)."""
+        if self.is_ollama():
+            return (yield from self._stream_ollama_once(model, messages, timeout_s, cancelled, response_cell, full))
+        return (yield from self._stream_openai_once(model, messages, timeout_s, cancelled, response_cell, full))
+
+    def _stream_ollama_once(self, model, messages, timeout_s, cancelled, response_cell, full):
+        """One round against Ollama's native /api/chat (NDJSON).
+
+        The OpenAI-compat shim Ollama also serves does not stream tool calls
+        reliably; /api/chat is the endpoint the spec picks for this driver.
+        Each line is a whole message delta — `{"message": {...}, "done": bool}`
+        — rather than an SSE `data:` frame, and its tool-call `arguments` are
+        already an object. Normalised here into the same (text, tool_calls)
+        shape the OpenAI path returns.
+        """
+        from ghostbrain.llm.providers import vault_tools
+
+        body = {"model": model, "messages": messages, "stream": True, "tools": vault_tools.TOOL_SCHEMAS}
+        url = f"{self._origin()}/api/chat"
+        text_parts: list[str] = []
+        calls: list[dict] = []
+        with httpx.stream("POST", url, json=body, headers=self._headers(), timeout=timeout_s) as r:
+            response_cell["response"] = r
+            try:
+                r.raise_for_status()
+                for line in r.iter_lines():
+                    if cancelled.is_set():
+                        break
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        ev = json.loads(line)
+                    except ValueError:
+                        log.debug("skipping unparsable NDJSON line: %.200s", line)
+                        continue
+                    msg = ev.get("message") or {}
+                    content = msg.get("content")
+                    if content:
+                        text_parts.append(content)
+                        full.append(content)
+                        yield {"type": "delta", "text": content}
+                    for tc in msg.get("tool_calls") or []:
+                        fn = tc.get("function") or {}
+                        args = fn.get("arguments")
+                        calls.append({
+                            "id": tc.get("id") or f"call_{len(calls) + 1}",
+                            "type": "function",
+                            "function": {
+                                "name": str(fn.get("name") or ""),
+                                "arguments": args if isinstance(args, str) else json.dumps(args or {}),
+                            },
+                        })
+                    if ev.get("done"):
+                        break
+            finally:
+                response_cell["response"] = None
+        return "".join(text_parts), calls
+
+    def _stream_openai_once(self, model, messages, timeout_s, cancelled, response_cell, full):
+        """One round against an OpenAI-compatible /chat/completions (SSE)."""
         from ghostbrain.llm.providers import vault_tools
 
         body = {"model": model, "messages": messages, "stream": True, "tools": vault_tools.TOOL_SCHEMAS}

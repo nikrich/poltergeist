@@ -200,3 +200,73 @@ def test_chat_history_entry_without_text_does_not_kill_the_turn(server):
                                           history=[{"role": "user"}])))
     assert events[-1]["type"] == "done"
     assert _Fake.seen[0]["messages"][1] == {"role": "user", "content": ""}
+
+
+# --- Ollama's native /api/chat (spec §4) ----------------------------------
+
+class _FakeOllama(BaseHTTPRequestHandler):
+    """Ollama speaks NDJSON on /api/chat, not SSE on /v1/chat/completions, and
+    its tool-call `arguments` arrive as an object rather than a JSON string."""
+    turns: list[list[dict]] = []   # scripted NDJSON docs per POST
+    seen: list[dict] = []
+    paths: list[str] = []
+
+    def log_message(self, *a): pass
+
+    def do_GET(self):
+        self.paths.append(self.path)
+        if self.path == "/api/tags":
+            body = json.dumps({"models": [{"name": "qwen3"}]}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        self.send_response(404); self.end_headers()
+
+    def do_POST(self):
+        self.paths.append(self.path)
+        n = int(self.headers.get("Content-Length", 0))
+        _FakeOllama.seen.append(json.loads(self.rfile.read(n)))
+        data = "".join(json.dumps(d) + "\n" for d in _FakeOllama.turns.pop(0)).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-ndjson")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+
+@pytest.fixture
+def ollama():
+    _FakeOllama.seen = []; _FakeOllama.turns = []; _FakeOllama.paths = []
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), _FakeOllama)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{httpd.server_address[1]}/v1"
+    httpd.shutdown()
+
+
+def test_ollama_chat_streams_over_api_chat_with_a_tool_round(ollama, monkeypatch):
+    monkeypatch.setattr(vault_tools, "call_tool", lambda name, args, client=None: f"RESULT({args['query']})")
+    _FakeOllama.turns = [
+        [{"message": {"role": "assistant", "content": "", "tool_calls": [
+            {"function": {"name": "poltergeist_search", "arguments": {"query": "budget"}}}]}, "done": False},
+         {"message": {"role": "assistant", "content": ""}, "done": True}],
+        [{"message": {"role": "assistant", "content": "Found "}, "done": False},
+         {"message": {"role": "assistant", "content": "it."}, "done": False},
+         {"message": {"role": "assistant", "content": ""}, "done": True}],
+    ]
+    p = OpenAiHttp(ollama, "K", M)
+    events = list(p.chat(base.ChatRequest(prompt="q", tier="fast", session_id=None, turn_key="o1")))
+    assert events[0] == {"type": "session", "session_id": "o1"}
+    assert {"type": "tool", "name": "search", "summary": "searched vault: budget"} in events
+    assert [e["text"] for e in events if e["type"] == "delta"] == ["Found ", "it."]
+    assert events[-1] == {"type": "done", "text": "Found it.", "session_id": "o1"}
+    # posted to Ollama's native endpoint, never the OpenAI-compat one
+    assert [pth for pth in _FakeOllama.paths if pth != "/api/tags"] == ["/api/chat", "/api/chat"]
+    first = _FakeOllama.seen[0]
+    assert first["stream"] is True
+    assert {t["function"]["name"] for t in first["tools"]} == {
+        "poltergeist_search", "poltergeist_get_note", "poltergeist_ask", "poltergeist_write_doc"}
+    # the tool result rides back as a plain tool message (no tool_call_id)
+    assert _FakeOllama.seen[1]["messages"][-1] == {"role": "tool", "content": "RESULT(budget)"}
