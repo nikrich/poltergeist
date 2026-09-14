@@ -772,7 +772,13 @@ llm:
   # openai_http:
   #   base_url: http://127.0.0.1:11434/v1   # Ollama; LM Studio is http://127.0.0.1:1234/v1
   #   api_key_env: OPENAI_API_KEY           # only read when base_url is not localhost
-  {}
+
+  # Per-role model, as a tier alias (haiku = fast, sonnet = balanced,
+  # opus = quality) resolved against whichever provider is active.
+  router_model: haiku       # frequent + classification
+  extractor_model: opus     # once/session — quality matters
+  digest_model: opus        # once/day — voice + synthesis matter
+  profile_model: opus       # confidence judgement on profile diffs
 
 profile:
   # Roots scanned by `ghostbrain-claude-md --all`. Each direct child that looks
