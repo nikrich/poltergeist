@@ -63,16 +63,45 @@ public enum TargetResolver {
     // meeting / call / huddle counts — otherwise the recorder would never ask
     // the "no meeting window" question while Teams is merely running.
     static let teamsMeetingRegex = try! NSRegularExpression(pattern: #"Meeting|Call|Webinar|Town hall"#, options: [.caseInsensitive])
-    static let teamsChatRegex = try! NSRegularExpression(pattern: #"^Chat \|"#)
+    /// Teams app sections. Their windows are titled "<Section> | <org> | <email> | Microsoft Teams".
+    static let teamsSections: Set<String> = [
+        "chat", "calendar", "activity", "teams", "calls", "files", "onedrive", "apps",
+        "copilot", "communities", "settings", "notifications", "help", "just me", "meeting compact view",
+    ]
+    static let teamsCompactPrefix = "Meeting compact view | "
+    static let teamsBundles: Set<String> = ["com.microsoft.teams2", "com.microsoft.teams"]
     static let zoomMeetingRegex = try! NSRegularExpression(pattern: #"Meeting|Webinar"#, options: [.caseInsensitive])
     static let slackHuddleRegex = try! NSRegularExpression(pattern: #"Huddle"#, options: [.caseInsensitive])
     static let webexHomeRegex = try! NSRegularExpression(pattern: #"^(Cisco )?Webex( Meetings)?$"#)
 
+    /// First " | "-separated segment of a Teams window title, lower-cased.
+    static func teamsFirstSegment(_ title: String) -> String {
+        let seg = title.components(separatedBy: " | ").first ?? title
+        return seg.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    /// Subjects of meetings Teams is currently showing a "Meeting compact view"
+    /// for. That floating monitor appears whenever the meeting window is not
+    /// frontmost and is titled "Meeting compact view | <subject> | …", which
+    /// tells us exactly which subject-titled window is the live meeting.
+    public static func teamsCompactSubjects(_ windows: [WindowDescriptor]) -> Set<String> {
+        var out = Set<String>()
+        for w in windows {
+            guard let b = w.ownerBundleID, teamsBundles.contains(b), let t = w.title, t.hasPrefix(teamsCompactPrefix) else { continue }
+            let rest = String(t.dropFirst(teamsCompactPrefix.count))
+            if let subject = rest.components(separatedBy: " | ").first?.trimmingCharacters(in: .whitespacesAndNewlines), !subject.isEmpty {
+                out.insert(subject.lowercased())
+            }
+        }
+        return out
+    }
+
     /// 0 = a window whose title positively identifies a live meeting / call /
-    /// huddle (or a browser tab on a meeting page); 1 = a Webex window that is
-    /// not the app's home window. nil = not a meeting window (this includes
-    /// Teams chat, Zoom home and Slack workspace windows).
-    public static func tier(for w: WindowDescriptor) -> Int? {
+    /// huddle (or a browser tab on a meeting page); 1 = a lower-confidence
+    /// meeting window (a subject-titled Teams window, a Webex window that is
+    /// not the app's home window). nil = not a meeting window (Teams app
+    /// sections such as Chat / Calendar, Zoom home, Slack workspace windows).
+    public static func tier(for w: WindowDescriptor, compactSubjects: Set<String> = []) -> Int? {
         guard w.layer == 0, w.isOnScreen else { return nil }
         guard w.frame.width >= minWidth, w.frame.height >= minHeight else { return nil }
         guard let title = w.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty else { return nil }
@@ -81,8 +110,17 @@ public enum TargetResolver {
         if nativeMeetingApps.contains(bundle) {
             switch bundle {
             case "com.microsoft.teams2", "com.microsoft.teams":
-                if matches(teamsChatRegex, title) { return nil }
-                return matches(teamsMeetingRegex, title) ? 0 : nil
+                // Teams titles its meeting window with the meeting *subject*:
+                // "[Core Platform] Daily stand-up | <org> | <email> | Microsoft Teams".
+                // Only app sections ("Chat | …", "Calendar | …") are reliably
+                // non-meetings, so: sections → nil; explicit Meeting/Call or a
+                // subject confirmed by a compact view → 0; any other
+                // subject-titled window → 1 (a popped-out chat can land here;
+                // the user can re-target from the desktop).
+                let first = teamsFirstSegment(title)
+                if teamsSections.contains(first) { return nil }
+                if matches(teamsMeetingRegex, title) || compactSubjects.contains(first) { return 0 }
+                return title.components(separatedBy: " | ").count >= 3 ? 1 : nil
             case "us.zoom.xos":
                 return matches(zoomMeetingRegex, title) ? 0 : nil
             case "com.tinyspeck.slackmacgap":
@@ -100,8 +138,9 @@ public enum TargetResolver {
     /// Frontmost meeting app wins; within that app the best tier, then the
     /// largest window.
     public static func resolve(_ windows: [WindowDescriptor]) -> WindowDescriptor? {
+        let compact = teamsCompactSubjects(windows)
         let candidates: [(Int, WindowDescriptor)] = windows.compactMap { w in
-            guard let t = tier(for: w) else { return nil }
+            guard let t = tier(for: w, compactSubjects: compact) else { return nil }
             return (t, w)
         }
         guard let front = candidates.first else { return nil }

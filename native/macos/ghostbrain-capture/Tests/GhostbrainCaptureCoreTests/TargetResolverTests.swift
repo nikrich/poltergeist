@@ -49,9 +49,39 @@ final class TargetResolverTests: XCTestCase {
         XCTAssertNil(TargetResolver.resolve([home]))
     }
 
+    func testTeamsSubjectTitledWindowIsAMeeting() {
+        // Real-world title: Teams names the meeting window after the meeting subject.
+        let standup = win("com.microsoft.teams2",
+                          "[Core Platform & Partner Channel - Digisure] Daily stand-up | Sanlam Life Insurance Limited | me@example.com | Microsoft Teams")
+        XCTAssertEqual(TargetResolver.tier(for: standup), 1)
+        XCTAssertEqual(TargetResolver.resolve([standup])?.windowID, standup.windowID)
+        // App sections are never meetings.
+        for section in ["Chat", "Calendar", "Activity", "Teams", "Calls", "Files", "OneDrive", "Apps", "Copilot", "Just me"] {
+            XCTAssertNil(TargetResolver.tier(for: win("com.microsoft.teams2", "\(section) | Acme | me@example.com | Microsoft Teams")), section)
+        }
+        // A bare two-segment title is not enough.
+        XCTAssertNil(TargetResolver.tier(for: win("com.microsoft.teams2", "Something | Microsoft Teams")))
+    }
+
+    func testTeamsCompactViewPromotesSubjectWindow() {
+        let compact = win("com.microsoft.teams2",
+                          "Meeting compact view | [Core] Daily stand-up | Acme | me@example.com | Microsoft Teams",
+                          size: CGSize(width: 320, height: 180))  // too small to capture, still a signal
+        let meeting = win("com.microsoft.teams2", "[Core] Daily stand-up | Acme | me@example.com | Microsoft Teams",
+                          size: CGSize(width: 900, height: 600))
+        let popped = win("com.microsoft.teams2", "Jane Doe | Acme | me@example.com | Microsoft Teams",
+                         size: CGSize(width: 1600, height: 1000))
+        XCTAssertEqual(TargetResolver.teamsCompactSubjects([compact, meeting]), ["[core] daily stand-up"])
+        XCTAssertNil(TargetResolver.tier(for: compact))
+        // Without the compact view both are tier 1 and the larger popped chat would win…
+        XCTAssertEqual(TargetResolver.resolve([popped, meeting])?.windowID, popped.windowID)
+        // …with it, the confirmed subject wins regardless of size.
+        XCTAssertEqual(TargetResolver.resolve([compact, popped, meeting])?.windowID, meeting.windowID)
+    }
+
     func testTeamsChatIsNotAMeeting() {
         let chat = win("com.microsoft.teams2", "Chat | Jane Doe | Microsoft Teams", size: CGSize(width: 1800, height: 1100))
-        let poppedOutChat = win("com.microsoft.teams2", "Jane Doe (Group Office) | Acme | Microsoft Teams")
+        let poppedOutChat = win("com.microsoft.teams2", "Chat | Jane Doe (Group Office) | Acme | Microsoft Teams")
         let meeting = win("com.microsoft.teams2", "Weekly sync | Meeting | Microsoft Teams", size: CGSize(width: 1000, height: 700))
         XCTAssertEqual(TargetResolver.resolve([chat, meeting])?.windowID, meeting.windowID)
         let call = win("com.microsoft.teams2", "Call with Bob")
