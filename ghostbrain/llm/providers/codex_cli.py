@@ -11,6 +11,7 @@ import time
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 
+from ghostbrain.llm.agent import CHAT_SYSTEM_PROMPT, find_mcp_binary
 from ghostbrain.llm.client import LLMError, LLMResult, LLMTimeout, _parse_json_tolerant
 from ghostbrain.llm.providers import base
 
@@ -80,7 +81,13 @@ def _real_codex_home() -> Path:
 
 
 def _toml_str(s: str) -> str:
-    return json.dumps(s)  # JSON string escaping is valid TOML basic-string escaping for our values
+    # JSON string escaping is valid TOML basic-string escaping for our values,
+    # EXCEPT json.dumps' default ensure_ascii=True emits \uXXXX surrogate-pair
+    # escapes for non-BMP characters (e.g. emoji) that tomllib's TOML parser
+    # rejects as "not a Unicode scalar value" — TOML basic strings accept raw
+    # unicode directly, so keep it unescaped and only quote/backslash/control
+    # chars get escaped.
+    return json.dumps(s, ensure_ascii=False)
 
 
 def write_codex_home(root: Path, *, model: str, mcp_argv: list[str], user_servers: list[dict], real_home: Path) -> Path:
@@ -109,41 +116,44 @@ def write_codex_home(root: Path, *, model: str, mcp_argv: list[str], user_server
     return root
 
 
-# Last thread id seen by parse_chat_line, purely so a bare "done" event
-# carries a session_id when the caller inspects parse_chat_line's own output
-# in isolation (e.g. in tests). CodexCli.chat() never relies on this — it
-# tracks its own `session` from the "session" event (or req.session_id) and
-# unconditionally overwrites the "done" event's session_id with that before
-# yielding, so this module-level value being shared across concurrent chat
-# turns has no production effect.
-_last_thread_id = ""
+class CodexChatParser:
+    """Stateful `codex exec --json` line parser for one chat turn.
 
+    `thread_id` is recorded from the `thread.started` event and stamped onto
+    the terminal `done` event's `session_id` — state that must live per turn,
+    not on the module, so two chat turns running concurrently (two
+    subprocesses, each fed through its own `stream_subprocess` generator)
+    never see each other's thread id. `CodexCli.chat()` constructs a fresh
+    instance per turn and passes `.feed` as the `parse` callable.
+    """
 
-def parse_chat_line(line: str) -> list[dict]:
-    global _last_thread_id
-    from ghostbrain.llm.providers import vault_tools
-    line = line.strip()
-    if not line:
+    def __init__(self) -> None:
+        self.thread_id = ""
+
+    def feed(self, line: str) -> list[dict]:
+        from ghostbrain.llm.providers import vault_tools
+        line = line.strip()
+        if not line:
+            return []
+        try:
+            ev = json.loads(line)
+        except json.JSONDecodeError:
+            return []
+        t, item = ev.get("type"), ev.get("item") or {}
+        if t == "thread.started":
+            self.thread_id = str(ev.get("thread_id") or "")
+            return [{"type": "session", "session_id": self.thread_id}]
+        if t == "item.started" and item.get("type") == "mcp_tool_call":
+            name = str(item.get("tool") or "")
+            return [{"type": "tool", "name": vault_tools.short_name_for(name),
+                     "summary": vault_tools.summary_for(name, item.get("arguments") or {})}]
+        if t == "item.completed" and item.get("type") == "agent_message":
+            return [{"type": "delta", "text": str(item.get("text") or "")}]
+        if t == "turn.completed":
+            return [{"type": "done", "text": "", "session_id": self.thread_id}]
+        if t in ("turn.failed", "error"):
+            return [{"type": "error", "message": str(((ev.get("error") or {}).get("message")) or ev.get("message") or "codex turn failed")}]
         return []
-    try:
-        ev = json.loads(line)
-    except json.JSONDecodeError:
-        return []
-    t, item = ev.get("type"), ev.get("item") or {}
-    if t == "thread.started":
-        _last_thread_id = str(ev.get("thread_id") or "")
-        return [{"type": "session", "session_id": _last_thread_id}]
-    if t == "item.started" and item.get("type") == "mcp_tool_call":
-        name = str(item.get("tool") or "")
-        return [{"type": "tool", "name": vault_tools.short_name_for(name),
-                 "summary": vault_tools.summary_for(name, item.get("arguments") or {})}]
-    if t == "item.completed" and item.get("type") == "agent_message":
-        return [{"type": "delta", "text": str(item.get("text") or "")}]
-    if t == "turn.completed":
-        return [{"type": "done", "text": "", "session_id": _last_thread_id}]
-    if t in ("turn.failed", "error"):
-        return [{"type": "error", "message": str(((ev.get("error") or {}).get("message")) or ev.get("message") or "codex turn failed")}]
-    return []
 
 
 class CodexCli:
@@ -212,7 +222,6 @@ class CodexCli:
         return base.ProviderProbe(True, last_line, {"binary": b, "models": self.models()})
 
     def chat(self, req: base.ChatRequest) -> Iterator[dict]:
-        from ghostbrain.llm.agent import CHAT_SYSTEM_PROMPT, find_mcp_binary
         b = self._binary or find_codex_binary()
         if b is None:
             yield {"type": "error", "message": "`codex` CLI not found; install it (`npm i -g @openai/codex`) and run `codex login`"}
@@ -230,7 +239,8 @@ class CodexCli:
         stdin = f"<instructions>\n{req.system_prompt or CHAT_SYSTEM_PROMPT}\n</instructions>\n\n{req.prompt}"
         session = req.session_id or ""
         text_parts: list[str] = []
-        for ev in stream_subprocess(cmd, timeout_s=req.timeout_s, turn_key=req.turn_key, parse=parse_chat_line,
+        parser = CodexChatParser()
+        for ev in stream_subprocess(cmd, timeout_s=req.timeout_s, turn_key=req.turn_key, parse=parser.feed,
                                     on_exit=lambda rc, err, saw: [{"type": "error", "message": f"codex exited {rc}: {err[-300:]}"}],
                                     env={"CODEX_HOME": str(home)}, stdin_text=stdin):
             if ev["type"] == "session":
