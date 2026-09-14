@@ -245,7 +245,10 @@ export function useRecorderStatus(opts?: { pollWhile?: 'recording' | 'transcribi
       if (opts?.pollWhile === 'all') return 2_000;
       if (data.phase === 'recording') return opts?.pollWhile === 'transcribing' ? false : 4_000;
       if (data.phase === 'transcribing') return 3_000;
-      return false; // idle/done — stop polling
+      // idle/done: keep a slow poll. The calendar-driven daemon starts
+      // recordings on its own; with polling off the UI stayed on the lobby
+      // while a recording ran and "record" answered 409 "in progress".
+      return opts?.pollWhile === 'transcribing' ? false : 15_000;
     },
     staleTime: 0,
   });
