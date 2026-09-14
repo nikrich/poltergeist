@@ -271,6 +271,7 @@ def test_start_recording_uses_backend(
     audio_switcher/audio_capture calls."""
     from ghostbrain.recorder import daemon, state as state_mod
     backend = FakeBackend()
+    monkeypatch.setenv("GHOSTBRAIN_STATE_DIR", str(tmp_path))
     monkeypatch.setattr(daemon, "DEFAULT_RECORDINGS_DIR", tmp_path)
     config = daemon.DaemonConfig(
         poll_interval_s=30, end_grace_s=60, audio_device="Ghost Brain",
@@ -304,6 +305,7 @@ def test_start_recording_ends_route_on_capture_failure(
             raise RuntimeError("ffmpeg boom")
 
     backend = FailingBackend()
+    monkeypatch.setenv("GHOSTBRAIN_STATE_DIR", str(tmp_path))
     monkeypatch.setattr(daemon, "DEFAULT_RECORDINGS_DIR", tmp_path)
     config = daemon.DaemonConfig(
         poll_interval_s=30, end_grace_s=60, audio_device="Ghost Brain",
