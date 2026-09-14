@@ -5,7 +5,8 @@ vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => '/tmp' } }
 
 import { buildExtraPath, buildSidecarEnv } from '../sidecar';
 
-describe('buildSidecarEnv', () => {
+// POSIX separators are asserted literally; the release build re-runs these on windows-2022.
+describe.skipIf(process.platform === 'win32')('buildSidecarEnv', () => {
   it('passes the configured vault path and scheduler flag to the sidecar', () => {
     const env = buildSidecarEnv({ PATH: '/usr/bin', HOME: '/Users/x' }, {
       schedulerEnabled: false,
@@ -50,7 +51,8 @@ describe('buildSidecarEnv PATH join', () => {
   });
 });
 
-describe('buildExtraPath', () => {
+// POSIX separators are asserted literally; the release build re-runs these on windows-2022.
+describe.skipIf(process.platform === 'win32')('buildExtraPath', () => {
   it('includes the homebrew and /usr/local dirs on darwin', () => {
     const extra = buildExtraPath('darwin', '/Users/x');
     expect(extra).toBe('/opt/homebrew/bin:/usr/local/bin:/Users/x/.local/bin');
