@@ -232,7 +232,15 @@ def recover_one(
 
     transcript_text = txt_path.read_text(encoding="utf-8")
     if not transcript_text.strip():
-        log.warning("empty transcript for %s; skipping", wav.name)
+        # Silence. Terminal: without removing the WAV the recovery pass would
+        # re-transcribe the same file on every daemon tick, forever.
+        log.warning("empty transcript for %s; discarding recording", wav.name)
+        for p in (wav, txt_path):
+            try:
+                p.unlink()
+            except OSError:
+                pass
+        slides_mod.cleanup_frames(wav)
         return None
 
     title = title_override or _derive_title(transcript_text)
