@@ -90,6 +90,21 @@ function devSidecar(repoRoot: string): SpawnTarget {
   return { exe, args: ['-m', 'ghostbrain.api'], cwd: repoRoot };
 }
 
+/**
+ * Path to the native macOS capture helper (ScreenCaptureKit), if present.
+ * Packaged builds ship it via electron-builder `extraResources` at
+ * resources/bin/ghostbrain-capture; dev builds use the SwiftPM release output
+ * under native/. The sidecar reads GHOSTBRAIN_CAPTURE_BIN to find it, falling
+ * back to its own discovery (PATH / ~/.local/bin) when unset.
+ */
+export function captureHelperPath(repoRoot: string): string | null {
+  if (process.platform !== 'darwin') return null;
+  const candidate = app.isPackaged
+    ? join(process.resourcesPath, 'bin', 'ghostbrain-capture')
+    : join(repoRoot, 'native', 'macos', 'ghostbrain-capture', '.build', 'release', 'ghostbrain-capture');
+  return existsSync(candidate) ? candidate : null;
+}
+
 function resolveSpawnTarget(repoRoot: string): SpawnTarget {
   // Packaged builds must use the bundled binary — they don't have a venv to
   // fall back to. Dev builds use the venv. If a dev tester ever wants to
@@ -201,13 +216,17 @@ export class Sidecar extends EventEmitter {
       // install path). Prepend those so the sidecar can shell out to them
       // regardless of how the app was launched (Dock, Finder, terminal).
       const extraPath = buildExtraPath(process.platform, process.env.HOME ?? '');
+      const captureBin = captureHelperPath(this.cwd);
       const proc = spawn(exe, args, {
         cwd,
-        env: buildSidecarEnv(process.env, {
-          schedulerEnabled: this.options.schedulerEnabled ?? false,
-          vaultPath: this.options.vaultPath ?? '',
-          extraPath,
-        }),
+        env: {
+          ...buildSidecarEnv(process.env, {
+            schedulerEnabled: this.options.schedulerEnabled ?? false,
+            vaultPath: this.options.vaultPath ?? '',
+            extraPath,
+          }),
+          ...(captureBin ? { GHOSTBRAIN_CAPTURE_BIN: captureBin } : {}),
+        },
       });
       this.proc = proc;
       this.stdoutBuf = '';

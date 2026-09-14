@@ -40,15 +40,31 @@ class ActiveRecording:
     context: str
     pid: int
     wav_path: str
-    started_at: str       # ISO; when ffmpeg launched
+    started_at: str       # ISO; when capture launched
     scheduled_end: str    # ISO; meeting end + grace
+    # Which backend owns the pid ("native", "blackhole", "wasapi"); "" for
+    # state files written before this field existed.
+    capture_backend: str = ""
+    # Native backend: helper found no meeting window and is waiting for the
+    # user to choose screen capture vs audio only (see /v1/recorder/capture/target).
+    awaiting_target_choice: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "ActiveRecording":
-        return cls(**{k: d[k] for k in cls.__dataclass_fields__})
+        # Tolerate state files from older builds that lack the newer,
+        # defaulted fields (and ignore unknown keys from newer ones).
+        kwargs: dict[str, Any] = {}
+        for name, field in cls.__dataclass_fields__.items():
+            if name in d:
+                kwargs[name] = d[name]
+            elif field.default is not dataclasses.MISSING:
+                kwargs[name] = field.default
+            else:
+                kwargs[name] = d[name]  # KeyError on genuinely required keys
+        return cls(**kwargs)
 
 
 @dataclasses.dataclass

@@ -37,9 +37,9 @@ def scheduler_status(request: Request) -> dict:
 
 
 @router.get("/diagnostics")
-def scheduler_diagnostics(request: Request) -> dict:
+def scheduler_diagnostics(request: Request, refresh: bool = False) -> dict:
     sched = _scheduler(request)
     return {
         "enabled": sched is not None,
-        **diagnostics(),
+        **diagnostics(refresh=refresh),
     }

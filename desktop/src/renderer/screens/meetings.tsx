@@ -11,8 +11,20 @@ import { useMeeting } from '../stores/meeting';
 import { useNavigation } from '../stores/navigation';
 import { useNoteView } from '../stores/note-view';
 import { stub, toast } from '../stores/toast';
-import { useAgenda, useMeetings } from '../lib/api/hooks';
-import type { AgendaItem, PastMeeting, StartRecordingRequest } from '../../shared/api-types';
+import {
+  useAgenda,
+  useMeetings,
+  useRecorderSettings,
+  useSchedulerDiagnostics,
+  useSetCaptureTarget,
+} from '../lib/api/hooks';
+import type {
+  AgendaItem,
+  CaptureWindow,
+  PastMeeting,
+  SetCaptureTargetRequest,
+  StartRecordingRequest,
+} from '../../shared/api-types';
 import { SkeletonRows } from '../components/SkeletonRows';
 import { PanelEmpty } from '../components/PanelEmpty';
 import { PanelError } from '../components/PanelError';
@@ -55,6 +67,9 @@ export function MeetingsScreen() {
     title: activeTitle,
     transcriptPath,
     error: activeError,
+    awaitingTargetChoice,
+    captureBackend,
+    captureWindows,
     start,
     stop,
     reset,
@@ -146,6 +161,9 @@ export function MeetingsScreen() {
           startedAt={startedAt}
           title={activeTitle}
           onStop={stop}
+          awaitingTargetChoice={awaitingTargetChoice}
+          captureBackend={captureBackend}
+          captureWindows={captureWindows}
         />
       )}
       {phase === 'transcribing' && (
@@ -272,13 +290,7 @@ function PreMeeting({ onStart, event }: PreMeetingProps) {
 
           <div className="mt-2">
             <Eyebrow className="mb-2">audio source</Eyebrow>
-            <AudioSource icon="mic" label="MacBook Pro Microphone" sub="default · 48 kHz" active />
-            <AudioSource
-              icon="volume-2"
-              label="System audio (loopback)"
-              sub="capture both sides of meet"
-              active
-            />
+            <CaptureSources />
           </div>
 
           <div className="mt-2">
@@ -339,10 +351,72 @@ interface AudioSourceProps {
   active: boolean;
 }
 
+/**
+ * Which capture backend the strip should describe. The live status wins while
+ * a recording is active; otherwise fall back to what settings/diagnostics say
+ * the next recording will use.
+ */
+function resolveBackend(
+  statusBackend: string | null | undefined,
+  settingsEffective: string | undefined,
+  diagnosticsEffective: string | undefined,
+): string | null {
+  return statusBackend ?? settingsEffective ?? diagnosticsEffective ?? null;
+}
+
+function systemAudioLabel(backend: string | null): string {
+  switch (backend) {
+    case 'native':
+      return 'System audio (ScreenCaptureKit)';
+    case 'blackhole':
+      return 'System audio (BlackHole)';
+    case 'wasapi':
+      return 'System audio (WASAPI loopback)';
+    default:
+      return 'System audio (loopback)';
+  }
+}
+
+/** Read-only strip of what the recorder *will* capture on this machine. */
+function CaptureSources({ statusBackend }: { statusBackend?: string | null }) {
+  const recorder = useRecorderSettings().data;
+  const diagnostics = useSchedulerDiagnostics().data;
+  const backend = resolveBackend(
+    statusBackend,
+    recorder?.capture_backend_effective,
+    diagnostics?.effective_backend,
+  );
+  const slidesActive = backend === 'native' && recorder?.capture_slides === true;
+  return (
+    <>
+      <AudioSource icon="mic" label="Microphone" sub="default input · 48 kHz" active />
+      <AudioSource
+        icon="volume-2"
+        label={systemAudioLabel(backend)}
+        sub="capture both sides of the meeting"
+        active={backend !== 'unsupported'}
+      />
+      <AudioSource
+        icon="presentation"
+        label="Slides (screen key-frames)"
+        sub={
+          slidesActive
+            ? `${recorder?.slide_fps ?? 1} fps · meeting window`
+            : backend === 'native'
+              ? 'off in settings'
+              : 'needs the native capture method'
+        }
+        active={slidesActive}
+      />
+    </>
+  );
+}
+
 function AudioSource({ icon, label, sub, active }: AudioSourceProps) {
-  // Read-only — devices are auto-detected by the recorder (BlackHole + mic
-  // from avfoundation). Source picker is out of scope for now; this strip
-  // shows what *will* be captured.
+  // Read-only — sources are auto-detected by the recorder: the native
+  // ScreenCaptureKit helper (system audio + mic + slide key-frames) or the
+  // legacy BlackHole/avfoundation path. Source picker is out of scope for
+  // now; this strip shows what *will* be captured.
   return (
     <div
       className={`mb-1 flex items-center gap-[10px] rounded-r6 border px-[10px] py-2 ${
@@ -391,9 +465,95 @@ interface ActiveRecordingProps {
   startedAt: number;
   title: string | null;
   onStop: () => Promise<void> | void;
+  awaitingTargetChoice?: boolean;
+  captureBackend?: string | null;
+  captureWindows?: CaptureWindow[];
 }
 
-function ActiveRecording({ startedAt, title, onStop }: ActiveRecordingProps) {
+/**
+ * Inline picker shown when the native helper found no Teams/Zoom/Meet window
+ * to sample slides from. Lists the on-screen windows the helper reported
+ * (refreshed by the status poll), plus "entire screen" / "audio only". The
+ * card disappears once status stops reporting awaitingTargetChoice.
+ */
+export function TargetChoiceCard({ windows = [] }: { windows?: CaptureWindow[] }) {
+  const setTarget = useSetCaptureTarget();
+  const choose = (req: SetCaptureTargetRequest) =>
+    void setTarget.mutateAsync(req).catch((e) =>
+      toast.error(e instanceof Error ? e.message : 'failed to set capture target'),
+    );
+  const busy = setTarget.isPending;
+  return (
+    <div role="status" className="mb-4 rounded-lg border border-neon/30 bg-neon/[0.06] p-5">
+      <div className="flex items-center gap-4">
+        <Lucide name="monitor" size={18} color="var(--neon)" />
+        <div className="flex-1 leading-[1.3]">
+          <div className="text-14 font-medium text-ink-0">
+            No meeting window found. Capture your screen for slides?
+          </div>
+          <div className="mt-[2px] font-mono text-11 text-ink-2">
+            audio keeps recording either way · pick the window to sample for slides
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <Btn
+            variant="primary"
+            size="sm"
+            onClick={() => choose({ choice: 'display' })}
+            disabled={busy}
+          >
+            Entire screen
+          </Btn>
+          <Btn
+            variant="secondary"
+            size="sm"
+            onClick={() => choose({ choice: 'audio' })}
+            disabled={busy}
+          >
+            Audio only
+          </Btn>
+        </div>
+      </div>
+      <ul
+        aria-label="windows"
+        className="m-0 mt-3 max-h-[180px] list-none overflow-y-auto rounded-r6 border border-hairline bg-paper p-1"
+      >
+        {windows.length === 0 ? (
+          <li className="px-2 py-[6px] font-mono text-11 text-ink-3">no windows detected yet…</li>
+        ) : (
+          windows.map((w) => (
+            <li key={w.windowId}>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => choose({ choice: 'window', window_id: w.windowId })}
+                className="flex w-full cursor-pointer items-center gap-3 rounded-sm border-0 bg-transparent px-2 py-[6px] text-left hover:bg-vellum disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <span className="w-[120px] flex-shrink-0 truncate font-mono text-11 text-ink-2">
+                  {w.appName}
+                </span>
+                <span className="flex-1 truncate text-12 text-ink-0">{w.title || '(untitled)'}</span>
+                {w.candidate && <Lucide name="star" size={11} color="var(--neon)" />}
+                <span className="flex-shrink-0 font-mono text-9 text-ink-3">
+                  {w.width}×{w.height}
+                </span>
+              </button>
+            </li>
+          ))
+        )}
+      </ul>
+    </div>
+  );
+}
+
+export function ActiveRecording({
+  startedAt,
+  title,
+  onStop,
+  awaitingTargetChoice = false,
+  captureBackend = null,
+  captureWindows = [],
+}: ActiveRecordingProps) {
   const [elapsed, setElapsed] = useState(0);
   const [stopping, setStopping] = useState(false);
   useEffect(() => {
@@ -462,14 +622,22 @@ function ActiveRecording({ startedAt, title, onStop }: ActiveRecordingProps) {
         </div>
       </div>
 
-      <div className="rounded-lg border border-hairline bg-vellum p-6">
-        <Eyebrow className="mb-2">capturing audio</Eyebrow>
-        <p className="m-0 max-w-[60ch] text-14 leading-[1.55] text-ink-1">
-          poltergeist is recording your mic + system audio. transcription runs
-          locally with whisper.cpp after you hit stop — no audio leaves your
-          machine. the transcript will land under{' '}
-          <span className="font-mono text-12">20-contexts/&lt;ctx&gt;/calendar/transcripts/</span>.
-        </p>
+      {awaitingTargetChoice && <TargetChoiceCard windows={captureWindows} />}
+
+      <div className="grid grid-cols-[1.4fr_1fr] gap-4">
+        <div className="rounded-lg border border-hairline bg-vellum p-6">
+          <Eyebrow className="mb-2">capturing</Eyebrow>
+          <p className="m-0 max-w-[60ch] text-14 leading-[1.55] text-ink-1">
+            poltergeist is recording your mic + system audio. transcription runs
+            locally with whisper.cpp after you hit stop — no audio leaves your
+            machine. the transcript will land under{' '}
+            <span className="font-mono text-12">20-contexts/&lt;ctx&gt;/calendar/transcripts/</span>.
+          </p>
+        </div>
+        <div className="rounded-lg border border-hairline bg-vellum p-4">
+          <Eyebrow className="mb-2">sources</Eyebrow>
+          <CaptureSources statusBackend={captureBackend} />
+        </div>
       </div>
     </div>
   );

@@ -93,6 +93,23 @@ function fireNotification(event: AgendaItem): void {
   notification.show();
 }
 
+/**
+ * Native capture found no meeting window and is waiting for the user to pick
+ * "capture screen" vs "audio only" (RecorderStatus.awaitingTargetChoice).
+ * Raised on request from the renderer so a hidden window still surfaces it;
+ * clicking brings the main window forward where the inline prompt lives.
+ */
+export function fireTargetChoiceNotification(opts: { onClick: () => void }): void {
+  if (!Notification.isSupported()) return;
+  const notification = new Notification({
+    title: 'No meeting window found',
+    body: 'Capture your screen for slides? Open Poltergeist to choose.',
+    silent: false,
+  });
+  notification.on('click', opts.onClick);
+  notification.show();
+}
+
 export function installMeetingNotifier(opts: InstallOpts): MeetingNotifierController {
   let notified = loadNotified();
   let timer: NodeJS.Timeout | null = null;

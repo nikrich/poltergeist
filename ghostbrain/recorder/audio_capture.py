@@ -49,6 +49,9 @@ _BUILTIN_ALLOWED_OUTPUT_PATTERNS: tuple[str, ...] = (
 class CaptureHandle:
     pid: int
     wav_path: Path
+    # Native backend only: the helper found no meeting-app window and is
+    # waiting for the user to choose "capture screen" vs "audio only".
+    awaiting_target_choice: bool = False
 
 
 def list_avfoundation_inputs() -> dict[str, int]:

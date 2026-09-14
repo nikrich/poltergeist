@@ -16,7 +16,7 @@ This guide walks you through a working installation of Poltergeist on Linux. The
 - **git**.
 - **Obsidian** — download the AppImage or Flatpak from [obsidian.md](https://obsidian.md/download).
 - **Claude Code CLI** — required for the LLM backend. See [installing Claude Code](https://claude.ai/docs/download).
-- **ffmpeg** (optional for now) — the meeting recorder will need it once Linux support lands. Install via your package manager.
+- **ffmpeg** (optional for now) — the meeting recorder may need it once Linux support lands (macOS and Windows no longer require it). Install via your package manager.
 
 ## Clone and install
 

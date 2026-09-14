@@ -14,8 +14,22 @@ from ghostbrain.recorder.audio.base import RouteHandle, UnsupportedBackend
 from ghostbrain.recorder.audio.darwin import DarwinBackend
 
 
-def test_factory_darwin():
-    assert isinstance(get_backend("darwin"), DarwinBackend)
+def test_factory_darwin_blackhole_when_configured():
+    backend = get_backend("darwin", recorder_cfg={"capture_backend": "blackhole"})
+    assert isinstance(backend, DarwinBackend)
+    assert backend.name == "blackhole"
+
+
+def test_factory_darwin_auto_falls_back_when_helper_unavailable():
+    from ghostbrain.recorder.audio import darwin_native
+    fake = darwin_native.HelperProbe(
+        found=False, path=None, ok=False, code=None, reason="ghostbrain-capture not found",
+        macos_version="15.1", macos_supported=True,
+    )
+    with patch("ghostbrain.recorder.audio.darwin_native.probe", return_value=fake):
+        backend = get_backend("darwin", recorder_cfg={"capture_backend": "auto"})
+    assert isinstance(backend, DarwinBackend)
+    assert "not found" in backend.native_fallback_reason
 
 
 def test_factory_linux_unsupported():

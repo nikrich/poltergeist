@@ -5,7 +5,7 @@
 1. Commits to `main` use [Conventional Commits](https://www.conventionalcommits.org/). `feat:` bumps minor, `fix:` bumps patch, `feat!:` bumps major (post-1.0).
 2. [release-please](https://github.com/googleapis/release-please) maintains a release PR on `main` that bumps `desktop/package.json`, updates `desktop/CHANGELOG.md`, and lists the changes drawn from those commits.
 3. Merging the release PR cuts a git tag (e.g. `v0.2.0`) and creates a GitHub Release.
-4. The `build-mac` job then builds the Python sidecar with PyInstaller, packages the Electron app with electron-builder, signs + notarizes, and uploads `.dmg` + `.zip` assets to that GitHub Release.
+4. The `build-mac` job then builds the Python sidecar with PyInstaller, builds the native macOS capture helper (`scripts/build-native-macos.sh` → `desktop/resources/bin/ghostbrain-capture`), packages the Electron app with electron-builder, signs + notarizes (the helper is signed with the hardened runtime via `mac.binaries` and verified with `codesign -dv` after packing), and uploads `.dmg` + `.zip` assets to that GitHub Release.
 
 ## Required GitHub Actions secrets
 
@@ -47,6 +47,25 @@ pyinstaller packaging/sidecar.spec \
   --noconfirm
 ```
 
+On macOS, also build the native capture helper (ScreenCaptureKit; needs Xcode 16+
+on an arm64 Mac). It lands in `desktop/resources/bin/` (gitignored), which
+`electron-builder.yml` copies to `Contents/Resources/bin/` and signs:
+
+```sh
+# From repo root:
+scripts/build-native-macos.sh            # stage for the desktop build
+scripts/build-native-macos.sh --install  # ...and install to ~/.local/bin for pip/headless use
+```
+
+If the helper is missing the app still builds; the recorder then falls back to the
+BlackHole/ffmpeg backend with a "native capture unavailable" reason in preflight.
+After `npm run pack`, sanity-check the nested binary:
+
+```sh
+codesign -dv --entitlements - "desktop/dist/mac-arm64/Poltergeist.app/Contents/Resources/bin/ghostbrain-capture"
+plutil -p desktop/dist/mac-arm64/Poltergeist.app/Contents/Info.plist | grep UsageDescription
+```
+
 ## Migrating from launchd to the in-app scheduler
 
 The desktop app can run all connectors + the worker + the recorder daemon
@@ -72,7 +91,7 @@ substituted before `launchctl load`).
 
 ## Tech debt
 
-- **x64 (Intel) builds.** CI runs `macos-14` (arm64 native) and the electron-builder config only lists `arch: arm64`. To add Intel: extend `mac.target` with `arch: x64`, add an x64 matrix entry to the workflow (PyInstaller has to run on an x64 runner — `macos-13` — because cross-arch PyInstaller builds aren't reliable), and merge both runners' artifacts onto the same release.
+- **x64 (Intel) builds.** CI runs `macos-15` (arm64 native; the macOS 15 SDK is required by the ScreenCaptureKit helper) and the electron-builder config only lists `arch: arm64`. To add Intel: extend `mac.target` with `arch: x64`, add an x64 matrix entry to the workflow (PyInstaller has to run on an x64 runner — `macos-13` — because cross-arch PyInstaller builds aren't reliable), and merge both runners' artifacts onto the same release.
 - **Auto-update.** `publish: null` in `electron-builder.yml` disables electron-updater. To enable, switch it to `github` and add `electron-updater` to runtime deps, then call `autoUpdater.checkForUpdatesAndNotify()` after `app.whenReady()`. The `latest-mac.yml` we already upload is what the updater consumes.
 - **Sidecar binary code-signing.** electron-builder signs `.app` contents recursively with the Developer ID, which covers the PyInstaller binary. But if hardened-runtime + notarization ever rejects a bundled native dep (torch's `.dylib`s are the usual culprit), add it to `mac.signIgnore` or sign it explicitly before electron-builder runs.
 - **Notarization stapling for `.zip`.** `notarytool` staples the `.app`, but the `.zip` is built post-sign. Gatekeeper accepts notarized + stapled apps even when distributed via `.zip` — first launch hits the notarization service online. If you ever ship offline, switch to `.dmg`-only or staple the `.zip` separately.

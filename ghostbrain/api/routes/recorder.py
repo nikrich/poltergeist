@@ -1,19 +1,28 @@
-"""Recorder control endpoints — POST /v1/recorder/{start,stop,clear}, GET /v1/recorder/status."""
+"""Recorder control endpoints — POST /v1/recorder/{start,stop,clear},
+GET /v1/recorder/status, plus the native-capture helpers under
+/v1/recorder/capture/*."""
 import logging
-
 from fastapi import APIRouter, HTTPException
 
-from ghostbrain.api.models.recorder import RecorderStatus, StartRequest
+from ghostbrain.api.models.recorder import (
+    CaptureHelperProbe,
+    CaptureTargetRequest,
+    RecorderStatus,
+    StartRequest,
+)
 from ghostbrain.api.repo.recorder import (
     RecorderBusy,
     RecorderNotActive,
     RecorderPrereqsMissing,
     RecorderUnsupportedError,
     clear,
+    request_capture_permissions,
+    set_capture_target,
     start,
     status,
     stop,
 )
+from ghostbrain.recorder.audio.base import CaptureUnavailableError
 from ghostbrain.recorder.audio_capture import AudioRoutingError
 
 log = logging.getLogger("ghostbrain.api.recorder_routes")
@@ -37,9 +46,12 @@ def post_start(payload: StartRequest) -> dict:
         raise HTTPException(status_code=501, detail=str(e))
     except RecorderBusy as e:
         raise HTTPException(status_code=409, detail=str(e))
-    except (AudioRoutingError, RecorderPrereqsMissing) as e:
-        # 412 Precondition Failed — well-formed request, system not ready; the
-        # detail names the exact fix (device to select, brew formula to install).
+    except (AudioRoutingError, CaptureUnavailableError, RecorderPrereqsMissing) as e:
+        # 412 Precondition Failed — request is well-formed, but the system
+        # isn't ready: output isn't routed to BlackHole (legacy path), the
+        # native helper lacks Screen Recording / Microphone permission, or a
+        # prerequisite binary/model is missing. The detail names the exact fix,
+        # distinct from 500 so the renderer can show a fixable hint.
         raise HTTPException(status_code=412, detail=str(e))
     except (RuntimeError, OSError) as e:
         log.exception("recorder start failed")
@@ -63,4 +75,28 @@ def post_clear() -> dict:
     except RecorderUnsupportedError as e:
         raise HTTPException(status_code=501, detail=str(e))
     except RecorderBusy as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+
+@router.post("/capture/request-permissions", response_model=CaptureHelperProbe)
+def post_request_permissions() -> dict:
+    """Trigger the macOS Screen Recording + Microphone prompts for the native
+    helper and return the refreshed probe. Blocks until the user answers
+    (bounded by the helper timeout)."""
+    try:
+        return request_capture_permissions()
+    except RecorderUnsupportedError as e:
+        raise HTTPException(status_code=501, detail=str(e))
+
+
+@router.post("/capture/target", response_model=RecorderStatus)
+def post_capture_target(payload: CaptureTargetRequest) -> dict:
+    """Answer the native helper's "no meeting window found" prompt."""
+    try:
+        return set_capture_target(payload.choice, payload.window_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except RecorderUnsupportedError as e:
+        raise HTTPException(status_code=501, detail=str(e))
+    except RecorderNotActive as e:
         raise HTTPException(status_code=409, detail=str(e))
