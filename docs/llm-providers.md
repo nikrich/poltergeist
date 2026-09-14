@@ -201,13 +201,14 @@ are never written to.** Poltergeist only ever reads your existing login
 (symlinking or copying just the auth type/token) into a disposable run
 directory it regenerates on every turn.
 
-`allowed_tools` semantics are honoured everywhere they can be: Claude passes
-the list as `--allowedTools`, Gemini as the vault server's `includeTools`,
-and the local driver simply omits the excluded tools from the function
-definitions it sends. **Codex is the exception** — its `config.toml` has no
-per-server tool allowlist, so a Codex chat turn always sees all four vault
-tools even when the caller asked for fewer (the docs assistant, which
-normally runs without `poltergeist_ask`).
+`allowed_tools` semantics are honoured everywhere: Claude passes the list as
+`--allowedTools`, Gemini as the vault server's `includeTools`, Codex as the
+server's `enabled_tools`, and the local driver simply omits the excluded
+tools from the function definitions it sends. Codex additionally needs
+`default_tools_approval_mode = "approve"` on each server: with the
+non-interactive `approval_policy = "never"`, a tool that would normally
+prompt is denied outright ("MCP tool call requires approval"), so the
+generated config pre-approves the vault server and your opted-in servers.
 
 Your opted-in MCP servers from `mcp-servers.json` ride along on Claude,
 Codex, and Gemini, and never on local.

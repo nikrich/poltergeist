@@ -14,7 +14,7 @@ from pathlib import Path
 from ghostbrain.llm import agent
 from ghostbrain.llm.agent import CHAT_SYSTEM_PROMPT, find_mcp_binary
 from ghostbrain.llm.client import LLMError, LLMResult, LLMTimeout, _parse_json_tolerant
-from ghostbrain.llm.providers import base
+from ghostbrain.llm.providers import base, vault_tools
 
 # Module import (not `from ... import stream_subprocess as _`) so tests can monkeypatch cx.stream_subprocess.
 from ghostbrain.llm.providers.stream import stream_subprocess
@@ -116,16 +116,15 @@ def _error_message(stderr_tail: str, fallback: str) -> str:
 
 
 def write_codex_home(root: Path, *, model: str | None, mcp_argv: list[str], user_servers: list[dict], real_home: Path,
-                     reasoning_effort: str | None = None) -> Path:
+                     reasoning_effort: str | None = None, enabled_tools: list[str] | None = None) -> Path:
     """Regenerate an isolated CODEX_HOME (config.toml + auth.json symlink) fresh each turn.
 
     Never writes into the user's real ~/.codex — root is a run-dir scratch
     directory dedicated to this provider.
 
-    NOTE: codex's config.toml has no per-server tool allowlist (gemini's
-    `includeTools` has no equivalent here), so a codex chat turn always sees
-    all four vault tools — ``ChatRequest.allowed_tools`` cannot be enforced on
-    this provider. docs-assist runs on codex with poltergeist_ask reachable.
+    ``enabled_tools`` is codex's per-server allowlist (the counterpart of
+    gemini's ``includeTools``); it carries ``ChatRequest.allowed_tools`` so
+    docs-assist runs without poltergeist_ask on codex too.
     """
     root.mkdir(parents=True, exist_ok=True)
     lines = []
@@ -134,10 +133,19 @@ def write_codex_home(root: Path, *, model: str | None, mcp_argv: list[str], user
     if reasoning_effort:
         lines.append(f"model_reasoning_effort = {_toml_str(reasoning_effort)}")
     lines += ['sandbox_mode = "read-only"', 'approval_policy = "never"', ""]
+    # approval_policy = "never" makes codex DENY (not skip) any MCP tool call
+    # that would normally prompt; "approve" pre-approves the server's tools
+    # (valid modes: auto, prompt, writes, approve). enabled_tools is the
+    # per-server allowlist that carries ChatRequest.allowed_tools.
     lines += ["[mcp_servers.poltergeist]", f"command = {_toml_str(mcp_argv[0])}",
-              "args = [" + ", ".join(_toml_str(a) for a in mcp_argv[1:]) + "]", "required = true", ""]
+              "args = [" + ", ".join(_toml_str(a) for a in mcp_argv[1:]) + "]", "required = true",
+              'default_tools_approval_mode = "approve"']
+    if enabled_tools is not None:
+        lines.append("enabled_tools = [" + ", ".join(_toml_str(t) for t in enabled_tools) + "]")
+    lines.append("")
     for s in user_servers:
         lines += [f"[mcp_servers.{s['name']}]", f"command = {_toml_str(s['command'])}",
+                  'default_tools_approval_mode = "approve"',
                   "args = [" + ", ".join(_toml_str(a) for a in s.get("args") or []) + "]"]
         if s.get("env"):
             lines.append("env = { " + ", ".join(f"{k} = {_toml_str(v)}" for k, v in s["env"].items()) + " }")
@@ -167,7 +175,6 @@ class CodexChatParser:
         self.thread_id = ""
 
     def feed(self, line: str) -> list[dict]:
-        from ghostbrain.llm.providers import vault_tools
         line = line.strip()
         if not line:
             return []
@@ -270,7 +277,9 @@ class CodexCli:
             return
         home = write_codex_home(_run_root() / "codex", model=self._models.get(req.tier), mcp_argv=list(mcp),
                                 user_servers=req.user_servers, real_home=_real_codex_home(),
-                                reasoning_effort=REASONING_EFFORT.get(req.tier))
+                                reasoning_effort=REASONING_EFFORT.get(req.tier),
+                                enabled_tools=(vault_tools.allowed_vault_tool_names(req.allowed_tools)
+                                               if req.allowed_tools else None))
         cmd = [b, "exec"]
         if req.session_id:
             cmd += ["resume", req.session_id]

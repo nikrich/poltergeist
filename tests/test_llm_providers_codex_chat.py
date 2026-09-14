@@ -35,9 +35,23 @@ def test_write_codex_home_config_and_auth_symlink(tmp_path: Path):
                                real_home=real)
     cfg = tomllib.loads((root / "config.toml").read_text())
     assert cfg["model"] == "gpt-5" and cfg["sandbox_mode"] == "read-only" and cfg["approval_policy"] == "never"
-    assert cfg["mcp_servers"]["poltergeist"] == {"command": "/app/ghostbrain-api", "args": ["mcp"], "required": True}
+    # approval_policy = "never" makes codex deny prompting MCP tools, so every
+    # server is pre-approved (verified against codex 0.154: any other mode fails
+    # with "MCP tool call requires approval, but approval policy is never").
+    assert cfg["mcp_servers"]["poltergeist"] == {"command": "/app/ghostbrain-api", "args": ["mcp"], "required": True,
+                                                 "default_tools_approval_mode": "approve"}
     assert cfg["mcp_servers"]["mem"]["command"] == "npx" and cfg["mcp_servers"]["mem"]["env"] == {"TOKEN": "t"}
+    assert cfg["mcp_servers"]["mem"]["default_tools_approval_mode"] == "approve"
     assert (root / "auth.json").is_symlink() and (root / "auth.json").resolve() == (real / "auth.json").resolve()
+
+
+def test_write_codex_home_enabled_tools_carries_the_allowlist(tmp_path: Path):
+    root = cx.write_codex_home(tmp_path / "gen", model=None, mcp_argv=["/app/ghostbrain-api", "mcp"], user_servers=[],
+                               real_home=tmp_path / "nohome", reasoning_effort="medium",
+                               enabled_tools=["poltergeist_search", "poltergeist_get_note"])
+    cfg = tomllib.loads((root / "config.toml").read_text())
+    assert "model" not in cfg and cfg["model_reasoning_effort"] == "medium"
+    assert cfg["mcp_servers"]["poltergeist"]["enabled_tools"] == ["poltergeist_search", "poltergeist_get_note"]
 
 
 def test_write_codex_home_accepts_non_bmp_unicode(tmp_path: Path):
