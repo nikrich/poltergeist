@@ -12,20 +12,9 @@ vi.mock('../lib/api/client', async () => {
   return { ...actual, get: vi.fn(), post: vi.fn(), put: vi.fn() };
 });
 
-// Diagnostics for the "switch to local and pick models" flow: openai_http
-// probes ok so the switch itself isn't blocked by the disabled-option guard
-// (that guard is covered separately below with a provider whose probe fails).
-const okProviders: LlmProvidersResponse = {
-  active: 'claude',
-  providers: {
-    claude: { ok: true, reason: '2.1.0', detail: {} },
-    codex: { ok: false, reason: 'not installed', detail: {} },
-    gemini: { ok: false, reason: 'not installed', detail: {} },
-    openai_http: { ok: true, reason: 'ready', detail: { models: ['llama3.2', 'qwen3'] } },
-  },
-};
-
-// Diagnostics for the disabled-option guard test: gemini fails its probe.
+// openai_http (= the "local" provider) fails its probe here on purpose: the
+// settings panel must still let the user select `local` to configure it
+// (allowUnavailable), while the plain chat-header switcher keeps it disabled.
 const mixedProviders: LlmProvidersResponse = {
   active: 'claude',
   providers: {
@@ -79,12 +68,14 @@ beforeEach(() => {
 });
 
 describe('AiProviderSettings', () => {
-  it('shows the active provider diagnostics and lets the user switch to local with model pickers', async () => {
-    stubApi(okProviders, makeSettings());
+  it('shows the active provider diagnostics and lets the user switch to local (even unavailable) with model pickers', async () => {
+    stubApi(mixedProviders, makeSettings());
     renderWith(<AiProviderSettings />);
 
     expect(await screen.findByText(/2\.1\.0/)).toBeInTheDocument();
 
+    // openai_http.ok === false here — the settings panel must still allow
+    // selecting `local` so the user can configure it (see allowUnavailable).
     fireEvent.change(screen.getByLabelText(/provider/i), { target: { value: 'local' } });
     await waitFor(() =>
       expect(client.put).toHaveBeenCalledWith('/v1/settings/llm', { provider: 'openai_http' }),
@@ -106,5 +97,18 @@ describe('ProviderSwitcher', () => {
 
     fireEvent.change(screen.getByLabelText(/provider/i), { target: { value: 'gemini' } });
     expect(client.put).not.toHaveBeenCalledWith('/v1/settings/llm', { provider: 'gemini' });
+  });
+
+  it('with allowUnavailable, a provider whose probe failed is still selectable and sends a PUT', async () => {
+    stubApi(mixedProviders, makeSettings());
+    renderWith(<ProviderSwitcher allowUnavailable />);
+
+    const local = await screen.findByRole('option', { name: /local — not answering/ });
+    expect(local).not.toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(/provider/i), { target: { value: 'local' } });
+    await waitFor(() =>
+      expect(client.put).toHaveBeenCalledWith('/v1/settings/llm', { provider: 'openai_http' }),
+    );
   });
 });

@@ -304,7 +304,7 @@ export function AiProviderSettings() {
       <SettingRow
         label="provider"
         sub="claude, codex, and gemini shell out to their CLI; local talks to any OpenAI-compatible server."
-        control={<ProviderSwitcher />}
+        control={<ProviderSwitcher allowUnavailable />}
       />
       <SettingRow
         label="status"
