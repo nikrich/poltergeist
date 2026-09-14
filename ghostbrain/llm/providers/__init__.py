@@ -14,4 +14,8 @@ def get_provider(cfg=None):
         from ghostbrain.llm.providers.claude_cli import ClaudeCli
 
         return ClaudeCli(models=models)
+    if cfg.provider == "openai_http":
+        from ghostbrain.llm.providers.openai_http import OpenAiHttp
+
+        return OpenAiHttp(cfg.base_url, cfg.api_key_env, models)
     raise LLMError(f"llm.provider {cfg.provider!r} is not implemented yet")
