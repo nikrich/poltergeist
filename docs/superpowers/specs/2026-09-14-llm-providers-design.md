@@ -227,8 +227,10 @@ opted in (and never on local).
   probe reason when the active provider is not usable.
 - **Desktop** — Settings → "AI provider": provider dropdown, a diagnostics row from the
   probe with a "re-check" button, and for local a base URL field plus three model
-  pickers populated from `probe().detail.models`. The chat header shows the active
-  provider id. The `llmProvider` schema enum changes; onboarding is untouched.
+  pickers populated from `probe().detail.models`. The chat header carries a provider
+  switcher: every provider is listed, those whose probe failed are disabled with the
+  reason in the label, and choosing another one switches the active provider for the
+  next turn. The `llmProvider` schema enum changes; onboarding is untouched.
 
 ## Error handling
 
