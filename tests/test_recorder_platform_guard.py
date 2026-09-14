@@ -100,8 +100,8 @@ def test_darwin_native_check_fires_when_permission_missing():
         macos_version="15.1", macos_supported=True, screen_recording="denied",
     )
     with patch("ghostbrain.recorder.audio.sys") as mock_sys, \
-         patch("ghostbrain.scheduler_jobs.shutil.which", return_value="/bin/whisper-cli"), \
-         patch("ghostbrain.scheduler_jobs._model_present", lambda: True), \
+         patch("ghostbrain.recorder.prereqs.shutil.which", return_value="/bin/whisper-cli"), \
+         patch("ghostbrain.recorder.prereqs._model_present", lambda: True), \
          patch("ghostbrain.recorder.audio.darwin_native.probe", return_value=denied), \
          patch("ghostbrain.recorder.config.load_recorder_block",
                return_value={"capture_backend": "native"}):

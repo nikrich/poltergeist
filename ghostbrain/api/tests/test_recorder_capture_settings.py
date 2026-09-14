@@ -69,6 +69,7 @@ def test_start_maps_capture_unavailable_to_412(client: TestClient, auth_headers:
         "Screen Recording permission not granted"
     )
     with patch("ghostbrain.recorder.audio.get_backend", return_value=fake_backend), \
+         patch("ghostbrain.api.repo.recorder.recorder_prereqs_ok", return_value=(True, [])), \
          patch("ghostbrain.api.repo.recorder._current_calendar_event", return_value=None):
         res = client.post("/v1/recorder/start", headers=auth_headers, json={})
     assert res.status_code == 412
