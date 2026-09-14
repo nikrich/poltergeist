@@ -108,7 +108,13 @@ def write_gemini_workspace(root: Path, *, mcp_argv: list[str], user_servers: lis
         servers[s["name"]] = entry
     servers["poltergeist"] = {"command": mcp_argv[0], "args": list(mcp_argv[1:]), "trust": True,
                               "includeTools": list(VAULT_TOOL_NAMES)}
-    doc: dict = {"mcpServers": servers}
+    # Disable every built-in gemini tool (run_shell_command, write_file,
+    # read_file, web_fetch, …): chat() runs with --approval-mode=yolo, which
+    # auto-approves whatever is exposed, and a second brain has no business
+    # holding a shell. Only the MCP servers above survive. Written under BOTH
+    # keys — current CLIs read the nested `tools.core`, older ones only the
+    # flat `coreTools` — so the restriction holds whichever is installed.
+    doc: dict = {"mcpServers": servers, "tools": {"core": []}, "coreTools": []}
     if auth_type:
         doc["security"] = {"auth": {"selectedType": auth_type}}
     (root / ".gemini" / "settings.json").write_text(json.dumps(doc, indent=2))

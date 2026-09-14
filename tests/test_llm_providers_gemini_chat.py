@@ -37,6 +37,20 @@ def test_write_gemini_workspace(tmp_path: Path):
     assert doc["mcpServers"]["mem"]["trust"] is True
 
 
+def test_write_gemini_workspace_disables_every_core_tool(tmp_path: Path):
+    """`--approval-mode=yolo` auto-approves whatever gemini exposes, so the
+    generated settings must leave ONLY the MCP servers: gemini's built-in
+    run_shell_command/write_file/read_file/web_fetch are switched off via both
+    the current nested `tools.core` key and the legacy flat `coreTools` one
+    (older CLIs only honour the latter)."""
+    root = gm.write_gemini_workspace(tmp_path / "ws", mcp_argv=["/app/ghostbrain-api", "mcp"],
+                                     user_servers=[], auth_type=None)
+    doc = json.loads((root / ".gemini" / "settings.json").read_text())
+    assert doc["tools"]["core"] == []
+    assert doc["coreTools"] == []
+    assert doc["mcpServers"]["poltergeist"]["includeTools"] == gm.VAULT_TOOL_NAMES
+
+
 def test_chat_command_cwd_and_events(monkeypatch, tmp_path: Path):
     captured = {}
     def fake_stream(cmd, **kw):
