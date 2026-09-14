@@ -14,6 +14,9 @@ from pathlib import Path
 from ghostbrain.llm.client import LLMError, LLMResult, LLMTimeout, _parse_json_tolerant
 from ghostbrain.llm.providers import base
 
+# Module import (not `from ... import stream_subprocess as _`) so tests can monkeypatch cx.stream_subprocess.
+from ghostbrain.llm.providers.stream import stream_subprocess
+
 log = logging.getLogger("ghostbrain.llm.providers.codex")
 
 
@@ -65,6 +68,82 @@ def parse_exec_events(lines: Iterable[str]) -> tuple[str, str | None, str | None
         elif t in ("turn.failed", "error"):
             err = str(((ev.get("error") or {}).get("message")) or ev.get("message") or "codex turn failed")
     return text, thread, err
+
+
+def _run_root() -> Path:
+    from ghostbrain.api.runtime import run_dir
+    return run_dir() / "llm"
+
+
+def _real_codex_home() -> Path:
+    return Path(os.environ.get("CODEX_HOME") or (Path.home() / ".codex"))
+
+
+def _toml_str(s: str) -> str:
+    return json.dumps(s)  # JSON string escaping is valid TOML basic-string escaping for our values
+
+
+def write_codex_home(root: Path, *, model: str, mcp_argv: list[str], user_servers: list[dict], real_home: Path) -> Path:
+    """Regenerate an isolated CODEX_HOME (config.toml + auth.json symlink) fresh each turn.
+
+    Never writes into the user's real ~/.codex — root is a run-dir scratch
+    directory dedicated to this provider.
+    """
+    root.mkdir(parents=True, exist_ok=True)
+    lines = [f"model = {_toml_str(model)}", 'sandbox_mode = "read-only"', 'approval_policy = "never"', ""]
+    lines += ["[mcp_servers.poltergeist]", f"command = {_toml_str(mcp_argv[0])}",
+              "args = [" + ", ".join(_toml_str(a) for a in mcp_argv[1:]) + "]", "required = true", ""]
+    for s in user_servers:
+        lines += [f"[mcp_servers.{s['name']}]", f"command = {_toml_str(s['command'])}",
+                  "args = [" + ", ".join(_toml_str(a) for a in s.get("args") or []) + "]"]
+        if s.get("env"):
+            lines.append("env = { " + ", ".join(f"{k} = {_toml_str(v)}" for k, v in s["env"].items()) + " }")
+        lines.append("")
+    (root / "config.toml").write_text("\n".join(lines))
+    auth_src = real_home / "auth.json"
+    auth_dst = root / "auth.json"
+    if auth_dst.is_symlink() or auth_dst.exists():
+        auth_dst.unlink()
+    if auth_src.exists():
+        auth_dst.symlink_to(auth_src)
+    return root
+
+
+# Last thread id seen by parse_chat_line, purely so a bare "done" event
+# carries a session_id when the caller inspects parse_chat_line's own output
+# in isolation (e.g. in tests). CodexCli.chat() never relies on this — it
+# tracks its own `session` from the "session" event (or req.session_id) and
+# unconditionally overwrites the "done" event's session_id with that before
+# yielding, so this module-level value being shared across concurrent chat
+# turns has no production effect.
+_last_thread_id = ""
+
+
+def parse_chat_line(line: str) -> list[dict]:
+    global _last_thread_id
+    from ghostbrain.llm.providers import vault_tools
+    line = line.strip()
+    if not line:
+        return []
+    try:
+        ev = json.loads(line)
+    except json.JSONDecodeError:
+        return []
+    t, item = ev.get("type"), ev.get("item") or {}
+    if t == "thread.started":
+        _last_thread_id = str(ev.get("thread_id") or "")
+        return [{"type": "session", "session_id": _last_thread_id}]
+    if t == "item.started" and item.get("type") == "mcp_tool_call":
+        name = str(item.get("tool") or "")
+        return [{"type": "tool", "name": vault_tools.short_name_for(name),
+                 "summary": vault_tools.summary_for(name, item.get("arguments") or {})}]
+    if t == "item.completed" and item.get("type") == "agent_message":
+        return [{"type": "delta", "text": str(item.get("text") or "")}]
+    if t == "turn.completed":
+        return [{"type": "done", "text": "", "session_id": _last_thread_id}]
+    if t in ("turn.failed", "error"):
+        return [{"type": "error", "message": str(((ev.get("error") or {}).get("message")) or ev.get("message") or "codex turn failed")}]
+    return []
 
 
 class CodexCli:
@@ -133,4 +212,31 @@ class CodexCli:
         return base.ProviderProbe(True, last_line, {"binary": b, "models": self.models()})
 
     def chat(self, req: base.ChatRequest) -> Iterator[dict]:
-        raise LLMError("codex chat lands in Task 7")
+        from ghostbrain.llm.agent import CHAT_SYSTEM_PROMPT, find_mcp_binary
+        b = self._binary or find_codex_binary()
+        if b is None:
+            yield {"type": "error", "message": "`codex` CLI not found; install it (`npm i -g @openai/codex`) and run `codex login`"}
+            return
+        mcp = find_mcp_binary()
+        if mcp is None:
+            yield {"type": "error", "message": "Vault tools are unavailable: the ghostbrain-api mcp helper could not be found"}
+            return
+        home = write_codex_home(_run_root() / "codex", model=self._models[req.tier], mcp_argv=list(mcp),
+                                user_servers=req.user_servers, real_home=_real_codex_home())
+        cmd = [b, "exec"]
+        if req.session_id:
+            cmd += ["resume", req.session_id]
+        cmd += ["--json", "--skip-git-repo-check", "-"]
+        stdin = f"<instructions>\n{req.system_prompt or CHAT_SYSTEM_PROMPT}\n</instructions>\n\n{req.prompt}"
+        session = req.session_id or ""
+        text_parts: list[str] = []
+        for ev in stream_subprocess(cmd, timeout_s=req.timeout_s, turn_key=req.turn_key, parse=parse_chat_line,
+                                    on_exit=lambda rc, err, saw: [{"type": "error", "message": f"codex exited {rc}: {err[-300:]}"}],
+                                    env={"CODEX_HOME": str(home)}, stdin_text=stdin):
+            if ev["type"] == "session":
+                session = ev["session_id"]
+            elif ev["type"] == "delta":
+                text_parts.append(ev["text"])
+            elif ev["type"] == "done":
+                ev = {"type": "done", "text": "".join(text_parts), "session_id": session}
+            yield ev
