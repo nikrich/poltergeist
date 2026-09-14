@@ -98,6 +98,16 @@ jobs:
         working-directory: native/macos/ghostbrain-capture
     steps:
       - uses: actions/checkout@v4
+      - name: Select Xcode 26 (Swift 6.2 — the toolchain the capture helper is written against)
+        # Xcode 16.4's Swift 6.1 rejects CaptureSession.swift under strict concurrency
+        # ("sending 'stream' risks causing data races"); the helper was built and tested
+        # with Swift 6.2. Fail loudly if the image has no Xcode 26 rather than silently
+        # compiling with an older toolchain.
+        run: |
+          xc="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)"
+          if [ -z "$xc" ]; then echo "No Xcode 26 on this runner image; available:"; ls /Applications | grep -i xcode; exit 1; fi
+          sudo xcode-select -s "$xc/Contents/Developer"
+          xcodebuild -version
       - name: Toolchain
         run: |
           xcodebuild -version
