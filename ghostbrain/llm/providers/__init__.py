@@ -18,6 +18,10 @@ def get_provider(cfg=None):
         from ghostbrain.llm.providers.codex_cli import CodexCli
 
         return CodexCli(models=models)
+    if cfg.provider == "gemini":
+        from ghostbrain.llm.providers.gemini_cli import GeminiCli
+
+        return GeminiCli(models=models)
     if cfg.provider == "openai_http":
         from ghostbrain.llm.providers.openai_http import OpenAiHttp
 
