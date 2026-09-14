@@ -4,6 +4,7 @@ import json
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import ClassVar
 
 import pytest
 
@@ -207,9 +208,9 @@ def test_chat_history_entry_without_text_does_not_kill_the_turn(server):
 class _FakeOllama(BaseHTTPRequestHandler):
     """Ollama speaks NDJSON on /api/chat, not SSE on /v1/chat/completions, and
     its tool-call `arguments` arrive as an object rather than a JSON string."""
-    turns: list[list[dict]] = []   # scripted NDJSON docs per POST
-    seen: list[dict] = []
-    paths: list[str] = []
+    turns: ClassVar[list[list[dict]]] = []   # scripted NDJSON docs per POST
+    seen: ClassVar[list[dict]] = []
+    paths: ClassVar[list[str]] = []
 
     def log_message(self, *a): pass
 
