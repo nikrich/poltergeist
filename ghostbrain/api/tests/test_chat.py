@@ -65,6 +65,14 @@ def test_missing_conversation_404s(client, tmp_chats_dir, auth_headers):
     )
 
 
+@pytest.fixture(autouse=True)
+def _provider_available(monkeypatch):
+    """These tests fake the chat turn itself; the provider probe that gates a
+    turn must not run the real CLI (absent on CI) and turn every turn into an
+    error event."""
+    monkeypatch.setattr("ghostbrain.api.repo.chat.require_provider", lambda: None)
+
+
 def test_send_message_streams_sse(client, tmp_chats_dir, auth_headers, monkeypatch):
     def fake_turn(prompt, *, session_id=None, **kw):
         yield {"type": "session", "session_id": "s-1"}
@@ -180,11 +188,20 @@ def test_send_long_message_accepted(client, tmp_chats_dir, auth_headers, monkeyp
     assert resp.status_code == 200
 
 
-def test_send_message_over_100k_rejected(client, tmp_chats_dir, auth_headers):
+def test_send_message_has_no_length_cap(client, tmp_chats_dir, auth_headers, monkeypatch):
+    """Users paste whole documents into chat; a 100k cap used to reject them."""
+    seen: dict[str, int] = {}
+
+    def fake_turn(prompt, *, session_id=None, **kw):
+        seen["prompt_len"] = len(prompt)
+        yield {"type": "done", "text": "ok", "session_id": "s-1"}
+
+    monkeypatch.setattr("ghostbrain.api.repo.chat.agent.run_chat_turn", fake_turn)
     conv = client.post("/v1/chat", headers=auth_headers).json()
     resp = client.post(
         f"/v1/chat/{conv['id']}/messages",
-        json={"text": "x" * 100_001},
+        json={"text": "x" * 400_000},
         headers=auth_headers,
     )
-    assert resp.status_code == 422
+    assert resp.status_code == 200
+    assert seen["prompt_len"] >= 400_000

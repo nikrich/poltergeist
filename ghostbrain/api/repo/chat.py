@@ -11,6 +11,7 @@ import threading
 from typing import Iterator
 
 from ghostbrain.api.repo import chat_attachments, chat_store
+from ghostbrain.api.repo.settings import ProviderUnavailable, require_provider
 from ghostbrain.llm import agent
 
 log = logging.getLogger("ghostbrain.chat")
@@ -23,6 +24,23 @@ HISTORY_FALLBACK_MESSAGES = 6
 # UI disables the composer mid-turn — this is defense-in-depth for the API.
 _active_lock = threading.Lock()
 _active: set[str] = set()
+
+# Conversations written before session_provider existed can only hold a
+# `claude` session id — that was the only provider.
+LEGACY_SESSION_PROVIDER = "claude"
+
+
+def _active_provider() -> str:
+    """The provider id the next turn will run on, or "" if config is unreadable."""
+    from ghostbrain.llm.providers.config import load_llm_config
+
+    try:
+        return load_llm_config().provider
+    except Exception:
+        # A bad llm block must not break chat here — require_provider() below
+        # reports the real problem to the user.
+        log.warning("could not read the active llm provider", exc_info=True)
+        return ""
 
 
 def build_attachment_prompt(text: str, paths: list[str] | None) -> str:
@@ -73,14 +91,31 @@ def send_message(
         ]
         chat_store.append_user_message(conv, text, attachments=attachments or None)
         prompt = build_attachment_prompt(text, attachment_paths)
+        provider = _active_provider()
         session_id = conv.get("claude_session_id")
+        # A session id only means something to the provider that minted it:
+        # `codex exec resume <claude-uuid>` and `gemini --resume <claude-uuid>`
+        # both fail outright. After a mid-conversation provider switch, start a
+        # fresh session and replay the recent transcript instead.
+        if session_id and (conv.get("session_provider") or LEGACY_SESSION_PROVIDER) != provider:
+            log.info(
+                "conversation %s has a %s session but %s is active; starting fresh",
+                conv_id, conv.get("session_provider") or LEGACY_SESSION_PROVIDER, provider,
+            )
+            session_id = None
+            prompt = _with_history(conv, prompt)
         try:
-            yield from _stream_turn(conv, prompt, session_id)
+            require_provider()
+        except ProviderUnavailable as e:
+            yield {"type": "error", "message": str(e)}
+            return
+        try:
+            yield from _stream_turn(conv, prompt, session_id, provider)
         except agent.ResumeFailed as e:
             log.warning(
                 "resume failed for %s (%s); retrying without session", conv_id, e
             )
-            yield from _stream_turn(conv, _with_history(conv, prompt), None)
+            yield from _stream_turn(conv, _with_history(conv, prompt), None, provider)
     finally:
         with _active_lock:
             _active.discard(conv_id)
@@ -105,19 +140,31 @@ def cancel(conv_id: str) -> bool:
     return agent.cancel_turn(conv_id)
 
 
-def _stream_turn(conv: dict, prompt: str, session_id: str | None) -> Iterator[dict]:
+def _stream_turn(
+    conv: dict, prompt: str, session_id: str | None, provider: str = ""
+) -> Iterator[dict]:
     parts: list[str] = []
     tools: list[dict] = []
-    for event in agent.run_chat_turn(prompt, session_id=session_id, turn_key=conv["id"]):
+    # messages[-1] is the just-appended user message (see build_attachment_prompt's
+    # caller) — exclude it, then take the HISTORY_FALLBACK_MESSAGES before it. Only
+    # the local/codex/gemini drivers use this; the Claude driver resumes via
+    # --resume <session_id> instead and ignores it.
+    history = [
+        {"role": m["role"], "text": m["text"]}
+        for m in conv["messages"][-(HISTORY_FALLBACK_MESSAGES + 1) : -1]
+    ]
+    for event in agent.run_chat_turn(
+        prompt, session_id=session_id, turn_key=conv["id"], history=history
+    ):
         if event["type"] == "session":
-            chat_store.set_session_id(conv, event["session_id"])
+            chat_store.set_session_id(conv, event["session_id"], provider or None)
         elif event["type"] == "delta":
             parts.append(event["text"])
         elif event["type"] == "tool":
             tools.append({"name": event["name"], "summary": event["summary"]})
         elif event["type"] == "done":
             if event.get("session_id"):
-                chat_store.set_session_id(conv, event["session_id"])
+                chat_store.set_session_id(conv, event["session_id"], provider or None)
             # Prefer the result's full text; fall back to assembled deltas.
             chat_store.append_assistant_message(
                 conv, event["text"] or "".join(parts), tools

@@ -1,15 +1,20 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { TopBar } from '../components/TopBar';
 import { Btn } from '../components/Btn';
 import { Eyebrow } from '../components/Eyebrow';
 import { Lucide } from '../components/Lucide';
 import { Toggle } from '../components/Toggle';
 import { Ghost } from '../components/Ghost';
+import { Pill } from '../components/Pill';
 import { McpServersPanel } from '../components/McpServersPanel';
+import { ProviderSwitcher } from '../components/ProviderSwitcher';
 import { useSettings } from '../stores/settings';
 import {
   useContexts,
   useCreateProject,
+  useLlmProviders,
+  useRecheckLlmProviders,
+  useLlmSettings,
   useProjects,
   useRecorderSettings,
   useRefreshSchedulerDiagnostics,
@@ -17,6 +22,7 @@ import {
   useRequestCapturePermissions,
   useSchedulerDiagnostics,
   useSearchIndexStatus,
+  useUpdateLlmSettings,
   useUpdateProject,
   useUpdateRecorderSettings,
 } from '../lib/api/hooks';
@@ -25,9 +31,9 @@ import { ApiError } from '../lib/api/client';
 import { formatRelativeTime } from '../lib/format';
 import { HOTKEYS, format as formatShortcut } from '../lib/shortcuts';
 import { APP_VERSION } from '../lib/version';
+import { fromSidecarProvider } from '../../shared/llm-provider';
 import type {
   FolderStructure,
-  LlmProvider,
   AudioRetention,
   TranscriptModel,
   Settings,
@@ -36,6 +42,7 @@ import type {
   CaptureBackend,
   CaptureHelperDiagnostics,
   CapturePermission,
+  LlmModelTier,
   Project,
   SlideFallback,
   UpdateProjectRequest,
@@ -54,6 +61,7 @@ type SectionId =
   | 'display'
   | 'vault'
   | 'search'
+  | 'ai-provider'
   | 'privacy'
   | 'meeting'
   | 'background'
@@ -67,6 +75,7 @@ const SECTIONS: Array<{ id: SectionId; label: string; icon: string }> = [
   { id: 'display', label: 'display', icon: 'sun' },
   { id: 'vault', label: 'vault', icon: 'hard-drive' },
   { id: 'search', label: 'search index', icon: 'search' },
+  { id: 'ai-provider', label: 'AI provider', icon: 'cpu' },
   { id: 'privacy', label: 'privacy', icon: 'shield' },
   { id: 'meeting', label: 'meetings', icon: 'mic' },
   { id: 'background', label: 'background', icon: 'activity' },
@@ -79,6 +88,12 @@ const SECTIONS: Array<{ id: SectionId; label: string; icon: string }> = [
 
 const selectClass =
   'cursor-pointer rounded-sm border border-hairline-2 bg-vellum px-[10px] py-[6px] font-mono text-11 text-ink-0';
+
+const TIER_HINTS: Record<LlmModelTier, string> = {
+  fast: 'routing and small extractions; blank keeps the provider default',
+  balanced: 'chat and transcript summaries',
+  quality: 'digests and the profile',
+};
 
 export function SettingsScreen() {
   const [section, setSection] = useState<SectionId>('display');
@@ -100,6 +115,7 @@ export function SettingsScreen() {
           {section === 'display' && <DisplaySettings />}
           {section === 'vault' && <VaultSettings />}
           {section === 'search' && <SearchIndexSettings />}
+          {section === 'ai-provider' && <AiProviderSettings />}
           {section === 'privacy' && <PrivacySettings />}
           {section === 'meeting' && <MeetingSettings />}
           {section === 'background' && <BackgroundSettings />}
@@ -228,7 +244,6 @@ function PrivacySettings() {
   const cloudSync = useSettings((s) => s.cloudSync);
   const e2eEncryption = useSettings((s) => s.e2eEncryption);
   const telemetry = useSettings((s) => s.telemetry);
-  const llmProvider = useSettings((s) => s.llmProvider);
   const setSetting = useSettings((s) => s.set);
   return (
     <div>
@@ -253,21 +268,140 @@ function PrivacySettings() {
         sub="anonymous crash reports. no message contents, ever."
         control={<Toggle on={telemetry} onChange={(v) => void trySet(setSetting, 'telemetry', v)} />}
       />
+    </div>
+  );
+}
+
+export function AiProviderSettings() {
+  const settingsQuery = useLlmSettings();
+  const providersQuery = useLlmProviders();
+  const recheckProviders = useRecheckLlmProviders();
+  const updateSettings = useUpdateLlmSettings();
+
+  const data = settingsQuery.data;
+  const diagnosticsMap = providersQuery.data?.providers;
+  // Key diagnostics off the provider the dropdown is currently showing
+  // (settings.provider updates immediately on a switch, via setQueryData in
+  // useUpdateLlmSettings) rather than providersQuery.data.active, which only
+  // catches up once the providers query refetches — using it directly would
+  // show the *previous* provider's health for a beat after every switch.
+  // Fall back to `active` only while settings are still loading.
+  const currentSidecarProvider = data?.provider ?? providersQuery.data?.active;
+  const diagnostics = currentSidecarProvider ? diagnosticsMap?.[currentSidecarProvider] : undefined;
+  const provider = data ? fromSidecarProvider(data.provider) : null;
+  const localModels = diagnosticsMap?.openai_http?.detail.models ?? [];
+
+  const [baseUrl, setBaseUrl] = useState('');
+  useEffect(() => {
+    if (data) setBaseUrl(data.base_url);
+  }, [data]);
+
+  const saveBaseUrl = () => {
+    if (!data || baseUrl === data.base_url) return;
+    void updateSettings
+      .mutateAsync({ base_url: baseUrl })
+      .catch((e) => toast.error(e instanceof Error ? e.message : 'failed to update base URL'));
+  };
+
+  const updateTierModel = (tier: LlmModelTier, value: string) => {
+    void updateSettings
+      .mutateAsync({ models: { [tier]: value || null } })
+      .catch((e) => toast.error(e instanceof Error ? e.message : `failed to update ${tier} model`));
+  };
+
+  return (
+    <div>
+      <SectionHeader
+        title="AI provider"
+        sub="which model drives chat, transcript summaries, and search."
+      />
       <SettingRow
-        label="LLM provider"
-        sub="for transcript summarization & query"
+        label="provider"
+        sub="claude, codex, and gemini shell out to their CLI; local talks to any OpenAI-compatible server."
+        control={<ProviderSwitcher allowUnavailable />}
+      />
+      <SettingRow
+        label="status"
+        sub={undefined}
         control={
-          <select
-            className={selectClass}
-            value={llmProvider}
-            onChange={(e) => void trySet(setSetting, 'llmProvider', e.target.value as LlmProvider)}
-          >
-            <option value="local">local (ollama)</option>
-            <option value="anthropic">anthropic</option>
-            <option value="openai">openai</option>
-          </select>
+          <div className="flex items-center gap-2">
+            {providersQuery.isFetching || recheckProviders.isPending ? (
+              <Pill tone="outline">checking…</Pill>
+            ) : (
+              <Pill tone={diagnostics?.ok ? 'moss' : 'oxblood'}>
+                {diagnostics?.reason ?? 'unknown'}
+              </Pill>
+            )}
+            <Btn
+              variant="ghost"
+              size="sm"
+              disabled={recheckProviders.isPending}
+              onClick={() =>
+                recheckProviders.mutate(undefined, {
+                  onError: (e) =>
+                    toast.error(e instanceof Error ? e.message : 'failed to re-check providers'),
+                })
+              }
+            >
+              {recheckProviders.isPending ? 'checking…' : 're-check'}
+            </Btn>
+          </div>
         }
       />
+      {provider === 'local' && (
+        <SettingRow
+          label="base URL"
+          sub="OpenAI-compatible endpoint, e.g. http://127.0.0.1:11434/v1"
+          control={
+            <input
+              aria-label="base URL"
+              className={selectClass}
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              onBlur={saveBaseUrl}
+            />
+          }
+        />
+      )}
+      {provider &&
+        (['fast', 'balanced', 'quality'] as const).map((tier) => {
+          // Only a local server can list its models; the CLI providers take a
+          // free-text model id and fall back to their own default when blank.
+          const listed = provider === 'local' ? localModels : [];
+          const fallback = data?.effective_models[tier] ?? 'provider default';
+          return (
+            <SettingRow
+              key={`${provider}-${tier}`}
+              label={`${tier} model`}
+              sub={TIER_HINTS[tier]}
+              control={
+                listed.length > 0 ? (
+                  <select
+                    aria-label={`${tier} model`}
+                    className={selectClass}
+                    value={data?.models[tier] ?? ''}
+                    onChange={(e) => updateTierModel(tier, e.target.value)}
+                  >
+                    <option value="">{fallback}</option>
+                    {listed.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    aria-label={`${tier} model`}
+                    className={selectClass}
+                    placeholder={fallback}
+                    defaultValue={data?.models[tier] ?? ''}
+                    onBlur={(e) => updateTierModel(tier, e.target.value)}
+                  />
+                )
+              }
+            />
+          );
+        })}
     </div>
   );
 }

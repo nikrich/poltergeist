@@ -1,7 +1,6 @@
-"""App, vault, contexts, claude-cli, scheduler, routing-mode checks."""
+"""App, vault, contexts, llm-provider, scheduler, routing-mode checks."""
 from __future__ import annotations
 
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -115,29 +114,49 @@ def check_contexts() -> CheckResult:
     return CheckResult(id="contexts", status="ok", summary=", ".join(ctx), data={"contexts": list(ctx)})
 
 
-def _claude_version() -> str | None:
+_LOGIN_FIX = {
+    "claude": "npm install -g @anthropic-ai/claude-code && claude login",
+    "codex": "npm i -g @openai/codex && codex login",
+    "gemini": "npm i -g @google/gemini-cli, run `gemini` once and choose Login with Google",
+    "openai_http": "Settings → AI provider → set the base URL and pick a model for each tier",
+}
+
+
+def _llm_provider():
+    from ghostbrain.llm.providers import get_provider
+
+    return get_provider()
+
+
+@register("llm-provider")
+def check_llm_provider() -> CheckResult:
+    from ghostbrain.llm.client import LLMError
+
     try:
-        proc = subprocess.run(["claude", "--version"], capture_output=True, text=True, timeout=10, check=False)
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    return proc.stdout.strip() if proc.returncode == 0 else None
-
-
-@register("claude-cli")
-def check_claude_cli() -> CheckResult:
-    if shutil.which("claude") is None:
+        provider = _llm_provider()
+    except LLMError as e:
         return CheckResult(
-            id="claude-cli", status="fail", summary="`claude` CLI not on PATH",
-            detail="Every LLM call shells out to `claude -p`, billed to your Claude subscription.",
-            fix=Fix(kind="manual", command="npm install -g @anthropic-ai/claude-code && claude login"),
+            id="llm-provider", status="fail", summary=str(e),
+            fix=Fix(kind="manual", command="edit llm.provider in 90-meta/config.yaml (claude | codex | gemini | openai_http)"),
         )
-    version = _claude_version()
-    if version is None:
+    try:
+        probe = provider.probe()
+    except Exception as e:  # noqa: BLE001 — a doctor check must never raise
         return CheckResult(
-            id="claude-cli", status="fail", summary="`claude --version` failed",
-            fix=Fix(kind="manual", command="claude login"),
+            id="llm-provider", status="fail", summary=f"{provider.id}: {e}",
+            fix=Fix(kind="manual", command=_LOGIN_FIX.get(provider.id, "edit llm.provider in 90-meta/config.yaml (claude | codex | gemini | openai_http)")),
         )
-    return CheckResult(id="claude-cli", status="ok", summary=version)
+    models = provider.models()
+    tiers = " ".join(f"{t}={models.get(t) or 'default'}" for t in ("fast", "balanced", "quality"))
+    data = {"provider": provider.id, "models": models, "probe": probe.detail}
+    if not probe.ok:
+        return CheckResult(
+            id="llm-provider", status="fail", summary=f"{provider.id}: {probe.reason}",
+            detail="Every routing, extraction, digest and chat call goes through this provider.",
+            fix=Fix(kind="manual", command=_LOGIN_FIX.get(provider.id, "edit llm.provider in 90-meta/config.yaml (claude | codex | gemini | openai_http)")),
+            data=data,
+        )
+    return CheckResult(id="llm-provider", status="ok", summary=f"{provider.id}: {probe.reason} — {tiers}", data=data)
 
 
 @register("scheduler")

@@ -34,7 +34,7 @@ Most "second brain" tools fail in one of two ways: they're **manual**, so you st
 
 - **Zero-effort capture.** Connectors watch the apps you already use and file everything automatically. You never "save a note" again.
 - **Local-first and private.** Your vault is plain markdown files on your own disk. Nothing leaves your machine unless you push it somewhere. Credentials are stored `0600` in local state, never in the vault or source.
-- **Your existing Claude subscription powers it.** LLM calls run through the `claude` CLI, so a Claude subscription is all you need — no separate API key or metered billing (the metered API is supported if you prefer it).
+- **Your existing Claude, ChatGPT, or Gemini subscription — or a local model — powers it.** LLM calls run through whichever provider you pick: the `claude`, `codex`, or `gemini` CLI, or a local OpenAI-compatible server like Ollama. No separate API key or metered billing required. See [LLM providers](./docs/llm-providers.md).
 - **Open format, no lock-in.** The vault is a standard Obsidian vault. Every note is readable with `cat`. Walk away any time and keep everything.
 - **Extensible.** A small connector pattern for new sources, and a plugin system for extending the desktop app.
 
@@ -195,6 +195,7 @@ The server forwards to the running desktop-app sidecar (it must be open). Tools:
 | Guide | Covers |
 |---|---|
 | [Connector setup](./docs/connectors.md) | Per-connector auth, routing, scheduling, and caveats |
+| [LLM providers](./docs/llm-providers.md) | Picking Claude, Codex, Gemini, or a local model; tiers, limitations, chat/vault-tool wiring, troubleshooting |
 | [Operations](./docs/operations.md) | Daily/weekly digests, profile auto-update, `CLAUDE.md` generation, LLM config, install verification |
 | [Install notes](./docs/install/) | macOS launchd, Linux systemd, Windows Task Scheduler |
 | [SPEC.md](./spec/SPEC.md) | The full system specification — architecture, vault structure, build phases |

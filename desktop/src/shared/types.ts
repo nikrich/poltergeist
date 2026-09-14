@@ -5,7 +5,7 @@ export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE' | 'PUT';
 
 export type Theme = 'dark' | 'light';
 export type Density = 'comfortable' | 'compact';
-export type LlmProvider = 'local' | 'anthropic' | 'openai';
+export type LlmProvider = 'claude' | 'codex' | 'gemini' | 'local';
 export type AudioRetention = '30d' | '7d' | 'immediate' | 'forever';
 export type TranscriptModel = 'whisper-large-v3' | 'whisper-medium';
 export type FolderStructure = 'by-source' | 'by-date' | 'by-person';

@@ -43,7 +43,10 @@ class Conversation(BaseModel):
 
 
 class ChatMessageRequest(BaseModel):
-    text: str = Field("", max_length=100_000)
+    # No length cap: users paste whole documents into chat. The only hard
+    # bound left is the OS argv limit (~1 MB on macOS) for the CLIs that take
+    # the prompt as an argument, which is far beyond any model's context.
+    text: str = ""
     attachment_paths: list[str] = Field(default_factory=list, max_length=10)
 
     @model_validator(mode="after")

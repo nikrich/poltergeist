@@ -45,6 +45,16 @@ jobs:
             tests/test_bootstrap_routing_mode.py \
             tests/test_connector_probe_calendar.py \
             tests/test_logging_setup.py \
+            tests/test_llm_providers_base.py \
+            tests/test_llm_providers_claude.py \
+            tests/test_llm_providers_codex.py \
+            tests/test_llm_providers_codex_chat.py \
+            tests/test_llm_providers_config.py \
+            tests/test_llm_providers_gemini.py \
+            tests/test_llm_providers_gemini_chat.py \
+            tests/test_llm_providers_openai_http.py \
+            tests/test_llm_providers_openai_http_chat.py \
+            tests/test_llm_providers_vault_tools.py \
             -q
 
   desktop:

@@ -12,7 +12,7 @@ export const settingsSchema = z.object({
   cloudSync: z.boolean(),
   e2eEncryption: z.boolean(),
   telemetry: z.boolean(),
-  llmProvider: z.enum(['local', 'anthropic', 'openai']),
+  llmProvider: z.enum(['claude', 'codex', 'gemini', 'local']),
 
   autoRecordFromCalendar: z.boolean(),
   diarizeSpeakers: z.boolean(),

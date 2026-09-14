@@ -7,66 +7,31 @@ yields SSE-ready event dicts as lines arrive. Sessions persist CLI-side so
 """
 from __future__ import annotations
 
-import dataclasses
 import json
 import logging
-import os
 import shutil
-import signal
-import subprocess
+import subprocess  # noqa: F401 — kept so `agent.subprocess` exists for tests to patch
 import sys
-import threading
 from pathlib import Path
-from typing import Callable
 
 from ghostbrain.llm import mcp_servers
-
-from ghostbrain.llm.client import _find_claude_binary
+from ghostbrain.llm.client import _find_claude_binary  # noqa: F401 — re-exported for tests/callers
+from ghostbrain.llm.providers.base import _lock as _running_lock  # noqa: F401
+from ghostbrain.llm.providers.base import (  # noqa: F401 — re-exported for tests/callers
+    _running,
+    _RunningTurn,
+    cancel_turn,
+    kill_all_running,
+)
 
 log = logging.getLogger("ghostbrain.llm.agent")
 
-
-@dataclasses.dataclass
-class _RunningTurn:
-    cancelled: threading.Event
-    kill: Callable[[], None]
-
-
-_running_lock = threading.Lock()
-_running: dict[str, _RunningTurn] = {}
-
-
-def cancel_turn(key: str) -> bool:
-    """Kill the in-flight turn for ``key`` (if any). Returns True if one was
-    running. The killed run yields a terminal 'stopped' error event, which
-    persists any partial text as interrupted and releases the busy guard."""
-    with _running_lock:
-        entry = _running.get(key)
-    if entry is None:
-        return False
-    entry.cancelled.set()
-    entry.kill()
-    return True
-
-
-def kill_all_running() -> int:
-    """Reap every in-flight turn's process group. Returns how many.
-
-    Called from the sidecar's shutdown hook: without it, quitting the app
-    mid-turn orphans the claude subprocess tree (parent reparented to pid 1),
-    and an orphan that never exits spins forever — the 2026-08-04 zombie
-    burned three weeks of CPU and the account's rate limit that way.
-    """
-    with _running_lock:
-        entries = list(_running.items())
-        _running.clear()
-    for _key, entry in entries:
-        entry.cancelled.set()
-        try:
-            entry.kill()
-        except Exception:  # noqa: BLE001 — shutdown cleanup must not raise
-            pass
-    return len(entries)
+# `cancel_turn`/`kill_all_running` and the `_RunningTurn`/`_running`/
+# `_running_lock` names above are re-exports of the shared registry in
+# providers/base.py (same objects, not copies) — kept under their original
+# names here because callers (api/__main__.py's shutdown hook,
+# api/repo/chat.py, api/repo/docs_assist.py) and
+# tests/test_llm_child_lifecycle.py reach them as `agent.*`.
 
 
 # tool name → (short name, human summary template over the tool input)
@@ -311,6 +276,21 @@ class ResumeFailed(RuntimeError):
     """`--resume <id>` was rejected (stale session). Caller retries fresh."""
 
 
+def _provider(*, binary: str | None = None, mcp_binary: str | list[str] | None = "auto"):
+    """Seam for tests: builds the configured provider. ``binary`` and
+    ``mcp_binary`` are Claude-specific overrides — they only make sense for
+    the ClaudeCli adapter and are ignored by any other provider."""
+    from ghostbrain.llm.providers import get_provider
+    from ghostbrain.llm.providers.config import effective_models, load_llm_config
+
+    cfg = load_llm_config()
+    if cfg.provider == "claude":
+        from ghostbrain.llm.providers.claude_cli import ClaudeCli
+
+        return ClaudeCli(models=effective_models("claude", cfg), binary=binary, mcp_binary=mcp_binary)
+    return get_provider(cfg)
+
+
 def run_chat_turn(
     prompt: str,
     *,
@@ -321,6 +301,7 @@ def run_chat_turn(
     turn_key: str | None = None,
     system_prompt: str | None = None,
     allowed_tools: str | None = None,
+    history: list[dict] | None = None,
 ):
     """Yield event dicts for one agentic chat turn.
 
@@ -329,123 +310,27 @@ def run_chat_turn(
     produced anything, which raises ResumeFailed so the caller can retry the
     turn without a session (we must not emit a terminal event in that case,
     the retry will produce its own).
+
+    ``history`` is forwarded into the ChatRequest for drivers that need
+    explicit conversational context (local/codex/gemini); the Claude driver
+    ignores it since it resumes via ``--resume <session_id>`` instead.
+
+    The MCP servers the user opted into (``~/ghostbrain/mcp-servers.json``)
+    are loaded exactly ONCE here and handed to whichever driver is active —
+    previously only ClaudeCli loaded them, so a codex or gemini turn silently
+    dropped every one of them.
     """
-    binary = binary or _find_claude_binary()
-    if binary is None:
-        yield {"type": "error", "message": BINARY_MISSING_MESSAGE}
-        return
-    if mcp_binary == "auto":
-        mcp_binary = find_mcp_binary()
-        # Auto-detection failed: no vault tools means no useful turn — every
-        # answer would be ungrounded. Surface a real error instead of running a
-        # toolless turn that lets the model improvise (and, worse, hallucinate a
-        # permission prompt for whatever global MCP server it stumbles onto).
-        # An explicit mcp_binary=None is a deliberate opt-out (lifecycle tests),
-        # so we only guard the auto path.
-        if mcp_binary is None:
-            yield {"type": "error", "message": MCP_BINARY_MISSING_MESSAGE}
-            return
+    from ghostbrain.llm.providers.base import ChatRequest, to_tier
 
-    # User MCP servers ride along only on real chat turns (mcp_binary present);
-    # explicit mcp_binary=None is the bare-run opt-out used by lifecycle tests.
-    user_servers = mcp_servers.load_enabled() if mcp_binary else None
-
-    cmd = build_chat_command(
-        binary, prompt,
+    req = ChatRequest(
+        prompt=prompt,
+        tier=to_tier(DEFAULT_CHAT_MODEL),
         session_id=session_id,
-        mcp_binary=mcp_binary,
+        turn_key=turn_key,
         system_prompt=system_prompt,
         allowed_tools=allowed_tools,
-        user_servers=user_servers,
+        user_servers=mcp_servers.load_enabled(),
+        history=history,
+        timeout_s=timeout_s,
     )
-    log.info(
-        "chat turn: resume=%s mcp=%s user_servers=%d",
-        bool(session_id), bool(mcp_binary), len(user_servers or []),
-    )
-    proc = subprocess.Popen(
-        cmd,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        errors="replace",
-        env={**os.environ, "CLAUDE_CODE_NO_TELEMETRY": "1"},
-        # Own process group: claude spawns descendants (ghostbrain-mcp, tool
-        # subprocesses) that inherit the stdout pipe write-end — killing only
-        # the direct child would leave the pipe open and our read loop blocked
-        # until the orphans exit. Group-kill (below) takes them all out.
-        start_new_session=True,
-    )
-
-    def _kill_group() -> None:
-        try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-        except ProcessLookupError:
-            pass  # already gone
-        except Exception:  # noqa: BLE001 — never let cleanup raise past us
-            proc.kill()
-
-    timed_out = threading.Event()
-    cancelled = threading.Event()
-
-    def _kill() -> None:
-        timed_out.set()
-        _kill_group()
-
-    # Register this turn in the cancellation registry so an external caller
-    # can kill the subprocess (and unblock the read loop) while we're blocked
-    # on proc.stdout — GeneratorExit alone can't reach a running generator.
-    if turn_key is not None:
-        with _running_lock:
-            _running[turn_key] = _RunningTurn(cancelled=cancelled, kill=_kill_group)
-
-    # Watchdog instead of readline timeouts: if claude wedges with no output,
-    # a blocking readline would hang forever. The timer fires once, kills the
-    # process, and the read loop unblocks on EOF.
-    killer = threading.Timer(timeout_s, _kill)
-    killer.start()
-    saw_any = False
-    saw_terminal = False
-    try:
-        assert proc.stdout is not None
-        for raw in proc.stdout:
-            for event in parse_stream_line(raw):
-                saw_any = True
-                if event["type"] in ("done", "error"):
-                    saw_terminal = True
-                yield event
-        proc.wait()
-    finally:
-        # Covers normal exit, timeout, and client-disconnect (GeneratorExit
-        # propagates here when the SSE consumer goes away — kill claude so
-        # we don't leak a billing subprocess).
-        killer.cancel()
-        if proc.poll() is None:
-            _kill_group()
-            proc.wait()
-        if turn_key is not None:
-            with _running_lock:
-                _running.pop(turn_key, None)
-
-    if saw_terminal:
-        return
-    stderr = (proc.stderr.read() if proc.stderr else "")[:500].strip()
-    # cancelled is checked FIRST: a cancelled resumed turn that died before any
-    # output must NOT be misclassified as ResumeFailed (which would trigger a
-    # pointless retry).
-    if cancelled.is_set():
-        yield {"type": "error", "message": "stopped", "interrupted": True}
-        return
-    if timed_out.is_set():
-        yield {
-            "type": "error",
-            "message": f"poltergeist took longer than {timeout_s}s and was stopped.",
-            "interrupted": True,
-        }
-        return
-    if session_id and not saw_any and proc.returncode != 0:
-        raise ResumeFailed(stderr or "resume failed")
-    yield {
-        "type": "error",
-        "message": stderr or f"claude exited with code {proc.returncode}",
-    }
+    yield from _provider(binary=binary, mcp_binary=mcp_binary).chat(req)

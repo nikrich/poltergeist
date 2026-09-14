@@ -23,7 +23,7 @@ export const useSettings = create<SettingsState>((set) => ({
   cloudSync: false,
   e2eEncryption: true,
   telemetry: false,
-  llmProvider: 'local',
+  llmProvider: 'claude',
 
   autoRecordFromCalendar: true,
   diarizeSpeakers: true,

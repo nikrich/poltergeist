@@ -21,6 +21,8 @@ import type {
   DailyPage,
   HeatmapResponse,
   JotsPage,
+  LlmProvidersResponse,
+  LlmSettings,
   MeetingsPage,
   Note,
   Prep,
@@ -32,6 +34,7 @@ import type {
   SetCaptureTargetRequest,
   StartRecordingRequest,
   Suggestion,
+  UpdateLlmSettings,
   UpdateNoteBodyRequest,
   UpdateNoteBodyResponse,
   UpdateProjectRequest,
@@ -743,5 +746,50 @@ export function useSaveMcpServers() {
     mutationFn: (servers: McpServerWrite[]) =>
       put<{ servers: McpServersResponse['servers'] }>('/v1/chat/mcp-servers', { servers }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['chat', 'mcp-servers'] }),
+  });
+}
+
+// ── LLM providers ────────────────────────────────────────────────────────
+
+export function useLlmSettings() {
+  return useQuery({
+    queryKey: ['settings', 'llm'],
+    queryFn: () => get<LlmSettings>('/v1/settings/llm'),
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useUpdateLlmSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: UpdateLlmSettings) => put<LlmSettings>('/v1/settings/llm', vars),
+    onSuccess: (data) => {
+      qc.setQueryData(['settings', 'llm'], data);
+      // A provider (or model) change can flip which provider is "active" and
+      // invalidates the cached diagnostics probe — re-run it so the panel
+      // doesn't keep showing the previous provider's health.
+      void qc.invalidateQueries({ queryKey: ['llm', 'providers'] });
+    },
+  });
+}
+
+/** Probes each provider CLI/HTTP endpoint — can take a few seconds, so this
+ * is cached for a while and only re-run on an explicit "re-check". */
+export function useLlmProviders() {
+  return useQuery({
+    queryKey: ['llm', 'providers'],
+    queryFn: () => get<LlmProvidersResponse>('/v1/llm/providers'),
+    staleTime: 30_000,
+  });
+}
+
+/** The "re-check" button. `refresh=1` bypasses the sidecar's 60s probe cache,
+ * which a plain refetch would otherwise be served from — the whole point of
+ * the button is to see the state *after* installing or signing into a CLI. */
+export function useRecheckLlmProviders() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => get<LlmProvidersResponse>('/v1/llm/providers?refresh=1'),
+    onSuccess: (data) => qc.setQueryData(['llm', 'providers'], data),
   });
 }
