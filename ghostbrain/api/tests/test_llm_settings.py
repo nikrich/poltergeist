@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
 from ghostbrain.api.main import create_app
@@ -29,7 +30,18 @@ def test_get_and_put_llm_settings_roundtrip(tmp_path, monkeypatch):
 def test_put_rejects_unknown_provider(tmp_path, monkeypatch):
     monkeypatch.setenv("VAULT_PATH", str(tmp_path))
     c, h = _client()
-    assert c.put("/v1/settings/llm", json={"provider": "bard"}, headers=h).status_code == 422 or 400
+    r = c.put("/v1/settings/llm", json={"provider": "bard"}, headers=h)
+    assert r.status_code in (400, 422)
+    assert "bard" in r.text
+
+
+def test_update_llm_settings_rejects_unknown_provider_directly(tmp_path, monkeypatch):
+    monkeypatch.setenv("VAULT_PATH", str(tmp_path))
+    (tmp_path / "90-meta").mkdir(parents=True)
+    from ghostbrain.api.repo.settings import update_llm_settings
+
+    with pytest.raises(ValueError, match="bard"):
+        update_llm_settings(provider="bard")
 
 
 def test_providers_route_probes_all(monkeypatch):
@@ -49,6 +61,30 @@ def test_providers_route_probes_all(monkeypatch):
     c, h = _client()
     body = c.get("/v1/llm/providers", headers=h).json()
     assert body["active"] == "claude" and body["providers"]["codex"]["ok"] is False and body["providers"]["openai_http"]["detail"]["models"] == []
+
+
+def test_providers_route_degrades_when_one_provider_raises(monkeypatch):
+    """A provider adapter raising something other than LLMError (e.g. a bug in
+    its constructor) must not break the whole /v1/llm/providers response —
+    only that provider's entry should report unavailable."""
+    from ghostbrain.api.routes import llm_providers as route
+
+    class WorkingProvider:
+        def probe(self):
+            return base.ProviderProbe(True, "ok")
+
+    def fake_get_provider(cfg):
+        if cfg.provider == "codex":
+            raise TypeError("boom")
+        return WorkingProvider()
+
+    monkeypatch.setattr(route, "get_provider", fake_get_provider)
+    c, h = _client()
+    body = c.get("/v1/llm/providers", headers=h).json()
+    assert set(body["providers"]) == {"claude", "codex", "gemini", "openai_http"}
+    assert body["providers"]["codex"]["ok"] is False
+    assert "boom" in body["providers"]["codex"]["reason"]
+    assert body["providers"]["claude"]["ok"] is True
 
 
 def test_answer_returns_412_when_provider_unusable(monkeypatch):

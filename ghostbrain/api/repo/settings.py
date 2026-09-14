@@ -137,13 +137,13 @@ def update_llm_settings(**fields) -> dict:
     if fields.get("provider") is not None:
         p = str(fields["provider"]).strip().lower()
         if p not in PROVIDER_IDS:
-            raise ValueError(f"provider must be one of {', '.join(PROVIDER_IDS)}")
+            raise ValueError(f"unknown provider {p!r}; expected one of {', '.join(PROVIDER_IDS)}")
         block["provider"] = p
     if fields.get("models") is not None:
         models = block.get("models") if isinstance(block.get("models"), dict) else {}
         for tier, model in fields["models"].items():
             if tier not in ("fast", "balanced", "quality"):
-                raise ValueError(f"unknown tier {tier!r}")
+                raise ValueError(f"unknown tier {tier!r}; expected one of fast, balanced, quality")
             models[tier] = (str(model).strip() or None) if model is not None else None
         block["models"] = models
     http = block.get("openai_http") if isinstance(block.get("openai_http"), dict) else {}

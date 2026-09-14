@@ -9,7 +9,6 @@ import dataclasses
 
 from fastapi import APIRouter
 
-from ghostbrain.llm.client import LLMError
 from ghostbrain.llm.providers import PROVIDER_IDS, get_provider
 from ghostbrain.llm.providers.base import ProviderProbe
 from ghostbrain.llm.providers.config import LlmConfig, load_llm_config
@@ -25,7 +24,7 @@ def _probe_all() -> dict[str, ProviderProbe]:
             out[pid] = get_provider(
                 LlmConfig(provider=pid, models=cfg.models, base_url=cfg.base_url, api_key_env=cfg.api_key_env)
             ).probe()
-        except LLMError as e:
+        except Exception as e:  # noqa: BLE001 — one misbehaving provider must not break the rest
             out[pid] = ProviderProbe(False, str(e))
     return out
 
