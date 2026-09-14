@@ -1,0 +1,5 @@
+{"type":"thread.started","thread_id":"thr_abc123"}
+{"type":"turn.started"}
+{"type":"item.started","item":{"id":"item_1","type":"agent_message","text":""}}
+{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"{\"context\": \"work\", \"confidence\": 0.9}"}}
+{"type":"turn.completed","usage":{"input_tokens":120,"output_tokens":18}}

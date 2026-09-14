@@ -14,6 +14,10 @@ def get_provider(cfg=None):
         from ghostbrain.llm.providers.claude_cli import ClaudeCli
 
         return ClaudeCli(models=models)
+    if cfg.provider == "codex":
+        from ghostbrain.llm.providers.codex_cli import CodexCli
+
+        return CodexCli(models=models)
     if cfg.provider == "openai_http":
         from ghostbrain.llm.providers.openai_http import OpenAiHttp
 
