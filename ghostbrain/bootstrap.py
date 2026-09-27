@@ -681,13 +681,10 @@ joplin:
     #   Personal: another-context
     {}
 
-# Calendar accounts → context. One block per provider.
+# Calendar routing. One block per provider.
 calendar:
-  google:
-    accounts:
-      # TODO: "you@gmail.com": personal
-      # TODO: "you@workspace.com": work
-      {}
+  # Google Calendar accounts live in 90-meta/accounts.yaml (connect them in the app).
+  google: {}
 
 # Claude Code project paths → context. Longest-prefix match wins.
 # Used by ghostbrain.profile.claude_md to pick the right context profile.

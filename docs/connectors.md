@@ -33,7 +33,7 @@ accounts:
   - connector: jira
     id: agencyx.atlassian.net        # site host
     context: agencyx
-    options: { email: jannik@agencyx.com }
+    options: { email: you@agencyx.com }  # the email for this site's API token
 ```
 
 **Accounts start unassigned.** Connecting an account in the app (or via a `ghostbrain-*-auth` CLI) registers it in `accounts.yaml` with no `context` — it keeps syncing and its events fall through to the LLM router until you set `context:` on that entry, which routes everything from that account straight to the named context with no LLM call.
@@ -49,6 +49,10 @@ accounts:
 **Microsoft** (Outlook Mail, Teams Chat, Teams Meetings) is one account covering all three. If no Microsoft account is listed in `accounts.yaml`, those connectors keep using the first signed-in Microsoft account from the MSAL cache, same as before.
 
 No secrets are ever stored in `accounts.yaml` — tokens stay exactly where they are today (OS keychain / `state/*.token` / `.env`).
+
+**Per-run limits apply per account.** Caps such as `max_messages_per_run` (Outlook, Teams Chat) and the per-run thread/result limits of Gmail, Slack, Jira and Confluence are applied to each account's fetch, so a connector with several accounts can pull up to that many items per account per run.
+
+**Re-seeding.** Deleting `accounts.yaml` makes it re-seed from `routing.yaml`'s legacy per-account blocks (plus live `gh` / Microsoft logins) on the next start; accounts you connected or assigned since are lost unless they're also in those blocks.
 
 ## Claude Code sessions
 
@@ -113,7 +117,7 @@ ATLASSIAN_EMAIL=your.email@example.com
 ATLASSIAN_TOKEN_<SITE>=<api token from id.atlassian.com>
 ```
 
-`<SITE>` is the site slug uppercased — e.g. `yourco.atlassian.net` → `ATLASSIAN_TOKEN_SFT`. A single shared `ATLASSIAN_TOKEN` works as a fallback if you only have one site, or store a per-site token via the connect flow / `accounts.yaml` `options.email` (see [Multiple accounts and contexts](#multiple-accounts-and-contexts)).
+`<SITE>` is the site slug (the host's first label) uppercased, with `-` → `_` — e.g. `yourco.atlassian.net` → `ATLASSIAN_TOKEN_YOURCO`, `your-co.atlassian.net` → `ATLASSIAN_TOKEN_YOUR_CO`. A single shared `ATLASSIAN_TOKEN` works as a fallback if you only have one site. Connecting a site in the app instead stores its token in `~/.ghostbrain/state/atlassian.<slug>.token` and its email in the site's `accounts.yaml` entry as `options.email` (the per-site email, which wins over `ATLASSIAN_EMAIL`); the token itself never goes in `accounts.yaml`. If `.env` already has `ATLASSIAN_TOKEN_<SITE>` for that site, reconnecting overwrites it with the new token (see [Multiple accounts and contexts](#multiple-accounts-and-contexts)).
 
 Sites are accounts — connect them in the app, or add them to `<vault>/90-meta/accounts.yaml` directly:
 
