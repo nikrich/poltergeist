@@ -37,6 +37,10 @@ SCOPES = [
 
 GRAPH = "https://graph.microsoft.com/v1.0"
 
+# Placeholder username_from_result returns when the sign-in's username is
+# unknown; never registered as an account.
+UNKNOWN_USERNAME = "your account"
+
 
 class MicrosoftAuthError(RuntimeError):
     """Raised when Graph credentials are missing, expired beyond refresh,
@@ -174,7 +178,9 @@ def username_from_result(result: dict, app) -> str:
     if claims.get("preferred_username"):
         return str(claims["preferred_username"])
     accounts = app.get_accounts()
-    return accounts[-1].get("username", "your account") if accounts else "your account"
+    if accounts and accounts[-1].get("username"):
+        return str(accounts[-1]["username"])
+    return UNKNOWN_USERNAME
 
 
 def run_device_flow(config: dict, tenant_id: str | None = None) -> str:

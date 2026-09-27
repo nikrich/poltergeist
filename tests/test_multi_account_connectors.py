@@ -147,6 +147,29 @@ def test_calendar_google_one_broken_account(tmp_path, monkeypatch):
     assert accounts_health.health_for("calendar", "expired@x.com")["status"] == "auth_required"
 
 
+def test_calendar_runner_all_google_accounts_failed(v, monkeypatch):
+    """All google accounts failing: run reports AllAccountsFailed with the
+    per-account summary, and google's last_run is not advanced."""
+    from ghostbrain.connectors.calendar import runner
+    from ghostbrain.connectors.calendar.google import GoogleCalendarConnector
+    from ghostbrain.connectors.calendar.google.auth import GoogleAuthError
+    from ghostbrain.paths import state_dir
+
+    write_accounts(v, [{"connector": "calendar_google", "id": "expired@x.com"}])
+
+    def fake(self, email, tmin, tmax):
+        raise GoogleAuthError("expired")
+
+    monkeypatch.setattr(GoogleCalendarConnector, "_fetch_account", fake)
+    res = runner.run()
+    assert res.ok is False and res.error_type == "AllAccountsFailed"
+    assert res.error.startswith("google: all calendar accounts failed")
+    assert res.details["accounts"] == {"expired@x.com": "auth_required"}
+    assert res.details["providers"]["google"]["error_type"] == "AllAccountsFailed"
+    assert "traceback" not in res.details["providers"]["google"]
+    assert not list(state_dir().glob("*calendar*.last_run"))
+
+
 def test_calendar_event_carries_account_id():
     from ghostbrain.connectors.calendar._base import CalendarEvent
 

@@ -202,3 +202,22 @@ def test_auth_cli_registers_account_with_tenant(monkeypatch):
     auth_cli.main()
     assert got["tenant"] == "t-y"
     assert got["acct"] == ("microsoft", "new@y.com", {"tenant_id": "t-y"})
+
+
+def test_auth_cli_does_not_register_placeholder_username(monkeypatch):
+    from ghostbrain.connectors.microsoft.graph import auth_cli
+
+    registered = []
+    monkeypatch.setattr(auth_cli, "_load_microsoft_config", lambda: dict(CFG))
+    monkeypatch.setattr(auth_cli, "run_device_flow", lambda cfg, tenant_id=None: auth.UNKNOWN_USERNAME)
+    monkeypatch.setattr("ghostbrain.accounts.ensure_account",
+                        lambda *a, **kw: registered.append(a))
+    monkeypatch.setattr("sys.argv", ["ghostbrain-microsoft-auth"])
+    auth_cli.main()
+    assert registered == []
+
+
+def test_username_from_result_placeholder_is_the_constant():
+    app = MagicMock()
+    app.get_accounts.return_value = [{"home_account_id": "x"}]
+    assert auth.username_from_result({}, app) == auth.UNKNOWN_USERNAME == "your account"

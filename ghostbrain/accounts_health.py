@@ -3,6 +3,11 @@
 Keyed ``"<connector>:<account id lower-cased>"`` where connector is the
 fetching connector's name (gmail, calendar, outlook_mail, ...). Written by
 ``for_each_account``, read by the connectors API.
+
+When every account of a run fails, ``for_each_account`` raises
+``AllAccountsFailedError`` so the connector's ``last_run`` is not advanced and
+the next run catches up. Partial failures (some accounts ok) still advance
+``last_run`` for the connector — a known limitation of the shared last_run.
 """
 from __future__ import annotations
 
@@ -25,6 +30,14 @@ STATUS_AUTH = "auth_required"
 STATUS_ERROR = "error"
 
 T = TypeVar("T")
+
+_ERROR_SNIPPET_CHARS = 200
+
+
+class AllAccountsFailedError(RuntimeError):
+    """Every account processed by ``for_each_account`` failed (health for
+    each was already recorded). Raised so ``Connector.run`` does not save
+    ``last_run`` for a run that fetched nothing."""
 
 _lock = threading.Lock()
 _last_run: dict[str, dict[str, str]] = {}
@@ -104,6 +117,8 @@ def for_each_account(
     Returns the events from every account that succeeded."""
     _last_run[connector] = {}
     events: list[dict] = []
+    failures: list[str] = []
+    succeeded = 0
     for item in items:
         aid = account_id(item)
         try:
@@ -111,11 +126,16 @@ def for_each_account(
         except auth_errors as e:
             log.warning("%s account %s needs re-auth: %s", connector, aid, e)
             record(connector, aid, STATUS_AUTH, str(e))
+            failures.append(f"{aid}: {STATUS_AUTH} ({str(e)[:_ERROR_SNIPPET_CHARS]})")
             continue
         except Exception as e:  # noqa: BLE001 — one account must never stop the rest
             log.warning("%s account %s failed: %s", connector, aid, e)
             record(connector, aid, STATUS_ERROR, str(e))
+            failures.append(f"{aid}: {STATUS_ERROR} ({str(e)[:_ERROR_SNIPPET_CHARS]})")
             continue
         record(connector, aid, STATUS_OK)
+        succeeded += 1
         events.extend(got)
+    if failures and not succeeded:
+        raise AllAccountsFailedError(f"all {connector} accounts failed: " + "; ".join(failures))
     return events

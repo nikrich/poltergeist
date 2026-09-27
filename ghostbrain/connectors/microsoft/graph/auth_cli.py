@@ -16,6 +16,7 @@ import logging
 import sys
 
 from ghostbrain.connectors.microsoft.graph.auth import (
+    UNKNOWN_USERNAME,
     MicrosoftAuthError,
     run_device_flow,
 )
@@ -50,6 +51,10 @@ def main() -> None:
         print(f"unexpected error: {e}", file=sys.stderr)
         raise SystemExit(2)
     print(f"OK — signed in as {username}; token cached.")
+    if username == UNKNOWN_USERNAME:
+        print("warning: could not tell which account signed in; not registering it.",
+              file=sys.stderr)
+        return
     from ghostbrain import accounts
 
     try:

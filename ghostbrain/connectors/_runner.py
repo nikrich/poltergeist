@@ -112,7 +112,21 @@ def run_connector(
                 error_type="HealthCheckFailed",
             )
         accounts_health.clear_last_run(name)
-        queued = connector.run()  # type: ignore[attr-defined]
+        try:
+            queued = connector.run()  # type: ignore[attr-defined]
+        except accounts_health.AllAccountsFailedError as e:
+            # Expected per-account failure, not a crash: no traceback. The
+            # connector did not save last_run, so the next run catches up.
+            _audit("connector_all_accounts_failed", name, error=str(e))
+            return RunResult(
+                connector=name,
+                ok=False,
+                started_at=started,
+                finished_at=time.time(),
+                error=str(e),
+                error_type="AllAccountsFailed",
+                details={"accounts": accounts_health.last_run_summary(name)},
+            )
         _audit("connector_run", name, events_queued=int(queued))
         summary = accounts_health.last_run_summary(name)
         details = {"accounts": summary} if summary else {}

@@ -89,6 +89,11 @@ def run() -> RunResult:
             queued = connector.run()
             per_provider[name] = {"ok": True, "queued": int(queued)}
             total_queued += int(queued)
+        except accounts_health.AllAccountsFailedError as e:
+            log.error("calendar.%s: %s", name, e)
+            per_provider[name] = {"ok": False, "error": str(e), "error_type": "AllAccountsFailed"}
+            if first_error is None:
+                first_error = (name, "AllAccountsFailed", str(e))
         except GoogleAuthError as e:
             log.error("calendar.google auth error: %s", e)
             per_provider[name] = {"ok": False, "error": str(e), "error_type": "GoogleAuthError"}
