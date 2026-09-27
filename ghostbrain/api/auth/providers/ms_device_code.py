@@ -98,11 +98,16 @@ class MicrosoftProvider:
         from ghostbrain import accounts
         from ghostbrain.connectors.microsoft.graph.auth import (
             UNKNOWN_USERNAME,
+            adopt_cached_accounts,
+            registry_is_empty,
             username_from_result,
         )
         session.account = username_from_result(result, app)
         if session.account != UNKNOWN_USERNAME:
+            first_registered = registry_is_empty()
             accounts.ensure_account("microsoft", session.account)
+            if first_registered:
+                adopt_cached_accounts(cfg)
         session.status = "success"
         session.next = NextAction(kind="done")
 

@@ -161,6 +161,44 @@ def cached_usernames(config: dict) -> list[str]:
     return [a["username"] for a in app.get_accounts() if a.get("username")]
 
 
+def registry_is_empty() -> bool:
+    """True when accounts.yaml has no (enabled) microsoft account, i.e. the
+    runners are on the no-accounts fallback (first cached MSAL account).
+    False when the registry can't be read, so nothing is adopted blindly."""
+    from ghostbrain import accounts
+
+    try:
+        return not accounts.list_accounts("microsoft")
+    except Exception as e:  # noqa: BLE001
+        log.warning("could not read microsoft accounts: %s", e)
+        return False
+
+
+def adopt_cached_accounts(config: dict) -> list[str]:
+    """Register every account already in the shared MSAL cache as a
+    ``microsoft`` account (unassigned). Called on the first registered
+    sign-in: registering only the new account would turn off the
+    no-accounts fallback and silently stop syncing the pre-existing
+    sign-in. Best-effort; returns the usernames registered."""
+    from ghostbrain import accounts
+
+    done: list[str] = []
+    try:
+        usernames = cached_usernames(config)
+    except Exception as e:  # noqa: BLE001 — the sign-in itself succeeded
+        log.warning("could not list cached Microsoft accounts: %s", e)
+        return done
+    for u in usernames:
+        if not u or u == UNKNOWN_USERNAME:
+            continue
+        try:
+            accounts.ensure_account("microsoft", u)
+            done.append(u)
+        except Exception as e:  # noqa: BLE001
+            log.warning("could not register cached Microsoft account %s: %s", u, e)
+    return done
+
+
 def remove_cached_account(config: dict, username: str) -> bool:
     """Drop ``username`` from the shared cache. True if it was present."""
     app = _build_app(config)

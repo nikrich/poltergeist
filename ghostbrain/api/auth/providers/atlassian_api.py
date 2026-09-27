@@ -18,6 +18,23 @@ def _validate_myself(email: str, token: str, site: str) -> dict:
     return r.json()
 
 
+def _replace_stale_env_token(site: str, token: str) -> None:
+    """``ATLASSIAN_TOKEN_<SLUG>`` wins over the state-file token in
+    ``auth_for_site``, so a stale one left in .env would shadow the token just
+    saved. Overwrite it in .env (only if already there) and in this process.
+    ``ATLASSIAN_EMAIL`` is never touched."""
+    import os
+
+    from ghostbrain.api.repo.dotenv_store import read_env, set_env
+    from ghostbrain.connectors.atlassian._base import site_token_var
+
+    var = site_token_var(site)
+    if var in read_env():
+        set_env({var: token})  # also updates os.environ
+    elif var in os.environ:
+        os.environ[var] = token
+
+
 class AtlassianTokenProvider:
     pattern = "atlassian_api"
 
@@ -53,6 +70,7 @@ class AtlassianTokenProvider:
             return NextAction(kind="need_input", fields=[])
         from ghostbrain.connectors.atlassian._base import save_token
         save_token(site, token)
+        _replace_stale_env_token(site, token)
         accounts.ensure_account(connector_id, site, options={"email": email})
         if connector_id == "confluence":
             spaces = [s.strip() for s in (data.get("spaces") or "").split(",") if s.strip()]

@@ -15,6 +15,7 @@ import argparse
 import logging
 import sys
 
+from ghostbrain.connectors.microsoft.graph import auth as ms_auth
 from ghostbrain.connectors.microsoft.graph.auth import (
     UNKNOWN_USERNAME,
     MicrosoftAuthError,
@@ -42,8 +43,9 @@ def main() -> None:
     )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    config = _load_microsoft_config()
     try:
-        username = run_device_flow(_load_microsoft_config(), tenant_id=args.tenant)
+        username = run_device_flow(config, tenant_id=args.tenant)
     except MicrosoftAuthError as e:
         print(f"auth error: {e}", file=sys.stderr)
         raise SystemExit(1)
@@ -57,6 +59,9 @@ def main() -> None:
         return
     from ghostbrain import accounts
 
+    # First registered sign-in: also register the accounts already in the
+    # cache, or the no-accounts fallback turns off and they stop syncing.
+    first_registered = ms_auth.registry_is_empty()
     try:
         accounts.ensure_account(
             "microsoft", username,
@@ -65,6 +70,8 @@ def main() -> None:
     except Exception as e:  # noqa: BLE001 — the sign-in itself succeeded
         print(f"warning: could not register {username} as a microsoft account: {e}",
               file=sys.stderr)
+    if first_registered:
+        ms_auth.adopt_cached_accounts(config)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -221,3 +222,32 @@ def test_username_from_result_placeholder_is_the_constant():
     app = MagicMock()
     app.get_accounts.return_value = [{"home_account_id": "x"}]
     assert auth.username_from_result({}, app) == auth.UNKNOWN_USERNAME == "your account"
+
+
+def test_auth_cli_first_sign_in_registers_existing_cached_accounts(monkeypatch):
+    from ghostbrain import accounts
+    from ghostbrain.connectors.microsoft.graph import auth_cli
+
+    (Path(os.environ["VAULT_PATH"]) / "90-meta").mkdir(parents=True)
+    monkeypatch.setattr(auth_cli, "_load_microsoft_config", lambda: dict(CFG))
+    monkeypatch.setattr(auth_cli, "run_device_flow", lambda cfg, tenant_id=None: "new@y.com")
+    monkeypatch.setattr(auth, "cached_usernames",
+                        lambda cfg: ["old@y.com", auth.UNKNOWN_USERNAME, "new@y.com"])
+    monkeypatch.setattr("sys.argv", ["ghostbrain-microsoft-auth", "--tenant", "t-y"])
+    auth_cli.main()
+    got = {a.id: a.options for a in accounts.list_accounts("microsoft")}
+    assert got == {"old@y.com": {}, "new@y.com": {"tenant_id": "t-y"}}
+
+
+def test_auth_cli_with_registered_accounts_does_not_adopt_cache(monkeypatch):
+    from ghostbrain import accounts
+    from ghostbrain.connectors.microsoft.graph import auth_cli
+
+    (Path(os.environ["VAULT_PATH"]) / "90-meta").mkdir(parents=True)
+    accounts.ensure_account("microsoft", "reg@y.com")
+    monkeypatch.setattr(auth_cli, "_load_microsoft_config", lambda: dict(CFG))
+    monkeypatch.setattr(auth_cli, "run_device_flow", lambda cfg, tenant_id=None: "new@y.com")
+    monkeypatch.setattr(auth, "cached_usernames", lambda cfg: ["old@y.com", "new@y.com"])
+    monkeypatch.setattr("sys.argv", ["ghostbrain-microsoft-auth"])
+    auth_cli.main()
+    assert sorted(a.id for a in accounts.list_accounts("microsoft")) == ["new@y.com", "reg@y.com"]

@@ -156,8 +156,7 @@ def auth_for_site(host: str) -> tuple[str, str]:
             "ATLASSIAN_EMAIL in .env."
         )
 
-    slug = slug_for_host(host).upper().replace("-", "_")
-    site_var = f"ATLASSIAN_TOKEN_{slug}"
+    site_var = site_token_var(host)
     token = os.environ.get(site_var) or _read_token_file(host) or os.environ.get("ATLASSIAN_TOKEN")
     if not token:
         raise AtlassianAuthError(
@@ -177,9 +176,18 @@ def token_path(host: str) -> Path:
 def save_token(host: str, token: str) -> Path:
     p = token_path(host)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(token.strip(), encoding="utf-8")
+    # Created 0600 so the token is never world-readable, even briefly; the
+    # chmod covers a pre-existing file (O_CREAT's mode only applies to new).
+    fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(token.strip())
     p.chmod(0o600)
     return p
+
+
+def site_token_var(host: str) -> str:
+    """The site-specific env var, e.g. ``ATLASSIAN_TOKEN_ACME``."""
+    return f"ATLASSIAN_TOKEN_{slug_for_host(host).upper().replace('-', '_')}"
 
 
 def _read_token_file(host: str) -> str | None:

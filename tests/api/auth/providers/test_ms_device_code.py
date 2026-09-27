@@ -75,3 +75,66 @@ def test_poll_failure_sets_error_without_secret(vault, monkeypatch):
     assert sess.error == "nope"
     assert "t" != sess.error  # no bare access-token leaked into the error message
     assert "access_token" not in (sess.error or "")
+
+
+class _SignInApp:
+    """MSAL app double: a pre-existing cached sign-in plus the new one."""
+
+    def __init__(self, cached):
+        self._cached = cached
+
+    def acquire_token_by_device_flow(self, flow):
+        return {"access_token": "t", "id_token_claims": {"preferred_username": "new@corp.com"}}
+
+    def get_accounts(self, username=None):
+        return [{"username": u} for u in self._cached]
+
+
+def _poll_with(monkeypatch, cached):
+    import ghostbrain.api.auth.providers.ms_device_code as mod
+    from ghostbrain.connectors.microsoft.graph import auth
+
+    app = _SignInApp(cached)
+    monkeypatch.setattr(mod, "_build_app", lambda cfg: app)
+    monkeypatch.setattr(auth, "_build_app", lambda cfg, tenant_id=None: app)
+    sess = _sess()
+    sess._ms_flow = {"device_code": "dev"}  # type: ignore[attr-defined]
+    MicrosoftProvider().poll("outlook_mail", sess)
+    assert sess.status == "success"
+
+
+def test_poll_first_sign_in_also_registers_existing_cached_accounts(vault, monkeypatch):
+    """Registering only the new account would turn off the no-accounts
+    fallback and silently stop syncing the pre-existing cached sign-in."""
+    from ghostbrain import accounts
+
+    _poll_with(monkeypatch, ["old@corp.com", "your account", "new@corp.com"])
+    assert sorted(a.id for a in accounts.list_accounts("microsoft")) == ["new@corp.com", "old@corp.com"]
+
+
+def test_poll_with_registered_accounts_does_not_adopt_cache(vault, monkeypatch):
+    from ghostbrain import accounts
+
+    accounts.ensure_account("microsoft", "reg@corp.com")
+    _poll_with(monkeypatch, ["old@corp.com", "new@corp.com"])
+    assert sorted(a.id for a in accounts.list_accounts("microsoft")) == ["new@corp.com", "reg@corp.com"]
+
+
+def test_poll_adopting_cache_failure_is_non_fatal(vault, monkeypatch):
+    from ghostbrain import accounts
+    from ghostbrain.connectors.microsoft.graph import auth
+
+    import ghostbrain.api.auth.providers.ms_device_code as mod
+
+    app = _SignInApp(["new@corp.com"])
+    monkeypatch.setattr(mod, "_build_app", lambda cfg: app)
+
+    def boom(*a, **k):
+        raise RuntimeError("keychain locked")
+
+    monkeypatch.setattr(auth, "_build_app", boom)
+    sess = _sess()
+    sess._ms_flow = {"device_code": "dev"}  # type: ignore[attr-defined]
+    MicrosoftProvider().poll("outlook_mail", sess)
+    assert sess.status == "success"
+    assert [a.id for a in accounts.list_accounts("microsoft")] == ["new@corp.com"]
