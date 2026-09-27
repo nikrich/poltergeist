@@ -1,5 +1,8 @@
 """GitHub connector. Shells out to `gh` CLI so we inherit the user's
-existing OAuth login — no token management, no env var.
+existing OAuth login. With logins registered in `accounts.yaml`, it
+fetches each one via `gh auth token --user <login>` + `GH_TOKEN`,
+never switching the CLI's active account; with none registered it
+falls back to whichever login `gh` is currently authenticated as.
 
 Fetches three kinds of events filtered to monitored orgs (routing.yaml
 github.orgs):

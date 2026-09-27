@@ -5,7 +5,7 @@ Run via::
     python -m ghostbrain.connectors.slack
     ghostbrain-slack-fetch
 
-Reads workspaces from ``vault/90-meta/routing.yaml:slack.workspaces``,
+Reads workspaces from ``vault/90-meta/accounts.yaml`` (connector: slack),
 runs the connector, and drops normalized events into the queue's
 pending/. The always-on worker picks them up.
 
@@ -15,8 +15,8 @@ Dry-run preview for full-pull mode::
 
 This pulls 1 day of history from every channel without saving cursors
 and without enqueueing, then prints the LLM's keep/skip decision per
-message so you can eyeball quality before flipping ``mode: full`` in
-``routing.yaml``.
+message so you can eyeball quality before flipping ``options.mode: full``
+for that workspace in ``accounts.yaml``.
 """
 
 from __future__ import annotations

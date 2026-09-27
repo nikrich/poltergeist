@@ -1,15 +1,54 @@
 # Connector setup
 
-Every Poltergeist connector follows the same shape: **create a credential → authenticate → add a block to `<vault>/90-meta/routing.yaml` → fetch.** The desktop app's connector cards do the first three for most connectors; this page is the full per-connector reference. For a guided walkthrough, use the `poltergeist-setup` Claude Code skill (see the README).
+Every Poltergeist connector follows the same shape: **create a credential → authenticate → connect the account → fetch.** Authenticating (or the app's "connect" flow) registers the account in `<vault>/90-meta/accounts.yaml`; the desktop app's connector cards do the first three for most connectors. This page is the full per-connector reference. For a guided walkthrough, use the `poltergeist-setup` Claude Code skill (see the README).
 
 > **Command names.** Commands below are written as `poltergeist <sub>`, the shim the app installs from Settings → background → "command line tool". The same subcommands are available as `ghostbrain-api <sub>` (the bundled binary, at `/Applications/Poltergeist.app/Contents/Resources/sidecar/ghostbrain-api/ghostbrain-api` on macOS) and, on a `pip install` from source, as `ghostbrain-<sub>`.
 
+- [Multiple accounts and contexts](#multiple-accounts-and-contexts)
 - [Claude Code sessions](#claude-code-sessions)
 - [GitHub](#github)
 - [Jira + Confluence](#jira--confluence)
 - [Calendar (Google)](#calendar-google)
 - [Gmail](#gmail)
 - [Slack](#slack)
+
+## Multiple accounts and contexts
+
+Every account-bearing connector (`gmail`, `calendar_google`, `slack`, `jira`, `confluence`, `github`, `microsoft`) supports any number of accounts. Per-account data — which accounts are connected, and which context each routes to — lives in one app-owned file, `<vault>/90-meta/accounts.yaml`, seeded once from any legacy per-account `routing.yaml` blocks the first time it's read:
+
+```yaml
+version: 1
+accounts:
+  - connector: gmail
+    id: you@gmail.com
+    context: personal                # optional; omitted = unassigned
+    enabled: true                    # optional, default true
+    options:                         # connector-specific, all optional
+      monitored_labels: []
+      unread_lookback_hours: 24
+  - connector: slack
+    id: agencyx                      # workspace slug
+    context: agencyx
+    options: { mode: mentions, lookback_hours: 24 }
+  - connector: jira
+    id: agencyx.atlassian.net        # site host
+    context: agencyx
+    options: { email: jannik@agencyx.com }
+```
+
+**Accounts start unassigned.** Connecting an account in the app (or via a `ghostbrain-*-auth` CLI) registers it in `accounts.yaml` with no `context` — it keeps syncing and its events fall through to the LLM router until you set `context:` on that entry, which routes everything from that account straight to the named context with no LLM call.
+
+**Connecting the same connector again adds another account** — there's no limit, and each account is tracked (and can fail or need re-auth) independently.
+
+**Routing order.** In `_fast_route`, the existing specific rules keep winning first (Claude Code project path, GitHub org, Confluence space, Joplin notebook, Gmail sender domain, Gmail label prefix, macOS calendar name). If none of those match, a new **account rule** runs before the LLM: it looks up the event's account in `accounts.yaml` and, if that account has a `context`, routes there (`method: "account"`, confidence 0.95). Only if the account is unassigned (or unknown) does the event fall through to the LLM router.
+
+**Per-account failure isolation.** Each account's health is tracked separately (`ok`, `auth_required`, or `error`) and surfaced by `GET /v1/connectors/{id}`. If only some of a connector's accounts fail in a run, the others keep syncing normally and the failed ones show `needs re-auth` / `error` for just that account. If *every* account of a connector fails in a run, the connector reports "all accounts failed" and its sync window does **not** advance — the backlog is picked up on the next run instead of being skipped.
+
+**GitHub** has no per-login "connect" step — it inherits whatever you're logged into via `gh auth login`. If you register GitHub accounts in `accounts.yaml`, every registered `gh` login is fetched (org filtering in `github.orgs` still limits what's pulled, and GitHub org rules still win routing over the account rule); with none registered, it fetches whichever login `gh` is currently authenticated as, as before.
+
+**Microsoft** (Outlook Mail, Teams Chat, Teams Meetings) is one account covering all three. If no Microsoft account is listed in `accounts.yaml`, those connectors keep using the first signed-in Microsoft account from the MSAL cache, same as before.
+
+No secrets are ever stored in `accounts.yaml` — tokens stay exactly where they are today (OS keychain / `state/*.token` / `.env`).
 
 ## Claude Code sessions
 
@@ -74,17 +113,24 @@ ATLASSIAN_EMAIL=your.email@example.com
 ATLASSIAN_TOKEN_<SITE>=<api token from id.atlassian.com>
 ```
 
-`<SITE>` is the site slug uppercased — e.g. `yourco.atlassian.net` → `ATLASSIAN_TOKEN_SFT`. A single shared `ATLASSIAN_TOKEN` works as a fallback if you only have one site.
+`<SITE>` is the site slug uppercased — e.g. `yourco.atlassian.net` → `ATLASSIAN_TOKEN_SFT`. A single shared `ATLASSIAN_TOKEN` works as a fallback if you only have one site, or store a per-site token via the connect flow / `accounts.yaml` `options.email` (see [Multiple accounts and contexts](#multiple-accounts-and-contexts)).
 
-Configure sites + spaces in `<vault>/90-meta/routing.yaml`:
+Sites are accounts — connect them in the app, or add them to `<vault>/90-meta/accounts.yaml` directly:
 
 ```yaml
-jira:
-  sites:
-    yourco.atlassian.net: work        # site → context
+accounts:
+  - connector: jira
+    id: yourco.atlassian.net          # site → context
+    context: work
+  - connector: confluence
+    id: yourco.atlassian.net
+    context: work
+```
+
+Confluence space keys still map to a context in `routing.yaml`:
+
+```yaml
 confluence:
-  sites:
-    yourco.atlassian.net: work
   spaces:
     DOCS: work                        # space key → context
     PROJ: work
@@ -119,13 +165,15 @@ Polls your Google Calendar(s) hourly. Today's events appear in the morning diges
 1. Create a Google Cloud project at <https://console.cloud.google.com/projectcreate>. Enable the **Google Calendar API**.
 2. Configure the **OAuth consent screen** as External, fill basic metadata, add yourself as a test user.
 3. Create an **OAuth client ID** (type: "Desktop app"). Download the JSON to `~/.ghostbrain/state/google_oauth_client.json` and `chmod 600`.
-4. Configure your accounts in `<vault>/90-meta/routing.yaml`:
+4. Accounts are registered in `<vault>/90-meta/accounts.yaml` when you authenticate (step 5); assign each a context there:
    ```yaml
-   calendar:
-     google:
-       accounts:
-         you@gmail.com: personal
-         you@workspace.com: work
+   accounts:
+     - connector: calendar_google
+       id: you@gmail.com
+       context: personal
+     - connector: calendar_google
+       id: you@workspace.com
+       context: work
    ```
 5. Run the consent flow once per account:
    ```bash
@@ -163,13 +211,24 @@ Polls one or more Gmail accounts. Surfaces threads that are either unread within
 
 Reuses the same OAuth client you set up for the calendar connector. If you skipped that, do steps 1–3 from the calendar setup first (Google Cloud project + OAuth consent screen + Desktop OAuth client at `~/.ghostbrain/state/google_oauth_client.json`). Then enable the **Gmail API** in the same project.
 
-1. Configure accounts and routing in `<vault>/90-meta/routing.yaml`:
+1. Run consent once per account — this also registers the account, unassigned, in `<vault>/90-meta/accounts.yaml`:
+   ```bash
+   poltergeist gmail-auth you@gmail.com
+   ```
+   Refresh token lands at `~/.ghostbrain/state/gmail.<slug>.token`.
+2. Assign each account a context (and, optionally, its own labels/lookback) in `accounts.yaml`:
    ```yaml
-   gmail:
-     accounts:
-       you@gmail.com:
+   accounts:
+     - connector: gmail
+       id: you@gmail.com
+       context: personal
+       options:
          monitored_labels: ["work/important", "consulting/internal"]
          unread_lookback_hours: 24
+   ```
+   Sender-domain and label routing (which win over the account's own context) still live in `routing.yaml`:
+   ```yaml
+   gmail:
      sender_domains:
        company.example.com: work
        client.example.com: consulting
@@ -177,11 +236,6 @@ Reuses the same OAuth client you set up for the calendar connector. If you skipp
        "work/": work
        "consulting/": consulting
    ```
-2. Run consent once per account:
-   ```bash
-   poltergeist gmail-auth you@gmail.com
-   ```
-   Refresh token lands at `~/.ghostbrain/state/gmail.<slug>.token`.
 
 ### Run
 
@@ -221,18 +275,19 @@ Polls one or more Slack workspaces for `@`-mentions of the authenticated user ov
    ```bash
    poltergeist slack-token-add <slug> xoxp-...your-token...
    ```
-   The slug is whatever you'll use in `routing.yaml`. The CLI verifies the token by calling `auth.test` and writes it 0600 to `~/.ghostbrain/state/slack.<slug>.token`.
-5. Configure the workspace in `<vault>/90-meta/routing.yaml`:
+   The slug is whatever you'll use in `accounts.yaml`. The CLI verifies the token by calling `auth.test`, writes it 0600 to `~/.ghostbrain/state/slack.<slug>.token`, and registers the workspace, unassigned, in `<vault>/90-meta/accounts.yaml`.
+5. Assign the workspace a context in `<vault>/90-meta/accounts.yaml`:
    ```yaml
-   slack:
-     workspaces:
-       work-workspace:
-         context: work
-         lookback_hours: 24
-         mentions_only: true
-       consulting:
-         context: consulting
+   accounts:
+     - connector: slack
+       id: work-workspace
+       context: work
+       options: { lookback_hours: 24, mode: mentions }
+     - connector: slack
+       id: consulting
+       context: consulting
    ```
+   A workspace with no `context` still gets polled — its mentions just fall through to the LLM router instead of routing instantly.
 
 Repeat for each workspace.
 
