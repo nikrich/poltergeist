@@ -202,3 +202,61 @@ def test_slack_one_broken_workspace(tmp_path, monkeypatch):
     monkeypatch.setattr(c, "_fetch_workspace", fake)
     assert [e["metadata"]["accountId"] for e in c.fetch(EPOCH)] == ["good"]
     assert accounts_health.health_for("slack", "revoked")["status"] == "auth_required"
+
+
+# ----------------------------------------------------------------- atlassian
+
+def test_atlassian_per_site_email_and_token_file(v, monkeypatch):
+    from ghostbrain.connectors.atlassian import _base
+
+    write_accounts(v, [
+        {"connector": "jira", "id": "agencyx.atlassian.net", "options": {"email": "me@agencyx.com"}},
+        {"connector": "confluence", "id": "agencyy.atlassian.net", "options": {"email": "me@agencyy.com"}},
+    ])
+    monkeypatch.setenv("ATLASSIAN_EMAIL", "legacy@old.com")
+    monkeypatch.setenv("ATLASSIAN_TOKEN", "legacy-global")
+    _base.save_token("agencyx.atlassian.net", "x-token")
+    assert _base.token_path("agencyx.atlassian.net").stat().st_mode & 0o777 == 0o600
+    assert _base.auth_for_site("agencyx.atlassian.net") == ("me@agencyx.com", "x-token")
+    assert _base.auth_for_site("agencyy.atlassian.net") == ("me@agencyy.com", "legacy-global")
+    monkeypatch.setenv("ATLASSIAN_TOKEN_AGENCYX", "env-site")
+    assert _base.auth_for_site("agencyx.atlassian.net")[1] == "env-site"
+    assert _base.auth_for_site("other.atlassian.net") == ("legacy@old.com", "legacy-global")
+
+
+def test_atlassian_auth_errors_without_email(v, monkeypatch):
+    from ghostbrain.connectors.atlassian import _base
+
+    write_accounts(v, [])
+    monkeypatch.delenv("ATLASSIAN_EMAIL", raising=False)
+    with pytest.raises(_base.AtlassianAuthError):
+        _base.auth_for_site("nobody.atlassian.net")
+
+
+def test_jira_and_confluence_sites_from_registry(v):
+    from ghostbrain.connectors.confluence import runner as conf_runner
+    from ghostbrain.connectors.jira import runner as jira_runner
+
+    write_accounts(v, [
+        {"connector": "jira", "id": "a.atlassian.net"},
+        {"connector": "confluence", "id": "b.atlassian.net"},
+    ])
+    assert jira_runner.sites() == ["a.atlassian.net"]
+    assert conf_runner.sites() == ["b.atlassian.net"]
+
+
+def test_jira_one_broken_site(tmp_path, monkeypatch):
+    from ghostbrain.connectors.atlassian._base import AtlassianAuthError
+    from ghostbrain.connectors.jira import JiraConnector
+
+    c = JiraConnector(config={"sites": ["good.atlassian.net", "bad.atlassian.net"]},
+                      queue_dir=tmp_path / "q", state_dir=tmp_path / "s")
+
+    def fake(host, since):
+        if host == "bad.atlassian.net":
+            raise AtlassianAuthError("401")
+        return iter([{"id": "jira:good:X-1", "metadata": {"site": host, "accountId": host}}])
+
+    monkeypatch.setattr(c, "_fetch_site", fake)
+    assert len(c.fetch(EPOCH)) == 1
+    assert accounts_health.health_for("jira", "bad.atlassian.net")["status"] == "auth_required"

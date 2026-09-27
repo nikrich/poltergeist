@@ -50,21 +50,22 @@ def _load_routing() -> dict:
 
 
 def _confluence_config(routing: dict) -> tuple[list[str], dict[str, str]]:
-    cfg = routing.get("confluence") or {}
-    # Confluence shares Atlassian sites with Jira when not configured
-    # explicitly — same fallback as the scheduled runner's _build().
-    sites = list(cfg.get("sites") or (routing.get("jira") or {}).get("sites") or [])
-    spaces = dict(cfg.get("spaces") or {})
-    if not sites or not spaces:
+    from ghostbrain.connectors.confluence.runner import sites
+
+    spaces = dict((routing.get("confluence") or {}).get("spaces") or {})
+    hosts = sites()
+    if not hosts or not spaces:
         raise ImportNotConfiguredError(CONFLUENCE_NOT_CONFIGURED)
-    return sites, spaces
+    return hosts, spaces
 
 
 def _jira_sites(routing: dict) -> list[str]:
-    sites = list((routing.get("jira") or {}).get("sites") or {})
-    if not sites:
+    from ghostbrain.connectors.jira.runner import sites
+
+    hosts = sites()
+    if not hosts:
         raise ImportNotConfiguredError(JIRA_NOT_CONFIGURED)
-    return sites
+    return hosts
 
 
 def _client(host: str, *, not_configured: str) -> AtlassianClient:

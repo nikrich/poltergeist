@@ -1,8 +1,7 @@
 """CLI runner for the Confluence connector.
 
-Reads sites + spaces from vault/90-meta/routing.yaml. Sites are derived
-from the keys of ``confluence.sites`` (or fall back to whatever sites the
-Jira config knows about — Confluence and Jira share Atlassian sites).
+Sites come from the accounts registry (90-meta/accounts.yaml); spaces still
+come from routing.yaml's ``confluence.spaces``.
 """
 
 from __future__ import annotations
@@ -14,6 +13,7 @@ import yaml
 
 from ghostbrain.connectors.atlassian._base import AtlassianAuthError
 from ghostbrain.connectors.confluence import ConfluenceConnector
+from ghostbrain.connectors.confluence.runner import sites as registry_sites
 from ghostbrain.paths import queue_dir, state_dir, vault_path
 from ghostbrain.worker.audit import audit_log
 
@@ -31,14 +31,10 @@ def main() -> None:
     routing = _load_routing()
     confluence_cfg = routing.get("confluence") or {}
     spaces = dict(confluence_cfg.get("spaces") or {})
-
-    # Confluence sites can be configured explicitly, or default to whatever
-    # Jira lists (same Atlassian sites, same auth).
-    sites = list(confluence_cfg.get("sites") or
-                 (routing.get("jira") or {}).get("sites") or [])
+    sites = registry_sites()
 
     if not sites or not spaces:
-        log.warning("Configure confluence.sites and confluence.spaces in "
+        log.warning("Connect a Confluence site and set confluence.spaces in "
                     "routing.yaml; nothing to fetch.")
         return
 

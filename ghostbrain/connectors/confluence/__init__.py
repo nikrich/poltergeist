@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable
 
+from ghostbrain.accounts_health import for_each_account
 from ghostbrain.connectors._base import Connector
 from ghostbrain.connectors.atlassian._base import (
     AtlassianAuthError,
@@ -49,17 +50,14 @@ class ConfluenceConnector(Connector):
         self.lookback_hours = int(config.get("lookback_hours") or 24)
 
     def health_check(self) -> bool:
-        if not self.sites:
-            return False
-        try:
-            for host in self.sites:
+        for host in self.sites:
+            try:
                 email, token = auth_for_site(host)
-                client = AtlassianClient(host, email, token)
-                client.get("/wiki/rest/api/user/current")
-        except (AtlassianAuthError, Exception) as e:
-            log.warning("confluence health check failed: %s", e)
-            return False
-        return True
+                AtlassianClient(host, email, token).get("/wiki/rest/api/user/current")
+                return True
+            except Exception as e:  # noqa: BLE001
+                log.warning("confluence health check failed for %s: %s", host, e)
+        return False
 
     def fetch(self, since: datetime) -> list[dict]:
         if not self.sites or not self.space_map:
@@ -71,14 +69,10 @@ class ConfluenceConnector(Connector):
             since = floor
         since = since - timedelta(hours=WINDOW_OVERLAP_HOURS)
 
-        events: list[dict] = []
-        for host in self.sites:
-            try:
-                events.extend(self._fetch_site(host, since))
-            except AtlassianAuthError as e:
-                log.warning("skipping %s: %s", host, e)
-            except Exception as e:  # noqa: BLE001
-                log.exception("confluence fetch failed for %s: %s", host, e)
+        events = for_each_account(
+            "confluence", self.sites, lambda host: list(self._fetch_site(host, since)),
+            account_id=lambda host: host, auth_errors=(AtlassianAuthError,),
+        )
         log.info("confluence fetch: %d page(s) across %d site(s)",
                  len(events), len(self.sites))
         return events
@@ -156,6 +150,7 @@ def normalize_page(raw: dict, *, host: str, space_map: dict[str, str]) -> dict |
         "rawData": raw,
         "metadata": {
             "site": host,
+            "accountId": host,
             "siteSlug": site_slug,
             "space": space,
             "pageId": page_id,

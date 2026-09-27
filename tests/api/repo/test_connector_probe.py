@@ -76,13 +76,14 @@ def test_confluence_off_when_creds_but_no_confluence_routing(state, vault, monke
     assert probe("confluence").state == "off"
 
 
-def test_jira_off_after_routing_sites_removed(state, vault, monkeypatch):
-    from ghostbrain.api.repo.routing import merge_routing, remove_routing_path
+def test_jira_off_after_account_removed(state, vault, monkeypatch):
+    from ghostbrain import accounts
+    from ghostbrain.api.repo.routing import merge_routing
 
     monkeypatch.setenv("ATLASSIAN_EMAIL", "me@x.com")
     monkeypatch.setenv("ATLASSIAN_TOKEN_ACME", "tok")
     merge_routing({"jira": {"sites": {"acme.atlassian.net": "needs_review"}}})
     assert probe("jira").state == "on"
 
-    remove_routing_path("jira.sites")
+    accounts.remove_account("jira", "acme.atlassian.net")
     assert probe("jira").state == "off"
