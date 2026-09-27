@@ -159,7 +159,7 @@ def test_fetch_uses_configured_meetings_without_touching_calendar(tmp_path) -> N
 def test_health_check_false_without_token(tmp_path, monkeypatch) -> None:
     # Patch the symbol the connector module bound at import time.
     monkeypatch.setattr(
-        "ghostbrain.connectors.microsoft.teams_meetings.connector.have_token",
+        "ghostbrain.connectors.microsoft.teams_meetings.connector.any_token",
         lambda cfg: False,
     )
     conn = _conn(tmp_path, MagicMock())

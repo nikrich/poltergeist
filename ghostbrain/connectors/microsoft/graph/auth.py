@@ -1,11 +1,13 @@
 """Microsoft Graph delegated (device-code) auth.
 
-One device-code sign-in caches a token in the OS keychain
+Device-code sign-ins cache tokens in the OS keychain
 (``msal-extensions`` encrypted persistence) at
-``~/.ghostbrain/state/microsoft/token_cache.bin``. All three microsoft
-connectors share that cache via the union of scopes below. Scheduled
-fetches only ever call ``get_token`` (silent); the interactive device-code
-flow lives in ``auth_cli.py``.
+``~/.ghostbrain/state/microsoft/token_cache.bin``. The cache can hold
+several accounts (one per sign-in, possibly in different tenants); all
+three microsoft connectors share it via the union of scopes below.
+Scheduled fetches only ever call ``get_token`` (silent), selecting one
+cached account by username (or the first cached account when none is
+given); the interactive device-code flow lives in ``auth_cli.py``.
 """
 
 from __future__ import annotations
@@ -109,48 +111,77 @@ def _build_token_cache():
     return PersistedTokenCache(persistence)
 
 
-def _build_app(config: dict):
+def _build_app(config: dict, tenant_id: str | None = None):
     import msal
 
-    client_id, tenant_id = resolve_app_config(config)
-    authority = f"https://login.microsoftonline.com/{tenant_id}"
+    client_id, default_tenant = resolve_app_config(config)
+    authority = f"https://login.microsoftonline.com/{tenant_id or default_tenant}"
     return msal.PublicClientApplication(
         client_id, authority=authority, token_cache=_build_token_cache()
     )
 
 
-def get_token(config: dict) -> str:
-    """Return an access token from the cached sign-in. Raises
-    MicrosoftAuthError if no usable cached account exists — the interactive
-    flow must be run via `ghostbrain-microsoft-auth` first."""
-    app = _build_app(config)
-    accounts = app.get_accounts()
+def get_token(config: dict, username: str | None = None, tenant_id: str | None = None) -> str:
+    """Access token for ``username`` (or the first cached account when None)
+    from the shared cache. Raises MicrosoftAuthError when that account has no
+    usable cached sign-in."""
+    app = _build_app(config, tenant_id)
+    accounts = app.get_accounts(username=username) if username else app.get_accounts()
     if not accounts:
+        who = username or "any account"
         raise MicrosoftAuthError(
-            "No cached Microsoft sign-in. Run: ghostbrain-microsoft-auth"
+            f"No cached Microsoft sign-in for {who}. Reconnect it in the app "
+            "or run: ghostbrain-microsoft-auth"
         )
     result = app.acquire_token_silent(resolve_scopes(config), account=accounts[0])
     if not result or "access_token" not in result:
         raise MicrosoftAuthError(
-            "Cached Microsoft sign-in could not be refreshed. "
-            "Re-run: ghostbrain-microsoft-auth"
+            f"Cached Microsoft sign-in for {accounts[0].get('username')} could not be "
+            "refreshed. Reconnect it in the app or re-run: ghostbrain-microsoft-auth"
         )
     return result["access_token"]
 
 
-def have_token(config: dict) -> bool:
+def have_token(config: dict, username: str | None = None, tenant_id: str | None = None) -> bool:
     """Cheap health-check predicate: True if get_token would succeed."""
     try:
-        get_token(config)
+        get_token(config, username, tenant_id)
         return True
     except MicrosoftAuthError:
         return False
 
 
-def run_device_flow(config: dict) -> str:
-    """Interactive one-time device-code sign-in. Returns the signed-in
-    username. Called only from auth_cli.py."""
+def cached_usernames(config: dict) -> list[str]:
+    """Usernames of every account in the shared MSAL cache."""
     app = _build_app(config)
+    return [a["username"] for a in app.get_accounts() if a.get("username")]
+
+
+def remove_cached_account(config: dict, username: str) -> bool:
+    """Drop ``username`` from the shared cache. True if it was present."""
+    app = _build_app(config)
+    found = app.get_accounts(username=username)
+    for acc in found:
+        app.remove_account(acc)
+    return bool(found)
+
+
+def username_from_result(result: dict, app) -> str:
+    """Username of the account a device-code ``result`` signed in: the id
+    token's preferred_username, else the newest cached account, else a
+    placeholder."""
+    claims = result.get("id_token_claims") or {}
+    if claims.get("preferred_username"):
+        return str(claims["preferred_username"])
+    accounts = app.get_accounts()
+    return accounts[-1].get("username", "your account") if accounts else "your account"
+
+
+def run_device_flow(config: dict, tenant_id: str | None = None) -> str:
+    """Interactive device-code sign-in that ADDS an account to the shared
+    cache (existing accounts stay). Returns the new account's username.
+    Called only from auth_cli.py."""
+    app = _build_app(config, tenant_id)
     flow = app.initiate_device_flow(scopes=resolve_scopes(config))
     if "user_code" not in flow:
         raise MicrosoftAuthError(f"Could not start device flow: {flow}")
@@ -160,5 +191,4 @@ def run_device_flow(config: dict) -> str:
         raise MicrosoftAuthError(
             f"Auth failed: {result.get('error_description', result)}"
         )
-    accounts = app.get_accounts()
-    return accounts[0].get("username", "your account") if accounts else "your account"
+    return username_from_result(result, app)

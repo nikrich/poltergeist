@@ -75,7 +75,7 @@ def test_fetch_filters_messages_by_since(tmp_path) -> None:
 
 def test_health_check_false_without_token(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "ghostbrain.connectors.microsoft.teams_chat.connector.have_token",
+        "ghostbrain.connectors.microsoft.teams_chat.connector.any_token",
         lambda cfg: False,
     )
     conn = _conn(tmp_path, MagicMock())

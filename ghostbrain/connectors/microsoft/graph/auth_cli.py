@@ -1,14 +1,17 @@
 """Microsoft Graph device-code sign-in CLI.
 
 Usage:
-    ghostbrain-microsoft-auth
+    ghostbrain-microsoft-auth [--tenant TENANT_ID]
 
-Runs the one-time device-code flow and caches the token in the OS keychain.
-Reads optional client_id/tenant_id from vault/90-meta/routing.yaml:microsoft.
+Runs the device-code flow and ADDS the signed-in account to the shared token
+cache in the OS keychain (accounts already signed in stay), then registers it
+as a ``microsoft`` account. ``--tenant`` signs in against another tenant's
+authority. Reads client_id/tenant_id from vault/90-meta/routing.yaml:microsoft.
 """
 
 from __future__ import annotations
 
+import argparse
 import logging
 import sys
 
@@ -31,9 +34,15 @@ def _load_microsoft_config() -> dict:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(prog="ghostbrain-microsoft-auth")
+    parser.add_argument(
+        "--tenant", default=None,
+        help="Tenant ID to sign in against (defaults to microsoft.tenant_id).",
+    )
+    args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     try:
-        username = run_device_flow(_load_microsoft_config())
+        username = run_device_flow(_load_microsoft_config(), tenant_id=args.tenant)
     except MicrosoftAuthError as e:
         print(f"auth error: {e}", file=sys.stderr)
         raise SystemExit(1)
@@ -41,6 +50,16 @@ def main() -> None:
         print(f"unexpected error: {e}", file=sys.stderr)
         raise SystemExit(2)
     print(f"OK — signed in as {username}; token cached.")
+    from ghostbrain import accounts
+
+    try:
+        accounts.ensure_account(
+            "microsoft", username,
+            options={"tenant_id": args.tenant} if args.tenant else None,
+        )
+    except Exception as e:  # noqa: BLE001 — the sign-in itself succeeded
+        print(f"warning: could not register {username} as a microsoft account: {e}",
+              file=sys.stderr)
 
 
 if __name__ == "__main__":

@@ -20,13 +20,9 @@ from datetime import datetime, timedelta, timezone
 import requests
 
 from ghostbrain.connectors._base import Connector
-from ghostbrain.connectors.microsoft.graph.auth import (
-    GRAPH,
-    MicrosoftAuthError,
-    get_token,
-    have_token,
-)
+from ghostbrain.connectors.microsoft.graph.auth import GRAPH, MicrosoftAuthError
 from ghostbrain.connectors.microsoft.graph.client import GraphClient
+from ghostbrain.connectors.microsoft.graph.multi import any_token, fetch_per_account
 
 log = logging.getLogger("ghostbrain.connectors.teams_meetings")
 
@@ -60,15 +56,16 @@ class TeamsMeetingsConnector(Connector):
         self._client = client  # injected in tests
 
     def health_check(self) -> bool:
-        return have_token(self.config)
-
-    def _graph(self) -> GraphClient:
-        if self._client is not None:
-            return self._client
-        return GraphClient(get_token(self.config))
+        return any_token(self.config)
 
     def fetch(self, since: datetime) -> list[dict]:
-        client = self._graph()
+        if self._client is not None:
+            return self._fetch_with(self._client, since)
+        return fetch_per_account(
+            "teams_meetings", self.config, lambda client: self._fetch_with(client, since),
+        )
+
+    def _fetch_with(self, client: GraphClient, since: datetime) -> list[dict]:
         refs = self._meeting_refs(client)
         events: list[dict] = []
         for ref in refs:
