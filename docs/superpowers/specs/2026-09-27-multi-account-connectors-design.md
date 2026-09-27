@@ -248,18 +248,23 @@ account, unassigned, if absent** — the CLI and the future in-app path converge
 same state.
 
 - **Gmail** — accounts and per-account `options` (`monitored_labels`,
-  `unread_lookback_hours`) from the registry. `last_run` becomes per-account
-  (`state/gmail.<slug>.last_run`) so a newly added account starts from its own lookback
-  window rather than the others' last run; the connector-level `gmail.last_run` is still
-  written for the connectors screen. Sender-domain / label rules unchanged.
+  `unread_lookback_hours`) from the registry. Sender-domain / label rules unchanged.
+  (No per-account `last_run`: Gmail's fetch ignores `since` and selects threads by each
+  account's own `unread_lookback_hours`, so a new account already starts from its own
+  window.)
 - **Google Calendar** — accounts from the registry (`calendar_google`). Its context
   mapping moves from `calendar.google.accounts` to the generic account rule.
 - **Slack** — workspaces from the registry; `context` is no longer required (today a
   workspace without one is skipped, `slack/connector.py:583-585`). Tokens unchanged.
 - **Jira / Confluence** — sites from the registry. `auth_for_site(host)`
   (`atlassian/_base.py:139`) resolves email as account `options.email` → `ATLASSIAN_EMAIL`,
-  and token as `ATLASSIAN_TOKEN_<SLUG>` → `ATLASSIAN_TOKEN` → **new**
-  `state/atlassian.<slug>.token` (chmod 600). Confluence gains site-level routing via the
+  and token as `ATLASSIAN_TOKEN_<SLUG>` → **new** `state/atlassian.<slug>.token`
+  (chmod 600) → `ATLASSIAN_TOKEN`. The site-specific file sits before the global env
+  token so an old single-agency `ATLASSIAN_TOKEN` cannot shadow a second agency's site.
+  `auth_for_site` looks the email up in the registry itself (jira, then confluence
+  account for that host), so callers don't thread it through. Seeding creates
+  `confluence` accounts from `jira.sites` only when `confluence.spaces` is non-empty
+  (i.e. the user actually indexes Confluence). Confluence gains site-level routing via the
   account rule; the space rule still wins when it matches.
 - **GitHub** — one account per `gh` login. Per account, the token is obtained with
   `gh auth token --hostname github.com --user <login>` and `gh search` runs with
@@ -274,6 +279,33 @@ same state.
   `microsoft.tenant_id` → current default). `run_device_flow` adds an account to the cache
   rather than replacing one, then upserts it into the registry. Outlook Mail, Teams Chat
   and Teams Meetings runners each iterate the `microsoft` accounts and tag `accountId`.
+
+### 4. Existing in-app connect flows and other readers
+
+*(Amendment, 2026-09-27, found while planning.)* `main` already ships in-app connect
+flows (`ghostbrain/api/auth/providers/`, `POST /v1/connectors/{id}/auth/*`,
+`DELETE /v1/connectors/{id}/credentials`). They write per-account data into `routing.yaml`,
+which the registry ignores after seeding, so they must write the registry instead:
+
+| Provider | Today | After |
+|---|---|---|
+| `google_oauth.py` (gmail, calendar) | saves token only — nothing tells the connector to poll the account | on success `upsert_account(gmail|calendar_google, email)` |
+| `paste_token.py` Slack | `merge_routing(slack.workspaces.<slug>.context: needs_review)` | `upsert_account(slack, slug)` unassigned |
+| `atlassian_api.py` | `set_env(ATLASSIAN_EMAIL, ATLASSIAN_TOKEN_<SLUG>)` (global email — a second agency overwrites the first) + `merge_routing(<app>.sites.<site>: needs_review)` | token to `state/atlassian.<slug>.token`, `upsert_account(jira|confluence, site, options.email)`; `confluence.spaces` still merged into `routing.yaml` (connector-wide) |
+| `ms_device_code.py` | username = `get_accounts()[0]` | username from the device-flow result's `id_token_claims.preferred_username`; `upsert_account(microsoft, username)` |
+| `cli_login.py` GitHub | nothing persisted | `upsert_account(github, login)` |
+| `disconnect.py` | deletes token / whole MSAL cache / whole `<app>.sites` subtree | also `remove_account(...)`; Microsoft with an account removes only that MSAL account; Atlassian with an account removes that site's state token file and account entry |
+
+New accounts from these flows are unassigned until spec B's UI (or a hand edit) sets a
+context. The old `needs_review` placeholders are never written again; seeding treats a
+`needs_review` context as unassigned.
+
+Other code that reads the old per-account blocks switches to the registry:
+`connector_probe._atlassian_probe`, `doctor/checks_connectors.py` ("configured" = has
+accounts in the registry for account connectors), `recorder/sources/__init__.py` (Google
+meeting source = `calendar_google` accounts that have a context), and
+`api/repo/import_atlassian.py` (Jira/Confluence sites). Every connector's `__main__.py` CLI
+switches the same way as its `runner.py`.
 
 ## Error handling
 
