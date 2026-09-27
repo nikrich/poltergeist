@@ -52,6 +52,7 @@ EXPECTED_PAGE_EVENT = {
     "rawData": PAGE_RAW,
     "metadata": {
         "site": "acme.atlassian.net",
+        "accountId": "acme.atlassian.net",
         "siteSlug": "acme",
         "space": "ENG",
         "pageId": "1234567",
@@ -98,6 +99,7 @@ EXPECTED_ISSUE_EVENT = {
     "rawData": ISSUE_RAW,
     "metadata": {
         "site": "acme.atlassian.net",
+        "accountId": "acme.atlassian.net",
         "siteSlug": "acme",
         "project": "ACME",
         "key": "ACME-1234",

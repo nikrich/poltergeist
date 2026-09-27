@@ -4,7 +4,7 @@ Run via:
     python -m ghostbrain.connectors.jira
 or  ghostbrain-jira-fetch [--dry-run]
 
-Reads sites from vault/90-meta/routing.yaml jira.sites.
+Reads sites from the accounts registry (90-meta/accounts.yaml).
 """
 
 from __future__ import annotations
@@ -12,11 +12,11 @@ from __future__ import annotations
 import argparse
 import logging
 
-import yaml
-
+from ghostbrain.accounts_health import AllAccountsFailedError
 from ghostbrain.connectors.atlassian._base import AtlassianAuthError
 from ghostbrain.connectors.jira import JiraConnector
-from ghostbrain.paths import queue_dir, state_dir, vault_path
+from ghostbrain.connectors.jira.runner import sites as registry_sites
+from ghostbrain.paths import queue_dir, state_dir
 from ghostbrain.worker.audit import audit_log
 
 log = logging.getLogger("ghostbrain.connectors.jira.main")
@@ -30,10 +30,9 @@ def main() -> None:
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-    routing = _load_routing()
-    sites = list((routing.get("jira") or {}).get("sites") or {})
+    sites = registry_sites()
     if not sites:
-        log.warning("No jira.sites configured in routing.yaml; nothing to fetch.")
+        log.warning("No jira accounts in 90-meta/accounts.yaml; nothing to fetch.")
         return
 
     queue = queue_dir()
@@ -61,17 +60,10 @@ def main() -> None:
         count = connector.run()
         audit_log("connector_run", "jira", events_queued=count)
         print(f"jira: queued {count} event(s)")
-    except AtlassianAuthError as e:
+    except (AtlassianAuthError, AllAccountsFailedError) as e:
         log.error(str(e))
         audit_log("connector_health_failed", "jira", error=str(e))
         raise SystemExit(1)
-
-
-def _load_routing() -> dict:
-    f = vault_path() / "90-meta" / "routing.yaml"
-    if not f.exists():
-        return {}
-    return yaml.safe_load(f.read_text(encoding="utf-8")) or {}
 
 
 if __name__ == "__main__":

@@ -134,15 +134,15 @@ def test_build_title_truncates_long_text() -> None:
     assert "AAAA" in title
 
 
-def test_parse_workspaces_skips_entries_without_context(caplog) -> None:
+def test_parse_workspaces_keeps_entries_without_context(caplog) -> None:
     from ghostbrain.connectors.slack.connector import _parse_workspaces
     out = list(_parse_workspaces({"workspaces": {
         "acme": {"context": "work"},
         "broken": {"lookback_hours": 24},  # no context
     }}))
     slugs = [ws.slug for ws in out]
-    assert "acme" in slugs
-    assert "broken" not in slugs
+    assert slugs == ["acme", "broken"]
+    assert [ws.context for ws in out] == ["work", None]
 
 
 def test_parse_workspaces_normalizes_allowed_channels() -> None:
@@ -401,55 +401,6 @@ def test_fetch_continues_after_workspace_error(
     )
     events = c.fetch(datetime.now(timezone.utc))
     assert len(events) == 1
-
-
-# ---------------------------------------------------------------------------
-# Routing fast path
-# ---------------------------------------------------------------------------
-
-
-def test_router_routes_by_workspace_slug() -> None:
-    from ghostbrain.worker.router import _fast_route
-
-    event = {
-        "source": "slack",
-        "id": "slack:msg:T1:C1:123.456",
-        "metadata": {"workspace_slug": "acme"},
-    }
-    routing = {"slack": {"workspaces": {"acme": {"context": "work"}}}}
-    decision = _fast_route(event, routing)
-    assert decision is not None
-    assert decision.context == "work"
-    assert decision.method == "path"
-    assert decision.confidence == 1.0
-
-
-def test_router_supports_legacy_string_value() -> None:
-    """Older routing.yaml format may have ``slack.workspaces: {acme: work}``
-    — string value instead of dict. Accept it."""
-    from ghostbrain.worker.router import _fast_route
-
-    event = {
-        "source": "slack",
-        "id": "slack:msg:T1:C1:123.456",
-        "metadata": {"workspace_slug": "acme"},
-    }
-    routing = {"slack": {"workspaces": {"acme": "work"}}}
-    decision = _fast_route(event, routing)
-    assert decision is not None
-    assert decision.context == "work"
-
-
-def test_router_falls_through_when_workspace_unknown() -> None:
-    from ghostbrain.worker.router import _fast_route
-
-    event = {
-        "source": "slack",
-        "id": "slack:msg:T1:C1:123.456",
-        "metadata": {"workspace_slug": "stranger"},
-    }
-    routing = {"slack": {"workspaces": {"acme": {"context": "work"}}}}
-    assert _fast_route(event, routing) is None
 
 
 # ---------------------------------------------------------------------------

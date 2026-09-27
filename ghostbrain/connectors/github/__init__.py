@@ -1,5 +1,8 @@
 """GitHub connector. Shells out to `gh` CLI so we inherit the user's
-existing OAuth login — no token management, no env var.
+existing OAuth login. With logins registered in `accounts.yaml`, it
+fetches each one via `gh auth token --user <login>` + `GH_TOKEN`,
+never switching the CLI's active account; with none registered it
+falls back to whichever login `gh` is currently authenticated as.
 
 Fetches three kinds of events filtered to monitored orgs (routing.yaml
 github.orgs):
@@ -15,12 +18,14 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+from ghostbrain.accounts_health import for_each_account
 from ghostbrain.connectors._base import Connector
 
 log = logging.getLogger("ghostbrain.connectors.github")
@@ -44,6 +49,24 @@ DEFAULT_LIMIT = 50  # gh search caps at 1000; 50 is plenty per query
 FIRST_RUN_LOOKBACK_DAYS = 7
 
 
+class GitHubAuthError(RuntimeError):
+    """`gh auth token --user <login>` failed — that login needs `gh auth login`."""
+
+
+# Ambient token env vars gh checks before falling back to the keyring/config
+# login for a --hostname/--user pair. Stripped from the env of the `gh auth
+# token` call so a leaked/exported token can't make every login resolve to
+# the same identity.
+_AMBIENT_TOKEN_VARS = (
+    "GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN",
+)
+
+# Case-insensitive substrings in `gh search` stderr that indicate the token
+# itself (not the query) is bad — surfaced as GitHubAuthError instead of a
+# silent "ok" so the account gets marked auth_required.
+_AUTH_FAILURE_MARKERS = ("401", "bad credentials", "authentication", "auth token")
+
+
 class GitHubConnector(Connector):
     """See module docstring."""
 
@@ -60,6 +83,7 @@ class GitHubConnector(Connector):
     ) -> None:
         super().__init__(config, queue_dir, state_dir)
         self.orgs = list(config.get("orgs") or [])
+        self.accounts: list[str] = [str(a) for a in (config.get("accounts") or [])]
         self._gh = gh_binary or shutil.which("gh")
         if self._gh is None:
             raise RuntimeError(
@@ -67,11 +91,35 @@ class GitHubConnector(Connector):
             )
 
     def health_check(self) -> bool:
+        if not self.accounts:
+            try:
+                proc = self._run_gh(["auth", "status"], timeout_s=15)
+            except subprocess.SubprocessError:
+                return False
+            return proc.returncode == 0
+        for login in self.accounts:
+            try:
+                self._token_for(login)
+                return True
+            except GitHubAuthError:
+                continue
+        return False
+
+    def _token_for(self, login: str) -> str:
+        env = {k: v for k, v in os.environ.items() if k not in _AMBIENT_TOKEN_VARS}
         try:
-            proc = self._run_gh(["auth", "status"], timeout_s=15)
-        except subprocess.SubprocessError:
-            return False
-        return proc.returncode == 0
+            proc = self._run_gh(
+                ["auth", "token", "--hostname", "github.com", "--user", login],
+                timeout_s=15, env=env,
+            )
+        except subprocess.SubprocessError as e:
+            raise GitHubAuthError(f"gh auth token failed for {login}: {e}") from e
+        token = (proc.stdout or "").strip()
+        if proc.returncode != 0 or not token:
+            raise GitHubAuthError(
+                f"no gh token for {login}; run `gh auth login` as that account"
+            )
+        return token
 
     def fetch(self, since: datetime) -> list[dict]:
         if not self.orgs:
@@ -87,28 +135,23 @@ class GitHubConnector(Connector):
         updated_qualifier = f">={since.date().isoformat()}"
         owner_csv = ",".join(self.orgs)
 
-        events: list[dict] = []
+        if not self.accounts:
+            events = self._search_all(owner_csv, updated_qualifier, None)
+        else:
+            def one(login: str) -> list[dict]:
+                env = {**os.environ, "GH_TOKEN": self._token_for(login)}
+                found = self._search_all(owner_csv, updated_qualifier, env)
+                for ev in found:
+                    ev["metadata"]["accountId"] = login
+                return found
 
-        # 1. Open PRs authored by @me, recently updated.
-        events.extend(self._search_prs(
-            owner_csv,
-            ["--author=@me", "--state=open", f"--updated={updated_qualifier}"],
-            origin="authored",
-        ))
-        # 2. Open PRs awaiting my review.
-        events.extend(self._search_prs(
-            owner_csv,
-            ["--review-requested=@me", "--state=open", f"--updated={updated_qualifier}"],
-            origin="review-requested",
-        ))
-        # 3. Open issues assigned to me.
-        events.extend(self._search_issues(
-            owner_csv,
-            ["--assignee=@me", "--state=open", f"--updated={updated_qualifier}"],
-            origin="assigned",
-        ))
+            events = for_each_account(
+                "github", self.accounts, one,
+                account_id=lambda login: login, auth_errors=(GitHubAuthError,),
+            )
 
-        # Dedup by (type, repo, number) — same PR may appear in multiple queries.
+        # Dedup by (type, repo, number) — same PR may appear in multiple queries
+        # (and across logins; first account wins).
         seen: set[tuple[str, str, int]] = set()
         unique: list[dict] = []
         for ev in events:
@@ -131,12 +174,31 @@ class GitHubConnector(Connector):
     # gh CLI plumbing
     # ------------------------------------------------------------------
 
+    def _search_all(
+        self, owner_csv: str, updated_qualifier: str, env: dict | None,
+    ) -> list[dict]:
+        events: list[dict] = []
+        events.extend(self._search_prs(
+            owner_csv, ["--author=@me", "--state=open", f"--updated={updated_qualifier}"],
+            origin="authored", env=env,
+        ))
+        events.extend(self._search_prs(
+            owner_csv, ["--review-requested=@me", "--state=open", f"--updated={updated_qualifier}"],
+            origin="review-requested", env=env,
+        ))
+        events.extend(self._search_issues(
+            owner_csv, ["--assignee=@me", "--state=open", f"--updated={updated_qualifier}"],
+            origin="assigned", env=env,
+        ))
+        return events
+
     def _search_prs(
         self,
         owner_csv: str,
         extra_args: list[str],
         *,
         origin: str,
+        env: dict | None = None,
     ) -> list[dict]:
         cmd = [
             self._gh, "search", "prs",
@@ -145,7 +207,7 @@ class GitHubConnector(Connector):
             "--json", PR_FIELDS,
             *extra_args,
         ]
-        items = self._run_gh_json(cmd)
+        items = self._run_gh_json(cmd, env)
         return [self._normalize_pr(item, origin=origin) for item in items]
 
     def _search_issues(
@@ -154,6 +216,7 @@ class GitHubConnector(Connector):
         extra_args: list[str],
         *,
         origin: str,
+        env: dict | None = None,
     ) -> list[dict]:
         cmd = [
             self._gh, "search", "issues",
@@ -162,18 +225,23 @@ class GitHubConnector(Connector):
             "--json", ISSUE_FIELDS,
             *extra_args,
         ]
-        items = self._run_gh_json(cmd)
+        items = self._run_gh_json(cmd, env)
         return [self._normalize_issue(item, origin=origin) for item in items]
 
-    def _run_gh_json(self, cmd: list[str]) -> list[dict]:
+    def _run_gh_json(self, cmd: list[str], env: dict | None = None) -> list[dict]:
         try:
-            proc = self._run_gh(cmd[1:], timeout_s=60)
+            proc = self._run_gh(cmd[1:], timeout_s=60, env=env)
         except subprocess.SubprocessError as e:
             log.warning("gh subprocess failed: %s", e)
             return []
         if proc.returncode != 0:
-            log.warning("gh exited %d: %s", proc.returncode,
-                        (proc.stderr or "").strip()[:200])
+            stderr = (proc.stderr or "").strip()[:200]
+            # Multi-account path only (env is set): a search-time auth
+            # failure must not be swallowed as a quiet "no results" — that
+            # would record the account `ok` even though its token is dead.
+            if env is not None and any(m in stderr.lower() for m in _AUTH_FAILURE_MARKERS):
+                raise GitHubAuthError(f"gh search failed (exit {proc.returncode}): {stderr}")
+            log.warning("gh exited %d: %s", proc.returncode, stderr)
             return []
         try:
             data = json.loads(proc.stdout or "[]")
@@ -182,12 +250,15 @@ class GitHubConnector(Connector):
             return []
         return data if isinstance(data, list) else []
 
-    def _run_gh(self, args: list[str], *, timeout_s: int) -> subprocess.CompletedProcess:
+    def _run_gh(
+        self, args: list[str], *, timeout_s: int, env: dict | None = None,
+    ) -> subprocess.CompletedProcess:
         return subprocess.run(
             [self._gh, *args],
             capture_output=True,
             text=True,
             timeout=timeout_s,
+            env=env,
         )
 
     # ------------------------------------------------------------------

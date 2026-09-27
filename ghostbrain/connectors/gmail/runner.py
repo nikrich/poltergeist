@@ -3,18 +3,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ghostbrain import accounts
 from ghostbrain.connectors._runner import RunResult, run_connector
 from ghostbrain.connectors.gmail import GmailConnector
 
 
 def _build(routing: dict, queue_dir: Path, state_dir: Path) -> GmailConnector | None:
-    gmail_cfg = routing.get("gmail") or {}
-    accounts = gmail_cfg.get("accounts") or {}
-    if not accounts:
+    accts = accounts.list_accounts("gmail")
+    if not accts:
         return None
+    gmail_cfg = routing.get("gmail") or {}
     return GmailConnector(
         config={
-            "accounts": accounts,
+            "accounts": {a.id: dict(a.options) for a in accts},
             "denylist_domains": gmail_cfg.get("denylist_domains") or [],
             "relevance_gate": gmail_cfg.get("relevance_gate", True),
             "relevance_model": gmail_cfg.get("relevance_model"),

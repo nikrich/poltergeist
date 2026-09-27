@@ -29,35 +29,22 @@ def test_disconnect_missing_is_noop(env):
     disconnect("gmail", account="nobody@x.com")  # must not raise
 
 
-def test_disconnect_jira_keeps_env_token(env):
-    """Verify jira disconnect removes routing but preserves shared Atlassian .env token."""
-    from ghostbrain.api.repo.routing import merge_routing, load_routing
-    from ghostbrain.api.repo.dotenv_store import set_env, read_env
+def test_disconnect_jira_keeps_shared_site_token(env):
+    """Jira disconnect removes only the jira account; a shared site token stays
+    while Confluence still has an account for it."""
+    from ghostbrain import accounts
+    from ghostbrain.accounts import Account
+    from ghostbrain.connectors.atlassian._base import save_token, token_path
 
-    # Seed routing and shared Atlassian token
-    merge_routing({
-        "jira": {"sites": {"acme.atlassian.net": "needs_review"}},
-        "confluence": {"sites": {"acme.atlassian.net": "needs_review"}}
-    })
-    set_env({
-        "ATLASSIAN_EMAIL": "me@x.com",
-        "ATLASSIAN_TOKEN_ACME": "tok"
-    })
+    accounts.upsert_account(Account("jira", "acme.atlassian.net"))
+    accounts.upsert_account(Account("confluence", "acme.atlassian.net"))
+    save_token("acme.atlassian.net", "tok")
 
-    # Disconnect jira
-    disconnect("jira", account=None)
+    disconnect("jira", account="acme.atlassian.net")
 
-    # Verify jira.sites is removed
-    routing = load_routing()
-    assert "sites" not in routing.get("jira", {}), "jira.sites should be removed"
-
-    # Verify confluence.sites is still present
-    assert "sites" in routing.get("confluence", {}), "confluence.sites should remain"
-
-    # Verify .env token is not deleted
-    env_vars = read_env()
-    assert env_vars.get("ATLASSIAN_EMAIL") == "me@x.com", "ATLASSIAN_EMAIL should be preserved"
-    assert env_vars.get("ATLASSIAN_TOKEN_ACME") == "tok", "ATLASSIAN_TOKEN_ACME should be preserved"
+    assert accounts.get_account("jira", "acme.atlassian.net") is None
+    assert accounts.get_account("confluence", "acme.atlassian.net") is not None
+    assert token_path("acme.atlassian.net").exists(), "Confluence still uses it"
 
 
 def test_disconnect_claude_code_malformed_json_is_noop(env, monkeypatch, tmp_path):

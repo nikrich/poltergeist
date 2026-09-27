@@ -3,25 +3,22 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ghostbrain import accounts
 from ghostbrain.connectors._runner import RunResult, run_connector
 from ghostbrain.connectors.confluence import ConfluenceConnector
 
 
+def sites() -> list[str]:
+    return [a.id for a in accounts.list_accounts("confluence")]
+
+
 def _build(routing: dict, queue_dir: Path, state_dir: Path) -> ConfluenceConnector | None:
-    confluence_cfg = routing.get("confluence") or {}
-    spaces = dict(confluence_cfg.get("spaces") or {})
-    # Confluence shares Atlassian sites with Jira when not configured explicitly.
-    sites = list(
-        confluence_cfg.get("sites")
-        or (routing.get("jira") or {}).get("sites")
-        or []
-    )
-    if not sites or not spaces:
+    spaces = dict((routing.get("confluence") or {}).get("spaces") or {})
+    hosts = sites()
+    if not hosts or not spaces:
         return None
     return ConfluenceConnector(
-        config={"sites": sites, "spaces": spaces},
-        queue_dir=queue_dir,
-        state_dir=state_dir,
+        config={"sites": hosts, "spaces": spaces}, queue_dir=queue_dir, state_dir=state_dir,
     )
 
 

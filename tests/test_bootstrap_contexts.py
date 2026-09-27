@@ -78,3 +78,12 @@ def test_bootstrap_is_idempotent(vault):
     after = sorted(str(p.relative_to(b)) for p in b.rglob("*"))
     assert a == b
     assert before == after
+
+
+def test_fresh_routing_yaml_has_no_per_account_calendar_block(vault):
+    """Google Calendar accounts live in accounts.yaml, not routing.yaml."""
+    root = bootstrap()
+    text = (root / "90-meta" / "routing.yaml").read_text()
+    routing = yaml.safe_load(text)
+    assert routing["calendar"] == {"google": {}}
+    assert "you@gmail.com" not in text

@@ -1,12 +1,13 @@
 """Atlassian Cloud HTTP client + auth helpers.
 
-Tokens are read from the environment so they never enter source or vault.
+Tokens never enter source or vault. For a site like ``acme.atlassian.net``:
 
-For a site like ``acme.atlassian.net`` the connector will look for:
-    1. ``ATLASSIAN_TOKEN_SFT`` (preferred — site-specific)
-    2. ``ATLASSIAN_TOKEN``    (fallback — single-token setups)
+Email: the site's account in accounts.yaml (``options.email``, jira then
+confluence) → ``ATLASSIAN_EMAIL``.
 
-``ATLASSIAN_EMAIL`` is required.
+Token: ``ATLASSIAN_TOKEN_ACME`` (preferred — site-specific env var) →
+``state/atlassian.acme.token`` (site-specific file, written by ``save_token``)
+→ ``ATLASSIAN_TOKEN`` (fallback — single-token setups).
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ import logging
 import os
 import time
 from base64 import b64encode
+from pathlib import Path
 
 import requests
 
@@ -139,24 +141,70 @@ class AtlassianClient:
 def auth_for_site(host: str) -> tuple[str, str]:
     """Return ``(email, token)`` for the given Atlassian host.
 
-    Raises ``AtlassianAuthError`` when env vars are missing.
+    Email: the site's account in accounts.yaml (``options.email``, jira then
+    confluence) → ``ATLASSIAN_EMAIL``. Token: ``ATLASSIAN_TOKEN_<SLUG>`` →
+    ``state/atlassian.<slug>.token`` → ``ATLASSIAN_TOKEN``. The site-specific
+    file wins over the global env token so an old single-agency token can't
+    shadow another agency's site.
+
+    Raises ``AtlassianAuthError`` when either is missing.
     """
-    email = os.environ.get("ATLASSIAN_EMAIL")
+    email = _registry_email(host) or os.environ.get("ATLASSIAN_EMAIL")
     if not email:
         raise AtlassianAuthError(
-            "ATLASSIAN_EMAIL not set. Add it to .env or your shell."
+            f"No Atlassian email for {host}. Reconnect the site in the app, or set "
+            "ATLASSIAN_EMAIL in .env."
         )
 
-    slug = slug_for_host(host).upper().replace("-", "_")
-    site_var = f"ATLASSIAN_TOKEN_{slug}"
-    token = os.environ.get(site_var) or os.environ.get("ATLASSIAN_TOKEN")
+    site_var = site_token_var(host)
+    token = os.environ.get(site_var) or _read_token_file(host) or os.environ.get("ATLASSIAN_TOKEN")
     if not token:
         raise AtlassianAuthError(
-            f"{site_var} (or ATLASSIAN_TOKEN) not set. Generate an Atlassian "
-            "API token at https://id.atlassian.com/manage-profile/security/api-tokens "
-            "and add it to .env."
+            f"No API token for {host} ({site_var}, {token_path(host)}, or ATLASSIAN_TOKEN). "
+            "Generate one at https://id.atlassian.com/manage-profile/security/api-tokens "
+            "and reconnect the site in the app."
         )
     return (email, token)
+
+
+def token_path(host: str) -> Path:
+    from ghostbrain.paths import state_dir
+
+    return state_dir() / f"atlassian.{slug_for_host(host).lower()}.token"
+
+
+def save_token(host: str, token: str) -> Path:
+    p = token_path(host)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    # Created 0600 so the token is never world-readable, even briefly; the
+    # chmod covers a pre-existing file (O_CREAT's mode only applies to new).
+    fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(token.strip())
+    p.chmod(0o600)
+    return p
+
+
+def site_token_var(host: str) -> str:
+    """The site-specific env var, e.g. ``ATLASSIAN_TOKEN_ACME``."""
+    return f"ATLASSIAN_TOKEN_{slug_for_host(host).upper().replace('-', '_')}"
+
+
+def _read_token_file(host: str) -> str | None:
+    try:
+        return token_path(host).read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
+
+
+def _registry_email(host: str) -> str | None:
+    from ghostbrain import accounts
+
+    for connector in ("jira", "confluence"):
+        acc = accounts.get_account(connector, host)
+        if acc is not None and acc.options.get("email"):
+            return str(acc.options["email"])
+    return None
 
 
 def slug_for_host(host: str) -> str:

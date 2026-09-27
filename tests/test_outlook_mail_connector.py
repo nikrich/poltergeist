@@ -75,7 +75,7 @@ def test_fetch_applies_relevance_gate(tmp_path) -> None:
 
 def test_health_check_false_without_token(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "ghostbrain.connectors.microsoft.outlook_mail.connector.have_token",
+        "ghostbrain.connectors.microsoft.outlook_mail.connector.any_token",
         lambda cfg: False,
     )
     conn = _conn(tmp_path, MagicMock())

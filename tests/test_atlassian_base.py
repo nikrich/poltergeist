@@ -58,3 +58,33 @@ def test_auth_for_site_raises_when_missing_token(monkeypatch: pytest.MonkeyPatch
     monkeypatch.delenv("ATLASSIAN_TOKEN", raising=False)
     with pytest.raises(AtlassianAuthError):
         auth_for_site("acme.atlassian.net")
+
+
+def test_save_token_creates_file_owner_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ghostbrain.connectors.atlassian import _base
+
+    opened: list[tuple] = []
+    real_open = os.open
+
+    def spy(path, flags, mode=0o777, *a, **k):
+        opened.append((str(path), flags, mode))
+        return real_open(path, flags, mode, *a, **k)
+
+    monkeypatch.setattr(_base.os, "open", spy)
+    p = _base.save_token("acme.atlassian.net", " tok \n")
+    assert p.read_text(encoding="utf-8") == "tok"
+    assert opened and opened[0][0] == str(p) and opened[0][2] == 0o600
+    assert opened[0][1] & os.O_CREAT and opened[0][1] & os.O_TRUNC
+    assert (p.stat().st_mode & 0o777) == 0o600
+
+
+def test_save_token_tightens_existing_file(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ghostbrain.connectors.atlassian import _base
+
+    p = _base.token_path("acme.atlassian.net")
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("old-longer-token", encoding="utf-8")
+    p.chmod(0o644)
+    _base.save_token("acme.atlassian.net", "new")
+    assert p.read_text(encoding="utf-8") == "new"
+    assert (p.stat().st_mode & 0o777) == 0o600

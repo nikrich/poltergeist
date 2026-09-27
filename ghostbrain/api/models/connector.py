@@ -19,7 +19,22 @@ class Connector(BaseModel):
     error: str | None
 
 
+class AccountHealth(BaseModel):
+    status: str
+    checkedAt: str | None = None
+    lastSuccessAt: str | None = None
+    error: str | None = None
+
+
+class ConnectorAccount(BaseModel):
+    id: str
+    context: str | None
+    enabled: bool
+    health: AccountHealth | None
+
+
 class ConnectorDetail(Connector):
     scopes: list[str]
     pulls: list[str]
     vaultDestination: str
+    accounts: list[ConnectorAccount] = []

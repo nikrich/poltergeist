@@ -183,6 +183,23 @@ def _read_last_run(connector_id: str) -> str | None:
         return None
 
 
+def _accounts_for(connector_id: str) -> list[dict]:
+    from ghostbrain import accounts, accounts_health
+
+    acct_connector = accounts.SOURCE_TO_ACCOUNT_CONNECTOR.get(connector_id)
+    if acct_connector is None:
+        return []
+    return [
+        {
+            "id": a.id,
+            "context": a.context,
+            "enabled": a.enabled,
+            "health": accounts_health.health_for(connector_id, a.id),
+        }
+        for a in accounts.list_accounts(acct_connector, include_disabled=True)
+    ]
+
+
 def _connector_record(connector_id: str) -> dict:
     display = _DISPLAY.get(connector_id, {
         "displayName": connector_id,
@@ -202,29 +219,50 @@ def _connector_record(connector_id: str) -> dict:
         state = "on"
     else:
         state = p.state
+
+    accts = _accounts_for(connector_id)
+    account = p.account
+    if len(accts) == 1:
+        account = accts[0]["id"]
+    elif len(accts) > 1:
+        account = f"{len(accts)} accounts"
+    error = p.error
+    enabled = [a for a in accts if a["enabled"]]
+    if enabled and all(
+        (a["health"] or {}).get("status") in ("auth_required", "error") for a in enabled
+    ):
+        state = "err"
+        error = "all accounts need attention"
+
     return {
         "id": connector_id,
         "displayName": display["displayName"],
         "state": state,
         "count": _count_indexed(connector_id),
         "lastSyncAt": last_run,
-        "account": p.account,
+        "account": account,
         "throughput": None,
-        "error": p.error,
+        "error": error,
+        "_accounts": accts,
     }
 
 
 def list_connectors() -> list[dict]:
-    return [_connector_record(cid) for cid in _list_connector_ids()]
+    return [
+        {k: v for k, v in _connector_record(cid).items() if k != "_accounts"}
+        for cid in _list_connector_ids()
+    ]
 
 
 def get_connector(connector_id: str) -> dict | None:
     if connector_id not in _list_connector_ids():
         return None
     base = _connector_record(connector_id)
+    accts = base.pop("_accounts")
     display = _DISPLAY.get(connector_id, {})
     return {
         **base,
+        "accounts": accts,
         "scopes": display.get("scopes", []),
         "pulls": display.get("pulls", []),
         "vaultDestination": display.get("vaultDestination", f"20-contexts/{{ctx}}/{connector_id}/"),

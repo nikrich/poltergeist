@@ -4,9 +4,9 @@ Run via:
     python -m ghostbrain.connectors.gmail
 or  ghostbrain-gmail-fetch
 
-Reads accounts from ``vault/90-meta/routing.yaml:gmail.accounts``, runs
-the connector against each, drops normalized thread events into the
-queue's pending/. The always-on worker picks them up.
+Reads accounts from ``90-meta/accounts.yaml``, runs the connector against
+each, drops normalized thread events into the queue's pending/. The
+always-on worker picks them up.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import logging
 
 import yaml
 
-from ghostbrain.connectors.gmail import GmailConnector
+from ghostbrain.accounts_health import AllAccountsFailedError
 from ghostbrain.paths import queue_dir, state_dir, vault_path
 from ghostbrain.worker.audit import audit_log
 
@@ -34,29 +34,16 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     routing = _load_routing()
-    gmail_cfg = routing.get("gmail") or {}
-    accounts = gmail_cfg.get("accounts") or {}
-    if not accounts:
-        log.warning(
-            "No gmail.accounts configured in routing.yaml; nothing to fetch.",
-        )
-        return
-
     queue = queue_dir()
     state = state_dir()
     queue.mkdir(parents=True, exist_ok=True)
     state.mkdir(parents=True, exist_ok=True)
 
-    connector = GmailConnector(
-        config={
-            "accounts": accounts,
-            "denylist_domains": gmail_cfg.get("denylist_domains") or [],
-            "relevance_gate": gmail_cfg.get("relevance_gate", True),
-            "relevance_model": gmail_cfg.get("relevance_model"),
-        },
-        queue_dir=queue,
-        state_dir=state,
-    )
+    from ghostbrain.connectors.gmail.runner import _build
+    connector = _build(routing, queue, state)
+    if connector is None:
+        log.warning("No gmail accounts in 90-meta/accounts.yaml; nothing to fetch.")
+        return
 
     if not connector.health_check():
         audit_log("connector_health_failed", "gmail")
@@ -66,22 +53,27 @@ def main() -> None:
         )
         return
 
-    if args.dry_run:
-        since = connector._get_last_run()
-        events = connector.fetch(since)
-        for ev in events:
-            md = ev["metadata"]
-            unread = "unread" if md.get("is_unread") else "read"
-            print(
-                f"{md['account']:30s} [{unread:>6s}] "
-                f"{md['from_address']:40s} {ev['title']}"
-            )
-        print(f"\n{len(events)} event(s) (dry-run; not enqueued)")
-        return
+    try:
+        if args.dry_run:
+            since = connector._get_last_run()
+            events = connector.fetch(since)
+            for ev in events:
+                md = ev["metadata"]
+                unread = "unread" if md.get("is_unread") else "read"
+                print(
+                    f"{md['account']:30s} [{unread:>6s}] "
+                    f"{md['from_address']:40s} {ev['title']}"
+                )
+            print(f"\n{len(events)} event(s) (dry-run; not enqueued)")
+            return
 
-    count = connector.run()
-    audit_log("connector_run", "gmail", events_queued=count)
-    print(f"gmail: queued {count} event(s)")
+        count = connector.run()
+        audit_log("connector_run", "gmail", events_queued=count)
+        print(f"gmail: queued {count} event(s)")
+    except AllAccountsFailedError as e:
+        log.error(str(e))
+        audit_log("connector_health_failed", "gmail", error=str(e))
+        raise SystemExit(1)
 
 
 def _load_routing() -> dict:

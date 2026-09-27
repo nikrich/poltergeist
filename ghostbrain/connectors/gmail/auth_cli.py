@@ -33,6 +33,9 @@ def main() -> None:
     except Exception as e:  # noqa: BLE001
         print(f"unexpected error: {e}", file=sys.stderr)
         raise SystemExit(2)
+
+    from ghostbrain import accounts
+    accounts.ensure_account("gmail", args.account)
     print(f"OK — token saved to {path}")
 
 

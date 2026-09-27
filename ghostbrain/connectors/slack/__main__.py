@@ -5,7 +5,7 @@ Run via::
     python -m ghostbrain.connectors.slack
     ghostbrain-slack-fetch
 
-Reads workspaces from ``vault/90-meta/routing.yaml:slack.workspaces``,
+Reads workspaces from ``vault/90-meta/accounts.yaml`` (connector: slack),
 runs the connector, and drops normalized events into the queue's
 pending/. The always-on worker picks them up.
 
@@ -15,8 +15,8 @@ Dry-run preview for full-pull mode::
 
 This pulls 1 day of history from every channel without saving cursors
 and without enqueueing, then prints the LLM's keep/skip decision per
-message so you can eyeball quality before flipping ``mode: full`` in
-``routing.yaml``.
+message so you can eyeball quality before flipping ``options.mode: full``
+for that workspace in ``accounts.yaml``.
 """
 
 from __future__ import annotations
@@ -25,11 +25,10 @@ import argparse
 import logging
 from collections import defaultdict
 
-import yaml
-
+from ghostbrain.accounts_health import AllAccountsFailedError
 from ghostbrain.connectors.slack import SlackConnector
 from ghostbrain.connectors.slack.connector import MessageDecision
-from ghostbrain.paths import queue_dir, state_dir, vault_path
+from ghostbrain.paths import queue_dir, state_dir
 from ghostbrain.worker.audit import audit_log
 
 log = logging.getLogger("ghostbrain.connectors.slack.main")
@@ -56,12 +55,11 @@ def main() -> None:
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-    routing = _load_routing()
-    slack_cfg = routing.get("slack") or {}
-    workspaces = slack_cfg.get("workspaces") or {}
+    from ghostbrain.connectors.slack.runner import workspaces_config
+    workspaces = workspaces_config()
     if not workspaces:
         log.warning(
-            "No slack.workspaces configured in routing.yaml; nothing to fetch.",
+            "No slack accounts in 90-meta/accounts.yaml; nothing to fetch.",
         )
         return
 
@@ -91,13 +89,18 @@ def main() -> None:
         )
         return
 
-    if args.dry_run:
-        _run_dry(connector)
-        return
+    try:
+        if args.dry_run:
+            _run_dry(connector)
+            return
 
-    count = connector.run()
-    audit_log("connector_run", "slack", events_queued=count)
-    print(f"slack: queued {count} event(s)")
+        count = connector.run()
+        audit_log("connector_run", "slack", events_queued=count)
+        print(f"slack: queued {count} event(s)")
+    except AllAccountsFailedError as e:
+        log.error(str(e))
+        audit_log("connector_health_failed", "slack", error=str(e))
+        raise SystemExit(1)
 
 
 def _override(cfg: dict, *, mode: str | None, days: int | None) -> dict:
@@ -189,13 +192,6 @@ def _print_decisions(workspace: str, decisions: list[MessageDecision]) -> None:
 def _short(text: str, limit: int = 100) -> str:
     t = (text or "").replace("\n", " ").strip()
     return t if len(t) <= limit else t[: limit - 1] + "…"
-
-
-def _load_routing() -> dict:
-    f = vault_path() / "90-meta" / "routing.yaml"
-    if not f.exists():
-        return {}
-    return yaml.safe_load(f.read_text(encoding="utf-8")) or {}
 
 
 if __name__ == "__main__":

@@ -26,10 +26,25 @@ export interface Connector {
   error: string | null;
 }
 
+export interface AccountHealth {
+  status: 'ok' | 'auth_required' | 'error';
+  checkedAt: string | null;
+  lastSuccessAt: string | null;
+  error: string | null;
+}
+
+export interface ConnectorAccount {
+  id: string;
+  context: string | null;
+  enabled: boolean;
+  health: AccountHealth | null;
+}
+
 export interface ConnectorDetail extends Connector {
   scopes: string[];
   pulls: string[];
   vaultDestination: string;
+  accounts?: ConnectorAccount[];
 }
 
 export interface CaptureSummary {

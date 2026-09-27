@@ -613,6 +613,11 @@ version: 1
 contexts:
 __CONTEXTS_YAML__
 
+# Per-account settings (which Gmail / Slack / Atlassian / GitHub / Microsoft
+# accounts are connected, and which context each routes to) live in
+# 90-meta/accounts.yaml. Rules here that are more specific than an account
+# (sender domains, labels, GitHub orgs, Confluence spaces) still win.
+
 # GitHub orgs → context. Phase 4.
 github:
   orgs:
@@ -624,54 +629,28 @@ github:
 # Jira sites → context. Used by the router for path-first routing of
 # Jira events, and by the Jira connector to know which sites to fetch.
 jira:
-  sites:
-    # TODO: "your-site.atlassian.net": your-context
-    {}
+  # Sites are accounts: connect them in the app (stored in 90-meta/accounts.yaml).
 
 # Confluence sites + spaces → context. Confluence shares Atlassian site
 # auth with Jira; you typically only need to add the same site once per
 # product. Space keys are short codes from page URLs.
 confluence:
-  sites:
-    # TODO: "your-site.atlassian.net": your-context
-    {}
+  # Sites are accounts: connect them in the app (stored in 90-meta/accounts.yaml).
   spaces:
     # TODO: e.g. "PROJ": your-context
     {}
 
-# Slack workspaces → context. The connector polls each workspace for
-# @-mentions over the configured lookback window and routes them
-# straight to the listed context (workspace slug = strongest signal).
-# Required user-token scopes: search:read, users:read, team:read,
-# channels:history, groups:history, im:history, mpim:history.
-# Save tokens via `ghostbrain-slack-token-add <slug> <xoxp-token>`.
-slack:
-  workspaces:
-    # Example:
-    #   your-workspace:
-    #     context: your-context
-    #     lookback_hours: 24
-    #     mentions_only: true
-    #   another-workspace:
-    #     context: another-context
-    {}
+# Slack workspaces are accounts: connect them in the app (90-meta/accounts.yaml).
 
 # Gmail accounts + routing. The connector polls each account in
-# `gmail.accounts`; threads are filtered by:
+# `accounts.yaml`; threads are filtered by:
 #   1. `denylist_domains` — drop matching senders before any cost.
 #   2. `relevance_gate` — LLM (Haiku) drops everything that isn't
 #      worth surfacing for the user's contexts.
 # Surviving threads are then routed using `sender_domains` (strongest
 # signal) or `label_prefixes` (fallback).
 gmail:
-  accounts:
-    # TODO: add Gmail accounts you want to ingest. Run
-    # `ghostbrain-gmail-auth <email>` once per account to authorize.
-    # Example:
-    #   you@example.com:
-    #     monitored_labels: ["work/important", "personal"]
-    #     unread_lookback_hours: 24
-    {}
+  # Gmail accounts live in 90-meta/accounts.yaml (connect them in the app).
   # Drop these senders entirely before they reach the LLM gate.
   # Supports exact (`humblebundle.com`) and subdomain (`*.humblebundle.com`).
   denylist_domains: []
@@ -702,13 +681,10 @@ joplin:
     #   Personal: another-context
     {}
 
-# Calendar accounts → context. One block per provider.
+# Calendar routing. One block per provider.
 calendar:
-  google:
-    accounts:
-      # TODO: "you@gmail.com": personal
-      # TODO: "you@workspace.com": work
-      {}
+  # Google Calendar accounts live in 90-meta/accounts.yaml (connect them in the app).
+  google: {}
 
 # Claude Code project paths → context. Longest-prefix match wins.
 # Used by ghostbrain.profile.claude_md to pick the right context profile.

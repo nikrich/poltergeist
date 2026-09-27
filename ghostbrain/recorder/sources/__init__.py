@@ -12,6 +12,7 @@ __all__ = ["MeetingEvent", "MeetingSource", "select_sources", "dedupe_events"]
 
 def select_sources(
     routing: dict, recorder_cfg: dict, platform: str | None = None,
+    *, google_accounts: dict[str, str] | None = None,
 ) -> tuple[list[MeetingSource], list[str]]:
     plat = platform or sys.platform
     calendar = routing.get("calendar") or {}
@@ -30,7 +31,11 @@ def select_sources(
         else:
             excluded.append("macos: Apple Calendar source requires macOS")
 
-    google_accounts = (calendar.get("google") or {}).get("accounts") or {}
+    if google_accounts is None:
+        from ghostbrain import accounts
+        google_accounts = {
+            a.id: a.context for a in accounts.list_accounts("calendar_google") if a.context
+        }
     if google_accounts and wanted("google"):
         from ghostbrain.recorder.sources.google import GoogleSource
         sources.append(GoogleSource(dict(google_accounts)))

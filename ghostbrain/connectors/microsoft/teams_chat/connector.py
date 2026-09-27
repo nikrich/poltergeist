@@ -6,12 +6,12 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 
 from ghostbrain.connectors._base import Connector
 from ghostbrain.connectors._relevance import apply_relevance_gate, build_llm_gate
-from ghostbrain.connectors.microsoft.graph.auth import get_token, have_token
 from ghostbrain.connectors.microsoft.graph.client import GraphClient
+from ghostbrain.connectors.microsoft.graph.multi import any_token, fetch_per_account
 
 log = logging.getLogger("ghostbrain.connectors.teams_chat")
 
@@ -34,13 +34,26 @@ class TeamsChatConnector(Connector):
         self._gate_override = relevance_gate
 
     def health_check(self) -> bool:
-        return have_token(self.config)
-
-    def _graph(self) -> GraphClient:
-        return self._client if self._client is not None else GraphClient(get_token(self.config))
+        return any_token(self.config)
 
     def fetch(self, since: datetime) -> list[dict]:
-        client = self._graph()
+        if self._client is not None:
+            events = self._fetch_with(self._client, since)
+        else:
+            events = fetch_per_account(
+                "teams_chat", self.config, lambda client: self._fetch_with(client, since),
+            )
+
+        raw = len(events)
+        if self.relevance_enabled and events:
+            gate = self._gate_override or self._default_gate()
+            events, dropped = apply_relevance_gate(events, gate)
+        else:
+            dropped = 0
+        log.info("teams_chat fetch: %d kept (%d gated, %d initial)", len(events), dropped, raw)
+        return events
+
+    def _fetch_with(self, client: GraphClient, since: datetime) -> list[dict]:
         chats = client.get_all("/me/chats", {"$top": 50}, max_items=50)
         events: list[dict] = []
         for chat in chats:
@@ -53,14 +66,6 @@ class TeamsChatConnector(Connector):
                 events.extend(self._messages_for(client, chat, since))
             except Exception as e:  # noqa: BLE001
                 log.warning("teams_chat: chat %s failed: %s", chat.get("id"), e)
-
-        raw = len(events)
-        if self.relevance_enabled and events:
-            gate = self._gate_override or self._default_gate()
-            events, dropped = apply_relevance_gate(events, gate)
-        else:
-            dropped = 0
-        log.info("teams_chat fetch: %d kept (%d gated, %d initial)", len(events), dropped, raw)
         return events
 
     def normalize(self, raw: dict) -> dict:

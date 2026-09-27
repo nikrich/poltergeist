@@ -36,6 +36,9 @@ class GitHubProvider:
         """Start GitHub auth. If gh is already logged in, return done. Otherwise request grant."""
         ok, login = _gh_logged_in()
         if ok:
+            if login:
+                from ghostbrain import accounts
+                accounts.ensure_account("github", login)
             return NextAction(kind="done", message=f"Signed in as {login}" if login else "Signed in")
         gh_present = shutil.which("gh") is not None
         msg = (
@@ -57,6 +60,9 @@ class GitHubProvider:
             if ok:
                 session.status = "success"
                 session.account = login
+                if login:
+                    from ghostbrain import accounts
+                    accounts.ensure_account("github", login)
                 session.next = NextAction(kind="done")
                 return
             time.sleep(3)

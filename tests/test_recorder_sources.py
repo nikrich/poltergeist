@@ -352,16 +352,19 @@ def test_microsoft_source_serves_cache_on_auth_error(monkeypatch):
 def test_select_sources_from_configured_blocks():
     from ghostbrain.recorder.sources import select_sources
     routing = {
-        "calendar": {"macos": {"accounts": {"Work": "w"}},
-                     "google": {"accounts": {"a@x.com": "w"}}},
+        "calendar": {"macos": {"accounts": {"Work": "w"}}},
         "microsoft": {"client_id": "c", "calendar_context": "sanlam"},
     }
-    sources, excluded = select_sources(routing, {}, platform="win32")
+    sources, excluded = select_sources(
+        routing, {}, platform="win32", google_accounts={"a@x.com": "w"},
+    )
     ids = sorted(s.id for s in sources)
     assert ids == ["google", "microsoft"]          # macos excluded off-darwin
     assert any("macos" in r for r in excluded)
 
-    sources, _ = select_sources(routing, {}, platform="darwin")
+    sources, _ = select_sources(
+        routing, {}, platform="darwin", google_accounts={"a@x.com": "w"},
+    )
     assert sorted(s.id for s in sources) == ["google", "macos", "microsoft"]
 
 
@@ -374,9 +377,11 @@ def test_select_sources_microsoft_needs_context():
 
 def test_select_sources_override_pins_list():
     from ghostbrain.recorder.sources import select_sources
-    routing = {"calendar": {"google": {"accounts": {"a@x.com": "w"}}},
-               "microsoft": {"client_id": "c", "calendar_context": "s"}}
-    sources, _ = select_sources(routing, {"meeting_sources": ["google"]}, platform="win32")
+    routing = {"microsoft": {"client_id": "c", "calendar_context": "s"}}
+    sources, _ = select_sources(
+        routing, {"meeting_sources": ["google"]}, platform="win32",
+        google_accounts={"a@x.com": "w"},
+    )
     assert [s.id for s in sources] == ["google"]
 
 

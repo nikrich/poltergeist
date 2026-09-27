@@ -4,9 +4,10 @@ authenticated user is @-mentioned over the last lookback window.
 Mentions-only by design (per SPEC §9 — only mentions, not raw channel
 volume). Each mention surfaces as a single event with the message text,
 permalink, channel name, and the mentioning user resolved to a display
-name. The user's existing ``slack.workspaces`` block in ``routing.yaml``
-maps workspace slug → context, so a mention from a configured workspace
-routes straight to its context (e.g. ``acme``) without an LLM call.
+name. Workspaces and their per-workspace options (mode, allowlist, DM
+flags, ...) come from the account registry (``90-meta/accounts.yaml``);
+routing from a workspace to its context is looked up there via
+``metadata.accountId`` (the workspace slug), not from this module.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable
 
+from ghostbrain.accounts_health import for_each_account
 from ghostbrain.connectors._base import Connector
 from ghostbrain.connectors.slack.auth import SlackAuthError, load_token
 
@@ -31,7 +33,7 @@ HISTORY_PAGE_LIMIT = 200
 @dataclasses.dataclass
 class SlackWorkspaceConfig:
     slug: str               # routing key (e.g. "acme", "your-context")
-    context: str            # vault context this workspace routes to
+    context: str | None = None  # informational; routing uses accounts.yaml
     lookback_hours: int = DEFAULT_LOOKBACK_HOURS
     # Fetch strategy:
     #   "mentions" (default, legacy) — search.messages for @-mentions only.
@@ -84,53 +86,47 @@ class SlackConnector(Connector):
         self._client_factory = client_factory or _default_client_factory
 
     def health_check(self) -> bool:
-        if not self.workspaces:
-            return False
         for ws in self.workspaces:
             try:
                 load_token(ws.slug)
+                return True
             except SlackAuthError:
-                return False
-        return True
+                continue
+        return False
+
+    def _fetch_one(self, ws: SlackWorkspaceConfig) -> list[dict]:
+        effective_mode = ws.mode
+        dm_only = ws.include_dms or ws.include_group_dms
+        if effective_mode == "full" and not ws.allowed_channels and not dm_only:
+            # Refuse silent failure on large workspaces. full-pull
+            # without an allowlist would iterate every channel and
+            # exhaust Slack's Tier 3 rate limit, with the
+            # per-channel except-block swallowing the errors as
+            # warnings — net result: last_run_ok=true, queued=0,
+            # and no signal in the UI that anything is wrong.
+            # Fall back to mentions so the user still gets the
+            # @-mentions / DMs flow until they configure an
+            # allowlist via Settings → Slack channels (or the
+            # state file at ~/.ghostbrain/state/slack.<slug>.allowed_channels.json).
+            log.warning(
+                "slack %s: mode=full but no allowed_channels — "
+                "falling back to mentions-mode for this run. "
+                "Configure an allowlist to enable full-pull.",
+                ws.slug,
+            )
+            effective_mode = "mentions"
+        if effective_mode == "full":
+            return list(self._fetch_workspace_full(ws))
+        return list(self._fetch_workspace(ws))
 
     def fetch(self, since: datetime) -> list[dict]:
         if not self.workspaces:
             log.info("no slack workspaces configured; skipping")
             return []
-
-        events: list[dict] = []
-        for ws in self.workspaces:
-            try:
-                effective_mode = ws.mode
-                dm_only = ws.include_dms or ws.include_group_dms
-                if effective_mode == "full" and not ws.allowed_channels and not dm_only:
-                    # Refuse silent failure on large workspaces. full-pull
-                    # without an allowlist would iterate every channel and
-                    # exhaust Slack's Tier 3 rate limit, with the
-                    # per-channel except-block swallowing the errors as
-                    # warnings — net result: last_run_ok=true, queued=0,
-                    # and no signal in the UI that anything is wrong.
-                    # Fall back to mentions so the user still gets the
-                    # @-mentions / DMs flow until they configure an
-                    # allowlist via Settings → Slack channels (or the
-                    # state file at ~/.ghostbrain/state/slack.<slug>.allowed_channels.json).
-                    log.warning(
-                        "slack %s: mode=full but no allowed_channels — "
-                        "falling back to mentions-mode for this run. "
-                        "Configure an allowlist to enable full-pull.",
-                        ws.slug,
-                    )
-                    effective_mode = "mentions"
-
-                if effective_mode == "full":
-                    events.extend(self._fetch_workspace_full(ws))
-                else:
-                    events.extend(self._fetch_workspace(ws))
-            except SlackAuthError as e:
-                log.warning("slack auth error for %s: %s", ws.slug, e)
-            except Exception as e:  # noqa: BLE001
-                log.warning("slack fetch failed for %s: %s", ws.slug, e)
-
+        events = for_each_account(
+            "slack", self.workspaces, self._fetch_one,
+            account_id=lambda ws: ws.slug, auth_errors=(SlackAuthError,),
+        )
         log.info("slack fetch: %d event(s) across %d workspace(s)",
                  len(events), len(self.workspaces))
         return events
@@ -563,11 +559,10 @@ def _parse_workspaces(config: dict) -> Iterable[SlackWorkspaceConfig]:
 
         workspaces:
           acme:
-            context: work
             lookback_hours: 24
             mentions_only: true
           other:
-            context: personal
+            mode: full
 
     Empty config → empty iterator.
 
@@ -581,9 +576,6 @@ def _parse_workspaces(config: dict) -> Iterable[SlackWorkspaceConfig]:
     for slug, cfg in raw.items():
         cfg = cfg or {}
         ctx = cfg.get("context")
-        if not ctx:
-            log.warning("slack workspace %s has no context; skipping", slug)
-            continue
         # mode resolution:
         #   explicit `mode: full|mentions` wins
         #   else legacy `mentions_only: false` → full
@@ -607,7 +599,7 @@ def _parse_workspaces(config: dict) -> Iterable[SlackWorkspaceConfig]:
 
         yield SlackWorkspaceConfig(
             slug=str(slug),
-            context=str(ctx),
+            context=str(ctx) if ctx else None,
             lookback_hours=int(
                 cfg.get("lookback_hours") or DEFAULT_LOOKBACK_HOURS
             ),
@@ -737,6 +729,7 @@ def _normalize_message(
         "sourceUrl": "",  # populated lazily by the worker via chat.getPermalink
         "metadata": {
             "workspace_slug": workspace_slug,
+            "accountId": workspace_slug,
             "workspace_id": workspace_team_id,
             "workspace_name": workspace_name,
             "channel_id": channel_id,
@@ -801,6 +794,7 @@ def _normalize_match(
         "sourceUrl": permalink or iter_url,
         "metadata": {
             "workspace_slug": workspace_slug,
+            "accountId": workspace_slug,
             "workspace_id": workspace_team_id,
             "workspace_name": workspace_name,
             "channel_id": channel_id,

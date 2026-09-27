@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+from ghostbrain.accounts_health import for_each_account
 from ghostbrain.connectors._base import Connector
 from ghostbrain.connectors.atlassian._base import (
     AtlassianAuthError,
@@ -60,17 +61,14 @@ class JiraConnector(Connector):
         self.lookback_hours = int(config.get("lookback_hours") or 4)
 
     def health_check(self) -> bool:
-        if not self.sites:
-            return False
-        try:
-            for host in self.sites:
+        for host in self.sites:
+            try:
                 email, token = auth_for_site(host)
-                client = AtlassianClient(host, email, token)
-                client.get("/rest/api/3/myself")
-        except (AtlassianAuthError, Exception) as e:
-            log.warning("jira health check failed: %s", e)
-            return False
-        return True
+                AtlassianClient(host, email, token).get("/rest/api/3/myself")
+                return True
+            except Exception as e:  # noqa: BLE001
+                log.warning("jira health check failed for %s: %s", host, e)
+        return False
 
     def fetch(self, since: datetime) -> list[dict]:
         if not self.sites:
@@ -83,14 +81,10 @@ class JiraConnector(Connector):
         # Apply overlap buffer in case events came in just before the last run.
         since = since - timedelta(hours=WINDOW_OVERLAP_HOURS)
 
-        events: list[dict] = []
-        for host in self.sites:
-            try:
-                events.extend(self._fetch_site(host, since))
-            except AtlassianAuthError as e:
-                log.warning("skipping %s: %s", host, e)
-            except Exception as e:  # noqa: BLE001
-                log.exception("jira fetch failed for %s: %s", host, e)
+        events = for_each_account(
+            "jira", self.sites, lambda host: list(self._fetch_site(host, since)),
+            account_id=lambda host: host, auth_errors=(AtlassianAuthError,),
+        )
         log.info("jira fetch: %d event(s) across %d site(s)",
                  len(events), len(self.sites))
         return events
@@ -160,6 +154,7 @@ def normalize_issue(raw: dict, *, host: str) -> dict:
         "rawData": raw,
         "metadata": {
             "site": host,
+            "accountId": host,
             "siteSlug": site_slug,
             "project": project,
             "key": key,

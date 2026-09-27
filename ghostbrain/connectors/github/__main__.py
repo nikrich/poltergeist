@@ -16,7 +16,8 @@ import logging
 
 import yaml
 
-from ghostbrain.connectors.github import GitHubConnector
+from ghostbrain.accounts_health import AllAccountsFailedError
+from ghostbrain.connectors.github.runner import _build
 from ghostbrain.paths import queue_dir, state_dir, vault_path
 from ghostbrain.worker.audit import audit_log
 
@@ -42,29 +43,33 @@ def main() -> None:
     queue.mkdir(parents=True, exist_ok=True)
     state.mkdir(parents=True, exist_ok=True)
 
-    connector = GitHubConnector(
-        config={"orgs": orgs},
-        queue_dir=queue,
-        state_dir=state,
-    )
+    connector = _build(routing, queue, state)
+    if connector is None:
+        log.warning("No github.orgs configured in routing.yaml; nothing to fetch.")
+        return
 
     if not connector.health_check():
         audit_log("connector_health_failed", "github")
         log.error("gh auth status failed; run `gh auth login`.")
         return
 
-    if args.dry_run:
-        since = connector._get_last_run()
-        events = connector.fetch(since)
-        for ev in events:
-            print(f"{ev['type']:6s} {ev['metadata']['repo']}#{ev['metadata']['number']:5d} "
-                  f"[{ev['subtype']:>16s}] {ev['title']}")
-        print(f"\n{len(events)} event(s) (dry-run; not enqueued)")
-        return
+    try:
+        if args.dry_run:
+            since = connector._get_last_run()
+            events = connector.fetch(since)
+            for ev in events:
+                print(f"{ev['type']:6s} {ev['metadata']['repo']}#{ev['metadata']['number']:5d} "
+                      f"[{ev['subtype']:>16s}] {ev['title']}")
+            print(f"\n{len(events)} event(s) (dry-run; not enqueued)")
+            return
 
-    count = connector.run()
-    audit_log("connector_run", "github", events_queued=count)
-    print(f"github: queued {count} event(s)")
+        count = connector.run()
+        audit_log("connector_run", "github", events_queued=count)
+        print(f"github: queued {count} event(s)")
+    except AllAccountsFailedError as e:
+        log.error(str(e))
+        audit_log("connector_health_failed", "github", error=str(e))
+        raise SystemExit(1)
 
 
 def _load_routing() -> dict:

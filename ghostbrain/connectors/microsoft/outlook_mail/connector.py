@@ -5,12 +5,12 @@ LLM relevance gate, and emits one event per message."""
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from ghostbrain.connectors._base import Connector
 from ghostbrain.connectors._relevance import apply_relevance_gate, build_llm_gate
-from ghostbrain.connectors.microsoft.graph.auth import get_token, have_token
 from ghostbrain.connectors.microsoft.graph.client import GraphClient
+from ghostbrain.connectors.microsoft.graph.multi import any_token, fetch_per_account
 
 log = logging.getLogger("ghostbrain.connectors.outlook_mail")
 
@@ -35,22 +35,15 @@ class OutlookMailConnector(Connector):
         self._gate_override = relevance_gate
 
     def health_check(self) -> bool:
-        return have_token(self.config)
-
-    def _graph(self) -> GraphClient:
-        return self._client if self._client is not None else GraphClient(get_token(self.config))
+        return any_token(self.config)
 
     def fetch(self, since: datetime) -> list[dict]:
-        client = self._graph()
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=self.lookback_hours)
-        params = {
-            "$filter": f"isRead eq false and receivedDateTime ge {cutoff.isoformat()}",
-            "$select": "id,subject,isRead,receivedDateTime,bodyPreview,from,toRecipients,webLink",
-            "$top": self.max_per_run,
-            "$orderby": "receivedDateTime desc",
-        }
-        msgs = client.get_all("/me/messages", params, max_items=self.max_per_run)
-        events = [_normalize_message(m, DEFAULT_BODY_CAP_CHARS) for m in msgs]
+        if self._client is not None:
+            events = self._fetch_with(self._client, since)
+        else:
+            events = fetch_per_account(
+                "outlook_mail", self.config, lambda client: self._fetch_with(client, since),
+            )
 
         raw = len(events)
         events = [e for e in events if not _is_denied(e, self.denylist)]
@@ -64,6 +57,17 @@ class OutlookMailConnector(Connector):
         log.info("outlook_mail fetch: %d kept (%d denied, %d gated, %d initial)",
                  len(events), denied, dropped, raw)
         return events
+
+    def _fetch_with(self, client: GraphClient, since: datetime) -> list[dict]:
+        cutoff = datetime.now(UTC) - timedelta(hours=self.lookback_hours)
+        params = {
+            "$filter": f"isRead eq false and receivedDateTime ge {cutoff.isoformat()}",
+            "$select": "id,subject,isRead,receivedDateTime,bodyPreview,from,toRecipients,webLink",
+            "$top": self.max_per_run,
+            "$orderby": "receivedDateTime desc",
+        }
+        msgs = client.get_all("/me/messages", params, max_items=self.max_per_run)
+        return [_normalize_message(m, DEFAULT_BODY_CAP_CHARS) for m in msgs]
 
     def normalize(self, raw: dict) -> dict:
         return raw

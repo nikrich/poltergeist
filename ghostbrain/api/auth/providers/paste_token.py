@@ -60,8 +60,8 @@ class SlackTokenProvider:
             return NextAction(kind="need_input", fields=[])
         session.status = "success"
         session.account = f"@{ident.get('user')} · {ident.get('team')}"
-        merge_routing({"slack": {"workspaces": {slug: {"context": "needs_review",
-                       "lookback_hours": 24, "mentions_only": True}}}})
+        from ghostbrain import accounts
+        accounts.ensure_account("slack", slug)
         return NextAction(kind="done")
 
     def poll(self, connector_id, session):  # not used

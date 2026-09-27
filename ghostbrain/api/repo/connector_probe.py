@@ -57,22 +57,17 @@ def _joplin_probe() -> ProbeResult:
 
 
 def _atlassian_probe(connector_id: str) -> ProbeResult:
-    from ghostbrain.api.repo.routing import load_routing
+    from ghostbrain import accounts
+    from ghostbrain.connectors.atlassian._base import AtlassianAuthError, auth_for_site
 
-    sites = ((load_routing().get(connector_id) or {}).get("sites")) or {}
-    if not sites:
+    accts = accounts.list_accounts(connector_id)
+    if not accts:
         return ProbeResult("off")
-
-    email = os.environ.get("ATLASSIAN_EMAIL")
-    has_token = any(
-        k == "ATLASSIAN_TOKEN" or k.startswith("ATLASSIAN_TOKEN_")
-        for k in os.environ
-    )
-    if email and has_token:
-        return ProbeResult("on", account=email)
-    if email or has_token:
-        return ProbeResult("err", account=email, error="Atlassian email or token missing")
-    return ProbeResult("off")
+    try:
+        email, _ = auth_for_site(accts[0].id)
+    except AtlassianAuthError as e:
+        return ProbeResult("err", error=str(e))
+    return ProbeResult("on", account=email)
 
 
 def _microsoft_probe() -> ProbeResult:

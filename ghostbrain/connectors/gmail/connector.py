@@ -22,6 +22,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+from ghostbrain.accounts_health import for_each_account
 from ghostbrain.connectors._base import Connector
 from ghostbrain.connectors.gmail.auth import GmailAuthError, load_credentials
 
@@ -82,28 +83,25 @@ class GmailConnector(Connector):
         self._relevance_override = relevance_gate
 
     def health_check(self) -> bool:
-        if not self.accounts:
-            return False
+        """True when at least one account has usable credentials — one
+        lapsed token must not stop the others."""
         for acc in self.accounts:
             try:
                 load_credentials(acc.email)
+                return True
             except GmailAuthError:
-                return False
-        return True
+                continue
+        return False
 
     def fetch(self, since: datetime) -> list[dict]:
         if not self.accounts:
             log.info("no monitored gmail accounts configured; skipping")
             return []
 
-        events: list[dict] = []
-        for acc in self.accounts:
-            try:
-                events.extend(self._fetch_account(acc))
-            except GmailAuthError as e:
-                log.warning("gmail auth error for %s: %s", acc.email, e)
-            except Exception as e:  # noqa: BLE001
-                log.warning("gmail fetch failed for %s: %s", acc.email, e)
+        events = for_each_account(
+            "gmail", self.accounts, self._fetch_account,
+            account_id=lambda a: a.email, auth_errors=(GmailAuthError,),
+        )
 
         raw_count = len(events)
         events = [e for e in events if not _is_denied(e, self.denylist)]
@@ -404,6 +402,7 @@ def _normalize_thread(thread: dict, *, account: str) -> dict | None:
         "metadata": {
             "thread_id": thread_id,
             "account": account,
+            "accountId": account,
             "msg_count": len(messages),
             "labels": labels,
             "from": from_header,
