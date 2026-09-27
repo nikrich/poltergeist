@@ -162,7 +162,7 @@ SOURCE_TO_ACCOUNT_CONNECTOR: dict[str, str]  # event source → account connecto
 ```
 
 Writes use temp-file + `os.replace` (same pattern as `ghostbrain/api/repo/settings.py`)
-under an exclusive `fcntl` lock on `90-meta/.accounts.lock` (the scheduler and API share
+under an exclusive `fcntl` lock on `<state>/accounts.lock` (outside the vault, so it never syncs) (the scheduler and API share
 the sidecar process but run concurrently; auth CLIs are separate processes). A malformed
 `accounts.yaml` logs a warning and yields an empty list — it never falls back to
 `routing.yaml`, so a typo cannot silently re-route.
