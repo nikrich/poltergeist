@@ -156,3 +156,21 @@ def test_no_vault_meta_dir_returns_empty_without_writing(tmp_path):
     # VAULT_PATH points at <tmp_path>/vault, which doesn't exist here.
     assert accounts.list_accounts() == []
     assert not (tmp_path / "vault" / "90-meta" / "accounts.yaml").exists()
+
+
+def test_ensure_account_merges_options_when_stored_context_was_removed(v):
+    _write_accounts(v, [{"connector": "jira", "id": "gone.atlassian.net", "context": "retired",
+                         "options": {"email": "old@x.com"}}])
+    acc = accounts.ensure_account("jira", "gone.atlassian.net", options={"email": "new@x.com"})
+    assert acc.context == "retired"
+    assert acc.options == {"email": "new@x.com"}
+    stored = accounts.get_account("jira", "gone.atlassian.net")
+    assert stored.context == "retired" and stored.options == {"email": "new@x.com"}
+
+
+def test_cross_process_lock_lives_in_state_dir_not_vault(v, tmp_path):
+    _write_accounts(v, [])
+    accounts.upsert_account(accounts.Account("gmail", "a@x.com"))
+    assert not (v / "90-meta" / ".accounts.lock").exists()
+    if accounts.fcntl is not None:
+        assert (tmp_path / "state" / "accounts.lock").exists()

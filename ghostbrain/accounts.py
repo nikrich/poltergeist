@@ -29,7 +29,7 @@ from pathlib import Path
 import yaml
 
 from ghostbrain import routing_config
-from ghostbrain.paths import vault_path
+from ghostbrain.paths import state_dir, vault_path
 
 try:
     import fcntl
@@ -60,6 +60,9 @@ SOURCE_TO_ACCOUNT_CONNECTOR: dict[str, str] = {
 _UNASSIGNED = frozenset({"needs_review"})
 
 _thread_lock = threading.RLock()
+
+# routing.yaml paths already warned about as unreadable (warn once per path).
+_warned_routing: set[str] = set()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -132,7 +135,11 @@ def account_connector_for_event(event: dict) -> str | None:
 
 
 def upsert_account(acc: Account, *, root: Path | None = None) -> Account:
-    _validate(acc, root)
+    return _upsert(acc, root=root, check_context=True)
+
+
+def _upsert(acc: Account, *, root: Path | None, check_context: bool) -> Account:
+    _validate(acc, root, check_context=check_context)
     _ensure_seeded(root)
     path = accounts_path(root)
     with _locked(root):
@@ -169,7 +176,11 @@ def ensure_account(
     if options:
         merged = {**existing.options, **options}
         if merged != existing.options:
-            return upsert_account(dataclasses.replace(existing, options=merged), root=root)
+            # The stored context may no longer be in contexts(); keep it
+            # as-is rather than failing a sign-in over it.
+            return _upsert(
+                dataclasses.replace(existing, options=merged), root=root, check_context=False,
+            )
     return existing
 
 
@@ -212,13 +223,22 @@ def gh_logins(host: str = "github.com") -> list[str]:
 @contextlib.contextmanager
 def _locked(root: Path | None) -> Iterator[None]:
     """Serialise writers across threads (scheduler + API share a process) and,
-    where fcntl exists, across processes (auth CLIs, the worker)."""
-    meta = accounts_path(root).parent
+    where fcntl exists, across processes (auth CLIs, the worker). The lock
+    file lives in the state dir, not the vault, so it never lands in a
+    synced or git-tracked vault."""
     with _thread_lock:
-        if fcntl is None or not meta.exists():
+        if fcntl is None:
             yield
             return
-        with open(meta / ".accounts.lock", "a+") as fh:
+        try:
+            lock_dir = state_dir()
+            lock_dir.mkdir(parents=True, exist_ok=True)
+            fh = open(lock_dir / "accounts.lock", "a+")  # noqa: SIM115 — closed below
+        except OSError as e:
+            log.warning("could not open accounts lock file (%s); thread lock only", e)
+            yield
+            return
+        with fh:
             fcntl.flock(fh, fcntl.LOCK_EX)
             try:
                 yield
@@ -299,12 +319,16 @@ def _write(path: Path, accs: list[Account]) -> None:
         raise
 
 
-def _validate(acc: Account, root: Path | None) -> None:
+def _validate(acc: Account, root: Path | None, *, check_context: bool = True) -> None:
     if acc.connector not in ACCOUNT_CONNECTORS:
         raise ValueError(f"unknown account connector: {acc.connector!r}")
     if not acc.id or not acc.id.strip():
         raise ValueError("account id is required")
-    if acc.context is not None and acc.context not in routing_config.contexts(root):
+    if (
+        check_context
+        and acc.context is not None
+        and acc.context not in routing_config.contexts(root)
+    ):
         raise ValueError(
             f"unknown context: {acc.context!r}; valid: {list(routing_config.contexts(root))}"
         )
@@ -323,6 +347,11 @@ def _ensure_seeded(root: Path | None) -> None:
         if path.exists():
             return
         seeded = _seed(root)
+        if seeded is None:
+            # routing.yaml missing or unreadable: persisting now would
+            # freeze an empty registry and drop the legacy accounts for
+            # good. Seed on a later call once routing.yaml is valid.
+            return
         _write(path, seeded)
     log.info(
         "seeded %s with %d account(s) from routing.yaml; its per-account blocks "
@@ -332,8 +361,12 @@ def _ensure_seeded(root: Path | None) -> None:
     )
 
 
-def _seed(root: Path | None) -> list[Account]:
+def _seed(root: Path | None) -> list[Account] | None:
+    """The seeded accounts, or None when routing.yaml is missing or not a
+    readable mapping (nothing must be persisted then)."""
     routing = _load_routing(root)
+    if routing is None:
+        return None
     accs = _seed_from_routing(routing)
     if os.environ.get("GHOSTBRAIN_ACCOUNTS_LIVE_SEED", "1") != "0":
         try:
@@ -353,13 +386,27 @@ def _seed(root: Path | None) -> list[Account]:
     return out
 
 
-def _load_routing(root: Path | None) -> dict:
+def _load_routing(root: Path | None) -> dict | None:
+    """routing.yaml as a mapping, or None (warned once per path) when it is
+    missing, unreadable, or not a mapping."""
     f = (root or vault_path()) / "90-meta" / "routing.yaml"
     try:
         data = yaml.safe_load(f.read_text(encoding="utf-8"))
-    except (OSError, yaml.YAMLError):
-        return {}
-    return data if isinstance(data, dict) else {}
+    except FileNotFoundError:
+        reason = "is missing"
+    except (OSError, yaml.YAMLError) as e:
+        reason = f"could not be parsed ({e})"
+    else:
+        if isinstance(data, dict):
+            _warned_routing.discard(str(f))
+            return data
+        reason = "is not a mapping"
+    if str(f) not in _warned_routing:
+        _warned_routing.add(str(f))
+        log.warning(
+            "%s %s; not seeding accounts.yaml until it is valid", f, reason,
+        )
+    return None
 
 
 def _ctx(value: object) -> str | None:

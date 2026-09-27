@@ -129,3 +129,30 @@ def test_gh_logins_parses_every_account(monkeypatch):
 def test_gh_logins_without_gh(monkeypatch):
     monkeypatch.setattr(accounts.shutil, "which", lambda name: None)
     assert accounts.gh_logins() == []
+
+
+def test_broken_routing_yaml_does_not_persist_a_seed(v, caplog):
+    routing = v / "90-meta" / "routing.yaml"
+    routing.write_text(LEGACY + "gmail: [unclosed\n", encoding="utf-8")  # parse error
+    assert accounts.list_accounts() == []
+    assert not (v / "90-meta" / "accounts.yaml").exists()
+    # a second call warns no more than once for the same broken file
+    accounts.list_accounts()
+    assert sum("routing.yaml" in r.getMessage() for r in caplog.records
+               if r.levelname == "WARNING") == 1
+    # once routing.yaml is fixed, the legacy accounts are seeded
+    routing.write_text(LEGACY, encoding="utf-8")
+    assert [a.id for a in accounts.list_accounts("gmail")] == ["me@gmail.com", "other@gmail.com"]
+    assert (v / "90-meta" / "accounts.yaml").exists()
+
+
+def test_non_mapping_routing_yaml_does_not_persist_a_seed(v):
+    (v / "90-meta" / "routing.yaml").write_text("- just\n- a list\n", encoding="utf-8")
+    assert accounts.list_accounts() == []
+    assert not (v / "90-meta" / "accounts.yaml").exists()
+
+
+def test_missing_routing_yaml_does_not_persist_a_seed(v):
+    (v / "90-meta" / "routing.yaml").unlink()
+    assert accounts.list_accounts() == []
+    assert not (v / "90-meta" / "accounts.yaml").exists()
