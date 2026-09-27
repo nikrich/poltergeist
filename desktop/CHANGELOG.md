@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.7.0](https://github.com/nikrich/poltergeist/compare/v1.6.0...v1.7.0) (2026-09-27)
+
+
+### Features
+
+* feat(api): connector detail lists accounts with health; doctor reads the registry
+* feat(auth): connect flows register accounts in accounts.yaml; disconnect removes one account
+* feat(microsoft): several accounts in one MSAL cache, per-tenant authority, per-account fetch
+* feat(github): fetch per gh login via GH_TOKEN, never switching the active account
+* feat(atlassian): per-site accounts with their own email + token file; site isolation
+* feat(slack): workspaces from registry, context optional, per-workspace isolation
+* feat(calendar): google accounts from registry; recorder source uses account contexts
+* feat(gmail): accounts from registry, per-account isolation, accountId tagging
+* feat(router): account -> context rule after specific rules; drop per-account routing.yaml rules
+* feat(accounts): per-account health + for_each_account; runner reports account breakdown
+* feat(accounts): accounts.yaml registry with one-time seeding from routing.yaml
+
+### Bug Fixes
+
+* fix(connectors): CLIs exit 1 when every account failed; account routing and health writes are best-effort
+* fix(auth): reconnect replaces stale ATLASSIAN_TOKEN_<SLUG>; first MS sign-in adopts cached accounts; token file created 0600
+* fix(accounts): never persist a seed from missing/broken routing.yaml; lock in state dir; keep retired context on option merge
+* fix(accounts): all-accounts-failed run raises so last_run is not advanced; never register placeholder MS username
+* fix(github): surface search-time auth failures and isolate the token lookup from ambient GH_TOKEN
+
 ## [1.6.0](https://github.com/nikrich/poltergeist/compare/v1.5.0...v1.6.0) (2026-09-14)
 
 
