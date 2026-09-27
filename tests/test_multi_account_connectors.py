@@ -260,3 +260,56 @@ def test_jira_one_broken_site(tmp_path, monkeypatch):
     monkeypatch.setattr(c, "_fetch_site", fake)
     assert len(c.fetch(EPOCH)) == 1
     assert accounts_health.health_for("jira", "bad.atlassian.net")["status"] == "auth_required"
+
+
+# -------------------------------------------------------------------- github
+
+_GH_PR = {
+    "number": 42, "title": "feat", "body": "", "url": "https://github.com/acme/x/pull/42",
+    "state": "OPEN", "isDraft": False, "repository": {"nameWithOwner": "acme/x"},
+    "author": {"login": "nikrich"}, "labels": [], "createdAt": "2026-09-20T08:00:00Z",
+    "updatedAt": "2026-09-27T10:00:00Z",
+}
+
+
+class _Proc:
+    def __init__(self, stdout="", returncode=0, stderr=""):
+        self.stdout, self.returncode, self.stderr = stdout, returncode, stderr
+
+
+def test_github_runs_each_login_with_its_own_token(tmp_path, monkeypatch):
+    import json
+
+    from ghostbrain.connectors.github import GitHubConnector
+
+    c = GitHubConnector(config={"orgs": ["acme"], "accounts": ["alice", "broken", "bob"]},
+                        queue_dir=tmp_path / "q", state_dir=tmp_path / "s", gh_binary="/fake/gh")
+    calls: list[tuple[list[str], str | None]] = []
+
+    def fake_run(args, *, timeout_s, env=None):
+        token = (env or {}).get("GH_TOKEN")
+        calls.append((args, token))
+        if args[:2] == ["auth", "token"]:
+            user = args[args.index("--user") + 1]
+            return _Proc("", 1, "no token") if user == "broken" else _Proc(f"tok-{user}\n")
+        if args[:2] == ["search", "prs"] and "--author=@me" in args:
+            return _Proc(json.dumps([_GH_PR]))  # same PR visible to both logins
+        return _Proc("[]")
+
+    monkeypatch.setattr(c, "_run_gh", fake_run)
+    events = c.fetch(EPOCH)
+    assert len(events) == 1                                   # de-duplicated across logins
+    assert events[0]["metadata"]["accountId"] == "alice"      # first account wins
+    assert not any(a[:2] == ["auth", "switch"] for a, _ in calls)
+    search_tokens = {t for a, t in calls if a[0] == "search"}
+    assert search_tokens == {"tok-alice", "tok-bob"}
+    assert accounts_health.health_for("github", "broken")["status"] == "auth_required"
+
+
+def test_github_runner_uses_registry_logins(v, tmp_path, monkeypatch):
+    from ghostbrain.connectors.github import runner
+
+    write_accounts(v, [{"connector": "github", "id": "nikrich"}])
+    monkeypatch.setattr("shutil.which", lambda name: "/fake/gh")
+    c = runner._build({"github": {"orgs": {"acme": "personal"}}}, tmp_path / "q", tmp_path / "s")
+    assert c.accounts == ["nikrich"] and c.orgs == ["acme"]

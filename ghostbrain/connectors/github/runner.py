@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ghostbrain import accounts
 from ghostbrain.connectors._runner import RunResult, run_connector
 from ghostbrain.connectors.github import GitHubConnector
 
@@ -12,7 +13,7 @@ def _build(routing: dict, queue_dir: Path, state_dir: Path) -> GitHubConnector |
     if not orgs:
         return None
     return GitHubConnector(
-        config={"orgs": orgs},
+        config={"orgs": orgs, "accounts": [a.id for a in accounts.list_accounts("github")]},
         queue_dir=queue_dir,
         state_dir=state_dir,
     )

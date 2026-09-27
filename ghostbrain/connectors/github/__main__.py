@@ -16,7 +16,7 @@ import logging
 
 import yaml
 
-from ghostbrain.connectors.github import GitHubConnector
+from ghostbrain.connectors.github.runner import _build
 from ghostbrain.paths import queue_dir, state_dir, vault_path
 from ghostbrain.worker.audit import audit_log
 
@@ -42,11 +42,10 @@ def main() -> None:
     queue.mkdir(parents=True, exist_ok=True)
     state.mkdir(parents=True, exist_ok=True)
 
-    connector = GitHubConnector(
-        config={"orgs": orgs},
-        queue_dir=queue,
-        state_dir=state,
-    )
+    connector = _build(routing, queue, state)
+    if connector is None:
+        log.warning("No github.orgs configured in routing.yaml; nothing to fetch.")
+        return
 
     if not connector.health_check():
         audit_log("connector_health_failed", "github")
