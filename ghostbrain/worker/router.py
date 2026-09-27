@@ -22,7 +22,7 @@ from typing import Any
 
 import yaml
 
-from ghostbrain import routing_config
+from ghostbrain import accounts, routing_config
 from ghostbrain.api.repo import projects as projects_repo
 from ghostbrain.llm import client as llm
 from ghostbrain.paths import vault_path
@@ -57,7 +57,7 @@ class RoutingDecision:
     context: str
     confidence: float
     reasoning: str
-    method: str  # "path" | "llm" | "fallback"
+    method: str  # "path" | "account" | "llm" | "fallback"
     secondary_contexts: list[str] = dataclasses.field(default_factory=list)
     project: str | None = None
 
@@ -151,20 +151,6 @@ def _fast_route(event: dict, routing: dict) -> RoutingDecision | None:
                     method="path",
                 )
 
-    if source == "jira":
-        site = metadata.get("site")
-        if site:
-            ctx = (routing.get("jira") or {}).get("sites", {}).get(site)
-            if ctx:
-                log.info("path-routed event=%s ctx=%s jira site=%s",
-                         event.get("id"), ctx, site)
-                return RoutingDecision(
-                    context=ctx,
-                    confidence=1.0,
-                    reasoning=f"matched jira site rule for {site}",
-                    method="path",
-                )
-
     if source == "confluence":
         space = metadata.get("space")
         if space:
@@ -225,47 +211,42 @@ def _fast_route(event: dict, routing: dict) -> RoutingDecision | None:
                         method="path",
                     )
 
-    if source == "slack":
-        # Workspace slug is the strongest signal — every message in a
-        # configured workspace routes straight to its mapped context,
-        # regardless of channel or sender.
-        slug = (metadata.get("workspace_slug") or "").lower()
-        if slug:
-            workspaces = (routing.get("slack") or {}).get("workspaces", {}) or {}
-            cfg = workspaces.get(slug) or {}
-            ctx = cfg.get("context") if isinstance(cfg, dict) else cfg
-            if ctx:
-                log.info("path-routed event=%s ctx=%s slack workspace=%s",
-                         event.get("id"), ctx, slug)
-                return RoutingDecision(
-                    context=ctx,
-                    confidence=1.0,
-                    reasoning=f"matched slack workspace rule for {slug}",
-                    method="path",
-                )
-
     if source == "calendar":
         provider = metadata.get("provider")
         account = metadata.get("account")
-        if provider and account:
+        if provider == "macos" and account:
             ctx = (
-                ((routing.get("calendar") or {}).get(provider) or {})
+                ((routing.get("calendar") or {}).get("macos") or {})
                 .get("accounts", {})
                 .get(account)
             )
             if ctx:
-                log.info("path-routed event=%s ctx=%s calendar=%s/%s",
-                         event.get("id"), ctx, provider, account)
+                log.info("path-routed event=%s ctx=%s calendar=macos/%s",
+                         event.get("id"), ctx, account)
                 return RoutingDecision(
                     context=ctx,
                     confidence=1.0,
-                    reasoning=(
-                        f"matched calendar.{provider}.accounts rule for {account}"
-                    ),
+                    reasoning=f"matched calendar.macos.accounts rule for {account}",
                     method="path",
                 )
 
-    return None
+    return _account_route(event)
+
+
+def _account_route(event: dict) -> RoutingDecision | None:
+    """Whole-account rule: every capture from an account assigned to a
+    context lands there. Runs after every specific rule, before the LLM."""
+    account_id = (event.get("metadata") or {}).get("accountId")
+    ctx = accounts.context_for(accounts.account_connector_for_event(event), account_id)
+    if not ctx:
+        return None
+    log.info("account-routed event=%s ctx=%s account=%s", event.get("id"), ctx, account_id)
+    return RoutingDecision(
+        context=ctx,
+        confidence=0.95,
+        reasoning=f"account {account_id} → {ctx}",
+        method="account",
+    )
 
 
 def _org_from_repo(repo: str | None) -> str | None:

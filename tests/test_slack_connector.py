@@ -404,55 +404,6 @@ def test_fetch_continues_after_workspace_error(
 
 
 # ---------------------------------------------------------------------------
-# Routing fast path
-# ---------------------------------------------------------------------------
-
-
-def test_router_routes_by_workspace_slug() -> None:
-    from ghostbrain.worker.router import _fast_route
-
-    event = {
-        "source": "slack",
-        "id": "slack:msg:T1:C1:123.456",
-        "metadata": {"workspace_slug": "acme"},
-    }
-    routing = {"slack": {"workspaces": {"acme": {"context": "work"}}}}
-    decision = _fast_route(event, routing)
-    assert decision is not None
-    assert decision.context == "work"
-    assert decision.method == "path"
-    assert decision.confidence == 1.0
-
-
-def test_router_supports_legacy_string_value() -> None:
-    """Older routing.yaml format may have ``slack.workspaces: {acme: work}``
-    — string value instead of dict. Accept it."""
-    from ghostbrain.worker.router import _fast_route
-
-    event = {
-        "source": "slack",
-        "id": "slack:msg:T1:C1:123.456",
-        "metadata": {"workspace_slug": "acme"},
-    }
-    routing = {"slack": {"workspaces": {"acme": "work"}}}
-    decision = _fast_route(event, routing)
-    assert decision is not None
-    assert decision.context == "work"
-
-
-def test_router_falls_through_when_workspace_unknown() -> None:
-    from ghostbrain.worker.router import _fast_route
-
-    event = {
-        "source": "slack",
-        "id": "slack:msg:T1:C1:123.456",
-        "metadata": {"workspace_slug": "stranger"},
-    }
-    routing = {"slack": {"workspaces": {"acme": {"context": "work"}}}}
-    assert _fast_route(event, routing) is None
-
-
-# ---------------------------------------------------------------------------
 # Full-pull DM / group-DM inclusion
 # ---------------------------------------------------------------------------
 

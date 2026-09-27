@@ -116,34 +116,6 @@ def test_google_connector_skips_cancelled(vault: Path, tmp_path: Path) -> None:
     assert ce is None
 
 
-def test_router_path_routes_calendar_event(vault: Path) -> None:
-    from ghostbrain.worker.router import route_event
-
-    routing = {
-        "calendar": {
-            "google": {
-                "accounts": {
-                    "sam@consulting.app": "consulting",
-                    "you@example.com": "personal",
-                },
-            },
-        },
-    }
-    event = {
-        "id": "calendar:google:sam@consulting.app:abc",
-        "source": "calendar",
-        "type": "event",
-        "title": "Standup",
-        "metadata": {
-            "provider": "google",
-            "account": "sam@consulting.app",
-        },
-    }
-    decision = route_event(event, routing=routing)
-    assert decision.context == "consulting"
-    assert decision.method == "path"
-
-
 def test_digest_loads_today_calendar(vault: Path) -> None:
     """The digest loader scans 20-contexts/*/calendar/*.md and surfaces
     notes whose `start` frontmatter lands on the digest date."""

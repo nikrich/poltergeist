@@ -107,24 +107,17 @@ def test_strip_html_handles_entities() -> None:
     assert _strip_html(html) == 'Tom & Jerry <love> "cheese".'
 
 
-def test_router_path_routes_jira_event(vault: Path) -> None:
-    """Cross-check: the router knows how to path-route Jira/Confluence events."""
+def test_router_path_routes_confluence_event(vault: Path) -> None:
+    """Cross-check: the router knows how to path-route Confluence events.
+
+    (Jira site -> context routing moved to accounts.yaml; see
+    tests/test_router_accounts.py.)
+    """
     from ghostbrain.worker.router import route_event
 
     routing = {
-        "jira": {"sites": {"acme.atlassian.net": "work"}},
         "confluence": {"spaces": {"Helix": "work"}},
     }
-
-    jira_event = {
-        "id": "jira:acme:Helix-1",
-        "source": "jira", "type": "ticket",
-        "title": "Helix-1 Test",
-        "metadata": {"site": "acme.atlassian.net", "key": "Helix-1"},
-    }
-    decision = route_event(jira_event, routing=routing)
-    assert decision.context == "work"
-    assert decision.method == "path"
 
     conf_event = {
         "id": "confluence:acme:42",
