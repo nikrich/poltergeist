@@ -19,6 +19,7 @@ from typing import Any, Callable
 
 import yaml
 
+from ghostbrain import accounts_health
 from ghostbrain.paths import queue_dir, state_dir, vault_path
 
 log = logging.getLogger("ghostbrain.connectors.runner")
@@ -110,14 +111,29 @@ def run_connector(
                 error="health check failed",
                 error_type="HealthCheckFailed",
             )
+        accounts_health.clear_last_run(name)
         queued = connector.run()  # type: ignore[attr-defined]
         _audit("connector_run", name, events_queued=int(queued))
+        summary = accounts_health.last_run_summary(name)
+        details = {"accounts": summary} if summary else {}
+        if summary and accounts_health.STATUS_OK not in summary.values():
+            return RunResult(
+                connector=name,
+                ok=False,
+                started_at=started,
+                finished_at=time.time(),
+                queued=int(queued),
+                error="all accounts failed",
+                error_type="AllAccountsFailed",
+                details=details,
+            )
         return RunResult(
             connector=name,
             ok=True,
             started_at=started,
             finished_at=time.time(),
             queued=int(queued),
+            details=details,
         )
     except Exception as e:  # noqa: BLE001 — we want to capture EVERY failure
         log.exception("connector %s crashed", name)
