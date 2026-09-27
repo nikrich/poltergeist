@@ -22,7 +22,7 @@ def main() -> None:
     )
     parser.add_argument(
         "workspace",
-        help="Workspace slug — must match a key in routing.yaml:slack.workspaces.",
+        help="Workspace slug (becomes the account id in 90-meta/accounts.yaml).",
     )
     parser.add_argument(
         "token",
@@ -41,6 +41,9 @@ def main() -> None:
     except SlackAuthError as e:
         print(f"auth error: {e}", file=sys.stderr)
         raise SystemExit(1)
+
+    from ghostbrain import accounts
+    accounts.ensure_account("slack", args.workspace)
 
     if not args.no_verify:
         try:

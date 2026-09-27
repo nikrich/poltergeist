@@ -166,3 +166,39 @@ def test_recorder_google_source_uses_registry_contexts(v):
     sources, _ = select_sources({}, {}, platform="win32")
     assert [s.id for s in sources] == ["google"]
     assert sources[0]._accounts == {"a@agencyx.com": "agencyx"}
+
+
+# --------------------------------------------------------------------- slack
+
+def test_slack_workspaces_from_registry(v):
+    from ghostbrain.connectors.slack import runner
+
+    write_accounts(v, [
+        {"connector": "slack", "id": "agencyx", "context": "agencyx", "options": {"mode": "full"}},
+        {"connector": "slack", "id": "newco"},
+    ])
+    assert runner.workspaces_config() == {"agencyx": {"mode": "full"}, "newco": {}}
+
+
+def test_slack_workspace_without_context_is_fetched():
+    from ghostbrain.connectors.slack.connector import _parse_workspaces
+
+    [ws] = list(_parse_workspaces({"workspaces": {"newco": {}}}))
+    assert ws.slug == "newco" and ws.context is None
+
+
+def test_slack_one_broken_workspace(tmp_path, monkeypatch):
+    from ghostbrain.connectors.slack.auth import SlackAuthError
+    from ghostbrain.connectors.slack.connector import SlackConnector
+
+    c = SlackConnector(config={"workspaces": {"good": {}, "revoked": {}}},
+                       queue_dir=tmp_path / "q", state_dir=tmp_path / "s")
+
+    def fake(ws):
+        if ws.slug == "revoked":
+            raise SlackAuthError("token_revoked")
+        return [{"id": "slack:1", "metadata": {"workspace_slug": ws.slug, "accountId": ws.slug}}]
+
+    monkeypatch.setattr(c, "_fetch_workspace", fake)
+    assert [e["metadata"]["accountId"] for e in c.fetch(EPOCH)] == ["good"]
+    assert accounts_health.health_for("slack", "revoked")["status"] == "auth_required"

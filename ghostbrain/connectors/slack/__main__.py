@@ -25,11 +25,9 @@ import argparse
 import logging
 from collections import defaultdict
 
-import yaml
-
 from ghostbrain.connectors.slack import SlackConnector
 from ghostbrain.connectors.slack.connector import MessageDecision
-from ghostbrain.paths import queue_dir, state_dir, vault_path
+from ghostbrain.paths import queue_dir, state_dir
 from ghostbrain.worker.audit import audit_log
 
 log = logging.getLogger("ghostbrain.connectors.slack.main")
@@ -56,12 +54,11 @@ def main() -> None:
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-    routing = _load_routing()
-    slack_cfg = routing.get("slack") or {}
-    workspaces = slack_cfg.get("workspaces") or {}
+    from ghostbrain.connectors.slack.runner import workspaces_config
+    workspaces = workspaces_config()
     if not workspaces:
         log.warning(
-            "No slack.workspaces configured in routing.yaml; nothing to fetch.",
+            "No slack accounts in 90-meta/accounts.yaml; nothing to fetch.",
         )
         return
 
@@ -189,13 +186,6 @@ def _print_decisions(workspace: str, decisions: list[MessageDecision]) -> None:
 def _short(text: str, limit: int = 100) -> str:
     t = (text or "").replace("\n", " ").strip()
     return t if len(t) <= limit else t[: limit - 1] + "…"
-
-
-def _load_routing() -> dict:
-    f = vault_path() / "90-meta" / "routing.yaml"
-    if not f.exists():
-        return {}
-    return yaml.safe_load(f.read_text(encoding="utf-8")) or {}
 
 
 if __name__ == "__main__":

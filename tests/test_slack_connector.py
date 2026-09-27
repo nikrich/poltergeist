@@ -134,15 +134,15 @@ def test_build_title_truncates_long_text() -> None:
     assert "AAAA" in title
 
 
-def test_parse_workspaces_skips_entries_without_context(caplog) -> None:
+def test_parse_workspaces_keeps_entries_without_context(caplog) -> None:
     from ghostbrain.connectors.slack.connector import _parse_workspaces
     out = list(_parse_workspaces({"workspaces": {
         "acme": {"context": "work"},
         "broken": {"lookback_hours": 24},  # no context
     }}))
     slugs = [ws.slug for ws in out]
-    assert "acme" in slugs
-    assert "broken" not in slugs
+    assert slugs == ["acme", "broken"]
+    assert [ws.context for ws in out] == ["work", None]
 
 
 def test_parse_workspaces_normalizes_allowed_channels() -> None:
