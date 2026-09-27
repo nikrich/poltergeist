@@ -8,11 +8,8 @@ from ghostbrain.doctor import checks_connectors as cc
 
 
 def test_connectors_flags_on_but_empty(monkeypatch):
-    monkeypatch.setattr(cc, "_routing", lambda: {
-        "github": {"orgs": {}},
-        "slack": {"workspaces": {"acme": {"context": "work"}}},
-        "gmail": {"accounts": {}},
-    })
+    monkeypatch.setattr(cc, "_routing", lambda: {"github": {"orgs": {}}})
+    monkeypatch.setattr(cc, "_account_ids", lambda conn: ["acme"] if conn == "slack" else [])
     states = {"github": "on", "slack": "on", "gmail": "off"}
     monkeypatch.setattr(cc, "_probe", lambda cid: ProbeResult(states.get(cid, "off")))
     r = cc.check_connectors()
@@ -23,8 +20,9 @@ def test_connectors_flags_on_but_empty(monkeypatch):
 
 
 def test_connectors_all_good(monkeypatch):
-    monkeypatch.setattr(cc, "_routing", lambda: {"slack": {"workspaces": {"acme": {"context": "work"}}}})
-    monkeypatch.setattr(cc, "_probe", lambda cid: ProbeResult("on"))
+    monkeypatch.setattr(cc, "_routing", dict)
+    monkeypatch.setattr(cc, "_account_ids", lambda conn: ["acme"] if conn == "slack" else [])
+    monkeypatch.setattr(cc, "_probe", lambda cid: ProbeResult("on" if cid == "slack" else "off"))
     r = cc.check_connectors()
     assert r.status == "ok"
     assert r.data["configured"] == ["slack"]
@@ -32,8 +30,17 @@ def test_connectors_all_good(monkeypatch):
 
 def test_connectors_none_configured_is_warn(monkeypatch):
     monkeypatch.setattr(cc, "_routing", lambda: {"github": {"orgs": {}}})
+    monkeypatch.setattr(cc, "_account_ids", lambda conn: [])
     monkeypatch.setattr(cc, "_probe", lambda cid: ProbeResult("off"))
     assert cc.check_connectors().status == "warn"
+
+
+def test_connectors_on_without_account_is_flagged(monkeypatch):
+    monkeypatch.setattr(cc, "_routing", dict)
+    monkeypatch.setattr(cc, "_account_ids", lambda conn: [])
+    monkeypatch.setattr(cc, "_probe", lambda cid: ProbeResult("on" if cid == "gmail" else "off"))
+    r = cc.check_connectors()
+    assert r.data["on_but_empty"] == ["gmail"]
 
 
 def test_claude_hook_missing_stale_and_ok(monkeypatch, tmp_path: Path):

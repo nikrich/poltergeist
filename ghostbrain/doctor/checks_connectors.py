@@ -6,14 +6,13 @@ import shutil
 from ghostbrain.api import claude_settings
 from ghostbrain.doctor import CheckResult, Fix, register
 
-# connector id -> (routing.yaml top-level key, sub-key that must be non-empty)
+# Check order (also the order of `configured` in the result).
+_ORDER = ("github", "gmail", "calendar", "slack", "jira", "confluence", "joplin", "claude_code")
+# Connectors whose configuration is their accounts in 90-meta/accounts.yaml.
+_ACCOUNT_BACKED = {"gmail": "gmail", "slack": "slack", "jira": "jira", "confluence": "confluence"}
+# Connectors configured by a routing.yaml block: (top-level key, sub-key).
 _BLOCKS: dict[str, tuple[str, str]] = {
     "github": ("github", "orgs"),
-    "gmail": ("gmail", "accounts"),
-    "calendar": ("calendar", "google"),
-    "slack": ("slack", "workspaces"),
-    "jira": ("jira", "sites"),
-    "confluence": ("confluence", "sites"),
     "joplin": ("joplin", "token"),
     "claude_code": ("claude_code", "project_paths"),
 }
@@ -31,14 +30,21 @@ def _probe(connector_id: str):
     return probe(connector_id)
 
 
-def _block_non_empty(routing: dict, key: str, sub: str) -> bool:
-    block = routing.get(key) or {}
-    value = block.get(sub)
-    if key == "calendar":
-        macos = ((block.get("macos") or {}).get("accounts")) or {}
-        google = ((block.get("google") or {}).get("accounts")) or {}
-        return bool(macos or google)
-    return bool(value)
+def _account_ids(account_connector: str) -> list[str]:
+    from ghostbrain import accounts
+
+    return [a.id for a in accounts.list_accounts(account_connector)]
+
+
+def _configured(cid: str, routing: dict) -> tuple[bool, bool]:
+    """(has configuration, configuration is relevant for the on-but-empty check)."""
+    if cid in _ACCOUNT_BACKED:
+        return bool(_account_ids(_ACCOUNT_BACKED[cid])), True
+    if cid == "calendar":
+        macos = (((routing.get("calendar") or {}).get("macos") or {}).get("accounts")) or {}
+        return bool(_account_ids("calendar_google") or macos), True
+    key, sub = _BLOCKS[cid]
+    return bool((routing.get(key) or {}).get(sub)), key in routing
 
 
 @register("connectors")
@@ -46,19 +52,19 @@ def check_connectors() -> CheckResult:
     routing = _routing()
     configured: list[str] = []
     on_but_empty: list[str] = []
-    for cid, (key, sub) in _BLOCKS.items():
-        has_block = _block_non_empty(routing, key, sub)
+    for cid in _ORDER:
+        has_config, relevant = _configured(cid, routing)
         state = _probe(cid).state
-        if has_block:
+        if has_config:
             configured.append(cid)
-        elif key in routing and state == "on":
+        elif relevant and state == "on":
             on_but_empty.append(cid)
     data = {"configured": configured, "on_but_empty": on_but_empty}
     if on_but_empty:
         return CheckResult(
             id="connectors", status="fail",
             summary=f"connected but not configured: {', '.join(on_but_empty)}",
-            detail="These show 'on' in the app because a credential exists, but their routing block is empty, so every sync returns zero events. Add the org/account/calendar to 90-meta/routing.yaml or reconnect through the app.",
+            detail="These show 'on' in the app because a credential exists, but no account (90-meta/accounts.yaml) or routing block (github orgs, joplin, claude_code) is configured, so every sync returns zero events. Reconnect through the app or add the account/org.",
             fix=Fix(kind="manual", command="open the connector card in the app and finish its form, then run `poltergeist <connector>-fetch`"),
             data=data,
         )
