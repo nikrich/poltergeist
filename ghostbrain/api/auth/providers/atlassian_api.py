@@ -1,12 +1,7 @@
 from __future__ import annotations
 
 from ghostbrain.api.auth.providers.base import NextAction
-from ghostbrain.api.repo.dotenv_store import set_env
 from ghostbrain.api.repo.routing import merge_routing
-
-
-def _slug(site: str) -> str:
-    return site.split(".", 1)[0].upper().replace("-", "_")
 
 
 def _validate_myself(email: str, token: str, site: str) -> dict:
@@ -43,6 +38,8 @@ class AtlassianTokenProvider:
         )
 
     def submit(self, connector_id, session, data):
+        from ghostbrain import accounts
+
         email = (data.get("email") or "").strip()
         token = (data.get("token") or "").strip()
         site = (data.get("site") or "").strip().replace("https://", "").rstrip("/")
@@ -54,15 +51,17 @@ class AtlassianTokenProvider:
         except Exception as e:  # noqa: BLE001
             session.status = "error"; session.error = f"Atlassian rejected these credentials: {e}"
             return NextAction(kind="need_input", fields=[])
-        set_env({"ATLASSIAN_EMAIL": email, f"ATLASSIAN_TOKEN_{_slug(site)}": token})
-        merge_routing({connector_id: {"sites": {site: "needs_review"}}})
+        from ghostbrain.connectors.atlassian._base import save_token
+        save_token(site, token)
+        accounts.ensure_account(connector_id, site, options={"email": email})
         if connector_id == "confluence":
             spaces = [s.strip() for s in (data.get("spaces") or "").split(",") if s.strip()]
             if spaces:
-                merge_routing({"confluence": {"spaces": {s: "needs_review" for s in spaces}}})
+                ctx = accounts.get_account("confluence", site).context or "needs_review"
+                merge_routing({"confluence": {"spaces": {s: ctx for s in spaces}}})
         session.status = "success"
         session.account = me.get("emailAddress") or email
-        return NextAction(kind="done", message="This also connects the other Atlassian app.")
+        return NextAction(kind="done", message="Connected. Connect the other Atlassian app separately if you use it.")
 
     def poll(self, connector_id, session):
         pass

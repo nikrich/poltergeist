@@ -102,6 +102,8 @@ class GoogleProvider:
             session.status = "error"
             session.error = str(e)
             return
+        from ghostbrain import accounts
+        accounts.ensure_account("gmail" if connector_id == "gmail" else "calendar_google", account)
         session.status = "success"
         session.account = account
         session.next = NextAction(kind="done")

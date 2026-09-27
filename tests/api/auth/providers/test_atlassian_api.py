@@ -9,6 +9,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("GHOSTBRAIN_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.setenv("VAULT_PATH", str(tmp_path / "vault"))
     (tmp_path / "vault" / "90-meta").mkdir(parents=True)
+    (tmp_path / "vault" / "90-meta" / "routing.yaml").write_text("contexts: [work]\n", encoding="utf-8")
     return tmp_path
 
 
@@ -22,19 +23,17 @@ def test_start_fields(env):
     assert {"email", "token", "site"} <= names
 
 
-def test_submit_writes_env_and_routing(env, monkeypatch):
+def test_submit_registers_site_account(env, monkeypatch):
     import ghostbrain.api.auth.providers.atlassian_api as mod
     monkeypatch.setattr(mod, "_validate_myself", lambda email, token, site: {"displayName": "Me"})
     p = AtlassianTokenProvider()
     sess = _sess("jira")
     p.submit("jira", sess, {"email": "me@x.com", "token": "tok", "site": "acme.atlassian.net"})
     assert sess.status == "success"
-    from ghostbrain.api.repo.dotenv_store import read_env
-    env_vals = read_env()
-    assert env_vals["ATLASSIAN_EMAIL"] == "me@x.com"
-    assert env_vals["ATLASSIAN_TOKEN_ACME"] == "tok"
-    from ghostbrain.api.repo.routing import load_routing
-    assert load_routing()["jira"]["sites"]["acme.atlassian.net"] == "needs_review"
+    from ghostbrain import accounts
+    from ghostbrain.connectors.atlassian._base import token_path
+    assert accounts.get_account("jira", "acme.atlassian.net").options == {"email": "me@x.com"}
+    assert token_path("acme.atlassian.net").read_text() == "tok"
 
 
 def test_submit_bad_creds_errors(env, monkeypatch):

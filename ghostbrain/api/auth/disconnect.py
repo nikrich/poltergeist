@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import logging
+
 from ghostbrain.paths import state_dir
+
+log = logging.getLogger("ghostbrain.api.auth.disconnect")
 
 
 def _rm(path) -> None:
@@ -50,13 +54,24 @@ def disconnect(connector_id: str, account: str | None) -> None:
         from ghostbrain.api.repo.routing import remove_routing_path
         remove_routing_path("joplin.token")
     elif connector_id in ("jira", "confluence"):
-        # Shared Atlassian identity — only remove the routing subtree for this app,
-        # leave the shared .env token (the other app may still use it).
-        from ghostbrain.api.repo.routing import remove_routing_path
-        remove_routing_path(f"{connector_id}.sites")
+        # Shared Atlassian identity — only remove the site's shared token when
+        # the other app (jira/confluence) no longer has an account for it too.
+        if account:
+            from ghostbrain.connectors.atlassian._base import token_path
+            other = "confluence" if connector_id == "jira" else "jira"
+            from ghostbrain import accounts as _acc
+            if _acc.get_account(other, account) is None:
+                _rm(token_path(account))  # only when the other app doesn't use this site
     elif connector_id in ("outlook_mail", "teams_chat", "teams_meetings"):
-        from ghostbrain.connectors.microsoft.graph.auth import cache_location
-        _rm(cache_location())
+        from ghostbrain.connectors.microsoft.graph import auth as ms_auth
+        if account:
+            from ghostbrain.api.repo.routing import load_routing
+            try:
+                ms_auth.remove_cached_account(load_routing().get("microsoft") or {}, account)
+            except Exception as e:  # noqa: BLE001 — best effort; the registry entry still goes
+                log.warning("could not remove cached Microsoft account %s: %s", account, e)
+        else:
+            _rm(ms_auth.cache_location())
     elif connector_id == "claude_code":
         import json
         from pathlib import Path
@@ -75,3 +90,8 @@ def disconnect(connector_id: str, account: str | None) -> None:
             except (OSError, ValueError, AttributeError, TypeError):
                 pass
     # github: nothing we own (gh manages its own login); no-op.
+
+    from ghostbrain import accounts
+    acct_connector = accounts.SOURCE_TO_ACCOUNT_CONNECTOR.get(connector_id)
+    if acct_connector and account:
+        accounts.remove_account(acct_connector, account)

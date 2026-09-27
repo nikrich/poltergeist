@@ -95,8 +95,14 @@ class MicrosoftProvider:
             session.status = "error"
             session.error = result.get("error_description", "Microsoft sign-in failed")
             return
-        accounts = app.get_accounts()
-        session.account = accounts[0].get("username") if accounts else "your account"
+        from ghostbrain import accounts
+        from ghostbrain.connectors.microsoft.graph.auth import (
+            UNKNOWN_USERNAME,
+            username_from_result,
+        )
+        session.account = username_from_result(result, app)
+        if session.account != UNKNOWN_USERNAME:
+            accounts.ensure_account("microsoft", session.account)
         session.status = "success"
         session.next = NextAction(kind="done")
 
