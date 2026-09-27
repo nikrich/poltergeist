@@ -107,3 +107,62 @@ def test_gmail_auth_cli_registers_account(v, monkeypatch, tmp_path):
     auth_cli.main()
     acc = accounts.get_account("gmail", "new@x.com")
     assert acc is not None and acc.context is None
+
+
+# ------------------------------------------------------------------ calendar
+
+def test_calendar_google_config_from_registry(v):
+    from ghostbrain.connectors.calendar import runner
+
+    write_accounts(v, [
+        {"connector": "calendar_google", "id": "a@agencyx.com", "context": "agencyx",
+         "options": {"calendars": ["primary", "team@group.calendar.google.com"]}},
+        {"connector": "calendar_google", "id": "b@x.com"},
+    ])
+    assert runner.google_config() == {
+        "accounts": {"a@agencyx.com": "agencyx", "b@x.com": ""},
+        "calendars_per_account": {"a@agencyx.com": ["primary", "team@group.calendar.google.com"]},
+    }
+    write_accounts(v, [])
+    assert runner.google_config() is None
+
+
+def test_calendar_google_one_broken_account(tmp_path, monkeypatch):
+    from ghostbrain.connectors.calendar.google import GoogleCalendarConnector
+    from ghostbrain.connectors.calendar.google.auth import GoogleAuthError
+
+    c = GoogleCalendarConnector(
+        config={"accounts": {"good@x.com": "", "expired@x.com": ""}},
+        queue_dir=tmp_path / "q", state_dir=tmp_path / "s",
+    )
+
+    def fake(email, tmin, tmax):
+        if email == "expired@x.com":
+            raise GoogleAuthError("expired")
+        return [{"id": "calendar:google:good@x.com:1", "metadata": {"account": email, "accountId": email}}]
+
+    monkeypatch.setattr(c, "_fetch_account", fake)
+    events = c.fetch(EPOCH)
+    assert len(events) == 1
+    assert accounts_health.health_for("calendar", "expired@x.com")["status"] == "auth_required"
+
+
+def test_calendar_event_carries_account_id():
+    from ghostbrain.connectors.calendar._base import CalendarEvent
+
+    ev = CalendarEvent(provider="google", account="a@x.com", event_id="1", title="t",
+                       start="2026-09-27T10:00:00+00:00", end="2026-09-27T11:00:00+00:00",
+                       is_all_day=False).to_event()
+    assert ev["metadata"]["accountId"] == "a@x.com"
+
+
+def test_recorder_google_source_uses_registry_contexts(v):
+    from ghostbrain.recorder.sources import select_sources
+
+    write_accounts(v, [
+        {"connector": "calendar_google", "id": "a@agencyx.com", "context": "agencyx"},
+        {"connector": "calendar_google", "id": "unassigned@x.com"},
+    ])
+    sources, _ = select_sources({}, {}, platform="win32")
+    assert [s.id for s in sources] == ["google"]
+    assert sources[0]._accounts == {"a@agencyx.com": "agencyx"}

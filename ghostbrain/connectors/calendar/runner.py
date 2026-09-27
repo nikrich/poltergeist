@@ -10,12 +10,28 @@ import logging
 import time
 import traceback
 
+from ghostbrain import accounts, accounts_health
 from ghostbrain.connectors._runner import RunResult, ensure_dirs, load_routing
 from ghostbrain.connectors.calendar.google import GoogleCalendarConnector
 from ghostbrain.connectors.calendar.google.auth import GoogleAuthError
 from ghostbrain.connectors.calendar.macos import MacosCalendarConnector
 
 log = logging.getLogger("ghostbrain.connectors.calendar.runner")
+
+
+def google_config() -> dict | None:
+    """GoogleCalendarConnector config from the registry, or None when no
+    Google accounts are connected. Values are contexts ('' = unassigned);
+    the connector only uses the keys, the recorder uses the values."""
+    accts = accounts.list_accounts("calendar_google")
+    if not accts:
+        return None
+    return {
+        "accounts": {a.id: a.context or "" for a in accts},
+        "calendars_per_account": {
+            a.id: list(a.options["calendars"]) for a in accts if a.options.get("calendars")
+        },
+    }
 
 
 def run() -> RunResult:
@@ -36,19 +52,11 @@ def run() -> RunResult:
     cal_cfg = routing.get("calendar") or {}
     providers = []
 
-    google_cfg = cal_cfg.get("google") or {}
-    google_accounts = dict(google_cfg.get("accounts") or {})
-    if google_accounts:
+    google = google_config()
+    if google:
         providers.append((
             "google",
-            GoogleCalendarConnector(
-                config={
-                    "accounts": google_accounts,
-                    "calendars_per_account": google_cfg.get("calendars_per_account") or {},
-                },
-                queue_dir=queue_dir,
-                state_dir=state_dir,
-            ),
+            GoogleCalendarConnector(config=google, queue_dir=queue_dir, state_dir=state_dir),
         ))
 
     macos_cfg = cal_cfg.get("macos") or {}
@@ -106,5 +114,5 @@ def run() -> RunResult:
         queued=total_queued,
         error=None if ok else f"{first_error[0]}: {first_error[2]}",  # type: ignore[index]
         error_type=None if ok else first_error[1],  # type: ignore[index]
-        details={"providers": per_provider},
+        details={"providers": per_provider, "accounts": accounts_health.last_run_summary("calendar")},
     )

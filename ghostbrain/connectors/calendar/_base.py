@@ -47,6 +47,7 @@ class CalendarEvent:
             "metadata": {
                 "provider": self.provider,
                 "account": self.account,
+                "accountId": self.account,
                 "eventId": self.event_id,
                 "start": self.start,
                 "end": self.end,

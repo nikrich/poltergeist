@@ -18,6 +18,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from ghostbrain.accounts_health import for_each_account
 from ghostbrain.connectors._base import Connector
 from ghostbrain.connectors.calendar._base import (
     CalendarEvent,
@@ -63,38 +64,28 @@ class GoogleCalendarConnector(Connector):
         )
 
     def health_check(self) -> bool:
-        if not self.account_contexts:
-            return False
-        try:
-            for email in self.account_contexts:
+        for email in self.account_contexts:
+            try:
                 load_credentials(email)
-        except GoogleAuthError:
-            return False
-        return True
+                return True
+            except GoogleAuthError:
+                continue
+        return False
 
     def fetch(self, since: datetime) -> list[dict]:
         if not self.account_contexts:
             log.info("no google accounts configured; skipping")
             return []
 
-        events: list[dict] = []
         now = datetime.now(timezone.utc)
         time_min = (now - timedelta(hours=self.lookback_hours)).isoformat()
         time_max = (now + timedelta(hours=self.lookahead_hours)).isoformat()
 
-        for email in self.account_contexts:
-            try:
-                events.extend(
-                    self._fetch_account(email, time_min, time_max)
-                )
-            except GoogleAuthError as e:
-                log.warning("auth missing for %s: %s — run "
-                            "ghostbrain-calendar-auth google %s",
-                            email, e, email)
-            except Exception as e:  # noqa: BLE001
-                log.exception("google calendar fetch failed for %s: %s",
-                              email, e)
-
+        events = for_each_account(
+            "calendar", list(self.account_contexts),
+            lambda email: self._fetch_account(email, time_min, time_max),
+            account_id=lambda email: email, auth_errors=(GoogleAuthError,),
+        )
         log.info("google calendar fetch: %d event(s) across %d account(s)",
                  len(events), len(self.account_contexts))
         return events

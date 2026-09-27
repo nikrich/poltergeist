@@ -41,16 +41,11 @@ def main() -> None:
 
     providers: list[tuple[str, Connector]] = []
 
-    google_cfg = cal_cfg.get("google") or {}
-    google_accounts = dict(google_cfg.get("accounts") or {})
-    if google_accounts and (args.provider in (None, "google")):
+    from ghostbrain.connectors.calendar.runner import google_config
+    google = google_config()
+    if google and (args.provider in (None, "google")):
         providers.append(("google", GoogleCalendarConnector(
-            config={
-                "accounts": google_accounts,
-                "calendars_per_account": google_cfg.get("calendars_per_account") or {},
-            },
-            queue_dir=queue,
-            state_dir=state,
+            config=google, queue_dir=queue, state_dir=state,
         )))
 
     macos_cfg = cal_cfg.get("macos") or {}
