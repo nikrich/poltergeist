@@ -22,3 +22,6 @@ def _isolate_user_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setenv("GHOSTBRAIN_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.setenv("GHOSTBRAIN_RUN_DIR", str(tmp_path / "run"))
     monkeypatch.setenv("VAULT_PATH", str(tmp_path / "vault"))
+    # accounts.yaml seeding would otherwise shell out to `gh` and open the
+    # MSAL keychain cache; tests opt back in explicitly.
+    monkeypatch.setenv("GHOSTBRAIN_ACCOUNTS_LIVE_SEED", "0")
