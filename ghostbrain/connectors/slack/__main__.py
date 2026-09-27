@@ -25,6 +25,7 @@ import argparse
 import logging
 from collections import defaultdict
 
+from ghostbrain.accounts_health import AllAccountsFailedError
 from ghostbrain.connectors.slack import SlackConnector
 from ghostbrain.connectors.slack.connector import MessageDecision
 from ghostbrain.paths import queue_dir, state_dir
@@ -88,13 +89,18 @@ def main() -> None:
         )
         return
 
-    if args.dry_run:
-        _run_dry(connector)
-        return
+    try:
+        if args.dry_run:
+            _run_dry(connector)
+            return
 
-    count = connector.run()
-    audit_log("connector_run", "slack", events_queued=count)
-    print(f"slack: queued {count} event(s)")
+        count = connector.run()
+        audit_log("connector_run", "slack", events_queued=count)
+        print(f"slack: queued {count} event(s)")
+    except AllAccountsFailedError as e:
+        log.error(str(e))
+        audit_log("connector_health_failed", "slack", error=str(e))
+        raise SystemExit(1)
 
 
 def _override(cfg: dict, *, mode: str | None, days: int | None) -> dict:

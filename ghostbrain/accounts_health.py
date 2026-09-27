@@ -104,6 +104,18 @@ def last_run_summary(connector: str) -> dict[str, str]:
     return dict(_last_run.get(connector) or {})
 
 
+def _record_best_effort(
+    connector: str, account_id: str, status: str, error: str | None = None,
+) -> None:
+    """A health-file write failure must never fail a successful fetch or
+    mask the account's real error."""
+    try:
+        record(connector, account_id, status, error)
+    except OSError as e:
+        log.warning("could not record %s health for %s: %s", connector, account_id, e)
+        _last_run.setdefault(connector, {})[account_id] = status
+
+
 def for_each_account(
     connector: str,
     items: Iterable[T],
@@ -125,15 +137,15 @@ def for_each_account(
             got = list(fn(item))
         except auth_errors as e:
             log.warning("%s account %s needs re-auth: %s", connector, aid, e)
-            record(connector, aid, STATUS_AUTH, str(e))
+            _record_best_effort(connector, aid, STATUS_AUTH, str(e))
             failures.append(f"{aid}: {STATUS_AUTH} ({str(e)[:_ERROR_SNIPPET_CHARS]})")
             continue
         except Exception as e:  # noqa: BLE001 — one account must never stop the rest
             log.warning("%s account %s failed: %s", connector, aid, e)
-            record(connector, aid, STATUS_ERROR, str(e))
+            _record_best_effort(connector, aid, STATUS_ERROR, str(e))
             failures.append(f"{aid}: {STATUS_ERROR} ({str(e)[:_ERROR_SNIPPET_CHARS]})")
             continue
-        record(connector, aid, STATUS_OK)
+        _record_best_effort(connector, aid, STATUS_OK)
         succeeded += 1
         events.extend(got)
     if failures and not succeeded:

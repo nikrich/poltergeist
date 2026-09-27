@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import logging
 
+from ghostbrain.accounts_health import AllAccountsFailedError
 from ghostbrain.connectors.atlassian._base import AtlassianAuthError
 from ghostbrain.connectors.jira import JiraConnector
 from ghostbrain.connectors.jira.runner import sites as registry_sites
@@ -59,7 +60,7 @@ def main() -> None:
         count = connector.run()
         audit_log("connector_run", "jira", events_queued=count)
         print(f"jira: queued {count} event(s)")
-    except AtlassianAuthError as e:
+    except (AtlassianAuthError, AllAccountsFailedError) as e:
         log.error(str(e))
         audit_log("connector_health_failed", "jira", error=str(e))
         raise SystemExit(1)

@@ -16,6 +16,7 @@ import logging
 
 import yaml
 
+from ghostbrain.accounts_health import AllAccountsFailedError
 from ghostbrain.paths import queue_dir, state_dir, vault_path
 from ghostbrain.worker.audit import audit_log
 
@@ -52,22 +53,27 @@ def main() -> None:
         )
         return
 
-    if args.dry_run:
-        since = connector._get_last_run()
-        events = connector.fetch(since)
-        for ev in events:
-            md = ev["metadata"]
-            unread = "unread" if md.get("is_unread") else "read"
-            print(
-                f"{md['account']:30s} [{unread:>6s}] "
-                f"{md['from_address']:40s} {ev['title']}"
-            )
-        print(f"\n{len(events)} event(s) (dry-run; not enqueued)")
-        return
+    try:
+        if args.dry_run:
+            since = connector._get_last_run()
+            events = connector.fetch(since)
+            for ev in events:
+                md = ev["metadata"]
+                unread = "unread" if md.get("is_unread") else "read"
+                print(
+                    f"{md['account']:30s} [{unread:>6s}] "
+                    f"{md['from_address']:40s} {ev['title']}"
+                )
+            print(f"\n{len(events)} event(s) (dry-run; not enqueued)")
+            return
 
-    count = connector.run()
-    audit_log("connector_run", "gmail", events_queued=count)
-    print(f"gmail: queued {count} event(s)")
+        count = connector.run()
+        audit_log("connector_run", "gmail", events_queued=count)
+        print(f"gmail: queued {count} event(s)")
+    except AllAccountsFailedError as e:
+        log.error(str(e))
+        audit_log("connector_health_failed", "gmail", error=str(e))
+        raise SystemExit(1)
 
 
 def _load_routing() -> dict:

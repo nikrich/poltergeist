@@ -16,6 +16,7 @@ import logging
 
 import yaml
 
+from ghostbrain.accounts_health import AllAccountsFailedError
 from ghostbrain.connectors.github.runner import _build
 from ghostbrain.paths import queue_dir, state_dir, vault_path
 from ghostbrain.worker.audit import audit_log
@@ -52,18 +53,23 @@ def main() -> None:
         log.error("gh auth status failed; run `gh auth login`.")
         return
 
-    if args.dry_run:
-        since = connector._get_last_run()
-        events = connector.fetch(since)
-        for ev in events:
-            print(f"{ev['type']:6s} {ev['metadata']['repo']}#{ev['metadata']['number']:5d} "
-                  f"[{ev['subtype']:>16s}] {ev['title']}")
-        print(f"\n{len(events)} event(s) (dry-run; not enqueued)")
-        return
+    try:
+        if args.dry_run:
+            since = connector._get_last_run()
+            events = connector.fetch(since)
+            for ev in events:
+                print(f"{ev['type']:6s} {ev['metadata']['repo']}#{ev['metadata']['number']:5d} "
+                      f"[{ev['subtype']:>16s}] {ev['title']}")
+            print(f"\n{len(events)} event(s) (dry-run; not enqueued)")
+            return
 
-    count = connector.run()
-    audit_log("connector_run", "github", events_queued=count)
-    print(f"github: queued {count} event(s)")
+        count = connector.run()
+        audit_log("connector_run", "github", events_queued=count)
+        print(f"github: queued {count} event(s)")
+    except AllAccountsFailedError as e:
+        log.error(str(e))
+        audit_log("connector_health_failed", "github", error=str(e))
+        raise SystemExit(1)
 
 
 def _load_routing() -> dict:

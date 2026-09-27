@@ -108,3 +108,13 @@ def test_legacy_routing_blocks_no_longer_route(v):
         {"id": "e", "source": "calendar", "metadata": {"provider": "google", "account": "legacy@x.com"}},
     ):
         assert router_mod._fast_route(ev, routing) is None
+
+
+def test_account_route_survives_registry_errors(v, monkeypatch, caplog):
+    def boom(*a, **k):
+        raise RuntimeError("accounts.yaml exploded")
+
+    monkeypatch.setattr(router_mod.accounts, "context_for", boom)
+    ev = {"id": "e1", "source": "gmail", "metadata": {"accountId": "me@gmail.com"}}
+    assert router_mod._account_route(ev) is None
+    assert any("accounts.yaml exploded" in r.getMessage() for r in caplog.records)

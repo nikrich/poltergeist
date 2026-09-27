@@ -11,6 +11,7 @@ import logging
 
 import yaml
 
+from ghostbrain.accounts_health import AllAccountsFailedError
 from ghostbrain.connectors.atlassian._base import AtlassianAuthError
 from ghostbrain.connectors.confluence import ConfluenceConnector
 from ghostbrain.connectors.confluence.runner import sites as registry_sites
@@ -62,7 +63,7 @@ def main() -> None:
         count = connector.run()
         audit_log("connector_run", "confluence", events_queued=count)
         print(f"confluence: queued {count} page(s)")
-    except AtlassianAuthError as e:
+    except (AtlassianAuthError, AllAccountsFailedError) as e:
         log.error(str(e))
         audit_log("connector_health_failed", "confluence", error=str(e))
         raise SystemExit(1)

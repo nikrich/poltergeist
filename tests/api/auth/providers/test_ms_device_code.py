@@ -121,10 +121,9 @@ def test_poll_with_registered_accounts_does_not_adopt_cache(vault, monkeypatch):
 
 
 def test_poll_adopting_cache_failure_is_non_fatal(vault, monkeypatch):
+    import ghostbrain.api.auth.providers.ms_device_code as mod
     from ghostbrain import accounts
     from ghostbrain.connectors.microsoft.graph import auth
-
-    import ghostbrain.api.auth.providers.ms_device_code as mod
 
     app = _SignInApp(["new@corp.com"])
     monkeypatch.setattr(mod, "_build_app", lambda cfg: app)

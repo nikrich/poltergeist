@@ -150,3 +150,21 @@ def test_all_accounts_failed_does_not_advance_last_run(tmp_path: Path, monkeypat
     again = _runner.run_connector("fakemulti", build=lambda r, q, s: Multi(True, {}, q, state))
     assert again.ok is False
     assert last_run.read_text() == before
+
+
+def test_for_each_account_health_write_failure_is_best_effort(monkeypatch):
+    import pytest
+
+    def broken_record(*a, **k):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(ah, "record", broken_record)
+    # success still returns its events
+    assert ah.for_each_account("gmail", ["ok@x.com"], lambda a: [{"id": a}],
+                               account_id=lambda a: a) == [{"id": "ok@x.com"}]
+    # the real per-account error still surfaces, not the OSError
+    def fail(a):
+        raise TimeoutError("read timed out")
+
+    with pytest.raises(ah.AllAccountsFailedError, match="read timed out"):
+        ah.for_each_account("gmail", ["bad@x.com"], fail, account_id=lambda a: a)

@@ -237,7 +237,11 @@ def _account_route(event: dict) -> RoutingDecision | None:
     """Whole-account rule: every capture from an account assigned to a
     context lands there. Runs after every specific rule, before the LLM."""
     account_id = (event.get("metadata") or {}).get("accountId")
-    ctx = accounts.context_for(accounts.account_connector_for_event(event), account_id)
+    try:
+        ctx = accounts.context_for(accounts.account_connector_for_event(event), account_id)
+    except Exception as e:  # noqa: BLE001 — registry problems must never stop routing
+        log.warning("account routing skipped for event=%s: %s", event.get("id"), e)
+        return None
     if not ctx:
         return None
     log.info("account-routed event=%s ctx=%s account=%s", event.get("id"), ctx, account_id)
