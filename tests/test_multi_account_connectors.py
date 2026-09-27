@@ -306,6 +306,70 @@ def test_github_runs_each_login_with_its_own_token(tmp_path, monkeypatch):
     assert accounts_health.health_for("github", "broken")["status"] == "auth_required"
 
 
+def test_github_search_auth_failure_marks_account_auth_required(tmp_path, monkeypatch):
+    """`gh auth token` can succeed while the token is already revoked; the
+    failure only shows up when `gh search` runs. That must not be recorded
+    as a quiet `ok` — it must mark the account `auth_required`, and the
+    other (healthy) login's events must still come back."""
+    import json
+
+    from ghostbrain.connectors.github import GitHubConnector
+
+    c = GitHubConnector(config={"orgs": ["acme"], "accounts": ["alice", "bob"]},
+                        queue_dir=tmp_path / "q", state_dir=tmp_path / "s", gh_binary="/fake/gh")
+
+    def fake_run(args, *, timeout_s, env=None):
+        token = (env or {}).get("GH_TOKEN")
+        if args[:2] == ["auth", "token"]:
+            user = args[args.index("--user") + 1]
+            return _Proc(f"tok-{user}\n")
+        if args[0] == "search":
+            if token == "tok-alice":
+                return _Proc("", 1, "HTTP 401: Bad credentials")
+            if args[:2] == ["search", "prs"] and "--author=@me" in args:
+                return _Proc(json.dumps([_GH_PR]))
+            return _Proc("[]")
+        return _Proc("[]")
+
+    monkeypatch.setattr(c, "_run_gh", fake_run)
+    events = c.fetch(EPOCH)
+    assert len(events) == 1
+    assert events[0]["metadata"]["accountId"] == "bob"
+    assert accounts_health.health_for("github", "alice")["status"] == "auth_required"
+    assert accounts_health.health_for("github", "bob")["status"] == "ok"
+
+
+def test_github_token_lookup_strips_ambient_token_env_vars(tmp_path, monkeypatch):
+    """An ambient GH_TOKEN/GITHUB_TOKEN in the parent env must not leak into
+    the `gh auth token --user <login>` call — otherwise gh returns that
+    ambient token for every login, defeating per-login isolation. It must
+    still end up in the search calls' env, as the per-login token."""
+    from ghostbrain.connectors.github import GitHubConnector
+
+    monkeypatch.setenv("GH_TOKEN", "ambient-gh")
+    monkeypatch.setenv("GITHUB_TOKEN", "ambient-github")
+
+    c = GitHubConnector(config={"orgs": ["acme"], "accounts": ["alice"]},
+                        queue_dir=tmp_path / "q", state_dir=tmp_path / "s", gh_binary="/fake/gh")
+    envs: list[tuple[list[str], dict]] = []
+
+    def fake_run(args, *, timeout_s, env=None):
+        envs.append((args, dict(env or {})))
+        if args[:2] == ["auth", "token"]:
+            return _Proc("tok-alice\n")
+        return _Proc("[]")
+
+    monkeypatch.setattr(c, "_run_gh", fake_run)
+    c.fetch(EPOCH)
+
+    auth_env = next(e for a, e in envs if a[:2] == ["auth", "token"])
+    assert "GH_TOKEN" not in auth_env
+    assert "GITHUB_TOKEN" not in auth_env
+
+    search_env = next(e for a, e in envs if a[0] == "search")
+    assert search_env["GH_TOKEN"] == "tok-alice"
+
+
 def test_github_runner_uses_registry_logins(v, tmp_path, monkeypatch):
     from ghostbrain.connectors.github import runner
 

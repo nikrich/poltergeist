@@ -50,6 +50,20 @@ class GitHubAuthError(RuntimeError):
     """`gh auth token --user <login>` failed — that login needs `gh auth login`."""
 
 
+# Ambient token env vars gh checks before falling back to the keyring/config
+# login for a --hostname/--user pair. Stripped from the env of the `gh auth
+# token` call so a leaked/exported token can't make every login resolve to
+# the same identity.
+_AMBIENT_TOKEN_VARS = (
+    "GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN",
+)
+
+# Case-insensitive substrings in `gh search` stderr that indicate the token
+# itself (not the query) is bad — surfaced as GitHubAuthError instead of a
+# silent "ok" so the account gets marked auth_required.
+_AUTH_FAILURE_MARKERS = ("401", "bad credentials", "authentication", "auth token")
+
+
 class GitHubConnector(Connector):
     """See module docstring."""
 
@@ -89,9 +103,11 @@ class GitHubConnector(Connector):
         return False
 
     def _token_for(self, login: str) -> str:
+        env = {k: v for k, v in os.environ.items() if k not in _AMBIENT_TOKEN_VARS}
         try:
             proc = self._run_gh(
-                ["auth", "token", "--hostname", "github.com", "--user", login], timeout_s=15,
+                ["auth", "token", "--hostname", "github.com", "--user", login],
+                timeout_s=15, env=env,
             )
         except subprocess.SubprocessError as e:
             raise GitHubAuthError(f"gh auth token failed for {login}: {e}") from e
@@ -216,8 +232,13 @@ class GitHubConnector(Connector):
             log.warning("gh subprocess failed: %s", e)
             return []
         if proc.returncode != 0:
-            log.warning("gh exited %d: %s", proc.returncode,
-                        (proc.stderr or "").strip()[:200])
+            stderr = (proc.stderr or "").strip()[:200]
+            # Multi-account path only (env is set): a search-time auth
+            # failure must not be swallowed as a quiet "no results" — that
+            # would record the account `ok` even though its token is dead.
+            if env is not None and any(m in stderr.lower() for m in _AUTH_FAILURE_MARKERS):
+                raise GitHubAuthError(f"gh search failed (exit {proc.returncode}): {stderr}")
+            log.warning("gh exited %d: %s", proc.returncode, stderr)
             return []
         try:
             data = json.loads(proc.stdout or "[]")
