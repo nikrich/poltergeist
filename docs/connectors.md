@@ -298,6 +298,8 @@ The daily fetch above only looks at the last 24h. To index older mail for an acc
 
 Imports Google Docs, Google Sheets, PDFs, Word (`.docx`) and Excel (`.xlsx`) files **you own or have edited** — one note per file, named `<title>-<fileId>.md`. Files land in `<vault>/00-inbox/raw/gdrive/` and route to `<vault>/20-contexts/<ctx>/gdrive/`; in-place updates rewrite every copy (its context is kept; no re-routing). Files only shared with you, not owned or edited, are ignored.
 
+Edits you make to a Drive note's body in the vault are replaced when the file changes in Drive; frontmatter such as its context and tags is kept.
+
 ### One-time setup
 
 1. Reuse the Desktop OAuth client from Gmail/Calendar (`~/.ghostbrain/state/google_oauth_client.json`). If you skipped those, do steps 1–3 from the [calendar setup](#calendar-google) first.
@@ -315,7 +317,7 @@ The hourly sync above only looks back 7 days on first run. To index older files 
 
 - **What's included:** files you own or have edited (Drive's `ownedByMe` or `modifiedByMe`) — the same filter the hourly sync applies. Files merely shared with you are skipped.
 - **How it's processed:** each file goes through the same ingest path as the hourly sync — new files become notes, changed files are rewritten in place (context kept, no re-routing), and files already imported and unchanged are left alone. The account row and dialog report five running counts: imported, updated, already had (unchanged, skipped), failed, and too large.
-- **Pace:** up to ~750 files/hour (25 files every 2 minutes; slower when AI routing is needed). It runs in small batches between other jobs, walking backwards month by month, each tick capped at about a minute. A multi-year backfill can take hours to finish; that's expected. Assigning the account a context (on its row) avoids AI routing for its files and speeds the backfill up.
+- **Pace:** up to ~750 files/hour (up to 25 of your files per 2-minute tick; slower when AI routing is needed). It runs in small batches between other jobs, walking backwards month by month, each tick capped at about a minute. Files that aren't yours are passed over without slowing it down. A multi-year backfill can take hours to finish; that's expected. Assigning the account a context (on its row) avoids AI routing for its files and speeds the backfill up.
 - **Pause / resume / cancel:** the dialog and the account row show progress once a backfill starts, with buttons to pause, resume, or cancel it. Cancelling stops the job but keeps every note already imported — nothing is deleted.
 - **Restarts:** progress is saved to a per-account state file after every file, so a backfill picks up where it left off after an app restart or crash — re-processing a file is harmless since ingest always upserts the same note.
 - **Requires the in-app scheduler:** backfill is driven by the same scheduler as the rest of Poltergeist's background work, so **Settings → Background → "Run scheduler in-app"** must be on. If it's off, starting a backfill is blocked with a message explaining why.
@@ -326,7 +328,7 @@ The hourly sync above only looks back 7 days on first run. To index older files 
 
 ### Limits
 
-Uploaded files (PDF, Word, Excel) over 200 MB are skipped (reported as "too large") — native Google Docs and Sheets have no size cap. Sheets: first 50 tabs, 5,000 rows × 50 columns per tab. Note bodies are capped at 1,000,000 characters. Truncation is marked in the note (`_…truncated at 5,000 rows_`, `_…truncated at 50 columns_`, `_…N more tabs_`, `_…truncated (document continues in Drive)_`); a file with no extractable text notes `_No extractable text — open in Drive._` instead of an empty body.
+Uploaded files (PDF, Word, Excel) over 200 MB are skipped (reported as "too large"). Native Google Docs and Sheets aren't downloaded, so that cap doesn't apply to them, but the note and Sheets caps below still do. Sheets: chart and data-source tabs are skipped; first 50 tabs, 5,000 rows × 50 columns per tab. Note bodies are capped at 1,000,000 characters. Truncation is marked in the note (`_…truncated at 5,000 rows_`, `_…truncated at 50 columns_`, `_…N more tabs_`, `_…truncated (document continues in Drive)_`); a file with no extractable text notes `_No extractable text — open in Drive._` instead of an empty body.
 
 ## Slack
 
