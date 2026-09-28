@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 import pytest
@@ -99,3 +100,110 @@ def test_missing_contexts_key_uses_defaults_then_writes(tmp_path):
     (root / "90-meta" / "routing.yaml").write_text("github:\n  orgs: {}\n", encoding="utf-8")
     rc.add_context("agencyx", root)
     assert rc.contexts(root) == (*rc.DEFAULT_CONTEXTS, "agencyx")
+
+
+# --- fix round 1: CRLF preservation ------------------------------------
+
+
+def test_crlf_preserved(tmp_path):
+    root = tmp_path / "vault"
+    (root / "90-meta").mkdir(parents=True)
+    crlf_text = COMMENTED.replace("\n", "\r\n")
+    routing_file = root / "90-meta" / "routing.yaml"
+    routing_file.write_bytes(crlf_text.encode("utf-8"))
+
+    rc.add_context("agencyx", root)
+
+    raw = routing_file.read_bytes()
+    before = COMMENTED.split("contexts:")[0].replace("\n", "\r\n").encode("utf-8")
+    after = COMMENTED.split("# GitHub orgs")[1].replace("\n", "\r\n").encode("utf-8")
+    assert raw.startswith(before)
+    assert raw.endswith(after)
+    assert b"contexts:\r\n  - personal\r\n  - work\r\n  - agencyx\r\n" in raw
+    # No bare LF anywhere — every newline in the file is part of a CRLF pair.
+    assert raw.replace(b"\r\n", b"").find(b"\n") == -1
+    assert yaml.safe_load(raw.decode("utf-8"))["contexts"] == ["personal", "work", "agencyx"]
+
+
+# --- fix round 1: comment preservation ----------------------------------
+
+
+def test_block_comment_line_preserved_on_add(tmp_path):
+    root = tmp_path / "vault"
+    (root / "90-meta").mkdir(parents=True)
+    text = (
+        "contexts:\n"
+        "  - personal\n"
+        "  - work\n"
+        "  # keep this note\n"
+        "github:\n"
+        "  orgs: {}\n"
+    )
+    (root / "90-meta" / "routing.yaml").write_text(text, encoding="utf-8")
+
+    rc.add_context("agencyx", root)
+
+    out = _text(root)
+    assert "contexts:\n  - personal\n  - work\n  - agencyx\n  # keep this note\n" in out
+    data = yaml.safe_load(out)
+    assert data["contexts"] == ["personal", "work", "agencyx"]
+    assert data["github"] == {"orgs": {}}
+
+
+def test_key_line_trailing_comment_preserved_on_add(tmp_path):
+    root = tmp_path / "vault"
+    (root / "90-meta").mkdir(parents=True)
+    text = "contexts:  # workspaces\n  - personal\n  - work\ngithub:\n  orgs: {}\n"
+    (root / "90-meta" / "routing.yaml").write_text(text, encoding="utf-8")
+
+    rc.add_context("agencyx", root)
+
+    out = _text(root)
+    assert "contexts:  # workspaces\n  - personal\n  - work\n  - agencyx\n" in out
+    data = yaml.safe_load(out)
+    assert data["contexts"] == ["personal", "work", "agencyx"]
+
+
+def test_comments_preserved_through_archive(tmp_path):
+    root = tmp_path / "vault"
+    (root / "90-meta").mkdir(parents=True)
+    text = (
+        "contexts:  # workspaces\n"
+        "  - personal\n"
+        "  - work\n"
+        "  # keep this note\n"
+        "github:\n"
+        "  orgs: {}\n"
+    )
+    (root / "90-meta" / "routing.yaml").write_text(text, encoding="utf-8")
+
+    rc.archive_context("work", root)
+
+    out = _text(root)
+    assert "contexts:  # workspaces\n  - personal\n  # keep this note\n" in out
+    data = yaml.safe_load(out)
+    assert data["contexts"] == ["personal"]
+    assert data["archived_contexts"] == ["work"]
+    assert data["github"] == {"orgs": {}}
+
+
+# --- fix round 1: concurrency -------------------------------------------
+
+
+def test_concurrent_add_context_all_present(tmp_path):
+    root = tmp_path / "vault"
+    (root / "90-meta").mkdir(parents=True)
+    (root / "90-meta" / "routing.yaml").write_text(
+        "contexts:\n  - personal\n  - work\n", encoding="utf-8"
+    )
+    names = [f"agency{i}" for i in range(10)]
+    threads = [threading.Thread(target=rc.add_context, args=(n, root)) for n in names]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    active = rc.contexts(root)
+    assert len(active) == len(set(active)) == 12
+    for n in names:
+        assert n in active
