@@ -325,14 +325,43 @@ def _classify(exc: BaseException) -> str:
         return "auth"
     if isinstance(exc, HttpError):
         status = int(getattr(exc, "status_code", None) or getattr(exc.resp, "status", 0) or 0)
-        if status in (401, 403):
+        if status == 401:
             return "auth"
+        if status == 403:
+            return _classify_403(exc)
         if status == 429 or status >= 500:
             return "transient"
         return "thread"
     if isinstance(exc, (OSError, TimeoutError, HttpLib2Error)):
         return "transient"
     return "thread"
+
+
+_RATE_LIMIT_REASONS = frozenset({
+    "rateLimitExceeded", "userRateLimitExceeded", "dailyLimitExceeded", "quotaExceeded",
+})
+
+
+def _classify_403(exc) -> str:
+    """Gmail uses 403 both for missing permissions (re-auth) and for rate /
+    quota limits (transient). Decide by ``error.errors[0].reason``."""
+    reason = None
+    details = getattr(exc, "error_details", None)
+    if isinstance(details, list) and details and isinstance(details[0], dict):
+        reason = details[0].get("reason")
+    content = getattr(exc, "content", b"") or b""
+    if not reason:
+        try:
+            data = json.loads(content)
+            reason = data["error"]["errors"][0]["reason"]
+        except (ValueError, TypeError, KeyError, IndexError):
+            reason = None
+    if reason:
+        return "transient" if reason in _RATE_LIMIT_REASONS else "auth"
+    if isinstance(content, bytes):
+        content = content.decode("utf-8", errors="replace")
+    text = f"{exc} {content}".lower()
+    return "transient" if ("rate" in text or "quota" in text) else "auth"
 
 
 def _import_thread(full, account, existing, denylist, process) -> str:

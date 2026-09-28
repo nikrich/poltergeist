@@ -66,11 +66,17 @@ class _Req:
         return self._fn()
 
 
-def http_error(status: int):
+def http_error(status: int, reason: str | None = None, body: bytes | None = None):
+    import json
+
     import httplib2
     from googleapiclient.errors import HttpError
 
-    return HttpError(httplib2.Response({"status": status}), b"{}")
+    if body is None:
+        body = b"{}" if reason is None else json.dumps({"error": {
+            "code": status, "message": reason,
+            "errors": [{"reason": reason, "message": reason}]}}).encode()
+    return HttpError(httplib2.Response({"status": status}), body)
 
 
 class FakeGmail:
@@ -592,3 +598,44 @@ def test_cancel_mid_tick_reports_skipped_cancelled():
     assert out["skipped"] == "cancelled"
     assert "status" not in out
     assert backfill.get(ACC) is None
+
+
+# ------------------------------------ fix round 1 follow-up: 403 rate limits
+
+@pytest.mark.parametrize("reason", [
+    "rateLimitExceeded", "userRateLimitExceeded", "dailyLimitExceeded", "quotaExceeded",
+])
+def test_403_rate_limit_on_list_is_transient(reason):
+    backfill.start(ACC, since=date(2026, 9, 1))
+    fake = FakeGmail(months_of(("2026-09", 2)))
+    fake.list_error = http_error(403, reason)
+    out = tick(fake, Recorder())
+    assert out["status"] == "running"
+    st = backfill.get(ACC)
+    assert st["status"] == "running" and st["error"] == "HttpError"
+
+
+@pytest.mark.parametrize("reason", ["insufficientPermissions", "forbidden", "authError"])
+def test_403_permission_on_list_needs_reauth(reason):
+    backfill.start(ACC, since=date(2026, 9, 1))
+    fake = FakeGmail(months_of(("2026-09", 2)))
+    fake.list_error = http_error(403, reason)
+    assert tick(fake, Recorder())["status"] == "error"
+    assert backfill.get(ACC)["error"] == "needs re-auth"
+
+
+def test_403_rate_limit_on_get_stops_tick_without_failing():
+    backfill.start(ACC, since=date(2026, 9, 1))
+    fake = FakeGmail(months_of(("2026-09", 3)))
+    fake.get_errors["2026-09-1"] = http_error(403, "userRateLimitExceeded")
+    out = tick(fake, Recorder())
+    assert out["status"] == "running" and out["failed"] == 0 and out["imported"] == 1
+
+
+def test_403_unparseable_body_falls_back_to_message():
+    backfill.start(ACC, since=date(2026, 9, 1))
+    fake = FakeGmail({})
+    fake.list_error = http_error(403, body=b"Quota exceeded for quota metric")
+    assert tick(fake, Recorder())["status"] == "running"
+    fake.list_error = http_error(403, body=b"<html>nope</html>")
+    assert tick(fake, Recorder())["status"] == "error"
