@@ -164,3 +164,43 @@ def test_scheduler_registers_gdrive_hourly():
     scheduler_jobs.register_connectors(r)
     assert r.jobs["gdrive"][0].seconds == 3600
     assert "gdrive" in SYNCABLE
+
+
+@pytest.mark.parametrize("exc", [OSError("net down"), TimeoutError("timed out"),
+                                 ConnectionResetError("reset")])
+def test_ingest_reraises_transient_network_errors(exc):
+    import httplib2
+
+    d = FakeDrive()
+    d.fail_next = [exc]
+    with pytest.raises(type(exc)):
+        ingest.ingest_file(fake_services(drive=d), "me@x.com", drive_file("a"), {})
+    d.fail_next = [httplib2.ServerNotFoundError("no dns")]
+    with pytest.raises(httplib2.HttpLib2Error):
+        ingest.ingest_file(fake_services(drive=d), "me@x.com", drive_file("a"), {})
+
+
+def test_network_error_during_ingest_keeps_that_accounts_cursor(upserts, monkeypatch):
+    from ghostbrain.connectors.gdrive import convert as convert_mod
+
+    ok = _docs_drive([drive_file("a", modified=iso(NOW - timedelta(hours=3)))])
+    flaky = _docs_drive([drive_file("b", modified=iso(NOW - timedelta(hours=3)))])
+    real_convert = convert_mod.convert
+
+    def convert(services, file):
+        if file["id"] == "b":
+            raise OSError("wifi dropped")
+        return real_convert(services, file)
+
+    monkeypatch.setattr(convert_mod, "convert", convert)
+    conn_mod.cursor_path().parent.mkdir(parents=True, exist_ok=True)
+    old = (NOW - timedelta(days=1)).isoformat()
+    conn_mod.cursor_path().write_text(json.dumps({"flaky@x.com": old}))
+    c = make(["me@x.com", "flaky@x.com"],
+             {"me@x.com": fake_services(drive=ok), "flaky@x.com": fake_services(drive=flaky)})
+    c.run()
+    cursors = json.loads(conn_mod.cursor_path().read_text())
+    assert cursors["flaky@x.com"] == old
+    assert cursors["me@x.com"] == NOW.isoformat()
+    assert c.stats["failed"] == 0
+    assert accounts_health.health_for("gdrive", "flaky@x.com")["status"] == accounts_health.STATUS_ERROR

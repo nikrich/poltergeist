@@ -386,7 +386,37 @@ def test_400_with_page_token_clears_token_and_redoes_month(rec):
     assert d.list_calls[-1]["pageToken"] is None
 
 
-@pytest.mark.parametrize("status", [400, 404, 403])
+@pytest.mark.parametrize("exc", [OSError("wifi dropped"), TimeoutError("t")])
+def test_network_error_from_ingest_is_transient_and_keeps_file(rec, exc):
+    rec.outcomes = {"2026-09-01": exc}  # the 2nd file (newest first: 02, 01, 00)
+    backfill.start(ACC, since=date(2026, 9, 1))
+    fake(month_files(("2026-09", 3)))
+    out = tick()
+    assert out["status"] == "running" and out["imported"] == 1 and out["failed"] == 0
+    st = backfill.get(ACC)
+    assert st["status"] == "running" and st["error"] == type(exc).__name__
+    assert st["pageDone"] == ["2026-09-02"]
+    assert st["cursor"] == "2026-09" and st["pageToken"] is None and st["failed"] == 0
+    rec.outcomes = {}
+    out = tick()
+    assert out["imported"] == 2 and out["cursor"] == "2026-08"
+    assert rec.ids == ["2026-09-02", "2026-09-01", "2026-09-01", "2026-09-00"]
+    assert backfill.get(ACC)["error"] is None
+
+
+@pytest.mark.parametrize("reason", ["insufficientPermissions", "forbidden"])
+def test_403_permission_on_list_needs_reauth(rec, reason):
+    backfill.start(ACC, since=date(2026, 9, 1))
+    d = fake(month_files(("2026-09", 30)))
+    tick()  # a page token is set: 403 must still mean re-auth, not a token reset
+    d.fail_next = [http_error(403, reason)]
+    assert tick()["status"] == "error"
+    st = backfill.get(ACC)
+    assert st["status"] == "error" and st["error"] == "needs re-auth"
+    assert st["pageToken"] == "25"
+
+
+@pytest.mark.parametrize("status", [400, 404])
 def test_4xx_without_page_token_sets_error(rec, status):
     backfill.start(ACC, since=date(2026, 9, 1))
     d = fake(month_files(("2026-09", 2)))

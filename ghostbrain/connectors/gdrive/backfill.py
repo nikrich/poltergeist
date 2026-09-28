@@ -379,7 +379,8 @@ def _http_status(exc) -> int:
 
 def _classify(exc: BaseException) -> str:
     """``auth`` (needs re-auth), ``disabled`` (enable the API), ``transient``
-    (retry the page later) or ``rejected`` (Drive refused the request)."""
+    (retry the page later) or ``rejected`` (Drive refused the request: a
+    non-auth, non-transient 4xx)."""
     # Lazy imports: the google client stack is heavy and only needed on error.
     from google.auth.exceptions import RefreshError
     from googleapiclient.errors import HttpError
@@ -397,10 +398,19 @@ def _classify(exc: BaseException) -> str:
             return "auth"
         if status == 429 or status >= 500:
             return "transient"
+        if status == 403:
+            # Rate-limit and API-disabled 403s already arrive as
+            # DriveRateLimited / DriveApiDisabled (drive.execute); what is
+            # left (insufficientPermissions, forbidden, …) means the token
+            # can't read Drive — re-auth, as Gmail treats permission 403s.
+            return "auth"
         return "rejected"
     if isinstance(exc, (OSError, TimeoutError, HttpLib2Error)):
         return "transient"
-    # Unknown failure on the list call: retry next tick, like Gmail.
+    # Anything else (e.g. an unexpected error from the Drive client): keep the
+    # backfill running and retry the page next tick. Gmail instead counts an
+    # unknown per-thread error as "thread" (failed); here per-file errors are
+    # already absorbed by ingest_file, so only list/account-level ones get here.
     return "transient"
 
 
