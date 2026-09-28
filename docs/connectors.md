@@ -296,7 +296,7 @@ The daily fetch above only looks at the last 24h. To index older mail for an acc
 
 ## Google Drive
 
-Imports Google Docs, Google Sheets, PDFs, Word (`.docx`) and Excel (`.xlsx`) files **you own or have edited** — one note per file under `<vault>/20-contexts/<ctx>/gdrive/`, named `<title>-<fileId>.md` and updated in place when the file changes (its context is kept; no re-routing). Files only shared with you, not owned or edited, are ignored.
+Imports Google Docs, Google Sheets, PDFs, Word (`.docx`) and Excel (`.xlsx`) files **you own or have edited** — one note per file, named `<title>-<fileId>.md`. Files land in `<vault>/00-inbox/raw/gdrive/` and route to `<vault>/20-contexts/<ctx>/gdrive/`; in-place updates rewrite every copy (its context is kept; no re-routing). Files only shared with you, not owned or edited, are ignored.
 
 ### One-time setup
 
@@ -306,7 +306,7 @@ Imports Google Docs, Google Sheets, PDFs, Word (`.docx`) and Excel (`.xlsx`) fil
 
 ### Run
 
-- **Hourly sync:** files modified since the account's last run (first run: last 7 days), kept only if you own them or have edited them. Files edited in the last 30 minutes wait for the next run (a 30-minute debounce, so a file mid-edit isn't imported half-written). New files become notes; changed files are rewritten in place — same note, same context, no re-routing.
+- **Hourly sync:** files modified since the account's last run (first run: last 7 days), kept only if you own them or have edited them. Files edited in the last 30 minutes wait for the next run (a 30-minute debounce, so a file mid-edit isn't imported half-written). New files become notes in the inbox and, once routed, in the context; changed files are rewritten in place in both locations — same note, same context, no re-routing.
 - **Backfill:** Connectors → Google Drive → account → **backfill…**, to index older files (1–5 years). See below.
 
 ### Backfilling past files
@@ -326,7 +326,7 @@ The hourly sync above only looks back 7 days on first run. To index older files 
 
 ### Limits
 
-Files over 200 MB are skipped (reported as "too large"). Sheets: first 50 tabs, 5,000 rows × 50 columns per tab. Note bodies are capped at 1,000,000 characters. Truncation is marked in the note (`_…truncated at 5,000 rows_`, `_…truncated at 50 columns_`, `_…N more tabs_`, `_…truncated (document continues in Drive)_`); a file with no extractable text notes `_No extractable text — open in Drive._` instead of an empty body.
+Uploaded files (PDF, Word, Excel) over 200 MB are skipped (reported as "too large") — native Google Docs and Sheets have no size cap. Sheets: first 50 tabs, 5,000 rows × 50 columns per tab. Note bodies are capped at 1,000,000 characters. Truncation is marked in the note (`_…truncated at 5,000 rows_`, `_…truncated at 50 columns_`, `_…N more tabs_`, `_…truncated (document continues in Drive)_`); a file with no extractable text notes `_No extractable text — open in Drive._` instead of an empty body.
 
 ## Slack
 
