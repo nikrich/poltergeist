@@ -192,10 +192,14 @@ jobs:
         working-directory: desktop
         # macOS runners default to `ulimit -n 256`; electron-builder's signing pass
         # opens the bundled sidecar's thousands of files concurrently and fails
-        # with EMFILE ("too many open files") — v1.8.0's mac build hit it twice.
+        # with EMFILE ("too many open files") — v1.8.0's mac build hit it twice,
+        # and v1.10.0 hit it again with `ulimit -n 65536` already applied, so the
+        # kernel caps (kern.maxfiles / kern.maxfilesperproc) are raised too.
         run: |
-          ulimit -n 65536 || ulimit -n "$(ulimit -Hn)"
-          echo "open-file limit: $(ulimit -n)"
+          echo "kernel before: $(sysctl -n kern.maxfiles) / $(sysctl -n kern.maxfilesperproc)"
+          sudo sysctl -w kern.maxfiles=524288 kern.maxfilesperproc=262144 || true
+          ulimit -n 262144 || ulimit -n 65536 || ulimit -n "$(ulimit -Hn)"
+          echo "open-file limit: $(ulimit -n); kernel: $(sysctl -n kern.maxfiles) / $(sysctl -n kern.maxfilesperproc)"
           npm run pack
 
       - name: Verify bundled capture helper signature
