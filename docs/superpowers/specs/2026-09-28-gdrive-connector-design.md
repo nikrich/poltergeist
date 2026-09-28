@@ -79,7 +79,7 @@ docs plus continuous import of new and changed ones.
 - Tables (Sheets + XLSX share `render_tables(tabs)`): each tab → `## <tab>` + a Markdown
   table (first row as header, pipes escaped, newlines in cells → `<br>`); empty trailing rows
   and columns trimmed; empty tabs skipped; at most 50 tabs. Cut content ends with
-  `_…truncated: N more rows_` / `_…N more columns_` / `_…N more tabs_`.
+  `_…truncated at 5,000 rows_` / `_…truncated at 50 columns_` / `_…N more tabs_`.
 - Downloads stream via `MediaIoBaseDownload` to a temp file (never fully in memory); files with
   `size > 200 MB` are skipped as `too_large` without downloading.
 - Body cap 1,000,000 chars; beyond it the body is cut at a line boundary with
@@ -91,7 +91,7 @@ docs plus continuous import of new and changed ones.
 
 ```python
 {
-  "id": "gdrive:<account-slug>:<fileId>",
+  "id": "gdrive:<fileId>",   # one note per Drive file, even if several accounts see it
   "source": "gdrive", "type": "doc" | "sheet" | "pdf" | "docx" | "xlsx", "subtype": "updated",
   "timestamp": <modifiedTime>, "title": <name>, "url": <webViewLink>,
   "actorId": "gdrive:<lastModifyingUser.emailAddress>",
@@ -105,28 +105,33 @@ docs plus continuous import of new and changed ones.
 
 ### 5. Store — `gdrive/store.py` (shared by sync + backfill)
 
-- `build_index() -> dict[event_id, (path, driveModifiedTime)]`: scan frontmatter of
-  `00-inbox/raw/gdrive/**/*.md` and `20-contexts/*/gdrive/**/*.md` once per run/tick.
-- `upsert(event, index) -> "imported" | "updated" | "skipped"`:
-  - id unknown → `worker.pipeline.process_event(event)` (normal routing: specific rules →
-    account context → LLM); record the written path in the index.
-  - id known, `driveModifiedTime` newer → rewrite that note (and its inbox/context twin if both
-    exist) in place: body + `driveModifiedTime` + `title`; all other frontmatter (context,
-    routing fields, tags) kept. No LLM call.
-  - id known, same `driveModifiedTime` → skip.
-- **Stable filenames:** for `source == "gdrive"`, `_filename_for` drops the timestamp prefix →
-  `<title-slug>-<id-suffix>.md`, so a new write of the same file never creates a sibling.
-- Found by frontmatter id wherever it lives, so a note the user moved still gets updated.
-- A per-note lock (`fcntl` where available, in-process lock otherwise) guards rewrites;
-  together with the `modifiedTime` check, a concurrent sync + backfill can't double-write.
+- **Stable filenames:** for `source == "gdrive"`, `note_generator._filename_for` returns
+  `<title-slug>-<fileId>.md` (no timestamp; Drive file ids are filesystem-safe and unique), so
+  the same file always maps to the same name.
+- `find_notes(file_id) -> list[Path]`: glob `00-inbox/raw/gdrive/*-<fileId>.md` and
+  `20-contexts/*/gdrive/**/*-<fileId>.md` (the inbox copy and its routed twin). No vault-wide
+  index — the filename is the index.
+- `upsert(event) -> "imported" | "updated" | "skipped"`:
+  - no note → `worker.pipeline.process_event(event)` (normal routing: specific rules →
+    account context → LLM).
+  - note exists, `driveModifiedTime` newer → rewrite every found copy in place: body +
+    `driveModifiedTime` + `updated` + `title`; all other frontmatter (context, routing fields,
+    tags) kept. No LLM call.
+  - note exists, same `driveModifiedTime` → skip.
+- A process-wide lock around each `upsert` (sync and backfill both run in the sidecar's
+  scheduler threads), so a concurrent sync + backfill can't both import the same file.
+- A note moved elsewhere under `20-contexts/*/gdrive/` is still found; a note moved or renamed
+  out of the gdrive folders is treated as gone and re-imported.
 
 ### 6. Hourly sync — `gdrive/connector.py` + `runner.py`
 
 - `GdriveConnector(Connector)`, one instance over all enabled gdrive accounts (per-account
   health via `accounts_health`, as Gmail does); `run()` overridden to use `store.upsert`
   instead of the queue so updates go through the in-place path.
-- Window: `modifiedTime > last_run` (first run with no `last_run`: last 7 days — history is the
-  backfill's job).
+- Window per account: `modifiedTime > <account cursor>` from `<state>/gdrive_sync.json`
+  (`{email: iso}`); first run for an account: last 7 days — history is the backfill's job. A
+  rate-limited or failing account keeps its old cursor while the others advance.
+  `gdrive.last_run` is still written at the end of each run for the connectors screen.
 - **Debounce:** files with `modifiedTime` within the last 30 min are deferred; `last_run` is
   saved as `min(now, oldest deferred modifiedTime)` so they're picked up next run.
 - `DriveRateLimited` or all accounts failing → `last_run` not saved.
@@ -198,7 +203,7 @@ Unknown account → 404; auth / API-not-enabled on estimate → 409 with the mes
 | Empty extraction | note written with "No extractable text" body |
 | Rate limited after 3 retries | run stops; sync keeps old `last_run`, backfill keeps cursor |
 | Crash mid-page | resume from cursor + pageToken; `modifiedTime` check skips repeats |
-| Note moved by the user | found by frontmatter id, updated where it lives |
+| Note moved by the user | found anywhere under `20-contexts/*/gdrive/`; moved out → re-imported |
 
 ## Testing
 
@@ -210,10 +215,10 @@ Fake Drive / Docs / Sheets services (`files().list/export/get_media`, `documents
   escaping; XLSX fixture (formulas → values); PDF/DOCX via extractor; body cap; empty extraction;
   too-large skip without download.
 - **filter:** owned vs modified-by-me vs shared-only.
-- **store:** new → `process_event`; newer → in-place rewrite keeping context/frontmatter, no LLM;
-  same → skip; stable filename; moved note found.
-- **sync:** 7-day first window, debounce + `last_run` computation, rate-limit backoff + no
-  `last_run` save, per-account auth failure.
+- **store:** new → `process_event`; newer → in-place rewrite of both copies keeping
+  context/frontmatter, no LLM; same → skip; stable filename; moved note found.
+- **sync:** 7-day first window, debounce + cursor computation, per-account cursors (one account
+  failing doesn't advance its cursor), per-account auth failure.
 - **backfill:** month stepping, pageToken paging, resume after crash, auth error → resume,
   API-not-enabled, cancel keeps notes, disabled/removed accounts, idle tick, capped estimate.
 - **routes:** 201/404/409, estimate, pause/resume/cancel.
