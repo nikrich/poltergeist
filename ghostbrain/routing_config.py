@@ -11,6 +11,9 @@ legacy hardcoded four. That tuple may exist NOWHERE else in ghostbrain/
 from __future__ import annotations
 
 import logging
+import os
+import re
+import tempfile
 from pathlib import Path
 
 import yaml
@@ -24,7 +27,30 @@ log = logging.getLogger("ghostbrain.routing_config")
 # (or `ghostbrain-api bootstrap`) once to persist a vault's real list.
 DEFAULT_CONTEXTS: tuple[str, ...] = ("personal", "work")
 
+CONTEXT_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
+RESERVED_CONTEXTS = frozenset({"needs_review"})
+
 _warned = False
+
+
+class ContextError(ValueError):
+    """Invalid, reserved, duplicate, unknown, or last-remaining context."""
+
+
+def _load(root: Path | None = None) -> dict:
+    """Safe-load routing.yaml into a dict; ``{}`` on missing/invalid."""
+    r = root or vault_path()
+    f = r / "90-meta" / "routing.yaml"
+    raw: dict = {}
+    try:
+        loaded = yaml.safe_load(f.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict):
+            raw = loaded
+    except FileNotFoundError:
+        pass
+    except Exception as e:  # noqa: BLE001 — malformed YAML must not kill callers
+        log.warning("could not read %s: %s", f, e)
+    return raw
 
 
 def contexts(root: Path | None = None) -> tuple[str, ...]:
@@ -40,17 +66,8 @@ def contexts(root: Path | None = None) -> tuple[str, ...]:
     router enum, digest ordering) append it themselves.
     """
     global _warned
-    r = root or vault_path()
-    f = r / "90-meta" / "routing.yaml"
-    raw: dict = {}
-    try:
-        loaded = yaml.safe_load(f.read_text(encoding="utf-8"))
-        if isinstance(loaded, dict):
-            raw = loaded
-    except FileNotFoundError:
-        pass
-    except Exception as e:  # noqa: BLE001 — malformed YAML must not kill callers
-        log.warning("could not read %s: %s", f, e)
+    raw = _load(root)
+    f = (root or vault_path()) / "90-meta" / "routing.yaml"
 
     value = raw.get("contexts")
     if (
@@ -70,3 +87,141 @@ def contexts(root: Path | None = None) -> tuple[str, ...]:
         )
         _warned = True
     return DEFAULT_CONTEXTS
+
+
+def archived_contexts(root: Path | None = None) -> tuple[str, ...]:
+    value = _load(root).get("archived_contexts")
+    if isinstance(value, list):
+        return tuple(str(c).strip() for c in value if isinstance(c, str) and c.strip())
+    return ()
+
+
+def _block_span(lines: list[str], key: str) -> tuple[int, int] | None:
+    """Find the [start, end) line range of the `key:` block, or None."""
+    pat = re.compile(rf"^{re.escape(key)}\s*:")
+    for i, line in enumerate(lines):
+        if pat.match(line):
+            end = i + 1
+            while end < len(lines):
+                nxt = lines[end]
+                if nxt.strip() == "" or not (nxt[:1] in (" ", "\t", "-")):
+                    break
+                end += 1
+            return i, end
+    return None
+
+
+def _write_context_blocks(
+    root: Path | None, active: list[str], archived: list[str]
+) -> None:
+    r = root or vault_path()
+    f = r / "90-meta" / "routing.yaml"
+    try:
+        old_text = f.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        old_text = ""
+
+    old_data = yaml.safe_load(old_text) if old_text.strip() else None
+    if not isinstance(old_data, dict):
+        old_data = {}
+
+    lines = old_text.splitlines(keepends=True)
+
+    def _block(key: str, values: list[str]) -> str:
+        return f"{key}:\n" + "".join(f"  - {v}\n" for v in values)
+
+    new_text = old_text
+    new_lines = lines
+
+    for key, values in (("contexts", active), ("archived_contexts", archived)):
+        span = _block_span(new_lines, key)
+        if not values:
+            # Empty list → remove existing block, write nothing new.
+            if span is not None:
+                start, end = span
+                new_lines = new_lines[:start] + new_lines[end:]
+            continue
+        block = _block(key, values)
+        if span is not None:
+            start, end = span
+            new_lines = new_lines[:start] + [block] + new_lines[end:]
+        else:
+            sep = "" if (not new_lines or new_lines[-1].endswith("\n")) else "\n"
+            new_lines = new_lines + [f"{sep}\n{block}" if new_lines else block]
+
+    new_text = "".join(new_lines)
+
+    # Verify: only the contexts/archived_contexts keys may have changed.
+    try:
+        verify_data = yaml.safe_load(new_text)
+    except yaml.YAMLError as e:
+        raise ContextError(
+            "routing.yaml has an unusual contexts layout; edit it by hand"
+        ) from e
+    if not isinstance(verify_data, dict):
+        raise ContextError(
+            "routing.yaml has an unusual contexts layout; edit it by hand"
+        )
+    if verify_data.get("contexts") != active:
+        raise ContextError(
+            "routing.yaml has an unusual contexts layout; edit it by hand"
+        )
+    if archived:
+        if verify_data.get("archived_contexts") != archived:
+            raise ContextError(
+                "routing.yaml has an unusual contexts layout; edit it by hand"
+            )
+    elif "archived_contexts" in verify_data:
+        raise ContextError(
+            "routing.yaml has an unusual contexts layout; edit it by hand"
+        )
+    other_old = {k: v for k, v in old_data.items() if k not in ("contexts", "archived_contexts")}
+    other_new = {k: v for k, v in verify_data.items() if k not in ("contexts", "archived_contexts")}
+    if other_old != other_new:
+        raise ContextError(
+            "routing.yaml has an unusual contexts layout; edit it by hand"
+        )
+
+    f.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(dir=str(f.parent), prefix=".routing.yaml.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(new_text)
+        os.replace(tmp_path, f)
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
+def add_context(name: str, root: Path | None = None) -> tuple[str, ...]:
+    name = (name or "").strip()
+    if not CONTEXT_NAME_RE.match(name) or name in RESERVED_CONTEXTS:
+        raise ContextError(
+            "context names use lowercase letters, digits and hyphens (max 40), "
+            f"and can't be {sorted(RESERVED_CONTEXTS)}"
+        )
+    active = list(contexts(root))
+    if name in active:
+        raise ContextError(f"context {name!r} already exists")
+    archived = [c for c in archived_contexts(root) if c != name]
+    active.append(name)
+    _write_context_blocks(root, active, archived)
+    from ghostbrain.bootstrap import ensure_context_dirs
+
+    ensure_context_dirs(root or vault_path(), name)
+    return tuple(active)
+
+
+def archive_context(name: str, root: Path | None = None) -> tuple[str, ...]:
+    active = list(contexts(root))
+    if name not in active:
+        raise ContextError(f"unknown context {name!r}")
+    if len(active) == 1:
+        raise ContextError("at least one context must remain")
+    active.remove(name)
+    archived = [*archived_contexts(root), name]
+    _write_context_blocks(root, active, archived)
+    return tuple(active)

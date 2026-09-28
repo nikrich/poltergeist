@@ -927,6 +927,23 @@ def _ensure_contexts_key(root: Path, contexts: tuple[str, ...]) -> None:
     f.write_text(body + block, encoding="utf-8")
 
 
+def ensure_context_dirs(root: Path, ctx: str) -> None:
+    """Create the per-context folder tree + index/profile stubs for `ctx`.
+
+    Idempotent: existing files/dirs are left untouched.
+    """
+    ctx_root = root / "20-contexts" / ctx
+    ctx_root.mkdir(parents=True, exist_ok=True)
+    for sub in CONTEXT_SUBDIRS:
+        (ctx_root / sub).mkdir(parents=True, exist_ok=True)
+    # Per-context index + profile stubs.
+    _write_if_absent(ctx_root / "_index.md", f"# {ctx.title()} context\n")
+    _write_if_absent(
+        ctx_root / "_profile.md",
+        f"# {ctx.title()} profile\n\nContext-specific profile, populated in Phase 6.\n",
+    )
+
+
 def bootstrap(root: Path | None = None) -> Path:
     """Create the vault tree and seed files. Idempotent.
 
@@ -940,16 +957,7 @@ def bootstrap(root: Path | None = None) -> Path:
         (root / rel).mkdir(parents=True, exist_ok=True)
 
     for ctx in contexts:
-        ctx_root = root / "20-contexts" / ctx
-        ctx_root.mkdir(parents=True, exist_ok=True)
-        for sub in CONTEXT_SUBDIRS:
-            (ctx_root / sub).mkdir(parents=True, exist_ok=True)
-        # Per-context index + profile stubs.
-        _write_if_absent(ctx_root / "_index.md", f"# {ctx.title()} context\n")
-        _write_if_absent(
-            ctx_root / "_profile.md",
-            f"# {ctx.title()} profile\n\nContext-specific profile, populated in Phase 6.\n",
-        )
+        ensure_context_dirs(root, ctx)
 
     # Per-context daily digest folder gets a placeholder so Obsidian shows it.
     (root / "10-daily" / "by-context").mkdir(parents=True, exist_ok=True)

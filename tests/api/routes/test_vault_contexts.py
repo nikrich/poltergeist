@@ -32,7 +32,7 @@ def test_returns_configured_contexts_in_order(client: TestClient, vault: Path) -
     _write_routing(vault, "contexts:\n  - work\n  - home\n  - side-hustle\n")
     r = client.get("/v1/vault/contexts")
     assert r.status_code == 200
-    assert r.json() == {"contexts": ["work", "home", "side-hustle"]}
+    assert r.json() == {"contexts": ["work", "home", "side-hustle"], "archived": []}
 
 
 def test_falls_back_when_routing_yaml_missing(client: TestClient) -> None:
