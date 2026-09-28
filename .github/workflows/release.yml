@@ -190,7 +190,13 @@ jobs:
 
       - name: Build + sign + notarize
         working-directory: desktop
-        run: npm run pack
+        # macOS runners default to `ulimit -n 256`; electron-builder's signing pass
+        # opens the bundled sidecar's thousands of files concurrently and fails
+        # with EMFILE ("too many open files") — v1.8.0's mac build hit it twice.
+        run: |
+          ulimit -n 65536 || ulimit -n "$(ulimit -Hn)"
+          echo "open-file limit: $(ulimit -n)"
+          npm run pack
 
       - name: Verify bundled capture helper signature
         # The helper must be inside the .app, signed with the hardened runtime and
