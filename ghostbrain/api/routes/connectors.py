@@ -1,9 +1,11 @@
-"""GET /v1/connectors, GET /v1/connectors/{id}, POST sync endpoints."""
+"""GET /v1/connectors, GET /v1/connectors/{id}, POST sync endpoints, PATCH accounts."""
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import asdict
 
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, ConfigDict
 
 from ghostbrain.api.models.connector import Connector, ConnectorDetail
 from ghostbrain.api.repo.connectors import get_connector, list_connectors
@@ -56,3 +58,33 @@ async def sync_all(request: Request) -> dict:
         )
     results = await sched.run_all()
     return {name: asdict(r) for name, r in results.items()}
+
+
+class AccountPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    context: str | None = None
+    enabled: bool | None = None
+
+
+@router.patch("/{connector_id}/accounts/{account_id}")
+def update_account(connector_id: str, account_id: str, body: AccountPatch) -> dict:
+    from ghostbrain import accounts, accounts_health
+
+    acct_connector = accounts.SOURCE_TO_ACCOUNT_CONNECTOR.get(connector_id)
+    if acct_connector is None:
+        raise HTTPException(status_code=404, detail=f"Connector has no accounts: {connector_id}")
+    acc = accounts.get_account(acct_connector, account_id)
+    if acc is None:
+        raise HTTPException(status_code=404, detail=f"Account not found: {account_id}")
+    changes = body.model_dump(exclude_unset=True)
+    updated = dataclasses.replace(acc, **changes)
+    try:
+        accounts.upsert_account(updated)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    return {
+        "id": updated.id,
+        "context": updated.context,
+        "enabled": updated.enabled,
+        "health": accounts_health.health_for(connector_id, updated.id),
+    }
