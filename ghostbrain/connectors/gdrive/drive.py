@@ -33,7 +33,8 @@ FILE_FIELDS = (
 
 MAX_RETRIES = 3
 BACKOFF_BASE_SECONDS = 2.0
-_RATE_REASONS = {"rateLimitExceeded", "userRateLimitExceeded"}
+# Same set as Gmail's backfill: quota 403s are transient, never "re-auth".
+_RATE_REASONS = {"rateLimitExceeded", "userRateLimitExceeded", "dailyLimitExceeded", "quotaExceeded"}
 _DISABLED_REASONS = {"accessNotConfigured", "SERVICE_DISABLED"}
 
 _sleep = time.sleep
@@ -122,23 +123,33 @@ def reasons(e: HttpError) -> set[str]:
     return {r for r in out if r}
 
 
+def _map_http_error(e: HttpError, api: str, *, retries: int = MAX_RETRIES) -> BaseException:
+    """The exception ``e`` stands for: ``DriveApiDisabled``, ``GdriveAuthError``
+    (401), ``DriveRateLimited`` (429, 5xx or a rate/quota 403 — callers may
+    retry first) or ``e`` itself for anything else."""
+    status = e.resp.status
+    why = reasons(e)
+    if why & _DISABLED_REASONS:
+        return DriveApiDisabled(api)
+    if status == 401:
+        return GdriveAuthError(f"Google rejected the Drive token ({api} API). Reauthorize.")
+    if status == 429 or status >= 500 or (status == 403 and bool(why & _RATE_REASONS)):
+        return DriveRateLimited(f"{api} API still rate-limited after {retries} retries")
+    return e
+
+
 def execute(request, *, api: str = "Drive"):
     for attempt in range(MAX_RETRIES + 1):
         try:
             return request.execute()
         except HttpError as e:
-            status = e.resp.status
-            why = reasons(e)
-            if why & _DISABLED_REASONS:
-                raise DriveApiDisabled(api) from e
-            if status == 401:
-                raise GdriveAuthError(f"Google rejected the Drive token ({api} API). Reauthorize.") from e
-            retryable = status == 429 or status >= 500 or (status == 403 and bool(why & _RATE_REASONS))
-            if not retryable:
+            mapped = _map_http_error(e, api)
+            if mapped is e:
                 raise
-            if attempt == MAX_RETRIES:
-                raise DriveRateLimited(f"{api} API still rate-limited after {MAX_RETRIES} retries") from e
-            _sleep(BACKOFF_BASE_SECONDS * (2 ** attempt))
+            if isinstance(mapped, DriveRateLimited) and attempt < MAX_RETRIES:
+                _sleep(BACKOFF_BASE_SECONDS * (2 ** attempt))
+                continue
+            raise mapped from e
     raise AssertionError("unreachable")
 
 
@@ -178,4 +189,11 @@ def download(drive, file_id: str, dest: Path) -> None:
         downloader = MediaIoBaseDownload(fh, request, chunksize=8 * 1024 * 1024)
         done = False
         while not done:
-            _, done = downloader.next_chunk(num_retries=MAX_RETRIES)
+            try:
+                # next_chunk already retries 429/5xx itself (num_retries).
+                _, done = downloader.next_chunk(num_retries=MAX_RETRIES)
+            except HttpError as e:
+                mapped = _map_http_error(e, "Drive")
+                if mapped is e:
+                    raise
+                raise mapped from e

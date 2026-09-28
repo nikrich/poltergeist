@@ -100,3 +100,69 @@ def test_folder_path_is_best_effort():
 
 def test_parse_time_handles_z_and_millis():
     assert drive.parse_time("2026-09-01T10:00:00.123Z") == datetime(2026, 9, 1, 10, 0, 0, 123000, tzinfo=UTC)
+
+
+@pytest.mark.parametrize("reason", ["dailyLimitExceeded", "quotaExceeded"])
+def test_execute_treats_quota_403s_as_rate_limits(reason):
+    fake = FakeDrive([drive_file("a")])
+    fake.fail_next = [http_error(403, reason)]
+    files, _ = drive.list_page(fake, after=datetime(2026, 1, 1, tzinfo=UTC))
+    assert [f["id"] for f in files] == ["a"]
+    fake.fail_next = [http_error(403, reason)] * (drive.MAX_RETRIES + 1)
+    with pytest.raises(drive.DriveRateLimited):
+        drive.list_page(fake, after=datetime(2026, 1, 1, tzinfo=UTC))
+
+
+class _FailingDownloader:
+    """MediaIoBaseDownload stand-in: writes one chunk, then raises ``error``."""
+
+    error: Exception | None = None
+
+    def __init__(self, fh, request, chunksize):
+        self.fh, self.calls = fh, 0
+
+    def next_chunk(self, num_retries=0):
+        self.calls += 1
+        if self.calls == 1:
+            self.fh.write(b"part")
+            return None, False
+        raise type(self).error
+
+
+@pytest.mark.parametrize("error,expected", [
+    (http_error(401, "authError"), GdriveAuthError),
+    (http_error(429, "rateLimitExceeded"), drive.DriveRateLimited),
+    (http_error(503, "backendError"), drive.DriveRateLimited),
+    (http_error(403, "userRateLimitExceeded"), drive.DriveRateLimited),
+    (http_error(403, "quotaExceeded"), drive.DriveRateLimited),
+    (http_error(403, "accessNotConfigured"), drive.DriveApiDisabled),
+    (http_error(404, "notFound"), HttpError),
+])
+def test_download_maps_http_errors_like_execute(monkeypatch, tmp_path, error, expected):
+    import googleapiclient.http
+
+    _FailingDownloader.error = error
+    monkeypatch.setattr(googleapiclient.http, "MediaIoBaseDownload", _FailingDownloader)
+    with pytest.raises(expected) as info:
+        drive.download(FakeDrive(), "f1", tmp_path / "out")
+    if expected is HttpError:
+        assert info.value is error
+    else:
+        assert info.value.__cause__ is error
+
+
+def test_download_streams_all_chunks(monkeypatch, tmp_path):
+    import googleapiclient.http
+
+    class _Ok:
+        def __init__(self, fh, request, chunksize):
+            self.fh, self.n = fh, 0
+
+        def next_chunk(self, num_retries=0):
+            self.n += 1
+            self.fh.write(b"ab")
+            return None, self.n == 2
+
+    monkeypatch.setattr(googleapiclient.http, "MediaIoBaseDownload", _Ok)
+    drive.download(FakeDrive(), "f1", tmp_path / "out")
+    assert (tmp_path / "out").read_bytes() == b"abab"
