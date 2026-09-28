@@ -64,6 +64,30 @@ export function useContexts() {
   });
 }
 
+function invalidateContexts(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ['vault', 'contexts'] });
+  qc.invalidateQueries({ queryKey: ['connectors'] });
+  qc.invalidateQueries({ queryKey: ['connector'] });
+  qc.invalidateQueries({ queryKey: ['projects'] });
+}
+
+export function useCreateContext() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => post<VaultContexts>('/v1/vault/contexts', { name }),
+    onSuccess: () => invalidateContexts(qc),
+  });
+}
+
+export function useArchiveContext() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) =>
+      del<VaultContexts>('/v1/vault/contexts/' + encodeURIComponent(name)),
+    onSuccess: () => invalidateContexts(qc),
+  });
+}
+
 export function useVaultGraph() {
   return useQuery({
     queryKey: ['vault', 'graph'],
