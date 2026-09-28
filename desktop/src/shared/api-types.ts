@@ -11,6 +11,7 @@ export interface VaultStats {
 
 export interface VaultContexts {
   contexts: string[];
+  archived?: string[];
 }
 
 export type ConnectorState = 'on' | 'off' | 'err';

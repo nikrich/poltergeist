@@ -10,7 +10,9 @@ import { McpServersPanel } from '../components/McpServersPanel';
 import { ProviderSwitcher } from '../components/ProviderSwitcher';
 import { useSettings } from '../stores/settings';
 import {
+  useArchiveContext,
   useContexts,
+  useCreateContext,
   useCreateProject,
   useLlmProviders,
   useRecheckLlmProviders,
@@ -119,7 +121,12 @@ export function SettingsScreen() {
           {section === 'privacy' && <PrivacySettings />}
           {section === 'meeting' && <MeetingSettings />}
           {section === 'background' && <BackgroundSettings />}
-          {section === 'projects' && <ProjectsSettings />}
+          {section === 'projects' && (
+            <>
+              <ContextsSettings />
+              <ProjectsSettings />
+            </>
+          )}
           {section === 'chat' && <McpServersPanel />}
           {section === 'hotkeys' && <HotkeySettings />}
           {section === 'account' && <AccountSettings />}
@@ -869,6 +876,115 @@ function AboutSettings() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+export function ContextsSettings() {
+  const contexts = useContexts();
+  const create = useCreateContext();
+  const archive = useArchiveContext();
+  const [name, setName] = useState('');
+
+  const active = contexts.data?.contexts ?? [];
+  const archived = contexts.data?.archived ?? [];
+
+  const submit = () => {
+    const trimmed = name.trim().toLowerCase();
+    if (!trimmed || create.isPending) return;
+    create.mutate(trimmed, {
+      onSuccess: () => setName(''),
+      onError: (e) => toast.error(e instanceof Error ? e.message : 'create failed'),
+    });
+  };
+
+  const handleArchive = (ctx: string) => {
+    if (
+      !window.confirm(
+        `Archive ${ctx}? Its notes stay; accounts and projects pointing at it stop routing there until you restore it.`,
+      )
+    ) {
+      return;
+    }
+    archive.mutate(ctx, {
+      onError: (e) => toast.error(e instanceof Error ? e.message : 'archive failed'),
+    });
+  };
+
+  const handleRestore = (ctx: string) => {
+    create.mutate(ctx, {
+      onError: (e) => toast.error(e instanceof Error ? e.message : 'restore failed'),
+    });
+  };
+
+  return (
+    <div>
+      <SectionHeader
+        title="contexts"
+        sub="top-level areas that route your notes, accounts, and projects."
+      />
+
+      <div className="mb-5 flex flex-col gap-2">
+        {active.map((c) => (
+          <div
+            key={c}
+            className="flex items-center gap-3 rounded-sm px-3 py-2 hover:bg-vellum"
+          >
+            <div className="min-w-0 flex-1 text-13 text-ink-0">{c}</div>
+            <button
+              type="button"
+              aria-label={`archive ${c}`}
+              className="text-11 text-ink-2 hover:text-ink-0"
+              onClick={() => handleArchive(c)}
+            >
+              archive
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="mb-6 flex gap-2 rounded-md border border-hairline bg-vellum p-4">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') submit();
+          }}
+          placeholder="context name…"
+          aria-label="new context name"
+          className="flex-1 rounded-sm border border-hairline-2 bg-paper px-2 py-[6px] text-12 text-ink-0 placeholder:text-ink-3 focus:outline-none"
+        />
+        <Btn
+          variant="primary"
+          size="sm"
+          disabled={!name.trim() || create.isPending}
+          onClick={submit}
+        >
+          add context
+        </Btn>
+      </div>
+
+      {archived.length > 0 && (
+        <div className="mb-5">
+          <Eyebrow className="mb-2">archived</Eyebrow>
+          {archived.map((c) => (
+            <div
+              key={c}
+              className="flex items-center gap-3 rounded-sm px-3 py-2 opacity-50 hover:bg-vellum hover:opacity-100"
+            >
+              <div className="min-w-0 flex-1 text-13 text-ink-0">{c}</div>
+              <button
+                type="button"
+                aria-label={`restore ${c}`}
+                className="text-11 text-ink-2 hover:text-ink-0"
+                onClick={() => handleRestore(c)}
+              >
+                restore
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

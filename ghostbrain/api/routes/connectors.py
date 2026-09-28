@@ -1,9 +1,11 @@
-"""GET /v1/connectors, GET /v1/connectors/{id}, POST sync endpoints."""
+"""GET /v1/connectors, GET /v1/connectors/{id}, POST sync endpoints, PATCH accounts."""
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import asdict
 
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from ghostbrain.api.models.connector import Connector, ConnectorDetail
 from ghostbrain.api.repo.connectors import get_connector, list_connectors
@@ -56,3 +58,45 @@ async def sync_all(request: Request) -> dict:
         )
     results = await sched.run_all()
     return {name: asdict(r) for name, r in results.items()}
+
+
+class AccountPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    context: str | None = None
+    enabled: bool | None = None
+
+    @model_validator(mode="after")
+    def _enabled_not_null(self) -> AccountPatch:
+        # `context: null` unassigns the context, but `enabled` is a bool
+        # flag with no "unset" meaning — omit it to leave it unchanged,
+        # never send it explicitly as null.
+        if "enabled" in self.model_fields_set and self.enabled is None:
+            raise ValueError("enabled must not be null; omit it to leave it unchanged")
+        return self
+
+
+@router.patch("/{connector_id}/accounts/{account_id}")
+def update_account(connector_id: str, account_id: str, body: AccountPatch) -> dict:
+    from ghostbrain import accounts, accounts_health
+
+    acct_connector = accounts.SOURCE_TO_ACCOUNT_CONNECTOR.get(connector_id)
+    if acct_connector is None:
+        raise HTTPException(status_code=404, detail=f"Connector has no accounts: {connector_id}")
+    acc = accounts.get_account(acct_connector, account_id)
+    if acc is None:
+        raise HTTPException(status_code=404, detail=f"Account not found: {account_id}")
+    changes = body.model_dump(exclude_unset=True)
+    updated = dataclasses.replace(acc, **changes)
+    try:
+        # Only validate the context when the request sets one: toggling
+        # `enabled` must still work on an account whose context was archived.
+        accounts.upsert_account(updated, check_context="context" in changes)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    persisted = accounts.get_account(acct_connector, updated.id)
+    return {
+        "id": persisted.id,
+        "context": persisted.context,
+        "enabled": persisted.enabled,
+        "health": accounts_health.health_for(connector_id, persisted.id),
+    }

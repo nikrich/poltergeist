@@ -64,6 +64,30 @@ export function useContexts() {
   });
 }
 
+function invalidateContexts(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ['vault', 'contexts'] });
+  qc.invalidateQueries({ queryKey: ['connectors'] });
+  qc.invalidateQueries({ queryKey: ['connector'] });
+  qc.invalidateQueries({ queryKey: ['projects'] });
+}
+
+export function useCreateContext() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => post<VaultContexts>('/v1/vault/contexts', { name }),
+    onSuccess: () => invalidateContexts(qc),
+  });
+}
+
+export function useArchiveContext() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) =>
+      del<VaultContexts>('/v1/vault/contexts/' + encodeURIComponent(name)),
+    onSuccess: () => invalidateContexts(qc),
+  });
+}
+
 export function useVaultGraph() {
   return useQuery({
     queryKey: ['vault', 'graph'],
@@ -719,6 +743,30 @@ export function useCancelAuth() {
   return useMutation({
     mutationFn: (a: { id: string; sessionId: string }) =>
       post(`/v1/connectors/${a.id}/auth/cancel`, { session_id: a.sessionId }),
+  });
+}
+
+export function useUpdateAccount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (a: {
+      connectorId: string;
+      accountId: string;
+      context?: string | null;
+      enabled?: boolean;
+    }) => {
+      const body: { context?: string | null; enabled?: boolean } = {};
+      if (a.context !== undefined) body.context = a.context;
+      if (a.enabled !== undefined) body.enabled = a.enabled;
+      return patch(
+        `/v1/connectors/${a.connectorId}/accounts/${encodeURIComponent(a.accountId)}`,
+        body,
+      );
+    },
+    onSettled: (_data, _err, a) => {
+      qc.invalidateQueries({ queryKey: ['connector', a.connectorId] });
+      qc.invalidateQueries({ queryKey: ['connectors'] });
+    },
   });
 }
 

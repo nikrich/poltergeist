@@ -14,7 +14,27 @@ Every Poltergeist connector follows the same shape: **create a credential → au
 
 ## Multiple accounts and contexts
 
-Every account-bearing connector (`gmail`, `calendar_google`, `slack`, `jira`, `confluence`, `github`, `microsoft`) supports any number of accounts. Per-account data — which accounts are connected, and which context each routes to — lives in one app-owned file, `<vault>/90-meta/accounts.yaml`, seeded once from any legacy per-account `routing.yaml` blocks the first time it's read:
+Every account-bearing connector (`gmail`, `calendar_google`, `slack`, `jira`, `confluence`, `github`, `microsoft`) supports any number of accounts. Manage contexts and accounts through the app or by hand-editing files.
+
+### Managing contexts in the app
+
+**Create, archive, and restore contexts** in Settings → Projects (the contexts section at the top). Contexts are permanent fixtures in your vault — names start with a letter or digit, use lowercase letters/digits/hyphens, and max 40 characters; names YAML would read as a number, boolean or date (e.g. `2024`, `yes`, `off`) are rejected — add a letter. Archived contexts keep their notes intact; accounts and projects pointing at them stop routing there until you restore them. Archiving does not touch explicit `routing.yaml` rules (sender domains, labels, GitHub orgs, Confluence spaces, Claude Code paths) — any that name the archived context still file notes there until you edit them. The app rewrites the `contexts:` and `archived_contexts:` lists in `<vault>/90-meta/routing.yaml`, preserving all other content (including comments).
+
+> **Comments caveat (pre-existing).** Some connect flows — Joplin, Atlassian (Confluence spaces), Claude Code, and the Microsoft app config — rewrite the whole of `routing.yaml` and drop its comments. Keep a copy if you rely on them.
+
+### Managing accounts in the app
+
+Each connector's detail panel lists all registered accounts with health status (`syncing`, `needs re-auth`, `error`, or `not synced yet`). For each account you can:
+
+- **Assign or change its context** — pick one from your contexts, or leave unassigned (routes through the LLM).
+- **Enable / disable** — disabled accounts don't sync but remain registered.
+- **Reauthorize** — re-run the auth flow if the account needs re-auth.
+- **Remove** — unregister the account from `accounts.yaml` and delete its stored credentials (token files, the MSAL account, or the Atlassian API token — unless the other Atlassian app still uses that site). Re-adding it means signing in again.
+- **Add another account** — connect a new account of the same connector type (e.g., a second Gmail account, a different Slack workspace).
+
+### Per-account data file
+
+Per-account configuration lives in `<vault>/90-meta/accounts.yaml`, which you can also edit by hand. The file is seeded once from any legacy per-account `routing.yaml` blocks the first time it's read:
 
 ```yaml
 version: 1

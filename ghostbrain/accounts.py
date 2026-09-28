@@ -134,8 +134,13 @@ def account_connector_for_event(event: dict) -> str | None:
     return SOURCE_TO_ACCOUNT_CONNECTOR.get(source)
 
 
-def upsert_account(acc: Account, *, root: Path | None = None) -> Account:
-    return _upsert(acc, root=root, check_context=True)
+def upsert_account(
+    acc: Account, *, root: Path | None = None, check_context: bool = True,
+) -> Account:
+    """Insert or replace ``acc``. ``check_context=False`` skips the
+    "context is in contexts()" check — for updates that don't touch the
+    context, so an account whose context was archived stays editable."""
+    return _upsert(acc, root=root, check_context=check_context)
 
 
 def _upsert(acc: Account, *, root: Path | None, check_context: bool) -> Account:
