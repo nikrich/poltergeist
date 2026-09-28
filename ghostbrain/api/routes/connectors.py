@@ -11,6 +11,9 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from ghostbrain import accounts
 from ghostbrain.api.models.connector import Connector, ConnectorDetail
 from ghostbrain.api.repo.connectors import get_connector, list_connectors
+from ghostbrain.connectors.gdrive import backfill as gdrive_backfill
+from ghostbrain.connectors.gdrive.auth import GdriveAuthError
+from ghostbrain.connectors.gdrive.drive import DriveApiDisabled
 from ghostbrain.connectors.gmail import backfill as gmail_backfill
 from ghostbrain.connectors.gmail.auth import GmailAuthError
 
@@ -137,6 +140,71 @@ def resume_backfill(account_id: str) -> dict:
 def delete_backfill(account_id: str) -> dict:
     _gmail_account_or_404(account_id)
     gmail_backfill.cancel(account_id)
+    return {"ok": True}
+
+
+def _gdrive_account_or_404(account_id: str) -> None:
+    if accounts.get_account("gdrive", account_id) is None:
+        raise HTTPException(status_code=404, detail=f"Account not found: {account_id}")
+
+
+@router.get("/gdrive/accounts/{account_id}/backfill")
+def get_gdrive_backfill(account_id: str) -> dict:
+    _gdrive_account_or_404(account_id)
+    state = gdrive_backfill.get(account_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="No backfill for this account")
+    return state
+
+
+@router.get("/gdrive/accounts/{account_id}/backfill/estimate")
+def gdrive_backfill_estimate(account_id: str, years: int = Query(..., ge=1, le=10)) -> dict:
+    _gdrive_account_or_404(account_id)
+    since = _since_for_years(years)
+    try:
+        result = gdrive_backfill.estimate(account_id, since=since)
+    except GdriveAuthError as e:
+        raise HTTPException(status_code=409, detail=gdrive_backfill.AUTH_ERROR_MESSAGE) from e
+    except DriveApiDisabled as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    return {**result, "since": since.isoformat()}
+
+
+@router.post("/gdrive/accounts/{account_id}/backfill", status_code=201)
+def start_gdrive_backfill(account_id: str, body: BackfillStartBody, request: Request) -> dict:
+    sched = getattr(request.app.state, "scheduler", None)
+    if sched is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Backfill needs the in-app scheduler. Enable 'Run scheduler in-app' in Settings.",
+        )
+    _gdrive_account_or_404(account_id)
+    gdrive_backfill.start(account_id, since=_since_for_years(body.years))
+    return gdrive_backfill.get(account_id)
+
+
+@router.post("/gdrive/accounts/{account_id}/backfill/pause")
+def pause_gdrive_backfill(account_id: str) -> dict:
+    _gdrive_account_or_404(account_id)
+    state = gdrive_backfill.pause(account_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="No backfill for this account")
+    return state
+
+
+@router.post("/gdrive/accounts/{account_id}/backfill/resume")
+def resume_gdrive_backfill(account_id: str) -> dict:
+    _gdrive_account_or_404(account_id)
+    state = gdrive_backfill.resume(account_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="No backfill for this account")
+    return state
+
+
+@router.delete("/gdrive/accounts/{account_id}/backfill")
+def delete_gdrive_backfill(account_id: str) -> dict:
+    _gdrive_account_or_404(account_id)
+    gdrive_backfill.cancel(account_id)
     return {"ok": True}
 
 
