@@ -138,9 +138,7 @@ describe('ConnectorAccounts', () => {
 
   it('toggles enabled off', async () => {
     renderAccounts(accounts);
-    const row = screen.getByTestId('account-row-a@x.com');
-    const toggle = row.querySelector('button[aria-pressed]') as HTMLButtonElement;
-    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole('button', { name: 'enabled for a@x.com' }));
     await waitFor(() =>
       expect(vi.mocked(client.patch)).toHaveBeenCalledWith(
         '/v1/connectors/gmail/accounts/a%40x.com',

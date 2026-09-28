@@ -933,6 +933,7 @@ export function ContextsSettings() {
             <div className="min-w-0 flex-1 text-13 text-ink-0">{c}</div>
             <button
               type="button"
+              aria-label={`archive ${c}`}
               className="text-11 text-ink-2 hover:text-ink-0"
               onClick={() => handleArchive(c)}
             >
@@ -950,6 +951,7 @@ export function ContextsSettings() {
             if (e.key === 'Enter') submit();
           }}
           placeholder="context name…"
+          aria-label="new context name"
           className="flex-1 rounded-sm border border-hairline-2 bg-paper px-2 py-[6px] text-12 text-ink-0 placeholder:text-ink-3 focus:outline-none"
         />
         <Btn
@@ -973,6 +975,7 @@ export function ContextsSettings() {
               <div className="min-w-0 flex-1 text-13 text-ink-0">{c}</div>
               <button
                 type="button"
+                aria-label={`restore ${c}`}
                 className="text-11 text-ink-2 hover:text-ink-0"
                 onClick={() => handleRestore(c)}
               >

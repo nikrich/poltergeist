@@ -1,11 +1,13 @@
 interface Props {
   label?: string;
+  /** Accessible name for the switch when the visible label isn't specific enough. */
+  ariaLabel?: string;
   on: boolean;
   onChange?: (next: boolean) => void;
   disabled?: boolean;
 }
 
-export function Toggle({ label, on, onChange, disabled }: Props) {
+export function Toggle({ label, ariaLabel, on, onChange, disabled }: Props) {
   return (
     <label
       className={`flex items-center gap-[10px] text-12 text-ink-1 ${disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
@@ -15,6 +17,7 @@ export function Toggle({ label, on, onChange, disabled }: Props) {
         onClick={() => !disabled && onChange?.(!on)}
         disabled={disabled}
         aria-pressed={on}
+        aria-label={ariaLabel}
         className={`relative h-4 w-7 flex-shrink-0 rounded-pill border border-hairline-2 transition-colors duration-[120ms] ${on ? 'bg-neon' : 'bg-fog'} ${disabled ? '' : 'cursor-pointer'}`}
       >
         <span

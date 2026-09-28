@@ -49,7 +49,7 @@ describe('ContextsSettings', () => {
   it('creates a context from the form, lower-cased', async () => {
     renderSection();
     await screen.findByText('work');
-    fireEvent.change(screen.getByPlaceholderText(/context name/i), {
+    fireEvent.change(screen.getByLabelText('new context name'), {
       target: { value: 'AgencyX' },
     });
     fireEvent.click(screen.getByRole('button', { name: /add context/i }));
@@ -64,8 +64,7 @@ describe('ContextsSettings', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     renderSection();
     await screen.findByText('work');
-    const archiveButtons = screen.getAllByRole('button', { name: /archive/i });
-    fireEvent.click(archiveButtons[0]!);
+    fireEvent.click(screen.getByRole('button', { name: 'archive work' }));
     await waitFor(() =>
       expect(vi.mocked(client.del)).toHaveBeenCalledWith('/v1/vault/contexts/work'),
     );
@@ -75,8 +74,7 @@ describe('ContextsSettings', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(false);
     renderSection();
     await screen.findByText('work');
-    const archiveButtons = screen.getAllByRole('button', { name: /archive/i });
-    fireEvent.click(archiveButtons[0]!);
+    fireEvent.click(screen.getByRole('button', { name: 'archive work' }));
     await waitFor(() => expect(window.confirm).toHaveBeenCalled());
     expect(vi.mocked(client.del)).not.toHaveBeenCalled();
   });
@@ -84,7 +82,7 @@ describe('ContextsSettings', () => {
   it('restores an archived context', async () => {
     renderSection();
     await screen.findByText('agencyx');
-    fireEvent.click(screen.getByRole('button', { name: /restore/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'restore agencyx' }));
     await waitFor(() =>
       expect(vi.mocked(client.post)).toHaveBeenCalledWith('/v1/vault/contexts', {
         name: 'agencyx',
@@ -103,13 +101,13 @@ describe('ContextsSettings', () => {
       </QueryClientProvider>,
     );
     await screen.findByText('work');
-    fireEvent.change(screen.getByPlaceholderText(/context name/i), {
+    fireEvent.change(screen.getByLabelText('new context name'), {
       target: { value: 'needs_review' },
     });
     fireEvent.click(screen.getByRole('button', { name: /add context/i }));
     await waitFor(() =>
       expect(useToasts.getState().toasts.some((t) => /reserved name/.test(t.message))).toBe(true),
     );
-    expect(screen.getByPlaceholderText(/context name/i)).toHaveValue('needs_review');
+    expect(screen.getByLabelText('new context name')).toHaveValue('needs_review');
   });
 });

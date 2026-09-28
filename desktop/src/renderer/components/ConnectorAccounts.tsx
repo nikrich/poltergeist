@@ -122,6 +122,7 @@ export function ConnectorAccounts({ connector, onAddAccount, onReauth }: Props) 
               </select>
               <Toggle
                 label="enabled"
+                ariaLabel={`enabled for ${a.id}`}
                 on={a.enabled}
                 onChange={(enabled) =>
                   update.mutate(
