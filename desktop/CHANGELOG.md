@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.9.0](https://github.com/nikrich/poltergeist/compare/v1.8.0...v1.9.0) (2026-09-28)
+
+
+### Features
+
+* feat(desktop): gmail backfill dialog and progress in connector accounts
+* feat(api): gmail backfill routes + scheduler tick
+* feat(gmail): resumable backfill job for threads you took part in
+
+### Bug Fixes
+
+* fix(gmail): budget stop no longer clears the AI-routing pause error
+* fix(desktop): backfill dialog a11y, re-auth from estimate, honest pace copy
+* fix: atomic google token refresh writes; 404 on backfill delete for unknown account
+* fix(gmail): backfill tick guards — rejected queries, restart race, time budget, AI routing pause
+* fix(desktop): backfill estimate copy and no pending flash
+* fix(gmail): treat 403 rate/quota limits as transient in backfill
+* fix(gmail): backfill never stalls on auth/transient errors or loses state
+
 ## [1.8.0](https://github.com/nikrich/poltergeist/compare/v1.7.0...v1.8.0) (2026-09-28)
 
 
