@@ -125,6 +125,30 @@ describe('GmailBackfill', () => {
     expect(paths.some((p) => p.includes('/backfill'))).toBe(false);
   });
 
+  it('renders nothing for the backfill area while the initial status fetch is pending', async () => {
+    let rejectBackfill: (e: unknown) => void = () => {};
+    const pending = new Promise((_resolve, reject) => {
+      rejectBackfill = reject;
+    });
+    vi.mocked(client.get).mockImplementation(((path: string) => {
+      if (path === '/v1/vault/contexts') return Promise.resolve(contextsResponse);
+      if (path === BASE) return pending;
+      return Promise.resolve({});
+    }) as never);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <ConnectorAccounts connector={detail('gmail')} onAddAccount={vi.fn()} onReauth={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    await screen.findByText(ACCOUNT);
+    expect(screen.queryByRole('button', { name: `backfill ${ACCOUNT}` })).toBeNull();
+    expect(screen.queryByTestId(`backfill-${ACCOUNT}`)).toBeNull();
+
+    rejectBackfill(new client.ApiError('no backfill', 404));
+    expect(await screen.findByRole('button', { name: `backfill ${ACCOUNT}` })).toBeTruthy();
+  });
+
   it('opens the dialog with an estimate and starts a 3-year backfill', async () => {
     setup({});
     fireEvent.click(await screen.findByRole('button', { name: `backfill ${ACCOUNT}` }));
@@ -135,6 +159,14 @@ describe('GmailBackfill', () => {
     expect(vi.mocked(client.get)).toHaveBeenCalledWith(`${BASE}/estimate?years=3`, expect.anything());
     fireEvent.click(screen.getByRole('button', { name: /start backfill/i }));
     await waitFor(() => expect(vi.mocked(client.post)).toHaveBeenCalledWith(BASE, { years: 3 }));
+  });
+
+  it('shows an "under an hour" estimate below pace instead of "about 0 h"', async () => {
+    setup({ estimate: () => ({ threads: 500, since: '2025-09-28' }) });
+    fireEvent.click(await screen.findByRole('button', { name: `backfill ${ACCOUNT}` }));
+    expect(
+      await screen.findByText('~500 threads you took part in · under an hour at the current pace'),
+    ).toBeTruthy();
   });
 
   it('refetches the estimate when the years change', async () => {

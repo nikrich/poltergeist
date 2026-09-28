@@ -41,6 +41,11 @@ export function GmailBackfill({ accountId, onReauth }: Props) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const backfill = useGmailBackfill(accountId);
   const action = useBackfillAction();
+
+  // First load: don't flash the "backfill…" button before we know whether a
+  // backfill is already running for this account.
+  if (backfill.isPending) return null;
+
   // Guard against malformed payloads so an odd response never breaks the row.
   const state: BackfillState | null = backfill.data?.status ? backfill.data : null;
 
@@ -194,7 +199,11 @@ function BackfillDialog({ accountId, onClose }: DialogProps) {
   else if (estimate.isError) estimateLine = errMessage(estimate.error, 'estimate unavailable');
   else {
     const n = estimate.data.threads;
-    estimateLine = `~${fmt(n)} threads you took part in · about ${Math.ceil(n / PACE_PER_HOUR)} h at the current pace`;
+    const pace =
+      n < PACE_PER_HOUR
+        ? 'under an hour at the current pace'
+        : `about ${Math.ceil(n / PACE_PER_HOUR)} h at the current pace`;
+    estimateLine = `~${fmt(n)} threads you took part in · ${pace}`;
   }
 
   return (
