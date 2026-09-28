@@ -1,8 +1,9 @@
 """Google Drive backfill — index past files the user owns or edited.
 
 One state file per account at <state>/gdrive_backfill.<slug>.json; the in-app
-scheduler calls run_tick() every 2 minutes and each tick processes one small
-page for one running backfill, newest month first (by ``modifiedTime``).
+scheduler calls run_tick() every 2 minutes and each tick works through one
+page of up to 100 listed files for one running backfill, newest month first
+(by ``modifiedTime``), processing at most 25 of the user's own files.
 Files go through ``ingest.ingest_file`` (the same path as the hourly sync),
 which upserts: new files become notes, changed ones are rewritten in place,
 unchanged ones are skipped. Imported notes are never removed by cancel.
@@ -29,7 +30,8 @@ from ghostbrain.paths import state_dir
 
 log = logging.getLogger("ghostbrain.connectors.gdrive.backfill")
 
-BATCH_SIZE = 25
+BATCH_SIZE = 25  # the user's files (owned or edited) processed per tick
+LIST_PAGE_SIZE = 100  # files listed per page; most may be other people's
 MAX_YEARS = 10
 ESTIMATE_CAP = 5000
 ESTIMATE_PAGE_SIZE = 1000
@@ -256,6 +258,10 @@ def estimate(account: str, *, since: date) -> dict:
 def run_tick(*, batch_size: int = BATCH_SIZE) -> dict:
     """Process one page for the running backfill updated least recently.
 
+    Lists ``LIST_PAGE_SIZE`` files and processes at most ``batch_size`` of
+    the user's own ones; files that aren't theirs cost nothing, so a page
+    of mostly shared files no longer takes a whole tick for a handful.
+
     Never raises for Drive/network trouble: auth failures and a disabled API
     park the backfill in ``error``; transient failures record ``error`` (type
     name only), keep it ``running`` and leave cursor/pageToken/pageDone alone
@@ -264,8 +270,9 @@ def run_tick(*, batch_size: int = BATCH_SIZE) -> dict:
     Every write is tied to the ``startedAt`` of the state this tick picked:
     once the backfill was cancelled (and maybe restarted) the tick ends
     without touching the new state. The tick stops taking new files after
-    ``TICK_BUDGET_SECONDS``; the handled file ids are kept in ``pageDone``
-    and cursor/pageToken only advance once the whole page was handled."""
+    ``TICK_BUDGET_SECONDS`` or after ``batch_size`` files; the handled file
+    ids are kept in ``pageDone`` and cursor/pageToken only advance once the
+    whole page was handled."""
     t0 = _monotonic()
     state = _pick_next()
     if state is None:
@@ -306,7 +313,7 @@ def run_tick(*, batch_size: int = BATCH_SIZE) -> dict:
             after=_after(max(first, since)),
             before=_midnight_utc(_next_month(first)),
             page_token=page_token,
-            page_size=batch_size,
+            page_size=LIST_PAGE_SIZE,
         )
     except Exception as e:  # noqa: BLE001 — classified below
         status = _rejected_status(e)
@@ -345,7 +352,8 @@ def run_tick(*, batch_size: int = BATCH_SIZE) -> dict:
                 fields.update(status="error", error=ROUTING_ERROR_MESSAGE)
         remaining = i + 1 < len(todo)
         over_budget = remaining and _monotonic() - t0 >= TICK_BUDGET_SECONDS
-        if over_budget:
+        batch_full = remaining and i + 1 >= batch_size
+        if over_budget or batch_full:
             fields.setdefault("error", None)  # never clobber the routing pause
         new = update(_incr={outcome: 1}, **fields)
         if new is None:
@@ -353,9 +361,9 @@ def run_tick(*, batch_size: int = BATCH_SIZE) -> dict:
         state = new
         if state.get("status") != "running":
             return summary(state)
-        if over_budget:
-            log.info("gdrive backfill %s: tick budget used; continuing next tick",
-                     account)
+        if over_budget or batch_full:
+            log.info("gdrive backfill %s: %s; continuing the page next tick", account,
+                     "tick budget used" if over_budget else f"{batch_size} files processed")
             return summary(state)
 
     fields = {"error": None, "pageDone": []}

@@ -117,6 +117,7 @@ def window(call: dict) -> str:
 
 def test_start_creates_running_state_and_is_idempotent():
     assert backfill.BATCH_SIZE == 25 and backfill.MAX_YEARS == 10
+    assert backfill.LIST_PAGE_SIZE == 100
     assert backfill.ESTIMATE_CAP == 5000 and backfill.ROUTING_FALLBACK_LIMIT == 5
     st = backfill.start(ACC, since=date(2025, 9, 28))
     assert st["status"] == "running" and st["account"] == ACC
@@ -164,9 +165,10 @@ def test_tick_ingests_batch_and_persists_counts(rec):
     call = d.list_calls[0]
     assert window(call) == ("modifiedTime > '2026-08-31T23:59:59' "
                             "and modifiedTime < '2026-10-01T00:00:00'")
-    assert call["pageSize"] == 25 and call["pageToken"] is None
+    assert call["pageSize"] == 100 and call["pageToken"] is None
     st = backfill.get(ACC)
-    assert st["imported"] == 25 and st["pageToken"] == "25" and st["pageDone"] == []
+    # 25 processed caps the tick mid-page; the page is continued next tick
+    assert st["imported"] == 25 and st["pageToken"] is None and len(st["pageDone"]) == 25
 
 
 def test_months_walk_back_with_paging_until_done(rec):
@@ -175,7 +177,7 @@ def test_months_walk_back_with_paging_until_done(rec):
     out = tick()
     assert out["cursor"] == "2026-09"
     out = tick()
-    assert d.list_calls[1]["pageToken"] == "25"
+    assert d.list_calls[1]["pageToken"] is None  # same page, continued
     assert out["imported"] == 5 and out["cursor"] == "2026-08"
     assert backfill.get(ACC)["pageToken"] is None
     out = tick()
@@ -371,7 +373,8 @@ def test_transient_error_moves_round_robin_on(rec):
     assert out["account"] == ACC and out["imported"] == 2
 
 
-def test_400_with_page_token_clears_token_and_redoes_month(rec):
+def test_400_with_page_token_clears_token_and_redoes_month(rec, monkeypatch):
+    monkeypatch.setattr(backfill, "LIST_PAGE_SIZE", 25)
     backfill.start(ACC, since=date(2026, 9, 1))
     d = fake(month_files(("2026-09", 30)))
     tick()
@@ -405,7 +408,8 @@ def test_network_error_from_ingest_is_transient_and_keeps_file(rec, exc):
 
 
 @pytest.mark.parametrize("reason", ["insufficientPermissions", "forbidden"])
-def test_403_permission_on_list_needs_reauth(rec, reason):
+def test_403_permission_on_list_needs_reauth(rec, reason, monkeypatch):
+    monkeypatch.setattr(backfill, "LIST_PAGE_SIZE", 25)
     backfill.start(ACC, since=date(2026, 9, 1))
     d = fake(month_files(("2026-09", 30)))
     tick()  # a page token is set: 403 must still mean re-auth, not a token reset
@@ -522,12 +526,50 @@ def test_tick_budget_stops_mid_page_and_next_tick_continues(rec, monkeypatch):
     rec.hook = None
     out = tick()
     assert d.list_calls[1]["pageToken"] is None
-    assert out["imported"] == 22
+    assert out["imported"] == 25  # the per-tick cap, not the budget, stops it
     st = backfill.get(ACC)
-    assert st["pageToken"] == "25" and st["imported"] == 25 and st["pageDone"] == []
+    assert st["pageToken"] is None and st["imported"] == 28 and len(st["pageDone"]) == 28
+    out = tick()
+    assert d.list_calls[2]["pageToken"] is None
+    assert out["imported"] == 2 and out["cursor"] == "2026-08"
+    assert backfill.get(ACC)["pageDone"] == []
+    assert len(rec.ids) == len(set(rec.ids)) == 30
+
+
+def test_page_of_mostly_other_peoples_files_is_handled_in_one_tick(rec):
+    backfill.start(ACC, since=date(2026, 8, 1))
+    theirs = [drive_file(f"theirs-{i:02d}", modified=f"2026-09-20T10:{i:02d}:00.000Z",
+                         owned=False, modified_by_me=False) for i in range(60)]
+    d = fake(theirs + month_files(("2026-09", 5)))
     out = tick()
     assert out["imported"] == 5 and out["cursor"] == "2026-08"
-    assert len(rec.ids) == len(set(rec.ids)) == 30
+    assert sorted(rec.ids) == [f"2026-09-{i:02d}" for i in range(5)]
+    assert len(d.list_calls) == 1 and d.list_calls[0]["pageSize"] == 100
+
+
+def test_processed_cap_stops_mid_page_and_next_tick_continues(rec):
+    backfill.start(ACC, since=date(2026, 9, 1))
+    d = fake(month_files(("2026-09", 40))
+             + [drive_file(f"theirs-{i}", modified="2026-09-20T00:00:00.000Z",
+                           owned=False, modified_by_me=False) for i in range(10)])
+    out = tick()
+    assert out["imported"] == 25 and out["status"] == "running" and out["cursor"] == "2026-09"
+    st = backfill.get(ACC)
+    assert st["pageToken"] is None and len(st["pageDone"]) == 25 and st["error"] is None
+    out = tick()
+    assert d.list_calls[1]["pageToken"] is None
+    assert out["imported"] == 15 and out["status"] == "done"
+    assert len(rec.ids) == len(set(rec.ids)) == 40
+    assert backfill.get(ACC)["pageDone"] == []
+
+
+def test_batch_size_caps_processed_files(rec):
+    backfill.start(ACC, since=date(2026, 9, 1))
+    fake(month_files(("2026-09", 10)))
+    assert backfill.run_tick(batch_size=4)["imported"] == 4
+    assert backfill.run_tick(batch_size=4)["imported"] == 4
+    out = backfill.run_tick(batch_size=4)
+    assert out["imported"] == 2 and out["status"] == "done"
 
 
 def test_tick_budget_on_last_file_advances_page(rec, monkeypatch):
