@@ -7,11 +7,8 @@ Sheets APIs. Tokens live at ``<state>/gdrive.<slug>.token`` per account.
 
 from __future__ import annotations
 
-import logging
 import os
 from pathlib import Path
-
-log = logging.getLogger("ghostbrain.connectors.gdrive.auth")
 
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 
@@ -45,6 +42,8 @@ def load_credentials(account_email: str):
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
 
+    from ghostbrain.connectors.gmail.auth import _write_token_atomic
+
     tpath = token_path(account_email)
     if not tpath.exists():
         raise GdriveAuthError(
@@ -59,8 +58,7 @@ def load_credentials(account_email: str):
                 raise GdriveAuthError(
                     f"Refresh token rejected for {account_email}: {e}. Reauthorize."
                 ) from e
-            tpath.write_text(creds.to_json(), encoding="utf-8")
-            tpath.chmod(0o600)
+            _write_token_atomic(tpath, creds.to_json())
         else:
             raise GdriveAuthError(
                 f"Credentials invalid for {account_email} and no refresh token. Reauthorize."
@@ -71,6 +69,8 @@ def load_credentials(account_email: str):
 def run_oauth_flow(account_email: str) -> Path:
     """Browser consent for the Drive read scope; saves and returns the token path."""
     from google_auth_oauthlib.flow import InstalledAppFlow
+
+    from ghostbrain.connectors.gmail.auth import _write_token_atomic
 
     client_path = oauth_client_path()
     if not client_path.exists():
@@ -85,6 +85,5 @@ def run_oauth_flow(account_email: str) -> Path:
     )
     tpath = token_path(account_email)
     tpath.parent.mkdir(parents=True, exist_ok=True)
-    tpath.write_text(creds.to_json(), encoding="utf-8")
-    tpath.chmod(0o600)
+    _write_token_atomic(tpath, creds.to_json())
     return tpath
