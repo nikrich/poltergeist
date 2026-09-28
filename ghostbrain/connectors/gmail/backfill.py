@@ -355,7 +355,8 @@ def run_tick(
         remaining = i + 1 < len(todo)
         over_budget = remaining and _monotonic() - t0 >= TICK_BUDGET_SECONDS
         if over_budget:
-            fields.update(pageDone=done_ids, error=None)
+            fields["pageDone"] = done_ids
+            fields.setdefault("error", None)  # never clobber the routing pause
         new = update(_incr={outcome: 1}, **fields)
         if new is None:
             return summary(None)

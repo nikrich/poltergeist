@@ -861,3 +861,23 @@ def test_path_or_account_routed_needs_review_does_not_count():
 
     out = tick(fake, proc)
     assert out["status"] == "done" and out["imported"] == 8
+
+
+def test_routing_pause_error_survives_budget_stop_on_same_thread(monkeypatch):
+    clock = {"t": 0.0}
+    monkeypatch.setattr(backfill, "_monotonic", lambda: clock["t"])
+    backfill.start(ACC, since=date(2026, 9, 1))
+    fake = FakeGmail(months_of(("2026-09", 10)))
+    inner = Recorder()
+    fallback = fallback_proc(inner)
+
+    def proc(event):
+        clock["t"] += 12.0  # 5th thread lands exactly on the 60 s budget
+        return fallback(event)
+
+    out = tick(fake, proc)
+    assert len(inner.events) == 5
+    assert out["status"] == "error"
+    st = backfill.get(ACC)
+    assert st["status"] == "error"
+    assert st["error"] == backfill.ROUTING_ERROR_MESSAGE
