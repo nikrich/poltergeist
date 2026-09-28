@@ -33,6 +33,7 @@ log = logging.getLogger("ghostbrain.connectors.gmail.backfill")
 QUERY_BASE = "(from:me OR is:starred OR is:important) -category:promotions"
 BATCH_SIZE = 25
 MAX_YEARS = 10
+NUM_RETRIES = 3  # googleapiclient built-in backoff per request
 
 AUTH_ERROR_MESSAGE = "needs re-auth"
 _STATE_PREFIX = "gmail_backfill."
@@ -202,10 +203,15 @@ def cancel(account: str) -> bool:
 def estimate(account: str, *, since: date, service_factory=None) -> int:
     """Gmail's ``resultSizeEstimate`` for the whole backfill range.
     Raises ``GmailAuthError`` when the account needs re-auth."""
-    service = (service_factory or _build_service)(account)
-    resp = service.users().threads().list(
-        userId="me", q=f"{QUERY_BASE} after:{since:%Y/%m/%d}", maxResults=1,
-    ).execute()
+    try:
+        service = (service_factory or _build_service)(account)
+        resp = service.users().threads().list(
+            userId="me", q=f"{QUERY_BASE} after:{since:%Y/%m/%d}", maxResults=1,
+        ).execute(num_retries=NUM_RETRIES)
+    except Exception as e:
+        if _classify(e) == "auth" and not isinstance(e, GmailAuthError):
+            raise GmailAuthError(AUTH_ERROR_MESSAGE) from e
+        raise
     try:
         return int(resp.get("resultSizeEstimate") or 0)
     except (TypeError, ValueError):
@@ -218,7 +224,12 @@ def run_tick(
     service_factory: Callable | None = None,
     process: Callable[[dict], dict] | None = None,
 ) -> dict:
-    """Process one batch for the running backfill updated least recently."""
+    """Process one batch for the running backfill updated least recently.
+
+    Never raises for Gmail/network trouble: auth failures park the backfill
+    in ``error``; transient failures record ``error`` (type name only), keep
+    it ``running`` and leave cursor/pageToken alone so the page is retried
+    (dedup makes that idempotent)."""
     state = _pick_next()
     if state is None:
         return {"skipped": "idle"}
@@ -228,9 +239,18 @@ def run_tick(
 
     counts = {"imported": 0, "skipped": 0, "failed": 0}
 
-    def summary(st: dict) -> dict:
+    def summary(st: dict | None) -> dict:
+        if st is None:  # cancelled mid-tick
+            return {"skipped": "cancelled", "account": account}
         return {"account": account, "status": st.get("status"), **counts,
                 "cursor": st.get("cursor")}
+
+    def gmail_failed(e: Exception) -> dict:
+        if _classify(e) == "auth":
+            return summary(_auth_failed(account))
+        log.warning("gmail backfill %s: transient %s; retrying next tick",
+                    account, type(e).__name__)
+        return summary(_update(account, error=type(e).__name__))
 
     cursor = state["cursor"]
     first = _month_start(cursor)
@@ -241,9 +261,9 @@ def run_tick(
         resp = service.users().threads().list(
             userId="me", q=query, maxResults=batch_size,
             pageToken=state.get("pageToken"),
-        ).execute()
-    except GmailAuthError:
-        return summary(_auth_failed(account, state))
+        ).execute(num_retries=NUM_RETRIES)
+    except Exception as e:  # noqa: BLE001 — classified in gmail_failed
+        return gmail_failed(e)
 
     existing = _existing_gmail_ids()
     denylist = _denylist()
@@ -252,32 +272,40 @@ def run_tick(
         if not tid:
             continue
         try:
-            outcome = _import_thread(service, tid, account, existing, denylist, process)
-        except GmailAuthError:
-            return summary(_auth_failed(account, state))
+            full = service.users().threads().get(
+                userId="me", id=tid, format="full",
+            ).execute(num_retries=NUM_RETRIES)
         except Exception as e:  # noqa: BLE001
+            if _classify(e) != "thread":
+                return gmail_failed(e)
             log.warning("gmail backfill %s: thread %s failed: %s",
                         account, tid, type(e).__name__)
             outcome = "failed"
+        else:
+            try:
+                outcome = _import_thread(full, account, existing, denylist, process)
+            except Exception as e:  # noqa: BLE001
+                log.warning("gmail backfill %s: thread %s failed: %s",
+                            account, tid, type(e).__name__)
+                outcome = "failed"
         counts[outcome] += 1
         new = _update(account, **{outcome: int(state.get(outcome) or 0) + 1})
-        if new is None:  # cancelled mid-tick
-            return summary({**state, "status": "cancelled"})
+        if new is None:
+            return summary(None)
         state = new
         if state.get("status") != "running":
             return summary(state)
 
     token = resp.get("nextPageToken")
+    fields: dict = {"error": None}
     if token:
-        new = _update(account, pageToken=token)
+        fields["pageToken"] = token
     else:
-        prev = _prev_month_key(cursor)
         last_day = _month_start(cursor) - timedelta(days=1)
-        fields: dict = {"cursor": prev, "pageToken": None}
+        fields.update(cursor=_prev_month_key(cursor), pageToken=None)
         if last_day < date.fromisoformat(state["since"]):
             fields["status"] = "done"
-        new = _update(account, **fields)
-    return summary(new if new is not None else {**state, "status": "cancelled"})
+    return summary(_update(account, **fields))
 
 
 # ---------------------------------------------------------------------------
@@ -285,8 +313,29 @@ def run_tick(
 # ---------------------------------------------------------------------------
 
 
-def _import_thread(service, tid, account, existing, denylist, process) -> str:
-    full = service.users().threads().get(userId="me", id=tid, format="full").execute()
+def _classify(exc: BaseException) -> str:
+    """``auth`` (needs re-auth), ``transient`` (retry the page later) or
+    ``thread`` (this one thread is bad; count it and move on)."""
+    # Lazy imports: the google client stack is heavy and only needed on error.
+    from google.auth.exceptions import RefreshError
+    from googleapiclient.errors import HttpError
+    from httplib2 import HttpLib2Error
+
+    if isinstance(exc, (GmailAuthError, RefreshError)):
+        return "auth"
+    if isinstance(exc, HttpError):
+        status = int(getattr(exc, "status_code", None) or getattr(exc.resp, "status", 0) or 0)
+        if status in (401, 403):
+            return "auth"
+        if status == 429 or status >= 500:
+            return "transient"
+        return "thread"
+    if isinstance(exc, (OSError, TimeoutError, HttpLib2Error)):
+        return "transient"
+    return "thread"
+
+
+def _import_thread(full, account, existing, denylist, process) -> str:
     event = _normalize_thread(full, account=account)
     if event is None or _is_denied(event, denylist) or _is_promotional(event):
         return "skipped"
@@ -297,21 +346,28 @@ def _import_thread(service, tid, account, existing, denylist, process) -> str:
     return "imported"
 
 
-def _auth_failed(account: str, state: dict) -> dict:
+def _auth_failed(account: str) -> dict | None:
     log.warning("gmail backfill %s: %s", account, AUTH_ERROR_MESSAGE)
-    new = _update(account, status="error", error=AUTH_ERROR_MESSAGE)
-    return new if new is not None else {**state, "status": "error"}
+    return _update(account, status="error", error=AUTH_ERROR_MESSAGE)
 
 
 def _pick_next() -> dict | None:
     """The running state with the oldest ``updatedAt`` whose account is
-    enabled. States of accounts removed from the registry are deleted."""
+    enabled. States of accounts removed from the registry are deleted —
+    but only when the registry actually loaded: an empty result (missing,
+    unreadable or malformed accounts.yaml) must never wipe backfills."""
+    registry = {
+        a.id.lower(): a
+        for a in accounts.list_accounts("gmail", include_disabled=True)
+    }
+    if not registry:
+        return None
     candidates: list[dict] = []
     for path in sorted(state_dir().glob(f"{_STATE_PREFIX}*.json")):
         st = _read(path)
         if not st or st.get("status") != "running" or not st.get("account"):
             continue
-        acc = accounts.get_account("gmail", st["account"])
+        acc = registry.get(str(st["account"]).lower())
         if acc is None:
             log.info("gmail backfill %s: account removed; cancelling", st["account"])
             with _lock:
@@ -342,6 +398,7 @@ def _frontmatter_id(path: Path) -> str | None:
         text = path.read_text(encoding="utf-8")
     except OSError:
         return None
+    text = text.replace("\r\n", "\n")
     if not text.startswith("---\n"):
         return None
     end = text.find("\n---", 4)

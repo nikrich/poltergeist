@@ -54,12 +54,23 @@ def thread(tid: str, *, sender: str = "bob@ok.com", labels: tuple = ()) -> dict:
     }
 
 
+EXECUTE_RETRIES: list[int] = []
+
+
 class _Req:
     def __init__(self, fn):
         self._fn = fn
 
-    def execute(self):
+    def execute(self, num_retries=0):
+        EXECUTE_RETRIES.append(num_retries)
         return self._fn()
+
+
+def http_error(status: int):
+    import httplib2
+    from googleapiclient.errors import HttpError
+
+    return HttpError(httplib2.Response({"status": status}), b"{}")
 
 
 class FakeGmail:
@@ -435,4 +446,149 @@ def test_get_unreadable_state_is_none():
     p = state_dir() / "gmail_backfill.a_at_x_com.json"
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text("{not json", encoding="utf-8")
+    assert backfill.get(ACC) is None
+
+
+# ------------------------------------------------ fix round 1: failure modes
+
+def test_http_401_on_list_needs_reauth():
+    backfill.start(ACC, since=date(2026, 9, 1))
+    fake = FakeGmail(months_of(("2026-09", 2)))
+    fake.list_error = http_error(401)
+    out = tick(fake, Recorder())
+    assert out["status"] == "error"
+    st = backfill.get(ACC)
+    assert st["status"] == "error" and st["error"] == "needs re-auth"
+
+
+def test_refresh_error_on_get_needs_reauth():
+    from google.auth.exceptions import RefreshError
+
+    backfill.start(ACC, since=date(2026, 9, 1))
+    fake = FakeGmail(months_of(("2026-09", 3)))
+    fake.get_errors["2026-09-1"] = RefreshError("invalid_grant")
+    proc = Recorder()
+    out = tick(fake, proc)
+    assert out["status"] == "error" and out["failed"] == 0
+    assert proc.ids == ["2026-09-0"]
+    st = backfill.get(ACC)
+    assert st["error"] == "needs re-auth" and st["failed"] == 0
+
+
+def test_http_503_on_list_keeps_running_and_moves_on():
+    backfill.start(ACC, since=date(2026, 9, 1))
+    backfill.start(ACC2, since=date(2026, 9, 1))
+    fakes = {ACC: FakeGmail(months_of(("2026-09", 2))), ACC2: FakeGmail({})}
+    fakes[ACC].list_error = http_error(503)
+    proc = Recorder()
+
+    def run():
+        return backfill.run_tick(service_factory=lambda a: fakes[a], process=proc)
+
+    before = backfill.get(ACC)["updatedAt"]
+    out = run()
+    assert out["account"] == ACC and out["status"] == "running"
+    st = backfill.get(ACC)
+    assert st["status"] == "running" and st["error"] == "HttpError"
+    assert st["updatedAt"] > before
+    assert st["cursor"] == "2026-09" and st["pageToken"] is None
+
+    assert run()["account"] == ACC2  # round-robin moved on
+
+    fakes[ACC].list_error = None
+    out = run()
+    assert out["account"] == ACC and out["imported"] == 2
+    assert backfill.get(ACC)["error"] is None
+
+
+def test_os_error_on_list_is_transient():
+    backfill.start(ACC, since=date(2026, 9, 1))
+    fake = FakeGmail({})
+    fake.list_error = TimeoutError("timed out")
+    out = tick(fake, Recorder())
+    assert out["status"] == "running"
+    assert backfill.get(ACC)["error"] == "TimeoutError"
+
+
+def test_transient_get_error_stops_tick_and_retries_page():
+    backfill.start(ACC, since=date(2026, 9, 1))
+    fake = FakeGmail(months_of(("2026-09", 5)))
+    fake.get_errors["2026-09-2"] = http_error(503)
+    first = Recorder()
+    out = tick(fake, first)
+    assert out == {"account": ACC, "status": "running", "imported": 2, "skipped": 0,
+                   "failed": 0, "cursor": "2026-09"}
+    st = backfill.get(ACC)
+    assert st["failed"] == 0 and st["pageToken"] is None and st["error"] == "HttpError"
+
+    del fake.get_errors["2026-09-2"]
+    second = Recorder()
+    out = tick(fake, second)
+    assert out["skipped"] == 2 and out["imported"] == 3 and out["cursor"] == "2026-08"
+    all_ids = first.ids + second.ids
+    assert len(all_ids) == 5 and len(set(all_ids)) == 5
+    st = backfill.get(ACC)
+    assert st["imported"] == 5 and st["error"] is None
+
+
+def test_404_on_get_counts_failed_and_continues():
+    backfill.start(ACC, since=date(2026, 9, 1))
+    fake = FakeGmail(months_of(("2026-09", 3)))
+    fake.get_errors["2026-09-1"] = http_error(404)
+    proc = Recorder()
+    out = tick(fake, proc)
+    assert out["failed"] == 1 and out["imported"] == 2
+    assert proc.ids == ["2026-09-0", "2026-09-2"]
+
+
+def test_every_execute_uses_num_retries():
+    EXECUTE_RETRIES.clear()
+    backfill.start(ACC, since=date(2026, 9, 1))
+    fake = FakeGmail(months_of(("2026-09", 2)))
+    tick(fake, Recorder())
+    backfill.estimate(ACC, since=date(2026, 1, 1), service_factory=lambda a: fake)
+    assert len(EXECUTE_RETRIES) == 4
+    assert set(EXECUTE_RETRIES) == {3}
+
+
+def test_estimate_maps_http_401_to_auth_error():
+    fake = FakeGmail({})
+    fake.list_error = http_error(401)
+    with pytest.raises(GmailAuthError):
+        backfill.estimate(ACC, since=date(2026, 1, 1), service_factory=lambda a: fake)
+
+
+def test_malformed_registry_leaves_state(v):
+    backfill.start(ACC, since=date(2026, 9, 1))
+    (v / "90-meta" / "accounts.yaml").write_text("accounts: {broken: [", encoding="utf-8")
+    fake = FakeGmail(months_of(("2026-09", 1)))
+    assert tick(fake, Recorder()) == {"skipped": "idle"}
+    assert (state_dir() / "gmail_backfill.a_at_x_com.json").exists()
+    (v / "90-meta" / "accounts.yaml").write_text("just a string\n", encoding="utf-8")
+    assert tick(fake, Recorder()) == {"skipped": "idle"}
+    assert (state_dir() / "gmail_backfill.a_at_x_com.json").exists()
+
+
+def test_crlf_note_is_deduped(v):
+    d = v / "20-contexts" / "personal" / "gmail"
+    d.mkdir(parents=True)
+    (d / "old.md").write_bytes(b"---\r\nid: gmail:thread:2026-09-0\r\n---\r\nx\r\n")
+    backfill.start(ACC, since=date(2026, 9, 1))
+    proc = Recorder()
+    out = tick(FakeGmail(months_of(("2026-09", 2))), proc)
+    assert out["skipped"] == 1 and proc.ids == ["2026-09-1"]
+
+
+def test_cancel_mid_tick_reports_skipped_cancelled():
+    backfill.start(ACC, since=date(2026, 9, 1))
+    inner = Recorder()
+
+    def proc(event):
+        inner(event)
+        backfill.cancel(ACC)
+        return {"status": "ok"}
+
+    out = tick(FakeGmail(months_of(("2026-09", 3))), proc)
+    assert out["skipped"] == "cancelled"
+    assert "status" not in out
     assert backfill.get(ACC) is None
