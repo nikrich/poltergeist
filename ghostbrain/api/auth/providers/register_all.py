@@ -16,6 +16,7 @@ _atlassian = AtlassianTokenProvider()
 
 registry.register("gmail", _google)
 registry.register("calendar", _google)  # google calendar; macOS grant handled separately in UI
+registry.register("gdrive", _google)
 registry.register("slack", SlackTokenProvider())
 registry.register("joplin", JoplinTokenProvider())
 registry.register("jira", _atlassian)

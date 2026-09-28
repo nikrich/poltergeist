@@ -38,6 +38,9 @@ def disconnect(connector_id: str, account: str | None) -> None:
     if connector_id == "gmail" and account:
         from ghostbrain.connectors.gmail.auth import token_path
         _rm(token_path(account))
+    elif connector_id == "gdrive" and account:
+        from ghostbrain.connectors.gdrive.auth import token_path
+        _rm(token_path(account))
     elif connector_id == "calendar" and account:
         from ghostbrain.connectors.calendar.google.auth import token_path
         _rm(token_path(account))

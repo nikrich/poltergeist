@@ -1,4 +1,4 @@
-"""Google OAuth provider for Gmail and Calendar connectors.
+"""Google OAuth provider for Gmail, Calendar and Drive connectors.
 
 Reuses the per-connector auth modules (gmail.auth, calendar.google.auth) which
 both expose oauth_client_path() and run_oauth_flow(email). The client JSON is
@@ -11,9 +11,12 @@ from ghostbrain.api.auth.providers.base import NextAction
 
 
 def _mod(connector_id: str):
-    """Return the auth module for the given connector (gmail or calendar)."""
+    """Return the auth module for the given connector (gmail, gdrive or calendar)."""
     if connector_id == "gmail":
         from ghostbrain.connectors.gmail import auth as m
+        return m
+    if connector_id == "gdrive":
+        from ghostbrain.connectors.gdrive import auth as m
         return m
     from ghostbrain.connectors.calendar.google import auth as m
     return m
@@ -103,7 +106,8 @@ class GoogleProvider:
             session.error = str(e)
             return
         from ghostbrain import accounts
-        accounts.ensure_account("gmail" if connector_id == "gmail" else "calendar_google", account)
+        acct_connector = {"gmail": "gmail", "gdrive": "gdrive"}.get(connector_id, "calendar_google")
+        accounts.ensure_account(acct_connector, account)
         session.status = "success"
         session.account = account
         session.next = NextAction(kind="done")

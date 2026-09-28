@@ -39,7 +39,7 @@ except ImportError:  # Windows: in-process lock only
 log = logging.getLogger("ghostbrain.accounts")
 
 ACCOUNT_CONNECTORS: tuple[str, ...] = (
-    "gmail", "calendar_google", "slack", "jira", "confluence", "github", "microsoft",
+    "gmail", "calendar_google", "slack", "jira", "confluence", "github", "microsoft", "gdrive",
 )
 
 # Event source / connector id -> account connector. Calendar events from the
@@ -54,6 +54,7 @@ SOURCE_TO_ACCOUNT_CONNECTOR: dict[str, str] = {
     "outlook_mail": "microsoft",
     "teams_chat": "microsoft",
     "teams_meetings": "microsoft",
+    "gdrive": "gdrive",
 }
 
 # Placeholder contexts older connect flows wrote; never a real assignment.

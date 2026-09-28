@@ -125,6 +125,8 @@ def _load_routing() -> dict:
 def probe(connector_id: str) -> ProbeResult:
     if connector_id == "gmail":
         return _google_probe("gmail")
+    if connector_id == "gdrive":
+        return _google_probe("gdrive")
     if connector_id == "calendar":
         google = _google_probe("google_calendar")
         if google.state == "on" or _platform() != "darwin":
