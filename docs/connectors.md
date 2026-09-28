@@ -285,12 +285,13 @@ The daily fetch above only looks at the last 24h. To index older mail for an acc
 
 - **What's included:** threads you took part in — sent by you, replied to, starred, or marked important — minus anything in Gmail's Promotions category and any domain listed in `gmail.denylist_domains` (`routing.yaml`).
 - **How it's processed:** each thread is routed the same way as daily mail — sender-domain/label rules first, then the account's own context, then the LLM router — but backfill skips the daily sync's relevance gate entirely, since taking part in a thread is itself the relevance signal.
-- **Pace:** roughly 750 threads/hour in the background (25 threads every 2 minutes), so it won't compete with everything else the scheduler is doing. A multi-year backfill can take hours to finish; that's expected.
+- **Pace:** up to ~750 threads/hour (25 threads every 2 minutes; slower when AI routing is needed). It runs in small batches between other jobs, each capped at about a minute. A multi-year backfill can take hours to finish; that's expected. Assigning the account a context (on its row) avoids AI routing for its mail and speeds the backfill up.
 - **Pause / resume / cancel:** the dialog and the account row show progress once a backfill starts, with buttons to pause, resume, or cancel it. Cancelling stops the job but keeps every note already imported — nothing is deleted.
 - **Restarts:** progress is saved to a per-account state file after every thread, so a backfill picks up where it left off after an app restart or crash — no thread is re-imported twice.
 - **Requires the in-app scheduler:** backfill is driven by the same scheduler as the rest of Poltergeist's background work, so **Settings → Background → "Run scheduler in-app"** must be on. If it's off, starting a backfill is blocked with a message explaining why.
 - **Re-auth:** if the account's Gmail token expires mid-backfill, the row shows "needs re-auth" — click **reauthorize**, complete the OAuth flow, then **resume** to continue from where it stopped.
 - **Transient errors:** ordinary Gmail API hiccups (rate limits, timeouts) are retried automatically on the next tick; they don't stop the backfill or require any action.
+- **AI routing outages:** if the LLM router fails for 5 threads in a row (they land in `needs_review`), the backfill stops with "AI routing unavailable — resume later". Click **resume** once the LLM provider works again.
 
 ## Slack
 

@@ -153,7 +153,7 @@ describe('GmailBackfill', () => {
     setup({});
     fireEvent.click(await screen.findByRole('button', { name: `backfill ${ACCOUNT}` }));
     expect(
-      await screen.findByText('~1,500 threads you took part in · about 2 h at the current pace'),
+      await screen.findByText('~1,500 threads you took part in · roughly 2 h or more'),
     ).toBeTruthy();
     expect((screen.getByLabelText('years to backfill') as HTMLSelectElement).value).toBe('3');
     expect(vi.mocked(client.get)).toHaveBeenCalledWith(`${BASE}/estimate?years=3`, expect.anything());
@@ -175,7 +175,7 @@ describe('GmailBackfill', () => {
     await screen.findByText(/~3,000 threads/);
     fireEvent.change(screen.getByLabelText('years to backfill'), { target: { value: '5' } });
     expect(
-      await screen.findByText('~5,000 threads you took part in · about 7 h at the current pace'),
+      await screen.findByText('~5,000 threads you took part in · roughly 7 h or more'),
     ).toBeTruthy();
     expect(vi.mocked(client.get)).toHaveBeenCalledWith(`${BASE}/estimate?years=5`, expect.anything());
   });
@@ -189,6 +189,41 @@ describe('GmailBackfill', () => {
     fireEvent.click(screen.getByRole('button', { name: /start backfill/i }));
     expect(await screen.findByText(msg)).toBeTruthy();
     expect(screen.queryByRole('button', { name: /start backfill/i })).toBeNull();
+  });
+
+  it('is a modal dialog that takes focus and closes on Escape', async () => {
+    setup({});
+    fireEvent.click(await screen.findByRole('button', { name: `backfill ${ACCOUNT}` }));
+    const dialog = await screen.findByRole('dialog', { name: `backfill ${ACCOUNT}` });
+    expect(dialog.getAttribute('aria-modal')).toBe('true');
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('offers reauthorize instead of start when the estimate needs re-auth', async () => {
+    const { onReauth } = setup({
+      estimate: () => Promise.reject(new client.ApiError('needs re-auth', 409)),
+    });
+    fireEvent.click(await screen.findByRole('button', { name: `backfill ${ACCOUNT}` }));
+    fireEvent.click(
+      await screen.findByRole('button', { name: `reauthorize ${ACCOUNT} for backfill` }),
+    );
+    expect(onReauth).toHaveBeenCalledWith(ACCOUNT);
+    expect(screen.queryByRole('button', { name: /start backfill/i })).toBeNull();
+  });
+
+  it('still allows starting when the estimate fails transiently', async () => {
+    setup({ estimate: () => Promise.reject(new client.ApiError('Gmail unavailable', 502)) });
+    fireEvent.click(await screen.findByRole('button', { name: `backfill ${ACCOUNT}` }));
+    expect(await screen.findByText('Gmail unavailable')).toBeTruthy();
+    const startBtn = screen.getByRole('button', { name: /start backfill/i }) as HTMLButtonElement;
+    expect(startBtn.disabled).toBe(false);
+    fireEvent.click(startBtn);
+    await waitFor(() => expect(vi.mocked(client.post)).toHaveBeenCalledWith(BASE, { years: 3 }));
+    expect(
+      screen.queryByRole('button', { name: `reauthorize ${ACCOUNT} for backfill` }),
+    ).toBeNull();
   });
 
   it('renders the running line with pause and cancel', async () => {

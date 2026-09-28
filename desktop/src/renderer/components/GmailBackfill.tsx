@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Btn } from './Btn';
 import { Lucide } from './Lucide';
@@ -76,7 +76,11 @@ export function GmailBackfill({ accountId, onReauth }: Props) {
           backfill…
         </Btn>
         {dialogOpen && (
-          <BackfillDialog accountId={accountId} onClose={() => setDialogOpen(false)} />
+          <BackfillDialog
+            accountId={accountId}
+            onClose={() => setDialogOpen(false)}
+            onReauth={onReauth}
+          />
         )}
       </>
     );
@@ -170,13 +174,33 @@ export function GmailBackfill({ accountId, onReauth }: Props) {
 interface DialogProps {
   accountId: string;
   onClose: () => void;
+  onReauth: (accountId: string) => void;
 }
 
-function BackfillDialog({ accountId, onClose }: DialogProps) {
+function BackfillDialog({ accountId, onClose, onReauth }: DialogProps) {
   const [years, setYears] = useState<number>(DEFAULT_YEARS);
   const [blocked, setBlocked] = useState<string | null>(null);
   const estimate = useBackfillEstimate(accountId, years);
   const start = useStartBackfill();
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  // Move focus into the dialog on open; Escape dismisses it.
+  useEffect(() => {
+    dialogRef.current?.focus();
+  }, []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  // 409 from the estimate means the account's token is unusable: starting
+  // would only park the backfill in "needs re-auth". Any other estimate
+  // failure is informational and must not block starting.
+  const needsReauth =
+    estimate.isError && estimate.error instanceof ApiError && estimate.error.status === 409;
 
   const onStart = () =>
     start.mutate(
@@ -202,16 +226,19 @@ function BackfillDialog({ accountId, onClose }: DialogProps) {
     const pace =
       n < PACE_PER_HOUR
         ? 'under an hour at the current pace'
-        : `about ${Math.ceil(n / PACE_PER_HOUR)} h at the current pace`;
+        : `roughly ${Math.ceil(n / PACE_PER_HOUR)} h or more`;
     estimateLine = `~${fmt(n)} threads you took part in · ${pace}`;
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div
+        ref={dialogRef}
         role="dialog"
+        aria-modal="true"
         aria-label={`backfill ${accountId}`}
-        className="w-[420px] overflow-hidden rounded-lg border border-hairline-2 bg-vellum shadow-float"
+        tabIndex={-1}
+        className="w-[420px] outline-none overflow-hidden rounded-lg border border-hairline-2 bg-vellum shadow-float"
       >
         <div className="flex items-center justify-between border-b border-hairline px-4 py-3">
           <span className="text-13 font-semibold text-ink-0">backfill {accountId}</span>
@@ -250,14 +277,24 @@ function BackfillDialog({ accountId, onClose }: DialogProps) {
             <Btn variant="secondary" size="sm" onClick={onClose}>
               close
             </Btn>
-            {blocked === null && (
+            {needsReauth ? (
               <Btn
                 size="sm"
-                onClick={onStart}
-                disabled={start.isPending || estimate.isError}
+                icon={<Lucide name="refresh-cw" size={12} />}
+                ariaLabel={`reauthorize ${accountId} for backfill`}
+                onClick={() => {
+                  onReauth(accountId);
+                  onClose();
+                }}
               >
-                start backfill
+                reauthorize
               </Btn>
+            ) : (
+              blocked === null && (
+                <Btn size="sm" onClick={onStart} disabled={start.isPending}>
+                  start backfill
+                </Btn>
+              )
             )}
           </div>
         </div>
