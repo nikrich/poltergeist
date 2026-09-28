@@ -42,6 +42,14 @@ export const CONNECTOR_CARDS: ConnectorCard[] = [
     group: 'google',
   },
   {
+    id: 'gdrive',
+    displayName: 'Google Drive',
+    blurb: 'Hourly, imports Google Docs, Sheets, PDFs and Word/Excel files you own or edited — one note per file, updated in place. Backfill older files per account.',
+    pattern: 'google_oauth',
+    docsUrl: 'https://console.cloud.google.com/apis/library',
+    group: 'google',
+  },
+  {
     id: 'slack',
     displayName: 'Slack',
     blurb: 'Pulls @-mentions across configured workspaces from the last 24h. Mentions only — no raw channel volume.',

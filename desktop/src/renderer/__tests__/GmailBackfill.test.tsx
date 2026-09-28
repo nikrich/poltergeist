@@ -5,9 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as client from '../lib/api/client';
 import { ConnectorAccounts } from '../components/ConnectorAccounts';
 import type {
+  BackfillState,
   ConnectorAccount,
   ConnectorDetail,
-  GmailBackfill,
   VaultContexts,
 } from '../../shared/api-types';
 
@@ -51,7 +51,7 @@ function detail(id: string): ConnectorDetail {
   };
 }
 
-function state(over: Partial<GmailBackfill>): GmailBackfill {
+function state(over: Partial<BackfillState>): BackfillState {
   return {
     account: ACCOUNT,
     status: 'running',
@@ -72,7 +72,7 @@ function state(over: Partial<GmailBackfill>): GmailBackfill {
 
 function setup(opts: {
   connectorId?: string;
-  backfill?: GmailBackfill | null;
+  backfill?: BackfillState | null;
   estimate?: (years: number) => unknown;
 }) {
   const backfill = opts.backfill ?? null;

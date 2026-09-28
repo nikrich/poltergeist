@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 
+import { AccountBackfill, BACKFILL_CONNECTORS } from './AccountBackfill';
 import { Btn } from './Btn';
-import { GmailBackfill } from './GmailBackfill';
 import { Lucide } from './Lucide';
 import { Pill } from './Pill';
 import { Toggle } from './Toggle';
@@ -143,7 +143,9 @@ export function ConnectorAccounts({ connector, onAddAccount, onReauth }: Props) 
                 </Btn>
               )}
             </div>
-            {connector.id === 'gmail' && <GmailBackfill accountId={a.id} onReauth={onReauth} />}
+            {BACKFILL_CONNECTORS.has(connector.id) && (
+              <AccountBackfill connectorId={connector.id} accountId={a.id} onReauth={onReauth} />
+            )}
           </div>
         );
       })}
