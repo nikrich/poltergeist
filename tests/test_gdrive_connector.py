@@ -77,12 +77,27 @@ def test_debounce_defers_recent_edits_and_holds_cursor(upserts):
     assert upserts == ["cold"] and c.stats["deferred"] == 1
     cursor = json.loads(conn_mod.cursor_path().read_text())["me@x.com"]
     assert drive.parse_time(cursor) < hot
+    # min(cutoff, oldest deferred - 1 s): the deferred file is after the cutoff
+    assert cursor == (NOW - conn_mod.DEBOUNCE).isoformat()
 
 
-def test_cursor_advances_to_run_start_when_nothing_deferred(upserts):
+def test_cursor_holds_before_deferred_file_right_at_cutoff(upserts):
+    at_cutoff = NOW - conn_mod.DEBOUNCE + timedelta(milliseconds=500)
+    d = _docs_drive([drive_file("edge", modified=at_cutoff.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z")])
+    c = make(["me@x.com"], {"me@x.com": fake_services(drive=d)})
+    c.run()
+    assert upserts == [] and c.stats["deferred"] == 1
+    cursor = json.loads(conn_mod.cursor_path().read_text())["me@x.com"]
+    assert drive.parse_time(cursor) == at_cutoff - timedelta(seconds=1)
+
+
+def test_cursor_advances_to_debounce_cutoff_when_nothing_deferred(upserts):
+    # Not to the run start: Drive's listing is eventually consistent, so a
+    # file edited just before the run could be missed for good.
     d = _docs_drive([drive_file("a", modified=iso(NOW - timedelta(hours=3)))])
     make(["me@x.com"], {"me@x.com": fake_services(drive=d)}).run()
-    assert json.loads(conn_mod.cursor_path().read_text())["me@x.com"] == NOW.isoformat()
+    assert json.loads(conn_mod.cursor_path().read_text())["me@x.com"] == \
+        (NOW - conn_mod.DEBOUNCE).isoformat()
     assert (state_dir() / "gdrive.last_run").exists()
 
 
@@ -98,7 +113,7 @@ def test_failing_account_keeps_its_cursor(upserts):
     c.run()
     cursors = json.loads(conn_mod.cursor_path().read_text())
     assert cursors["slow@x.com"] == old
-    assert cursors["me@x.com"] == NOW.isoformat()
+    assert cursors["me@x.com"] == (NOW - conn_mod.DEBOUNCE).isoformat()
     assert accounts_health.health_for("gdrive", "slow@x.com")["status"] == accounts_health.STATUS_ERROR
 
 
@@ -201,7 +216,7 @@ def test_network_error_during_ingest_keeps_that_accounts_cursor(upserts, monkeyp
     c.run()
     cursors = json.loads(conn_mod.cursor_path().read_text())
     assert cursors["flaky@x.com"] == old
-    assert cursors["me@x.com"] == NOW.isoformat()
+    assert cursors["me@x.com"] == (NOW - conn_mod.DEBOUNCE).isoformat()
     assert c.stats["failed"] == 0
     assert accounts_health.health_for("gdrive", "flaky@x.com")["status"] == accounts_health.STATUS_ERROR
 
@@ -219,3 +234,38 @@ def test_ingest_skips_current_file_without_converting(monkeypatch):
     svc = fake_services()
     assert ingest.ingest_file(svc, "me@x.com", drive_file("cur"), {}) == ("skipped", False)
     assert converted == [] and upserted == []
+
+
+def test_concurrent_cursor_saves_lose_nothing(monkeypatch):
+    import threading
+    import time
+
+    real_load = conn_mod._load_cursors
+
+    def slow_load():
+        out = real_load()
+        time.sleep(0.01)  # widen the read-modify-write window
+        return out
+
+    monkeypatch.setattr(conn_mod, "_load_cursors", slow_load)
+    threads = [threading.Thread(target=conn_mod._save_cursor, args=(f"a{i}@x.com", NOW))
+               for i in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert set(json.loads(conn_mod.cursor_path().read_text())) == {f"a{i}@x.com" for i in range(8)}
+
+
+def test_cursor_save_is_atomic(monkeypatch):
+    conn_mod._save_cursor("me@x.com", NOW)
+    before = conn_mod.cursor_path().read_text()
+
+    def boom(src, dst):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(conn_mod.os, "replace", boom)
+    with pytest.raises(OSError):
+        conn_mod._save_cursor("other@x.com", NOW)
+    assert conn_mod.cursor_path().read_text() == before
+    assert [p.name for p in conn_mod.cursor_path().parent.glob("*.tmp")] == []

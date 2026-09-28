@@ -7,6 +7,9 @@ from __future__ import annotations
 import collections
 import json
 import logging
+import os
+import tempfile
+import threading
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -22,6 +25,10 @@ log = logging.getLogger("ghostbrain.connectors.gdrive")
 DEBOUNCE = timedelta(minutes=30)
 FIRST_RUN_LOOKBACK = timedelta(days=7)
 
+# Accounts sync in parallel threads; the cursor file is one JSON map, so its
+# read-modify-write must not interleave.
+_cursor_lock = threading.Lock()
+
 
 def cursor_path() -> Path:
     return state_dir() / "gdrive_sync.json"
@@ -35,10 +42,19 @@ def _load_cursors() -> dict[str, str]:
 
 
 def _save_cursor(account: str, value: datetime) -> None:
-    cursors = _load_cursors()
-    cursors[account] = value.isoformat()
-    cursor_path().parent.mkdir(parents=True, exist_ok=True)
-    cursor_path().write_text(json.dumps(cursors, indent=2), encoding="utf-8")
+    path = cursor_path()
+    with _cursor_lock:
+        cursors = _load_cursors()
+        cursors[account] = value.isoformat()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                json.dump(cursors, fh, indent=2)
+            os.replace(tmp, path)
+        except BaseException:
+            Path(tmp).unlink(missing_ok=True)
+            raise
 
 
 class GdriveConnector(Connector):
@@ -108,6 +124,10 @@ class GdriveConnector(Connector):
                 self.stats[outcome] += 1
             if not token:
                 break
-        cursor = started if oldest_deferred is None else min(started, oldest_deferred - timedelta(seconds=1))
+        # Never advance to ``started``: Drive's listing is eventually
+        # consistent and clocks drift, so an edit seconds before the run can
+        # surface late. Re-listing the debounce window is cheap — unchanged
+        # files are skipped before any download.
+        cursor = cutoff if oldest_deferred is None else min(cutoff, oldest_deferred - timedelta(seconds=1))
         _save_cursor(email, cursor)
         return []
