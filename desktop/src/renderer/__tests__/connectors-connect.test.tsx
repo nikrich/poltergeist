@@ -206,3 +206,78 @@ describe('ConnectorsScreen disconnect flow', () => {
     window.confirm = originalConfirm;
   });
 });
+
+describe('ConnectorsScreen hero disconnect with accounts', () => {
+  function mockWithAccounts(accountIds: string[]) {
+    const detail: ConnectorDetail = {
+      ...slackConnectedDetail,
+      accounts: accountIds.map((id) => ({ id, context: null, enabled: true, health: null })),
+    };
+    const request = vi.fn((method: string, path: string) => {
+      if (method === 'GET' && path === '/v1/connectors') {
+        return Promise.resolve({ ok: true, status: 200, data: [slackConnected] });
+      }
+      if (method === 'GET' && path === '/v1/connectors/slack') {
+        return Promise.resolve({ ok: true, status: 200, data: detail });
+      }
+      if (method === 'GET' && path === '/v1/vault/contexts') {
+        return Promise.resolve({ ok: true, status: 200, data: { contexts: ['work'], archived: [] } });
+      }
+      if (method === 'GET' && path === '/v1/scheduler/status') {
+        return Promise.resolve({ ok: true, status: 200, data: { enabled: false, jobs: {} } });
+      }
+      if (method === 'GET' && path === '/v1/scheduler/diagnostics') {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          data: {
+            enabled: false,
+            active_launchd_plists: [],
+            double_scheduling: false,
+            ffmpeg_available: true,
+          },
+        });
+      }
+      if (method === 'DELETE' && path.startsWith('/v1/connectors/slack/credentials')) {
+        return Promise.resolve({ ok: true, status: 200, data: null });
+      }
+      return Promise.resolve({ ok: false, status: 500, error: `unexpected ${method} ${path}` });
+    });
+    window.gb.api.request = request as unknown as typeof window.gb.api.request;
+    return request;
+  }
+
+  const heroDisconnect = () =>
+    screen
+      .queryAllByRole('button')
+      .find(
+        (btn) =>
+          (btn.textContent || '').toLowerCase().includes('disconnect') &&
+          btn.className.includes('oxblood'),
+      );
+
+  it('hides the hero disconnect when there are 2 accounts', async () => {
+    mockWithAccounts(['a@x.com', 'b@x.com']);
+    render(wrap(<ConnectorsScreen />));
+    await screen.findByText('b@x.com');
+    expect(heroDisconnect()).toBeUndefined();
+  });
+
+  it('hero disconnect with 1 account sends that account id', async () => {
+    const request = mockWithAccounts(['a@x.com']);
+    const originalConfirm = window.confirm;
+    window.confirm = vi.fn(() => true);
+    render(wrap(<ConnectorsScreen />));
+    await screen.findByText('a@x.com');
+    const btn = heroDisconnect();
+    expect(btn).toBeDefined();
+    await userEvent.click(btn!);
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        'DELETE',
+        '/v1/connectors/slack/credentials?account=a%40x.com',
+      ),
+    );
+    window.confirm = originalConfirm;
+  });
+});

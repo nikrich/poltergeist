@@ -7,6 +7,7 @@ import { Pill } from '../components/Pill';
 import { Eyebrow } from '../components/Eyebrow';
 import { Toggle } from '../components/Toggle';
 import { ConnectorAuthFlow } from '../components/ConnectorAuthFlow';
+import { ConnectorAccounts } from '../components/ConnectorAccounts';
 import type { Connector, ConnectorDetail, ConnectorState } from '../../shared/api-types';
 import {
   useConnector,
@@ -400,6 +401,11 @@ function ConnectorDetailPanel({ c }: ConnectorDetailProps) {
   const schedulerEnabled = scheduler.data?.enabled === true;
   const jobStatus = scheduler.data?.jobs[c.id];
   const [authOpen, setAuthOpen] = useState(false);
+  // Account-backed connectors: the hero disconnect only makes sense with
+  // exactly one account (0 → nothing to remove, ≥2 → per-row remove).
+  const accounts = Array.isArray(c.accounts) ? c.accounts : null;
+  const heroDisconnectAccount =
+    accounts === null ? (c.account ?? undefined) : accounts.length === 1 ? accounts[0]!.id : null;
 
   const handleAuthDone = () => {
     setAuthOpen(false);
@@ -413,7 +419,7 @@ function ConnectorDetailPanel({ c }: ConnectorDetailProps) {
       return;
     }
     disconnect.mutate(
-      { id: c.id, account: c.account ?? undefined },
+      { id: c.id, account: heroDisconnectAccount ?? undefined },
       {
         onSuccess: () => {
           toast.info(`${c.displayName} disconnected`);
@@ -552,6 +558,16 @@ function ConnectorDetailPanel({ c }: ConnectorDetailProps) {
           </div>
         </DetailBlock>
 
+        {accounts !== null && (
+          <DetailBlock label="accounts">
+            <ConnectorAccounts
+              connector={c}
+              onAddAccount={() => setAuthOpen(true)}
+              onReauth={() => setAuthOpen(true)}
+            />
+          </DetailBlock>
+        )}
+
         <DetailBlock label="what poltergeist pulls">
           <div className="flex flex-wrap gap-[6px]">
             {c.pulls.map((p) => (
@@ -588,7 +604,7 @@ function ConnectorDetailPanel({ c }: ConnectorDetailProps) {
           <ConnectorFilterToggles />
         </DetailBlock>
 
-        {c.state !== 'off' && (
+        {c.state !== 'off' && heroDisconnectAccount !== null && (
           <Btn
             variant="danger"
             size="sm"

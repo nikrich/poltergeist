@@ -746,6 +746,30 @@ export function useCancelAuth() {
   });
 }
 
+export function useUpdateAccount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (a: {
+      connectorId: string;
+      accountId: string;
+      context?: string | null;
+      enabled?: boolean;
+    }) => {
+      const body: { context?: string | null; enabled?: boolean } = {};
+      if (a.context !== undefined) body.context = a.context;
+      if (a.enabled !== undefined) body.enabled = a.enabled;
+      return patch(
+        `/v1/connectors/${a.connectorId}/accounts/${encodeURIComponent(a.accountId)}`,
+        body,
+      );
+    },
+    onSettled: (_data, _err, a) => {
+      qc.invalidateQueries({ queryKey: ['connector', a.connectorId] });
+      qc.invalidateQueries({ queryKey: ['connectors'] });
+    },
+  });
+}
+
 export function useDisconnectConnector() {
   const qc = useQueryClient();
   return useMutation({

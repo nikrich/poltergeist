@@ -4,6 +4,7 @@ interface Props {
   tone?: Tone;
   children: React.ReactNode;
   className?: string;
+  title?: string;
 }
 
 const toneClasses: Record<Tone, string> = {
@@ -14,9 +15,10 @@ const toneClasses: Record<Tone, string> = {
   outline: 'bg-transparent text-ink-2 border border-hairline-2',
 };
 
-export function Pill({ tone = 'neon', children, className = '' }: Props) {
+export function Pill({ tone = 'neon', children, className = '', title }: Props) {
   return (
     <span
+      title={title}
       className={`inline-flex items-center gap-[5px] whitespace-nowrap rounded-sm px-[7px] py-[2px] font-mono text-10 font-medium lowercase ${toneClasses[tone]} ${className}`}
     >
       {children}
