@@ -33,6 +33,10 @@ def is_routing_fallback(result) -> bool:
 def ingest_file(services: drive.Services, account: str, file: dict, folders: dict) -> tuple[str, bool]:
     """(outcome, routing_fallback) for one file."""
     try:
+        # Cheap pre-check so a re-run (backfill restart, sync overlap) never
+        # re-downloads an unchanged file; upsert re-checks under its lock.
+        if store.is_current(file["id"], file["modifiedTime"]):
+            return "skipped", False
         converted = convert.convert(services, file)
         folder = drive.folder_path(services.drive, file, folders)
         outcome, result = store.upsert(build_event(file, account=account, result=converted, folder=folder))

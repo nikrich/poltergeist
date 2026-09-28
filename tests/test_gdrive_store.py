@@ -107,3 +107,94 @@ def test_other_sources_keep_timestamped_filenames():
     name = note_generator._filename_for(
         {"source": "gmail", "timestamp": "2026-09-01T10:00:00Z", "title": "Hi"}, "gmail:abc")
     assert name.startswith("20260901T100000-hi-")
+
+
+def _set_stored_time(path, raw_yaml_value: str) -> None:
+    text = path.read_text()
+    front, body = text.split("---\n", 2)[1], text.split("---\n", 2)[2]
+    lines = [ln for ln in front.splitlines() if not ln.startswith("driveModifiedTime:")]
+    lines.append(f"driveModifiedTime: {raw_yaml_value}")
+    path.write_text("---\n" + "\n".join(lines) + "\n---\n" + body)
+
+
+def test_upsert_return_values(fake_pipeline):
+    outcome, result = store.upsert(_event())
+    assert (outcome, result) == ("imported", {"context": "work"})
+    assert store.upsert(_event(modified="2026-09-02T09:00:00.000Z", body="v2")) == ("updated", None)
+    assert store.upsert(_event(modified="2026-09-02T09:00:00.000Z", body="v2")) == ("skipped", None)
+
+
+def test_update_rewrites_updated_frontmatter(fake_pipeline):
+    store.upsert(_event())
+    new = _event(modified="2026-09-02T09:00:00.000Z", body="v2")
+    store.upsert(new)
+    assert new["timestamp"] == "2026-09-02T09:00:00.000Z"
+    for p in store.find_notes("F1abc_-Z"):
+        assert _front(p)[0]["updated"] == "2026-09-02T09:00:00.000Z"
+
+
+def test_naive_stored_time_is_treated_as_utc(fake_pipeline):
+    store.upsert(_event())
+    for p in store.find_notes("F1abc_-Z"):
+        _set_stored_time(p, "2026-09-01 10:00:00")  # YAML → naive datetime
+    assert store.upsert(_event()) == ("skipped", None)
+    assert store.upsert(_event(modified="2026-09-02T09:00:00.000Z", body="v2"))[0] == "updated"
+    for p in store.find_notes("F1abc_-Z"):
+        assert _front(p)[1].rstrip().endswith("v2")
+
+
+def test_malformed_stored_time_forces_rewrite(fake_pipeline):
+    store.upsert(_event())
+    for p in store.find_notes("F1abc_-Z"):
+        _set_stored_time(p, "not-a-date")
+    assert store.upsert(_event(body="healed"))[0] == "updated"
+    for p in store.find_notes("F1abc_-Z"):
+        front, body = _front(p)
+        assert front["driveModifiedTime"] == "2026-09-01T10:00:00.000Z"
+        assert body.rstrip().endswith("healed")
+
+
+def test_stale_second_copy_is_healed(fake_pipeline):
+    store.upsert(_event())
+    store.upsert(_event(modified="2026-09-02T09:00:00.000Z", body="v2"))
+    inbox, ctx = store.find_notes("F1abc_-Z")
+    # simulate an interrupted rewrite: the second copy still holds v1
+    ctx.write_text(ctx.read_text().replace("2026-09-02T09:00:00.000Z", "2026-09-01T10:00:00.000Z")
+                   .replace("v2", "v1"))
+    before_inbox = inbox.read_text()
+    assert store.upsert(_event(modified="2026-09-02T09:00:00.000Z", body="v2"))[0] == "updated"
+    assert _front(ctx)[1].rstrip().endswith("v2")
+    assert inbox.read_text() == before_inbox  # the current copy is left alone
+    assert store.upsert(_event(modified="2026-09-02T09:00:00.000Z", body="v2"))[0] == "skipped"
+
+
+def test_is_current(fake_pipeline):
+    assert store.is_current("F1abc_-Z", "2026-09-01T10:00:00.000Z") is False
+    store.upsert(_event())
+    assert store.is_current("F1abc_-Z", "2026-09-01T10:00:00.000Z") is True
+    assert store.is_current("F1abc_-Z", "2026-08-01T00:00:00.000Z") is True
+    assert store.is_current("F1abc_-Z", "2026-09-02T00:00:00.000Z") is False
+    ctx = next(p for p in store.find_notes("F1abc_-Z") if "20-contexts" in p.parts)
+    _set_stored_time(ctx, "garbage")
+    assert store.is_current("F1abc_-Z", "2026-09-01T10:00:00.000Z") is False
+
+
+def test_rewrite_is_atomic(fake_pipeline, monkeypatch):
+    import os
+
+    store.upsert(_event())
+    paths = store.find_notes("F1abc_-Z")
+    before = {p: p.read_text() for p in paths}
+    modes = {p: os.stat(p).st_mode for p in paths}
+
+    def boom(src, dst):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(store.os, "replace", boom)
+    with pytest.raises(OSError):
+        store.upsert(_event(modified="2026-09-02T09:00:00.000Z", body="v2"))
+    assert {p: p.read_text() for p in paths} == before
+    assert not [p for p in paths[0].parent.iterdir() if p.name.endswith(".tmp")]
+    monkeypatch.undo()
+    store.upsert(_event(modified="2026-09-02T09:00:00.000Z", body="v2"))
+    assert {p: os.stat(p).st_mode for p in paths} == modes

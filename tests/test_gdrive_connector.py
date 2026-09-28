@@ -204,3 +204,18 @@ def test_network_error_during_ingest_keeps_that_accounts_cursor(upserts, monkeyp
     assert cursors["me@x.com"] == NOW.isoformat()
     assert c.stats["failed"] == 0
     assert accounts_health.health_for("gdrive", "flaky@x.com")["status"] == accounts_health.STATUS_ERROR
+
+
+def test_ingest_skips_current_file_without_converting(monkeypatch):
+    from ghostbrain.connectors.gdrive import convert as convert_mod
+
+    converted = []
+    monkeypatch.setattr(convert_mod, "convert",
+                        lambda services, file: converted.append(file["id"]))
+    monkeypatch.setattr(store, "is_current",
+                        lambda fid, mt: (fid, mt) == ("cur", "2026-09-01T10:00:00.000Z"))
+    upserted = []
+    monkeypatch.setattr(store, "upsert", lambda event: upserted.append(event) or ("updated", None))
+    svc = fake_services()
+    assert ingest.ingest_file(svc, "me@x.com", drive_file("cur"), {}) == ("skipped", False)
+    assert converted == [] and upserted == []

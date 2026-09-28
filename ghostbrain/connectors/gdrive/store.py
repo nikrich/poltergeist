@@ -5,8 +5,11 @@ is the lookup key, so there is no separate index."""
 from __future__ import annotations
 
 import logging
+import os
+import stat
+import tempfile
 import threading
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
@@ -42,11 +45,51 @@ def _split(text: str) -> tuple[dict, str]:
 
 
 def _as_time(value) -> datetime | None:
+    """The stored ``driveModifiedTime`` as an aware datetime. Naive values
+    (e.g. set through a date picker) count as UTC; anything unparseable is
+    None, which forces a rewrite."""
     if isinstance(value, datetime):
-        return value
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
     if isinstance(value, str) and value:
-        return parse_time(value)
+        try:
+            return parse_time(value)
+        except ValueError:
+            return None
     return None
+
+
+def _stored_time(path: Path) -> datetime | None:
+    return _as_time(_split(path.read_text(encoding="utf-8"))[0].get("driveModifiedTime"))
+
+
+def _is_current_note(path: Path, modified: datetime) -> bool:
+    stored = _stored_time(path)
+    return stored is not None and stored >= modified
+
+
+def is_current(file_id: str, modified_time: str) -> bool:
+    """True when the file already has notes and every copy holds this
+    ``modifiedTime`` or newer — the caller can skip downloading it."""
+    paths = find_notes(file_id)
+    modified = parse_time(modified_time)
+    return bool(paths) and all(_is_current_note(p, modified) for p in paths)
+
+
+def _write_atomic(path: Path, text: str) -> None:
+    """Temp file in the same directory, then ``os.replace`` — a crash never
+    leaves a half-written note. Keeps the note's existing permissions."""
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        try:
+            os.chmod(tmp, stat.S_IMODE(path.stat().st_mode))
+        except FileNotFoundError:
+            pass
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
 
 
 def _rewrite(path: Path, event: dict) -> None:
@@ -58,7 +101,7 @@ def _rewrite(path: Path, event: dict) -> None:
     front["truncated"] = md["truncated"]
     if md.get("folder"):
         front["folder"] = md["folder"]
-    path.write_text(note_generator._render(front, event["body"]), encoding="utf-8")
+    _write_atomic(path, note_generator._render(front, event["body"]))
 
 
 def upsert(event: dict) -> tuple[str, dict | None]:
@@ -69,9 +112,12 @@ def upsert(event: dict) -> tuple[str, dict | None]:
         paths = find_notes(md["fileId"])
         if not paths:
             return "imported", pipeline.process_event(event)
-        stored = _as_time(_split(paths[0].read_text(encoding="utf-8"))[0].get("driveModifiedTime"))
-        if stored is not None and stored >= parse_time(md["driveModifiedTime"]):
+        modified = parse_time(md["driveModifiedTime"])
+        # Every copy is checked, so one left stale by an interrupted
+        # rewrite heals on the next pass.
+        stale = [p for p in paths if not _is_current_note(p, modified)]
+        if not stale:
             return "skipped", None
-        for p in paths:
+        for p in stale:
             _rewrite(p, event)
         return "updated", None
