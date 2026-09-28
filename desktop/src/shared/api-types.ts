@@ -44,8 +44,7 @@ export interface ConnectorAccount {
 export type BackfillStatus = 'running' | 'paused' | 'done' | 'error';
 
 /** Per-account backfill job state (GET /v1/connectors/{connectorId}/accounts/{id}/backfill).
- * Shared by Gmail and Drive; `updated`, `tooLarge` and `routingFallbacks` are only ever
- * sent by connectors that track them (currently Drive). */
+ * Shared by Gmail and Drive; `updated` and `tooLarge` are only sent by Drive. */
 export interface BackfillState {
   account: string;
   status: BackfillStatus;
@@ -60,6 +59,8 @@ export interface BackfillState {
   updated?: number;
   /** Drive only: files skipped for exceeding a size/extraction cap. */
   tooLarge?: number;
+  /** Consecutive imports the AI router parked in needs_review. Sent by both
+   * connectors (Gmail only once it has imported or resumed). */
   routingFallbacks?: number;
   /** "needs re-auth" for auth failures; an exception type name for transient ones. */
   error: string | null;

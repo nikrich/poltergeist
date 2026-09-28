@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as client from '../lib/api/client';
+import { BACKFILL_CONNECTORS } from '../components/AccountBackfill';
 import { ConnectorAccounts } from '../components/ConnectorAccounts';
 import type {
   BackfillState,
@@ -150,6 +151,21 @@ describe('DriveBackfill', () => {
     expect(screen.queryByRole('button', { name: /start backfill/i })).toBeNull();
   });
 
+  it('shows an API-disabled 409 as the estimate line and still offers start', async () => {
+    const enable =
+      "Enable the Google Drive API in Google Cloud for your OAuth client's project " +
+      '(APIs & Services → Library).';
+    const { onReauth } = setup({
+      estimate: () => Promise.reject(new client.ApiError(enable, 409)),
+    });
+    fireEvent.click(await screen.findByRole('button', { name: `backfill ${ACCOUNT}` }));
+    expect(await screen.findByText(enable)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: `reauthorize ${ACCOUNT} for backfill` })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /start backfill/i }));
+    await waitFor(() => expect(vi.mocked(client.post)).toHaveBeenCalledWith(BASE, { years: 3 }));
+    expect(onReauth).not.toHaveBeenCalled();
+  });
+
   it('shows needs re-auth with reauthorize on the running-state auth error', async () => {
     const { onReauth } = setup({ backfill: state({ status: 'error', error: 'needs re-auth' }) });
     fireEvent.click(
@@ -157,6 +173,10 @@ describe('DriveBackfill', () => {
     );
     expect(onReauth).toHaveBeenCalledWith(ACCOUNT);
     expect(screen.getByText(/backfill paused · needs re-auth/)).toBeTruthy();
+  });
+
+  it('offers backfill exactly for the connectors that have a dialog config', () => {
+    expect([...BACKFILL_CONNECTORS].sort()).toEqual(['gdrive', 'gmail']);
   });
 
   it('dismisses a completed backfill with DELETE', async () => {

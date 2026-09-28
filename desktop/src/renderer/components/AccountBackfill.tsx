@@ -17,9 +17,6 @@ import {
 } from '../lib/api/hooks';
 import { toast } from '../stores/toast';
 
-/** Connector ids that support the backfill entry point + progress line. */
-export const BACKFILL_CONNECTORS = new Set(['gmail', 'gdrive']);
-
 /** Items per hour the scheduler gets through (25 items every 120 s), for both connectors. */
 const PACE_PER_HOUR = 750;
 const YEAR_OPTIONS = [1, 2, 3, 5] as const;
@@ -63,6 +60,9 @@ const CONNECTOR_CONFIG: Record<string, ConnectorConfig> = {
     },
   },
 };
+
+/** Connector ids that support the backfill entry point + progress line. */
+export const BACKFILL_CONNECTORS: ReadonlySet<string> = new Set(Object.keys(CONNECTOR_CONFIG));
 
 /** 'YYYY-MM' → 'Mon YYYY'; anything unexpected is shown as-is. */
 function monthLabel(cursor: string): string {
@@ -227,8 +227,10 @@ interface DialogProps {
 function BackfillDialog({ connectorId, accountId, onClose, onReauth }: DialogProps) {
   const [years, setYears] = useState<number>(DEFAULT_YEARS);
   const [blocked, setBlocked] = useState<string | null>(null);
-  // Only rendered for connectors in BACKFILL_CONNECTORS, which always has a config entry.
-  const config = CONNECTOR_CONFIG[connectorId] ?? CONNECTOR_CONFIG.gmail!;
+  // Only rendered for connectors in BACKFILL_CONNECTORS (the keys of
+  // CONNECTOR_CONFIG). Should that ever not hold, show no blurb or estimate
+  // text rather than another connector's.
+  const config: ConnectorConfig | undefined = CONNECTOR_CONFIG[connectorId];
   const estimate = useBackfillEstimate<BackfillEstimate>(connectorId, accountId, years);
   const start = useStartBackfill();
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -245,11 +247,15 @@ function BackfillDialog({ connectorId, accountId, onClose, onReauth }: DialogPro
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  // 409 from the estimate means the account's token is unusable: starting
-  // would only park the backfill in "needs re-auth". Any other estimate
-  // failure is informational and must not block starting.
+  // A 409 "needs re-auth" from the estimate means the account's token is
+  // unusable: starting would only park the backfill there. Any other estimate
+  // failure (e.g. a 409 asking to enable a Google API, a 503 when Drive is
+  // busy) is shown as the estimate line and must not block starting.
   const needsReauth =
-    estimate.isError && estimate.error instanceof ApiError && estimate.error.status === 409;
+    estimate.isError &&
+    estimate.error instanceof ApiError &&
+    estimate.error.status === 409 &&
+    estimate.error.message === AUTH_ERROR;
 
   const onStart = () =>
     start.mutate(
@@ -270,7 +276,7 @@ function BackfillDialog({ connectorId, accountId, onClose, onReauth }: DialogPro
   let estimateLine: string;
   if (estimate.isPending) estimateLine = 'estimating…';
   else if (estimate.isError) estimateLine = errMessage(estimate.error, 'estimate unavailable');
-  else estimateLine = config.estimateLine(estimate.data);
+  else estimateLine = config ? config.estimateLine(estimate.data) : '';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
@@ -294,7 +300,7 @@ function BackfillDialog({ connectorId, accountId, onClose, onReauth }: DialogPro
           </button>
         </div>
         <div className="flex flex-col gap-3 p-4">
-          <div className="text-12 text-ink-1">{config.blurb}</div>
+          {config && <div className="text-12 text-ink-1">{config.blurb}</div>}
           <label className="flex items-center gap-2 text-12 text-ink-1">
             go back
             <select
