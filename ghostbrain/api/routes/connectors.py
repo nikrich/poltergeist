@@ -88,7 +88,9 @@ def update_account(connector_id: str, account_id: str, body: AccountPatch) -> di
     changes = body.model_dump(exclude_unset=True)
     updated = dataclasses.replace(acc, **changes)
     try:
-        accounts.upsert_account(updated)
+        # Only validate the context when the request sets one: toggling
+        # `enabled` must still work on an account whose context was archived.
+        accounts.upsert_account(updated, check_context="context" in changes)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     persisted = accounts.get_account(acct_connector, updated.id)

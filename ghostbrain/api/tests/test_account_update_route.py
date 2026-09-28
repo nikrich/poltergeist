@@ -45,3 +45,19 @@ def test_patch_enabled_null_rejected(client, auth_headers, tmp_vault):
     r = client.patch("/v1/connectors/gmail/accounts/a@x.com", json={"enabled": None}, headers=auth_headers)
     assert r.status_code == 422
     assert _registry(tmp_vault) == [{"connector": "gmail", "id": "a@x.com"}]
+
+
+def test_patch_enabled_on_account_with_archived_context(client, auth_headers, tmp_vault):
+    from ghostbrain import routing_config
+
+    _accounts(tmp_vault, [{"connector": "gmail", "id": "a@x.com", "context": "side-project"}])
+    routing_config.archive_context("side-project", tmp_vault)
+    r = client.patch("/v1/connectors/gmail/accounts/a@x.com",
+                     json={"enabled": False}, headers=auth_headers)
+    assert r.status_code == 200
+    assert r.json()["context"] == "side-project" and r.json()["enabled"] is False
+    assert _registry(tmp_vault)[0]["context"] == "side-project"
+    # Re-sending the archived context (a real change request) still validates.
+    r = client.patch("/v1/connectors/gmail/accounts/a@x.com",
+                     json={"context": "side-project"}, headers=auth_headers)
+    assert r.status_code == 422
