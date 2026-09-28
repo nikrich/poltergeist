@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.10.0](https://github.com/nikrich/poltergeist/compare/v1.9.0...v1.10.0) (2026-09-28)
+
+
+### Features
+
+* feat(gdrive): desktop card; generalise backfill UI to gmail + drive
+* feat(gdrive): backfill API routes
+* feat(gdrive): resumable month-by-month backfill job
+* feat(gdrive): hourly sync with per-account cursors and edit debounce
+* feat(gdrive): event shape, stable filenames, in-place note updates
+* feat(gdrive): convert Docs, Sheets, XLSX, PDF, DOCX to markdown
+* feat(gdrive): markdown table renderer with caps; extractor accepts paths
+* feat(gdrive): drive query, paging, error mapping + test fakes
+* feat(gdrive): auth module + account/connector registration
+
+### Bug Fixes
+
+* fix(desktop): only a 'needs re-auth' 409 blocks the backfill dialog
+* fix(gdrive): estimate route returns 503 with a readable message on transient errors
+* fix(gdrive): backfill lists 100 files per page, caps 25 processed per tick
+* fix(gdrive): read only GRID tabs of a spreadsheet
+* fix(gdrive): quota 403s are rate limits; downloads map HTTP errors like execute
+* fix(gdrive): sync cursor stops at the debounce cutoff; locked atomic cursor file
+* fix(gdrive): tolerant stored times, per-copy upsert, atomic rewrites, skip current files
+* fix(gdrive): re-raise network errors from ingest; permission 403 needs re-auth
+* fix(gdrive): atomic token writes (reuse gmail helper)
+
 ## [1.9.0](https://github.com/nikrich/poltergeist/compare/v1.8.0...v1.9.0) (2026-09-28)
 
 
