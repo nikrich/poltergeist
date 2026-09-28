@@ -38,3 +38,10 @@ def test_patch_errors(client, auth_headers, tmp_vault):
     assert client.patch("/v1/connectors/joplin/accounts/x", json={}, headers=auth_headers).status_code == 404
     assert client.patch("/v1/connectors/gmail/accounts/nobody@x.com", json={}, headers=auth_headers).status_code == 404
     assert client.patch("/v1/connectors/gmail/accounts/a@x.com", json={"context": "nope"}, headers=auth_headers).status_code == 422
+
+
+def test_patch_enabled_null_rejected(client, auth_headers, tmp_vault):
+    _accounts(tmp_vault, [{"connector": "gmail", "id": "a@x.com"}])
+    r = client.patch("/v1/connectors/gmail/accounts/a@x.com", json={"enabled": None}, headers=auth_headers)
+    assert r.status_code == 422
+    assert _registry(tmp_vault) == [{"connector": "gmail", "id": "a@x.com"}]

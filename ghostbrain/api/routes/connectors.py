@@ -5,7 +5,7 @@ import dataclasses
 from dataclasses import asdict
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from ghostbrain.api.models.connector import Connector, ConnectorDetail
 from ghostbrain.api.repo.connectors import get_connector, list_connectors
@@ -65,6 +65,15 @@ class AccountPatch(BaseModel):
     context: str | None = None
     enabled: bool | None = None
 
+    @model_validator(mode="after")
+    def _enabled_not_null(self) -> AccountPatch:
+        # `context: null` unassigns the context, but `enabled` is a bool
+        # flag with no "unset" meaning — omit it to leave it unchanged,
+        # never send it explicitly as null.
+        if "enabled" in self.model_fields_set and self.enabled is None:
+            raise ValueError("enabled must not be null; omit it to leave it unchanged")
+        return self
+
 
 @router.patch("/{connector_id}/accounts/{account_id}")
 def update_account(connector_id: str, account_id: str, body: AccountPatch) -> dict:
@@ -82,9 +91,10 @@ def update_account(connector_id: str, account_id: str, body: AccountPatch) -> di
         accounts.upsert_account(updated)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
+    persisted = accounts.get_account(acct_connector, updated.id)
     return {
-        "id": updated.id,
-        "context": updated.context,
-        "enabled": updated.enabled,
-        "health": accounts_health.health_for(connector_id, updated.id),
+        "id": persisted.id,
+        "context": persisted.context,
+        "enabled": persisted.enabled,
+        "health": accounts_health.health_for(connector_id, persisted.id),
     }
