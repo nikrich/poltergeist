@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.8.0](https://github.com/nikrich/poltergeist/compare/v1.7.0...v1.8.0) (2026-09-28)
+
+
+### Features
+
+* feat(desktop): per-account context, enable, add, remove and re-auth in connector detail
+* feat(desktop): manage contexts in settings
+* feat(api): PATCH connector account context/enabled
+* feat(contexts): add/archive/restore contexts without touching the rest of routing.yaml
+
+### Bug Fixes
+
+* fix(desktop): accessible names for context and account controls
+* fix(contexts): tidy archive/restore, reject YAML-ambiguous names, share routing.yaml write lock
+* fix(api): only validate account context on PATCH when the request sets it
+* fix(api): reject enabled:null on account PATCH, build response from persisted state
+* fix(contexts): preserve CRLF and comments, serialize concurrent writes
+
 ## [1.7.0](https://github.com/nikrich/poltergeist/compare/v1.6.0...v1.7.0) (2026-09-27)
 
 
