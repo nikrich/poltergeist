@@ -187,6 +187,8 @@ def test_rewrite_is_atomic(fake_pipeline, monkeypatch):
     before = {p: p.read_text() for p in paths}
     modes = {p: os.stat(p).st_mode for p in paths}
 
+    real_replace = os.replace
+
     def boom(src, dst):
         raise OSError("disk full")
 
@@ -195,6 +197,6 @@ def test_rewrite_is_atomic(fake_pipeline, monkeypatch):
         store.upsert(_event(modified="2026-09-02T09:00:00.000Z", body="v2"))
     assert {p: p.read_text() for p in paths} == before
     assert not [p for p in paths[0].parent.iterdir() if p.name.endswith(".tmp")]
-    monkeypatch.undo()
+    monkeypatch.setattr(store.os, "replace", real_replace)
     store.upsert(_event(modified="2026-09-02T09:00:00.000Z", body="v2"))
     assert {p: os.stat(p).st_mode for p in paths} == modes
