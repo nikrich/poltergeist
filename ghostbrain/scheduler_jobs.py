@@ -16,6 +16,7 @@ from pathlib import Path
 from ghostbrain.connectors._runner import RunResult
 from ghostbrain.connectors.calendar import runner as calendar_runner
 from ghostbrain.connectors.confluence import runner as confluence_runner
+from ghostbrain.connectors.gdrive import runner as gdrive_runner
 from ghostbrain.connectors.github import runner as github_runner
 from ghostbrain.connectors.gmail import backfill as gmail_backfill
 from ghostbrain.connectors.gmail import runner as gmail_runner
@@ -230,6 +231,7 @@ def register_connectors(scheduler: Scheduler) -> None:
     """Wire every connector with its scheduling cadence."""
     scheduler.add_job("github", Interval(seconds=7200), github_runner.run, "every 2h")
     scheduler.add_job("gmail", Interval(seconds=3600), gmail_runner.run, "every 1h")
+    scheduler.add_job("gdrive", Interval(seconds=3600), gdrive_runner.run, "every 1h")
     scheduler.add_job("calendar", Interval(seconds=3600), calendar_runner.run, "every 1h")
     scheduler.add_job("slack", Interval(seconds=3600), slack_runner.run, "every 1h")
     scheduler.add_job("jira", Interval(seconds=14400), jira_runner.run, "every 4h")
