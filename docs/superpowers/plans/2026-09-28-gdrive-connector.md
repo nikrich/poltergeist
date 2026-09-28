@@ -12,6 +12,8 @@
 
 ## Global Constraints
 
+- **Rebased onto main v1.9.0 (bb03e8a) — Gmail backfill is on main.** Tasks 4b, 5–9 were amended to build on it (see each task's note). Baseline figures below were re-measured after the rebase.
+
 - Worktree: `/Users/jannik/development/nikrich/ghost-brain/.claude/worktrees/gdrive-connector`, branch `feat/gdrive-connector`. `cd` there in EVERY shell command and check `git rev-parse --abbrev-ref HEAD` prints `feat/gdrive-connector` before committing.
 - Python tests: `.venv/bin/python -m pytest <path> -q -p no:cacheprovider`. The venv exists. The repo-root `conftest.py` sandboxes `HOME`, `GHOSTBRAIN_STATE_DIR` (= `<tmp_path>/state`) and `VAULT_PATH` (= `<tmp_path>/vault`) for every test; `paths.vault_path()` / `paths.state_dir()` read the env live.
 - Baseline (not yours): full suite `.venv/bin/python -m pytest -q -p no:cacheprovider --ignore=tests/test_recorder_wasapi_io.py` = **22 failed, 1428 passed** — failures only in `test_agent_stream`, `test_calendar`, `test_joplin_connector`, `test_mcp_integration`, `test_mcp_tools`, `test_recorder_api_platform_guard`, `test_recorder_audio_backend`, `test_recorder_platform_guard`, `test_semantic`, `test_weekly_digest`. A task is green when it adds no failures beyond these.
@@ -1514,6 +1516,26 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 
 ---
 
+### Task 4b: Align with main — atomic token refresh write
+
+Main (v1.9.0, Gmail backfill) made Google token refresh writes atomic in `gmail/auth.py` and `calendar/google/auth.py` via a private `_write_token_atomic(path, text)`. The gdrive auth module (Task 1) still does a plain `write_text` + `chmod`.
+
+**Files:**
+- Modify: `ghostbrain/connectors/gdrive/auth.py` (the refresh branch of `load_credentials`, and `run_oauth_flow`'s save)
+- Test: `tests/test_gdrive_auth.py` (append)
+
+**Interfaces:**
+- Consumes: `ghostbrain.connectors.gmail.auth._write_token_atomic(path: Path, text: str) -> None` (exists on main).
+- Produces: nothing new.
+
+- [ ] **Step 1: Failing test** — append to `tests/test_gdrive_auth.py`, mirroring `tests/test_google_token_refresh_atomic.py` on main (read it first and copy its approach for gdrive): a token whose credentials are expired with a refresh token; patch the refresh so it succeeds; patch `ghostbrain.connectors.gdrive.auth._write_token_atomic` (or the gmail one it imports) to record calls; assert `load_credentials` wrote the refreshed token through it (not `Path.write_text`).
+- [ ] **Step 2: Run red.** `.venv/bin/python -m pytest tests/test_gdrive_auth.py -q -p no:cacheprovider`
+- [ ] **Step 3: Implement** — in `gdrive/auth.py`: `from ghostbrain.connectors.gmail.auth import _write_token_atomic` (one shared helper for the Google connectors that share the OAuth client — don't add a third copy); replace both `tpath.write_text(...); tpath.chmod(0o600)` pairs with `_write_token_atomic(tpath, creds.to_json())` (in `run_oauth_flow` keep the `tpath.parent.mkdir(...)` before it). Remove the unused module-level `log`/`logging` if nothing uses them.
+- [ ] **Step 4: Run green** plus `tests/test_google_token_refresh_atomic.py`.
+- [ ] **Step 5: Commit** `fix(gdrive): atomic token writes (reuse gmail helper)`.
+
+---
+
 ### Task 5: Event shape, stable filenames, in-place store
 
 **Files:**
@@ -1523,7 +1545,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: `convert.ConvertResult` (Task 4); mime constants (Task 2); `worker.pipeline.process_event`, `note_generator.write_note`, `note_generator._render`.
-- Produces: `event.TYPE_BY_MIME: dict[str, str]`, `event.build_event(file: dict, *, account: str, result: ConvertResult, folder: str | None) -> dict`; `store.find_notes(file_id: str) -> list[Path]`, `store.upsert(event: dict) -> str` returning `"imported" | "updated" | "skipped"`.
+- Produces: `event.TYPE_BY_MIME: dict[str, str]`, `event.build_event(file: dict, *, account: str, result: ConvertResult, folder: str | None) -> dict`; `store.find_notes(file_id: str) -> list[Path]`, `store.upsert(event: dict) -> tuple[str, dict | None]` returning `(outcome, pipeline_result)` — outcome `"imported" | "updated" | "skipped"`; `pipeline_result` is `process_event`'s return dict for `imported`, else `None` (Task 7's AI-routing pause needs it).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1581,7 +1603,7 @@ def test_build_event_shape():
 
 
 def test_new_file_goes_through_pipeline_with_stable_name(fake_pipeline):
-    assert store.upsert(_event()) == "imported"
+    assert store.upsert(_event())[0] == "imported"
     paths = store.find_notes("F1abc_-Z")
     assert {p.name for p in paths} == {"roadmap-F1abc_-Z.md"}
     assert len(paths) == 2  # inbox + context twin
@@ -1596,7 +1618,7 @@ def test_newer_version_rewrites_in_place_without_pipeline(fake_pipeline, monkeyp
     text = ctx_note.read_text().replace("routingMethod: account", "routingMethod: account\ntags:\n- keep")
     ctx_note.write_text(text)
 
-    assert store.upsert(_event(modified="2026-09-02T09:00:00.000Z", body="v2")) == "updated"
+    assert store.upsert(_event(modified="2026-09-02T09:00:00.000Z", body="v2"))[0] == "updated"
     assert fake_pipeline == []
     for p in store.find_notes("F1abc_-Z"):
         front, body = _front(p)
@@ -1608,13 +1630,13 @@ def test_newer_version_rewrites_in_place_without_pipeline(fake_pipeline, monkeyp
 
 def test_same_version_is_skipped(fake_pipeline):
     store.upsert(_event())
-    assert store.upsert(_event()) == "skipped"
-    assert store.upsert(_event(modified="2026-08-01T00:00:00.000Z")) == "skipped"
+    assert store.upsert(_event())[0] == "skipped"
+    assert store.upsert(_event(modified="2026-08-01T00:00:00.000Z"))[0] == "skipped"
 
 
 def test_upsert_updates_renamed_doc_under_old_filename(fake_pipeline):
     store.upsert(_event(name="Roadmap"))
-    assert store.upsert(_event(name="Roadmap 2027", modified="2026-09-03T00:00:00.000Z", body="v3")) == "updated"
+    assert store.upsert(_event(name="Roadmap 2027", modified="2026-09-03T00:00:00.000Z", body="v3"))[0] == "updated"
     paths = store.find_notes("F1abc_-Z")
     assert {p.name for p in paths} == {"roadmap-F1abc_-Z.md"}
     assert _front(paths[0])[0]["title"] == "Roadmap 2027"
@@ -1622,7 +1644,7 @@ def test_upsert_updates_renamed_doc_under_old_filename(fake_pipeline):
 
 def test_same_file_from_two_accounts_is_one_note(fake_pipeline):
     store.upsert(_event(account="me@x.com"))
-    assert store.upsert(_event(account="me@work.com")) == "skipped"
+    assert store.upsert(_event(account="me@work.com"))[0] == "skipped"
     assert len(fake_pipeline) == 1
 
 
@@ -1778,19 +1800,20 @@ def _rewrite(path: Path, event: dict) -> None:
     path.write_text(note_generator._render(front, event["body"]), encoding="utf-8")
 
 
-def upsert(event: dict) -> str:
+def upsert(event: dict) -> tuple[str, dict | None]:
+    """(outcome, pipeline result). The result is only set for 'imported' —
+    callers use it to spot LLM-routing fallbacks."""
     md = event["metadata"]
     with _lock:
         paths = find_notes(md["fileId"])
         if not paths:
-            pipeline.process_event(event)
-            return "imported"
+            return "imported", pipeline.process_event(event)
         stored = _as_time(_split(paths[0].read_text(encoding="utf-8"))[0].get("driveModifiedTime"))
         if stored is not None and stored >= parse_time(md["driveModifiedTime"]):
-            return "skipped"
+            return "skipped", None
         for p in paths:
             _rewrite(p, event)
-        return "updated"
+        return "updated", None
 ```
 
 - [ ] **Step 6: Run tests**
@@ -1817,7 +1840,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: Tasks 1–5.
-- Produces: `ingest.OUTCOMES = ("imported", "updated", "skipped", "failed", "tooLarge")`; `ingest.ingest_file(services, account: str, file: dict, folders: dict) -> str` (one of OUTCOMES; re-raises `GdriveAuthError`, `DriveRateLimited`, `DriveApiDisabled`); `connector.GdriveConnector(config: {"accounts": list[str]}, queue_dir, state_dir, *, services_for=None, now=None)` with `.run() -> int`, `.health_check() -> bool`, `.stats: collections.Counter`; `connector.DEBOUNCE`, `connector.FIRST_RUN_LOOKBACK`; `connector.cursor_path() -> Path`; `runner.run() -> RunResult`. Scheduler job `gdrive` every 3600 s; `"gdrive"` in `SYNCABLE`.
+- Produces: `ingest.OUTCOMES = ("imported", "updated", "skipped", "failed", "tooLarge")`; `ingest.ingest_file(services, account: str, file: dict, folders: dict) -> tuple[str, bool]` = (outcome in OUTCOMES, routing_fallback — True only when a newly imported note fell back to `needs_review` because LLM routing failed); re-raises `GdriveAuthError`, `DriveRateLimited`, `DriveApiDisabled`; `ingest.is_routing_fallback(result) -> bool`; `connector.GdriveConnector(config: {"accounts": list[str]}, queue_dir, state_dir, *, services_for=None, now=None)` with `.run() -> int`, `.health_check() -> bool`, `.stats: collections.Counter`; `connector.DEBOUNCE`, `connector.FIRST_RUN_LOOKBACK`; `connector.cursor_path() -> Path`; `runner.run() -> RunResult`. Scheduler job `gdrive` every 3600 s; `"gdrive"` in `SYNCABLE`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1858,7 +1881,7 @@ def upserts(monkeypatch):
 
     def _upsert(event):
         seen.append(event["metadata"]["fileId"])
-        return "imported"
+        return "imported", {"context": "work", "method": "account"}
 
     monkeypatch.setattr(store, "upsert", _upsert)
     return seen
@@ -1948,9 +1971,16 @@ def test_ingest_counts_failures_and_too_large(monkeypatch):
     d = FakeDrive()
     d.fail_next = [http_error(404, "notFound")]
     svc = fake_services(drive=d)
-    assert ingest.ingest_file(svc, "me@x.com", drive_file("gone"), {}) == "failed"
+    assert ingest.ingest_file(svc, "me@x.com", drive_file("gone"), {}) == ("failed", False)
     big = drive_file("big", mime=drive.PDF, size=10**12)
-    assert ingest.ingest_file(svc, "me@x.com", big, {}) == "tooLarge"
+    assert ingest.ingest_file(svc, "me@x.com", big, {}) == ("tooLarge", False)
+
+
+def test_is_routing_fallback():
+    assert ingest.is_routing_fallback({"method": "fallback", "context": "needs_review"})
+    assert not ingest.is_routing_fallback({"method": "account", "context": "work"})
+    assert not ingest.is_routing_fallback({"method": "path", "context": "needs_review"})
+    assert not ingest.is_routing_fallback(None)
 
 
 def test_ingest_reraises_auth_and_rate_limits():
@@ -2013,19 +2043,30 @@ OUTCOMES = ("imported", "updated", "skipped", "failed", "tooLarge")
 _ACCOUNT_LEVEL = (GdriveAuthError, drive.DriveRateLimited, drive.DriveApiDisabled)
 
 
-def ingest_file(services: drive.Services, account: str, file: dict, folders: dict) -> str:
+def is_routing_fallback(result) -> bool:
+    """True when the pipeline parked the note in needs_review because the LLM
+    router failed (router ``method == "fallback"``) — same test as Gmail's
+    backfill uses to pause on an unavailable AI router."""
+    return (isinstance(result, dict)
+            and result.get("method") == "fallback"
+            and result.get("context") == "needs_review")
+
+
+def ingest_file(services: drive.Services, account: str, file: dict, folders: dict) -> tuple[str, bool]:
+    """(outcome, routing_fallback) for one file."""
     try:
-        result = convert.convert(services, file)
+        converted = convert.convert(services, file)
         folder = drive.folder_path(services.drive, file, folders)
-        return store.upsert(build_event(file, account=account, result=result, folder=folder))
+        outcome, result = store.upsert(build_event(file, account=account, result=converted, folder=folder))
+        return outcome, outcome == "imported" and is_routing_fallback(result)
     except convert.TooLarge:
         log.info("gdrive: skipping %s (%s) — over the download cap", file.get("name"), file.get("id"))
-        return "tooLarge"
+        return "tooLarge", False
     except _ACCOUNT_LEVEL:
         raise
     except Exception:  # noqa: BLE001 — one bad file never stops the run
         log.exception("gdrive: failed to ingest %s (%s)", file.get("name"), file.get("id"))
-        return "failed"
+        return "failed", False
 ```
 
 - [ ] **Step 4: Implement `connector.py`**
@@ -2137,7 +2178,8 @@ class GdriveConnector(Connector):
                     self.stats["deferred"] += 1
                     oldest_deferred = min(oldest_deferred or modified, modified)
                     continue
-                self.stats[ingest.ingest_file(services, email, f, folders)] += 1
+                outcome, _fallback = ingest.ingest_file(services, email, f, folders)
+                self.stats[outcome] += 1
             if not token:
                 break
         cursor = started if oldest_deferred is None else min(started, oldest_deferred - timedelta(seconds=1))
@@ -2204,970 +2246,110 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 
 ### Task 7: Resumable backfill job
 
+> **Amended 2026-09-28 after rebasing onto main v1.9.0.** Main now ships `ghostbrain/connectors/gmail/backfill.py`, hardened in review. The Drive backfill follows the same state machine and guards so both behave the same. **Read `ghostbrain/connectors/gmail/backfill.py` and `tests/test_gmail_backfill.py` first.** They are the reference implementation. Mirror their structure; don't import their private helpers. A shared base gets extracted in a follow-up, not here.
+
 **Files:**
 - Create: `ghostbrain/connectors/gdrive/backfill.py`
-- Modify: `ghostbrain/scheduler_jobs.py` (register `gdrive-backfill`)
-- Test: `tests/test_gdrive_backfill.py`
+- Modify: `ghostbrain/scheduler_jobs.py` (add a `_gdrive_backfill_job()` mirroring `_gmail_backfill_job()` and register `gdrive-backfill` every 120 s)
+- Test: `tests/test_gdrive_backfill.py`, `tests/test_scheduler_gdrive_backfill_job.py` (mirror `tests/test_scheduler_gmail_backfill_job.py`)
 
 **Interfaces:**
-- Consumes: `drive.list_page`, `drive.is_mine`, `drive.build_services`, errors (Task 2); `ingest.ingest_file`, `ingest.OUTCOMES` (Task 6); `auth.slug` (Task 1); `accounts.list_accounts`.
-- Produces (module `backfill`): `MAX_YEARS = 10`, `ESTIMATE_CAP = 5000`, `BATCH_SIZE = 25`; `_services_for` (module attr, patched in tests); `_today() -> date` (patched in tests); `state_path(account) -> Path`; `start(account: str, *, since: date) -> dict`; `get(account) -> dict | None`; `pause(account) -> dict | None`; `resume(account) -> dict | None`; `cancel(account) -> bool`; `estimate(account, *, since: date) -> dict` (`{"files": int, "capped": bool}`); `run_tick(*, batch_size: int = BATCH_SIZE) -> dict`. State dict keys: `account, status, since, cursor, pageToken, imported, updated, skipped, failed, tooLarge, error, startedAt, updatedAt` + (from `get`/`start`/`pause`/`resume`) `monthsTotal, monthsDone`.
-
-- [ ] **Step 1: Write the failing tests**
-
-`tests/test_gdrive_backfill.py`:
-
-```python
-from __future__ import annotations
-
-import json
-from datetime import date
-
-import pytest
-
-from ghostbrain import accounts
-from ghostbrain.connectors.gdrive import backfill, drive, ingest
-from ghostbrain.connectors.gdrive.auth import GdriveAuthError
-from tests.gdrive_fakes import FakeDrive, drive_file, fake_services, http_error
-
-TODAY = date(2026, 9, 28)
-
-
-@pytest.fixture(autouse=True)
-def _env(monkeypatch):
-    monkeypatch.setattr(backfill, "_today", lambda: TODAY)
-    monkeypatch.setattr(drive, "_sleep", lambda s: None)
-    accounts.ensure_account("gdrive", "me@x.com")
-
-
-@pytest.fixture
-def world(monkeypatch):
-    """A FakeDrive per account + a recording ingest."""
-    drives: dict[str, FakeDrive] = {"me@x.com": FakeDrive()}
-    ingested: list[str] = []
-    outcome = {"value": "imported"}
-
-    def services_for(email):
-        d = drives[email]
-        if isinstance(d, Exception):
-            raise d
-        return fake_services(drive=d)
-
-    def _ingest(services, account, f, folders):
-        ingested.append(f["id"])
-        return outcome["value"]
-
-    monkeypatch.setattr(backfill, "_services_for", services_for)
-    monkeypatch.setattr(ingest, "ingest_file", _ingest)
-    return drives, ingested, outcome
-
-
-def test_start_clamps_since_and_reports_progress():
-    st = backfill.start("me@x.com", since=date(2001, 1, 1))
-    assert st["status"] == "running" and st["cursor"] == "2026-09"
-    assert date.fromisoformat(st["since"]) >= date(2016, 9, 28)
-    assert st["monthsDone"] == 0 and st["monthsTotal"] > 100
-
-
-def test_start_returns_existing_unfinished_backfill():
-    a = backfill.start("me@x.com", since=date(2025, 9, 28))
-    b = backfill.start("me@x.com", since=date(2020, 1, 1))
-    assert b["since"] == a["since"]
-
-
-def test_idle_tick():
-    assert backfill.run_tick() == {"skipped": "idle"}
-
-
-def test_walks_months_backwards_with_paging_then_done(world):
-    drives, ingested, _ = world
-    drives["me@x.com"].file_list = [
-        drive_file("sep1", modified="2026-09-10T00:00:00.000Z"),
-        drive_file("sep2", modified="2026-09-11T00:00:00.000Z"),
-        drive_file("sep3", modified="2026-09-12T00:00:00.000Z"),
-        drive_file("aug", modified="2026-08-15T00:00:00.000Z"),
-        drive_file("shared", modified="2026-08-16T00:00:00.000Z", owned=False, modified_by_me=False),
-    ]
-    backfill.start("me@x.com", since=date(2026, 8, 1))
-    backfill.run_tick(batch_size=2)
-    st = backfill.get("me@x.com")
-    assert st["cursor"] == "2026-09" and st["pageToken"] == "2"
-    backfill.run_tick(batch_size=2)
-    assert backfill.get("me@x.com")["cursor"] == "2026-08"
-    backfill.run_tick(batch_size=2)
-    st = backfill.get("me@x.com")
-    assert st["status"] == "done" and st["monthsDone"] == st["monthsTotal"]
-    assert ingested == ["sep3", "sep2", "sep1", "aug"]
-    assert st["imported"] == 4
-
-
-def test_month_boundary_file_is_included(world):
-    drives, ingested, _ = world
-    drives["me@x.com"].file_list = [drive_file("edge", modified="2026-08-01T00:00:00.000Z")]
-    backfill.start("me@x.com", since=date(2026, 7, 1))
-    for _ in range(4):
-        backfill.run_tick()
-    assert ingested.count("edge") == 1
-
-
-def test_counts_outcomes(world):
-    drives, _, outcome = world
-    drives["me@x.com"].file_list = [drive_file("a", modified="2026-09-10T00:00:00.000Z")]
-    outcome["value"] = "tooLarge"
-    backfill.start("me@x.com", since=date(2026, 9, 1))
-    backfill.run_tick()
-    assert backfill.get("me@x.com")["tooLarge"] == 1
-
-
-def test_resume_after_crash_reuses_page_token(world):
-    drives, ingested, _ = world
-    drives["me@x.com"].file_list = [drive_file(f"f{i}", modified=f"2026-09-1{i}T00:00:00.000Z") for i in range(3)]
-    backfill.start("me@x.com", since=date(2026, 9, 1))
-    p = backfill.state_path("me@x.com")
-    st = json.loads(p.read_text())
-    st["pageToken"] = "1"
-    p.write_text(json.dumps(st))
-    backfill.run_tick(batch_size=5)
-    assert ingested == ["f1", "f0"]
-
-
-def test_auth_error_then_resume(world):
-    drives, _, _ = world
-    drives["me@x.com"] = GdriveAuthError("revoked")
-    backfill.start("me@x.com", since=date(2026, 9, 1))
-    backfill.run_tick()
-    st = backfill.get("me@x.com")
-    assert st["status"] == "error" and st["error"] == "needs re-auth"
-    assert backfill.run_tick() == {"skipped": "idle"}
-    drives["me@x.com"] = FakeDrive()
-    assert backfill.resume("me@x.com")["status"] == "running"
-    assert backfill.get("me@x.com")["error"] is None
-
-
-def test_api_disabled_sets_error_message(world):
-    drives, _, _ = world
-    drives["me@x.com"].fail_next = [http_error(403, "accessNotConfigured")]
-    backfill.start("me@x.com", since=date(2026, 9, 1))
-    backfill.run_tick()
-    assert "Enable the Google Drive API" in backfill.get("me@x.com")["error"]
-
-
-def test_rate_limit_leaves_state_unchanged(world):
-    drives, _, _ = world
-    backfill.start("me@x.com", since=date(2026, 9, 1))
-    before = backfill.get("me@x.com")
-    drives["me@x.com"].fail_next = [http_error(429, "rateLimitExceeded")] * (drive.MAX_RETRIES + 1)
-    assert backfill.run_tick()["skipped"] == "rate_limited"
-    after = backfill.get("me@x.com")
-    assert (after["status"], after["cursor"], after["pageToken"]) == ("running", before["cursor"], before["pageToken"])
-
-
-def test_pause_skips_and_cancel_deletes_state(world):
-    backfill.start("me@x.com", since=date(2026, 9, 1))
-    assert backfill.pause("me@x.com")["status"] == "paused"
-    assert backfill.run_tick() == {"skipped": "idle"}
-    assert backfill.cancel("me@x.com") is True
-    assert backfill.get("me@x.com") is None
-
-
-def test_disabled_account_is_skipped_removed_account_cancelled(world):
-    backfill.start("me@x.com", since=date(2026, 9, 1))
-    acc = accounts.get_account("gdrive", "me@x.com")
-    import dataclasses
-    accounts.upsert_account(dataclasses.replace(acc, enabled=False), check_context=False)
-    assert backfill.run_tick() == {"skipped": "idle"}
-    assert backfill.get("me@x.com") is not None
-    accounts.remove_account("gdrive", "me@x.com")
-    backfill.run_tick()
-    assert backfill.get("me@x.com") is None
-
-
-def test_round_robin_picks_least_recently_updated(world):
-    drives, _, _ = world
-    accounts.ensure_account("gdrive", "b@x.com")
-    drives["b@x.com"] = FakeDrive()
-    backfill.start("me@x.com", since=date(2026, 9, 1))
-    backfill.start("b@x.com", since=date(2026, 9, 1))
-    first = backfill.run_tick()["account"]
-    second = backfill.run_tick()["account"]
-    assert {first, second} == {"me@x.com", "b@x.com"}
-
-
-def test_estimate_counts_mine_and_caps(world, monkeypatch):
-    drives, _, _ = world
-    drives["me@x.com"].file_list = [
-        drive_file("a", modified="2026-09-01T00:00:00.000Z"),
-        drive_file("s", modified="2026-09-01T00:00:00.000Z", owned=False, modified_by_me=False),
-    ]
-    assert backfill.estimate("me@x.com", since=date(2026, 1, 1)) == {"files": 1, "capped": False}
-    monkeypatch.setattr(backfill, "ESTIMATE_CAP", 1)
-    assert backfill.estimate("me@x.com", since=date(2026, 1, 1)) == {"files": 1, "capped": True}
-
-
-def test_scheduler_registers_backfill_tick():
-    from ghostbrain import scheduler_jobs
-
-    class Rec:
-        def __init__(self):
-            self.jobs = {}
-
-        def add_job(self, name, schedule, fn, label):
-            self.jobs[name] = (schedule, label)
-
-        def add_daemon(self, *a, **k):
-            pass
-
-    r = Rec()
-    scheduler_jobs.register_connectors(r)
-    assert r.jobs["gdrive-backfill"][0].seconds == 120
-```
-
-Check the real signatures of `accounts.ensure_account`, `accounts.upsert_account` and `accounts.remove_account` (`ghostbrain/accounts.py:137-205`) before running; adapt the three call sites in the test if their parameters differ.
-
-- [ ] **Step 2: Run to verify they fail**
-
-Run: `.venv/bin/python -m pytest tests/test_gdrive_backfill.py -q -p no:cacheprovider`
-Expected: FAIL — `backfill` missing.
-
-- [ ] **Step 3: Implement `backfill.py`**
-
-```python
-"""Resumable per-account Drive backfill, ticked by the in-app scheduler.
-
-State lives in ``<state>/gdrive_backfill.<slug>.json``. The cursor is a month
-(``YYYY-MM``) walking backwards from the current month; ``pageToken`` resumes
-within the month. State is persisted after every file, and re-listing a page
-after a crash is harmless because unchanged files upsert as 'skipped'."""
-from __future__ import annotations
-
-import json
-import logging
-from datetime import date, datetime, time, timedelta, timezone
-from pathlib import Path
-
-from ghostbrain import accounts
-from ghostbrain.connectors.gdrive import drive, ingest
-from ghostbrain.connectors.gdrive.auth import GdriveAuthError, slug
-from ghostbrain.paths import state_dir
-
-log = logging.getLogger("ghostbrain.connectors.gdrive.backfill")
-
-MAX_YEARS = 10
-ESTIMATE_CAP = 5000
-BATCH_SIZE = 25
-_COUNTERS = ("imported", "updated", "skipped", "failed", "tooLarge")
-
-_services_for = drive.build_services
-
-
-def _today() -> date:
-    return datetime.now(timezone.utc).date()
-
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def state_path(account: str) -> Path:
-    return state_dir() / f"gdrive_backfill.{slug(account)}.json"
-
-
-def _load_path(path: Path) -> dict | None:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-
-
-def _save(st: dict) -> None:
-    st["updatedAt"] = _now_iso()
-    p = state_path(st["account"])
-    p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_suffix(".tmp")
-    tmp.write_text(json.dumps(st, indent=2), encoding="utf-8")
-    tmp.replace(p)
-
-
-def _month_index(d: date) -> int:
-    return d.year * 12 + d.month - 1
-
-
-def _with_progress(st: dict) -> dict:
-    today = _today()
-    since = date.fromisoformat(st["since"])
-    y, m = map(int, st["cursor"].split("-"))
-    total = _month_index(today) - _month_index(since) + 1
-    done = total if st["status"] == "done" else _month_index(today) - (y * 12 + m - 1)
-    return {**st, "monthsTotal": total, "monthsDone": max(0, min(done, total))}
-
-
-def start(account: str, *, since: date) -> dict:
-    existing = _load_path(state_path(account))
-    if existing and existing.get("status") != "done":
-        return _with_progress(existing)
-    today = _today()
-    since = max(since, today - timedelta(days=365 * MAX_YEARS + MAX_YEARS // 4))
-    st = {
-        "account": account, "status": "running", "since": since.isoformat(),
-        "cursor": today.strftime("%Y-%m"), "pageToken": None,
-        **{k: 0 for k in _COUNTERS},
-        "error": None, "startedAt": _now_iso(), "updatedAt": _now_iso(),
-    }
-    _save(st)
-    return _with_progress(st)
-
-
-def get(account: str) -> dict | None:
-    st = _load_path(state_path(account))
-    return _with_progress(st) if st else None
-
-
-def _set_status(account: str, allowed: tuple[str, ...], status: str) -> dict | None:
-    st = _load_path(state_path(account))
-    if st is None:
-        return None
-    if st["status"] in allowed:
-        st["status"] = status
-        st["error"] = None if status == "running" else st.get("error")
-        _save(st)
-    return _with_progress(st)
-
-
-def pause(account: str) -> dict | None:
-    return _set_status(account, ("running",), "paused")
-
-
-def resume(account: str) -> dict | None:
-    return _set_status(account, ("paused", "error"), "running")
-
-
-def cancel(account: str) -> bool:
-    try:
-        state_path(account).unlink()
-        return True
-    except FileNotFoundError:
-        return False
-
-
-def _utc_midnight(d: date) -> datetime:
-    return datetime.combine(d, time.min, tzinfo=timezone.utc)
-
-
-def estimate(account: str, *, since: date) -> dict:
-    services = _services_for(account)
-    after = _utc_midnight(since) - timedelta(seconds=1)
-    count, token = 0, None
-    while True:
-        files, token = drive.list_page(services.drive, after=after, page_token=token,
-                                       page_size=1000, fields="id,ownedByMe,modifiedByMe")
-        count += sum(1 for f in files if drive.is_mine(f))
-        if count >= ESTIMATE_CAP:
-            return {"files": ESTIMATE_CAP, "capped": True}
-        if not token:
-            return {"files": count, "capped": False}
-
-
-def run_tick(*, batch_size: int = BATCH_SIZE) -> dict:
-    registry = {a.id.lower(): a for a in accounts.list_accounts("gdrive", include_disabled=True)}
-    runnable: list[dict] = []
-    for path in sorted(state_dir().glob("gdrive_backfill.*.json")):
-        st = _load_path(path)
-        if st is None:
-            continue
-        acc = registry.get(str(st.get("account", "")).lower())
-        if acc is None:
-            path.unlink(missing_ok=True)  # account removed → backfill cancelled
-            continue
-        if acc.enabled and st.get("status") == "running":
-            runnable.append(st)
-    if not runnable:
-        return {"skipped": "idle"}
-    return _tick(min(runnable, key=lambda s: s.get("updatedAt") or ""), batch_size)
-
-
-def _tick(st: dict, batch_size: int) -> dict:
-    account = st["account"]
-    since = _utc_midnight(date.fromisoformat(st["since"]))
-    y, m = map(int, st["cursor"].split("-"))
-    month_start = datetime(y, m, 1, tzinfo=timezone.utc)
-    next_start = datetime(y + (m == 12), m % 12 + 1, 1, tzinfo=timezone.utc)
-    # modifiedTime > after is strict: back off one second so a file at exactly
-    # 00:00:00 on the 1st lands in this month's window.
-    after = max(month_start, since) - timedelta(seconds=1)
-    try:
-        services = _services_for(account)
-        files, token = drive.list_page(services.drive, after=after, before=next_start,
-                                       page_token=st.get("pageToken"), page_size=batch_size)
-        folders: dict = {}
-        for f in files:
-            if not drive.is_mine(f):
-                continue
-            st[ingest.ingest_file(services, account, f, folders)] += 1
-            _save(st)
-    except GdriveAuthError:
-        st.update(status="error", error="needs re-auth")
-        _save(st)
-        return {"account": account, "status": "error"}
-    except drive.DriveApiDisabled as e:
-        st.update(status="error", error=str(e))
-        _save(st)
-        return {"account": account, "status": "error"}
-    except drive.DriveRateLimited:
-        log.warning("gdrive backfill for %s rate-limited; retrying next tick", account)
-        return {"account": account, "skipped": "rate_limited"}
-
-    if token:
-        st["pageToken"] = token
-    else:
-        st["pageToken"] = None
-        if month_start <= since:
-            st["status"] = "done"
-        else:
-            prev = month_start - timedelta(days=1)
-            st["cursor"] = prev.strftime("%Y-%m")
-    _save(st)
-    return {"account": account, "cursor": st["cursor"], "processed": len(files), "status": st["status"]}
-```
-
-- [ ] **Step 4: Register the tick**
-
-In `scheduler_jobs.py`, import `from ghostbrain.connectors.gdrive import backfill as gdrive_backfill` and after the `gdrive` job:
-
-```python
-    scheduler.add_job(
-        "gdrive-backfill",
-        Interval(seconds=120),
-        lambda: _wrap_job("gdrive-backfill", gdrive_backfill.run_tick),
-        "every 2m",
-    )
-```
-
-- [ ] **Step 5: Run tests**
-
-Run: `.venv/bin/python -m pytest tests/test_gdrive_backfill.py tests/test_gdrive_connector.py -q -p no:cacheprovider`
-Expected: PASS.
-
-- [ ] **Step 6: Commit**
-
-```bash
-cd /Users/jannik/development/nikrich/ghost-brain/.claude/worktrees/gdrive-connector && git add ghostbrain/connectors/gdrive/backfill.py ghostbrain/scheduler_jobs.py tests/test_gdrive_backfill.py && git commit -m "feat(gdrive): resumable month-by-month backfill job
-
-Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
-```
+- Consumes: `drive.list_page`, `drive.is_mine`, `drive.build_services`, `drive.DriveRateLimited`, `drive.DriveApiDisabled`, `drive.reasons` (Task 2); `ingest.ingest_file(services, account, file, folders) -> tuple[str, bool]` = (outcome in `ingest.OUTCOMES`, routing_fallback) (Task 6); `auth.slug`, `auth.GdriveAuthError` (Task 1); `accounts.get_account`, `accounts.list_accounts`.
+- Produces (module `ghostbrain.connectors.gdrive.backfill`):
+  - constants `BATCH_SIZE = 25`, `MAX_YEARS = 10`, `ESTIMATE_CAP = 5000`, `TICK_BUDGET_SECONDS = 60`, `ROUTING_FALLBACK_LIMIT = 5`, `AUTH_ERROR_MESSAGE = "needs re-auth"`, `ROUTING_ERROR_MESSAGE = "AI routing unavailable — resume later"`
+  - seams patched in tests: `_services_for = drive.build_services`, `_today() -> date` (local calendar day, as in gmail), `_now() -> datetime`, `_monotonic() -> float`
+  - `state_path(account) -> Path` = `<state>/gdrive_backfill.<slug>.json`
+  - `start(account, *, since: date) -> dict`. Raises `KeyError` for an account not registered under `gdrive`. Returns the existing state if it's not `done`. `since` is clamped to `MAX_YEARS`, the same way gmail's `_clamp_since` does it.
+  - `get(account) -> dict | None`. Adds `monthsTotal` / `monthsDone`, computed like gmail's `get`.
+  - `pause(account)`, `resume(account)`. Resume clears `error` and resets `routingFallbacks` to 0. `cancel(account) -> bool`.
+  - `estimate(account, *, since: date) -> dict`, returning `{"files": int, "capped": bool}`. It pages `fields="id,ownedByMe,modifiedByMe"` with `page_size=1000` and counts `is_mine`. It stops at `ESTIMATE_CAP` and returns `{"files": ESTIMATE_CAP, "capped": True}`. `GdriveAuthError` and `DriveApiDisabled` propagate.
+  - `run_tick(*, batch_size: int = BATCH_SIZE) -> dict`. Never raises for Drive or network trouble.
+  - State keys: `account, status, since, cursor ("YYYY-MM"), pageToken, pageDone (list of file ids), imported, updated, skipped, failed, tooLarge, routingFallbacks, error, startedAt, updatedAt`.
+
+**Behaviour to mirror from gmail's `backfill.py`, adapted to Drive:**
+1. **State I/O.** Use atomic writes (temp file plus `os.replace`) and a module-level `threading.Lock`. `_update(account, *, _started=None, _incr=None, **fields)` re-reads the file under the lock before merging, so a pause or cancel issued mid-tick is never overwritten. Given `_started`, it only writes while the stored `startedAt` still matches, meaning the backfill wasn't cancelled and restarted in between. It returns None when the file is gone or was replaced.
+2. **`_pick_next()`.** Scan `gdrive_backfill.*.json`. An account missing from the registry gets its state deleted, which cancels it. A disabled account is skipped. Among `running` states, pick the oldest `updatedAt`. A malformed registry (`accounts.list_accounts` raising) leaves every state alone and returns None.
+3. **Window per tick.** `month_start` is the first of the cursor month. `after = max(month_start, since at 00:00 UTC) - 1 second`, because `modifiedTime >` is strict and a file at exactly 00:00:00 on the 1st must land in that month. `before` is the first of the next month. `drive.list_page(services.drive, after=..., before=..., page_token=state["pageToken"], page_size=batch_size)`.
+4. **Per file.** Skip ids already in `pageDone` and files that fail `is_mine`. Otherwise `outcome, fallback = ingest.ingest_file(services, account, f, folders)`. Record each file with `_update(..., _started=started, _incr={outcome: 1}, pageDone=[...])`, just as gmail does per thread. Stop the tick if the returned state is None (cancelled) or its status is no longer `running` (paused mid-tick).
+5. **AI-routing pause.** The streak counts only files that were imported: `routingFallbacks` goes up by one on a fallback and resets to 0 on a successful import. When it reaches `ROUTING_FALLBACK_LIMIT`, set `status="error"` and `error=ROUTING_ERROR_MESSAGE`. `updated` and `skipped` outcomes leave the streak alone.
+6. **Tick budget.** Once `_monotonic() - t0 >= TICK_BUDGET_SECONDS` with files still left on the page, persist `pageDone` and return. The cursor and page token only advance once the whole page is handled. Never clobber a routing-pause error, same as gmail's `setdefault("error", None)`.
+7. **Page end.** If there's a next token, set `pageToken` and clear `pageDone`. Otherwise set `pageToken=None` and `pageDone=[]`, then either mark `done` (the cursor month's start is on or before the `since` day) or step the cursor back one month. Clear `error` on a clean page end.
+8. **Errors, in the order gmail classifies them:**
+   - `GdriveAuthError` or google `RefreshError`: `status="error"`, `error=AUTH_ERROR_MESSAGE`.
+   - `DriveApiDisabled`: `status="error"`, `error=str(e)`, which carries the enable-API message.
+   - `DriveRateLimited`, `OSError`, `TimeoutError`, `httplib2.HttpLib2Error`, or `HttpError` 429/5xx (transient): keep `running`, set `error` to the exception type name, and leave cursor, page token and `pageDone` untouched so the page is retried next tick.
+   - `HttpError` 400/404 on `list_page` while a page token is set: clear the token and `pageDone` so the month is redone.
+   - Any other 4xx on list without a token: `status="error"`, `error=f"Drive rejected the query ({status})"`.
+   - Per-file errors are already absorbed by `ingest_file` as `failed`. Account-level ones it re-raises (auth, rate limit, API disabled) follow the rules above.
+
+**Tests** (`tests/test_gdrive_backfill.py`). Use the fakes from `tests/gdrive_fakes.py`. Patch `backfill._services_for` with a per-account FakeDrive and `ingest.ingest_file` with a recorder that returns `(outcome, fallback)`. Cover at least:
+- start is idempotent, restarts after done, clamps `since`, and raises `KeyError` for an unknown account
+- months walk backwards with paging and end in `done`; `monthsDone == monthsTotal`
+- `test_month_boundary_file_is_included`: a file at `2026-08-01T00:00:00.000Z` is ingested exactly once across the Sept/Aug/Jul windows
+- outcomes are counted (`tooLarge`, `updated`, `skipped`, `failed`)
+- resume after a crash: a state with `pageToken` and `pageDone` set skips the ids already done
+- auth error goes to `needs re-auth`, the tick stays idle, then resume works; `DriveApiDisabled` stores the enable-API message
+- a transient error (`DriveRateLimited`, and 503) keeps `running` with `error` set to the type name, and cursor/token are unchanged
+- 400 with a page token clears the token; a 4xx without one sets `status="error"`
+- pause issued during a tick is respected (patch `ingest_file` to call `backfill.pause` on the first file)
+- cancel plus restart during a tick keeps the new state (mirror gmail's test)
+- the tick budget stops mid-page and the next tick continues the same page (patch `_monotonic`)
+- the AI-routing pause triggers after 5 fallbacks; the counter resets on a successful import and carries across ticks
+- a removed account cancels its state; a disabled one is skipped
+- two accounts alternate by `updatedAt`
+- `estimate` counts only files the account owns or edited, and caps at `ESTIMATE_CAP`
+
+`tests/test_scheduler_gdrive_backfill_job.py` mirrors the gmail scheduler-job test: `gdrive-backfill` is registered every 120 s and wraps `run_tick`.
+
+Commit: `feat(gdrive): resumable month-by-month backfill job`.
 
 ---
 
 ### Task 8: Backfill API routes
 
+> **Amended 2026-09-28 after rebasing onto main v1.9.0.** `ghostbrain/api/routes/connectors.py` on main already has the Gmail backfill routes and the `_since_for_years`, `BackfillStartBody` helpers. Add the Drive routes beside them, reusing those helpers, with the same status codes and messages. Read the Gmail routes and `ghostbrain/api/tests/test_gmail_backfill_routes.py` first.
+
 **Files:**
-- Modify: `ghostbrain/api/routes/connectors.py` (append)
-- Test: `ghostbrain/api/tests/test_gdrive_backfill_routes.py`
+- Modify: `ghostbrain/api/routes/connectors.py`
+- Test: `ghostbrain/api/tests/test_gdrive_backfill_routes.py`, which mirrors the structure and fixtures of `test_gmail_backfill_routes.py`
 
 **Interfaces:**
-- Consumes: `backfill.start/get/pause/resume/cancel/estimate` (Task 7); `accounts.get_account`.
-- Produces: `GET/POST/DELETE /v1/connectors/gdrive/accounts/{account_id}/backfill`, `GET …/backfill/estimate?years=N`, `POST …/backfill/pause`, `POST …/backfill/resume`. POST body `{"years": int 1..10}`.
+- Consumes: `gdrive.backfill.start/get/pause/resume/cancel/estimate`, `AUTH_ERROR_MESSAGE` (Task 7); `drive.DriveApiDisabled`; `auth.GdriveAuthError`; the existing `_since_for_years(years) -> date` and `BackfillStartBody`.
+- Produces: under `/v1/connectors/gdrive/accounts/{account_id}/backfill`:
+  - `GET` returns the state, or 404 `"No backfill for this account"`
+  - `GET …/estimate?years=N` with `Query(..., ge=1, le=10)` returns `{"files": int, "capped": bool, "since": "YYYY-MM-DD"}`. `GdriveAuthError` gives 409 with detail `AUTH_ERROR_MESSAGE`. `DriveApiDisabled` gives 409 with `str(e)`.
+  - `POST` with body `BackfillStartBody` returns 201 plus `backfill.get(account)`. If the in-app scheduler is off it returns 409 with the same message as the Gmail start route.
+  - `POST …/pause` and `POST …/resume` return the state, or 404.
+  - `DELETE` returns `{"ok": true}`.
+  - Every route answers 404 for an account not registered under `gdrive`. Add a `_gdrive_account_or_404` next to `_gmail_account_or_404`.
+  - Import the gdrive backfill module at module level, as the Gmail one is.
 
-- [ ] **Step 1: Write the failing tests**
+**Tests:** mirror every Gmail route test that applies to Drive: 404s, 409 when the scheduler is off, 422 for years 0 or 11, start/get/pause/resume/cancel, estimate shape, estimate auth giving 409 `needs re-auth`, and the API-disabled 409 message. Compute expected `since` values with `_since_for_years(N).isoformat()` rather than hard-coded dates.
 
-`ghostbrain/api/tests/test_gdrive_backfill_routes.py`:
-
-```python
-from __future__ import annotations
-
-from datetime import date
-
-import pytest
-
-from ghostbrain import accounts
-from ghostbrain.connectors.gdrive import backfill
-from ghostbrain.connectors.gdrive.auth import GdriveAuthError
-
-BASE = "/v1/connectors/gdrive/accounts/me@x.com/backfill"
-
-
-@pytest.fixture(autouse=True)
-def _acct(tmp_vault, tmp_state_dir, monkeypatch):
-    monkeypatch.setattr(backfill, "_today", lambda: date(2026, 9, 28))
-    accounts.ensure_account("gdrive", "me@x.com")
-
-
-@pytest.fixture
-def scheduler_on(client):
-    client.app.state.scheduler = object()
-    yield
-    client.app.state.scheduler = None
-
-
-def test_get_404_when_none(client, auth_headers):
-    assert client.get(BASE, headers=auth_headers).status_code == 404
-
-
-def test_unknown_account_404(client, auth_headers, scheduler_on):
-    r = client.post("/v1/connectors/gdrive/accounts/who@x.com/backfill", json={"years": 1}, headers=auth_headers)
-    assert r.status_code == 404
-
-
-def test_start_requires_scheduler(client, auth_headers):
-    client.app.state.scheduler = None
-    r = client.post(BASE, json={"years": 3}, headers=auth_headers)
-    assert r.status_code == 409 and "Scheduler" in r.json()["detail"]
-
-
-def test_start_validates_years(client, auth_headers, scheduler_on):
-    assert client.post(BASE, json={"years": 0}, headers=auth_headers).status_code == 422
-    assert client.post(BASE, json={"years": 11}, headers=auth_headers).status_code == 422
-
-
-def test_start_get_pause_resume_cancel(client, auth_headers, scheduler_on):
-    r = client.post(BASE, json={"years": 3}, headers=auth_headers)
-    assert r.status_code == 201
-    body = r.json()
-    assert body["status"] == "running" and body["since"] == "2023-09-29"
-    assert client.get(BASE, headers=auth_headers).json()["monthsTotal"] == body["monthsTotal"]
-    assert client.post(f"{BASE}/pause", headers=auth_headers).json()["status"] == "paused"
-    assert client.post(f"{BASE}/resume", headers=auth_headers).json()["status"] == "running"
-    assert client.delete(BASE, headers=auth_headers).json() == {"ok": True}
-    assert client.post(f"{BASE}/pause", headers=auth_headers).status_code == 404
-
-
-def test_estimate(client, auth_headers, monkeypatch):
-    seen = {}
-
-    def fake(account, *, since):
-        seen["since"] = since
-        return {"files": 42, "capped": False}
-
-    monkeypatch.setattr(backfill, "estimate", fake)
-    r = client.get(f"{BASE}/estimate?years=2", headers=auth_headers)
-    assert r.json() == {"files": 42, "capped": False, "since": "2024-09-28"}
-
-
-def test_estimate_auth_error_is_409(client, auth_headers, monkeypatch):
-    def boom(account, *, since):
-        raise GdriveAuthError("revoked")
-
-    monkeypatch.setattr(backfill, "estimate", boom)
-    r = client.get(f"{BASE}/estimate?years=1", headers=auth_headers)
-    assert r.status_code == 409 and r.json()["detail"] == "needs re-auth"
-```
-
-`since` for N years = `today - timedelta(days=365 * N)`: 2026-09-28 − 1095 days = 2023-09-29 (Feb 2024 is a leap day); − 730 days = 2024-09-28.
-
-- [ ] **Step 2: Run to verify they fail**
-
-Run: `.venv/bin/python -m pytest ghostbrain/api/tests/test_gdrive_backfill_routes.py -q -p no:cacheprovider`
-Expected: FAIL — 404/405 for the new paths.
-
-- [ ] **Step 3: Implement** (append to `ghostbrain/api/routes/connectors.py`; add `from datetime import timedelta` and `from pydantic import Field` to the imports)
-
-```python
-# --- Google Drive backfill -------------------------------------------------
-
-class BackfillStart(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    years: int = Field(ge=1, le=10)
-
-
-def _gdrive_account(account_id: str) -> str:
-    from ghostbrain import accounts
-
-    acc = accounts.get_account("gdrive", account_id)
-    if acc is None:
-        raise HTTPException(status_code=404, detail=f"Account not found: {account_id}")
-    return acc.id
-
-
-def _since_for(years: int):
-    from ghostbrain.connectors.gdrive import backfill
-
-    return backfill._today() - timedelta(days=365 * years)
-
-
-@router.get("/gdrive/accounts/{account_id}/backfill")
-def gdrive_backfill_get(account_id: str) -> dict:
-    from ghostbrain.connectors.gdrive import backfill
-
-    st = backfill.get(_gdrive_account(account_id))
-    if st is None:
-        raise HTTPException(status_code=404, detail="No backfill for this account")
-    return st
-
-
-@router.get("/gdrive/accounts/{account_id}/backfill/estimate")
-def gdrive_backfill_estimate(account_id: str, years: int = 3) -> dict:
-    from ghostbrain.connectors.gdrive import backfill, drive
-    from ghostbrain.connectors.gdrive.auth import GdriveAuthError
-
-    if not 1 <= years <= 10:
-        raise HTTPException(status_code=422, detail="years must be 1-10")
-    since = _since_for(years)
-    try:
-        result = backfill.estimate(_gdrive_account(account_id), since=since)
-    except GdriveAuthError as e:
-        raise HTTPException(status_code=409, detail="needs re-auth") from e
-    except drive.DriveApiDisabled as e:
-        raise HTTPException(status_code=409, detail=str(e)) from e
-    return {**result, "since": since.isoformat()}
-
-
-@router.post("/gdrive/accounts/{account_id}/backfill", status_code=201)
-def gdrive_backfill_start(account_id: str, body: BackfillStart, request: Request) -> dict:
-    from ghostbrain.connectors.gdrive import backfill
-
-    account = _gdrive_account(account_id)
-    if getattr(request.app.state, "scheduler", None) is None:
-        raise HTTPException(
-            status_code=409,
-            detail="Scheduler not running. Enable 'Run scheduler in-app' in Settings.",
-        )
-    return backfill.start(account, since=_since_for(body.years))
-
-
-@router.post("/gdrive/accounts/{account_id}/backfill/{action}")
-def gdrive_backfill_action(account_id: str, action: str) -> dict:
-    from ghostbrain.connectors.gdrive import backfill
-
-    fn = {"pause": backfill.pause, "resume": backfill.resume}.get(action)
-    if fn is None:
-        raise HTTPException(status_code=404, detail=f"Unknown action: {action}")
-    st = fn(_gdrive_account(account_id))
-    if st is None:
-        raise HTTPException(status_code=404, detail="No backfill for this account")
-    return st
-
-
-@router.delete("/gdrive/accounts/{account_id}/backfill")
-def gdrive_backfill_cancel(account_id: str) -> dict:
-    from ghostbrain.connectors.gdrive import backfill
-
-    backfill.cancel(_gdrive_account(account_id))
-    return {"ok": True}
-```
-
-If the `scheduler_on` fixture's `client.app.state.scheduler = object()` leaks into other endpoints during the app's lifespan, that's fine — the fixture resets it.
-
-- [ ] **Step 4: Run tests**
-
-Run: `.venv/bin/python -m pytest ghostbrain/api/tests/test_gdrive_backfill_routes.py ghostbrain/api/tests/test_connectors.py ghostbrain/api/tests/test_connectors_accounts.py ghostbrain/api/tests/test_account_update_route.py -q -p no:cacheprovider`
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-cd /Users/jannik/development/nikrich/ghost-brain/.claude/worktrees/gdrive-connector && git add ghostbrain/api/routes/connectors.py ghostbrain/api/tests/test_gdrive_backfill_routes.py && git commit -m "feat(gdrive): backfill API routes
-
-Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
-```
+Commit: `feat(gdrive): backfill API routes`.
 
 ---
 
-### Task 9: Desktop — catalog card, types, hooks, backfill UI
+### Task 9: Desktop — catalog card, generalised backfill UI
+
+> **Amended 2026-09-28 after rebasing onto main v1.9.0.** Main ships a Gmail-only backfill UI: `components/GmailBackfill.tsx` (a progress line plus an accessible dialog), the hooks `useGmailBackfill`, `useBackfillEstimate`, `useStartBackfill`, `useBackfillAction` hard-wired to `/v1/connectors/gmail/…`, types `GmailBackfill` and `GmailBackfillEstimate`, and `__tests__/GmailBackfill.test.tsx`. **Generalise all of this to take a connector id.** Don't add a second, parallel component or a second set of hooks. The Gmail behaviour and copy must stay exactly the same, and `GmailBackfill.test.tsx` must pass with at most import or name updates.
 
 **Files:**
-- Create: `desktop/src/renderer/components/AccountBackfill.tsx`, `desktop/src/renderer/__tests__/AccountBackfill.test.tsx`
-- Modify: `desktop/src/shared/api-types.ts`, `desktop/src/renderer/lib/api/hooks.ts`, `desktop/src/renderer/lib/connector-catalog.ts`, `desktop/src/renderer/components/ConnectorAccounts.tsx`, `desktop/src/renderer/__tests__/connector-catalog.test.ts` (if it asserts the card list)
+- Rename: `components/GmailBackfill.tsx` → `components/AccountBackfill.tsx` (use `git mv`)
+- Modify: `desktop/src/shared/api-types.ts`, `desktop/src/renderer/lib/api/hooks.ts`, `components/ConnectorAccounts.tsx`, `lib/connector-catalog.ts`, `__tests__/GmailBackfill.test.tsx` (imports only, if needed), `__tests__/connector-catalog.test.ts` (if it pins the card list)
+- Create: `desktop/src/renderer/__tests__/DriveBackfill.test.tsx`
 
-**Interfaces:**
-- Consumes: Task 8 routes.
-- Produces: types `BackfillStatus`, `BackfillState`, `BackfillEstimate`; hooks `useBackfill(connectorId, accountId)`, `useBackfillEstimate(connectorId, accountId, years, enabled)`, `useStartBackfill()`, `useBackfillAction()`; `BACKFILL_CONNECTORS: ReadonlySet<string>` and `<AccountBackfill connectorId accountId onReauth />`.
+**Design:**
+- **Types.** Rename `GmailBackfill` to `BackfillState` and `GmailBackfillStatus` to `BackfillStatus`. Add optional `updated?: number` and `tooLarge?: number`, which only Drive sends, plus `routingFallbacks?: number` if it isn't there yet. Keep `GmailBackfillEstimate` (`{threads, since}`) and add `DriveBackfillEstimate` (`{files, capped, since}`). Update every use.
+- **Hooks.** They take the connector id as their first argument: `useAccountBackfill(connectorId, accountId, enabled?)`, `useBackfillEstimate<T>(connectorId, accountId, years, enabled?)`, `useStartBackfill()` and `useBackfillAction()`, whose mutation variables gain `connectorId`. The path is `/v1/connectors/${connectorId}/accounts/${encodeURIComponent(accountId)}/backfill`, and the query keys are `['backfill', connectorId, accountId]` and `['backfill-estimate', connectorId, accountId, years]`. Remove `useGmailBackfill` and keep the 15 s poll while `running`.
+- **Component.** `AccountBackfill({ connectorId, accountId, onReauth })` reads a small per-connector config map with these keys:
+  - `gmail`: noun `threads`, the blurb as it is today, the estimate count read from `threads`, and the current `~N threads you took part in` line.
+  - `gdrive`: noun `files`, blurb `Import past Docs, Sheets, PDFs and Word/Excel files you own or edited. Runs in the background a small batch at a time.`, count from `files`, and the estimate line `~N files you own or edited` with a `+` after N when `capped`, followed by the same pace text.
 
-- [ ] **Step 1: Write the failing test**
-
-`desktop/src/renderer/__tests__/AccountBackfill.test.tsx`:
-
-```tsx
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import * as client from '../lib/api/client';
-import { ApiError } from '../lib/api/client';
-import { AccountBackfill } from '../components/AccountBackfill';
-import type { BackfillState } from '../../shared/api-types';
-
-vi.mock('../lib/api/client', async () => {
-  const actual = await vi.importActual<typeof import('../lib/api/client')>('../lib/api/client');
-  return { ...actual, get: vi.fn(), post: vi.fn(), patch: vi.fn(), del: vi.fn() };
-});
-
-const BASE = '/v1/connectors/gdrive/accounts/me%40x.com/backfill';
-
-function state(over: Partial<BackfillState> = {}): BackfillState {
-  return {
-    account: 'me@x.com', status: 'running', since: '2023-09-29', cursor: '2026-08',
-    pageToken: null, imported: 12, updated: 1, skipped: 3, failed: 0, tooLarge: 2,
-    error: null, startedAt: '', updatedAt: '', monthsTotal: 37, monthsDone: 1, ...over,
-  };
-}
-
-function renderIt(onReauth = vi.fn()) {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(
-    <QueryClientProvider client={qc}>
-      <AccountBackfill connectorId="gdrive" accountId="me@x.com" onReauth={onReauth} />
-    </QueryClientProvider>,
-  );
-  return onReauth;
-}
-
-describe('AccountBackfill', () => {
-  beforeEach(() => vi.mocked(client.post).mockResolvedValue(state()));
-  afterEach(() => vi.clearAllMocks());
-
-  it('offers a backfill with an estimate when none exists', async () => {
-    vi.mocked(client.get).mockImplementation(async (path: string) => {
-      if (path === BASE) throw new ApiError('none', 404);
-      if (path.startsWith(`${BASE}/estimate`)) return { files: 5000, capped: true, since: '2023-09-29' };
-      throw new Error(path);
-    });
-    renderIt();
-    fireEvent.click(await screen.findByRole('button', { name: 'backfill…' }));
-    expect(await screen.findByText(/~5,000\+ files/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'start backfill' }));
-    await waitFor(() => expect(client.post).toHaveBeenCalledWith(BASE, { years: 3 }));
-  });
-
-  it('shows running progress with pause and cancel', async () => {
-    vi.mocked(client.get).mockResolvedValue(state());
-    renderIt();
-    expect(await screen.findByText(/backfilling · Aug 2026 · 12 imported · 1 updated · 3 already had · 0 failed · 2 too large/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'pause' }));
-    await waitFor(() => expect(client.post).toHaveBeenCalledWith(`${BASE}/pause`));
-  });
-
-  it('shows reauthorize on auth error', async () => {
-    vi.mocked(client.get).mockResolvedValue(state({ status: 'error', error: 'needs re-auth' }));
-    const onReauth = renderIt();
-    fireEvent.click(await screen.findByRole('button', { name: 'reauthorize' }));
-    expect(onReauth).toHaveBeenCalled();
-  });
-
-  it('done state can be dismissed', async () => {
-    vi.mocked(client.get).mockResolvedValue(state({ status: 'done' }));
-    vi.mocked(client.del).mockResolvedValue({ ok: true });
-    renderIt();
-    fireEvent.click(await screen.findByRole('button', { name: 'dismiss' }));
-    await waitFor(() => expect(client.del).toHaveBeenCalledWith(BASE));
-  });
-});
-```
-
-- [ ] **Step 2: Run to verify it fails**
-
-Run: `cd desktop && npx vitest run src/renderer/__tests__/AccountBackfill.test.tsx`
-Expected: FAIL — component missing.
-
-- [ ] **Step 3: Types** — append to `desktop/src/shared/api-types.ts`:
-
-```ts
-export type BackfillStatus = 'running' | 'paused' | 'done' | 'error';
-
-export interface BackfillState {
-  account: string;
-  status: BackfillStatus;
-  since: string;
-  cursor: string;
-  pageToken: string | null;
-  imported: number;
-  updated: number;
-  skipped: number;
-  failed: number;
-  tooLarge: number;
-  error: string | null;
-  startedAt: string;
-  updatedAt: string;
-  monthsTotal: number;
-  monthsDone: number;
-}
-
-export interface BackfillEstimate {
-  files: number;
-  capped: boolean;
-  since: string;
-}
-```
-
-- [ ] **Step 4: Hooks** — append to `desktop/src/renderer/lib/api/hooks.ts` (add `BackfillEstimate`, `BackfillState` to the type import and `ApiError` to the client import if not already imported):
-
-```ts
-const backfillPath = (connectorId: string, accountId: string) =>
-  `/v1/connectors/${connectorId}/accounts/${encodeURIComponent(accountId)}/backfill`;
-
-/** The account's backfill, or null when none exists (404). Polls every 15 s
- *  while running. Connector-parametrised so Gmail's backfill can share it. */
-export function useBackfill(connectorId: string, accountId: string) {
-  return useQuery({
-    queryKey: ['backfill', connectorId, accountId],
-    queryFn: async () => {
-      try {
-        return await get<BackfillState>(backfillPath(connectorId, accountId));
-      } catch (e) {
-        if (e instanceof ApiError && e.status === 404) return null;
-        throw e;
-      }
-    },
-    refetchInterval: (q) => (q.state.data?.status === 'running' ? 15_000 : false),
-  });
-}
-
-export function useBackfillEstimate(connectorId: string, accountId: string, years: number, enabled: boolean) {
-  return useQuery({
-    queryKey: ['backfill-estimate', connectorId, accountId, years],
-    queryFn: () => get<BackfillEstimate>(`${backfillPath(connectorId, accountId)}/estimate?years=${years}`),
-    enabled,
-    staleTime: 5 * 60_000,
-  });
-}
-
-export function useStartBackfill() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (a: { connectorId: string; accountId: string; years: number }) =>
-      post<BackfillState>(backfillPath(a.connectorId, a.accountId), { years: a.years }),
-    onSettled: (_d, _e, a) => qc.invalidateQueries({ queryKey: ['backfill', a.connectorId, a.accountId] }),
-  });
-}
-
-export function useBackfillAction() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (a: { connectorId: string; accountId: string; action: 'pause' | 'resume' | 'cancel' }) =>
-      a.action === 'cancel'
-        ? del(backfillPath(a.connectorId, a.accountId))
-        : post<BackfillState>(`${backfillPath(a.connectorId, a.accountId)}/${a.action}`),
-    onSettled: (_d, _e, a) => qc.invalidateQueries({ queryKey: ['backfill', a.connectorId, a.accountId] }),
-  });
-}
-```
-
-Check how the existing `ApiError` import/usage looks in `hooks.ts` (the import screen already relies on `status`) and mirror it. Check the `@tanstack/react-query` major in `desktop/package.json`: the `refetchInterval: (q) => q.state.data…` form is v5; on v4 it's `(data) => data?.status…`.
-
-- [ ] **Step 5: Component** — `desktop/src/renderer/components/AccountBackfill.tsx`:
-
-```tsx
-import { useState } from 'react';
-
-import { Btn } from './Btn';
-import type { BackfillState } from '../../shared/api-types';
-import { useBackfill, useBackfillAction, useBackfillEstimate, useStartBackfill } from '../lib/api/hooks';
-import { toast } from '../stores/toast';
-
-/** Connectors whose accounts support a backfill. Gmail joins when its branch merges. */
-export const BACKFILL_CONNECTORS: ReadonlySet<string> = new Set(['gdrive']);
-
-const YEARS = [1, 2, 3, 5] as const;
-const PACE_PER_HOUR = 750;
-
-function monthLabel(cursor: string): string {
-  const [y, m] = cursor.split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, 1)).toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
-}
-
-function counts(s: BackfillState): string {
-  return `${s.imported} imported · ${s.updated} updated · ${s.skipped} already had · ${s.failed} failed · ${s.tooLarge} too large`;
-}
-
-interface Props {
-  connectorId: string;
-  accountId: string;
-  onReauth: () => void;
-}
-
-export function AccountBackfill({ connectorId, accountId, onReauth }: Props) {
-  const backfill = useBackfill(connectorId, accountId);
-  const start = useStartBackfill();
-  const act = useBackfillAction();
-  const [open, setOpen] = useState(false);
-  const [years, setYears] = useState(3);
-  const estimate = useBackfillEstimate(connectorId, accountId, years, open && backfill.data === null);
-
-  const onError = (e: unknown) => toast.error(e instanceof Error ? e.message : 'backfill: request failed');
-  const run = (action: 'pause' | 'resume' | 'cancel') =>
-    act.mutate({ connectorId, accountId, action }, { onError });
-
-  if (backfill.isLoading) return null;
-  const s = backfill.data;
-
-  if (s) {
-    const line =
-      s.status === 'running' ? `backfilling · ${monthLabel(s.cursor)} · ${counts(s)}`
-      : s.status === 'paused' ? `backfill paused · ${monthLabel(s.cursor)} · ${counts(s)}`
-      : s.status === 'done' ? `backfill complete · ${counts(s)}`
-      : `backfill stopped · ${s.error ?? 'error'}`;
-    return (
-      <div className="flex flex-wrap items-center gap-2 text-11 text-ink-2" data-testid={`backfill-${accountId}`}>
-        <span className="min-w-0 flex-1">{line}</span>
-        {s.status === 'running' && <Btn variant="ghost" size="sm" onClick={() => run('pause')}>pause</Btn>}
-        {s.status === 'paused' && <Btn variant="ghost" size="sm" onClick={() => run('resume')}>resume</Btn>}
-        {s.status === 'error' && s.error === 'needs re-auth' && (
-          <Btn variant="ghost" size="sm" onClick={onReauth}>reauthorize</Btn>
-        )}
-        {s.status === 'error' && <Btn variant="ghost" size="sm" onClick={() => run('resume')}>resume</Btn>}
-        {s.status === 'done'
-          ? <Btn variant="ghost" size="sm" onClick={() => run('cancel')}>dismiss</Btn>
-          : <Btn variant="ghost" size="sm" onClick={() => run('cancel')}>cancel</Btn>}
-      </div>
-    );
-  }
-
-  if (!open) {
-    return (
-      <Btn variant="ghost" size="sm" className="self-start" onClick={() => setOpen(true)}>
-        backfill…
-      </Btn>
-    );
-  }
-
-  const est = estimate.data;
-  const hours = est ? Math.max(1, Math.round(est.files / PACE_PER_HOUR)) : null;
-  return (
-    <div className="flex flex-wrap items-center gap-2 text-11 text-ink-2">
-      <select
-        aria-label={`backfill years for ${accountId}`}
-        value={years}
-        onChange={(e) => setYears(Number(e.target.value))}
-        className="rounded-r6 border border-hairline-2 bg-vellum px-2 py-1 font-mono text-11 text-ink-0"
-      >
-        {YEARS.map((y) => (
-          <option key={y} value={y}>{`${y} year${y > 1 ? 's' : ''}`}</option>
-        ))}
-      </select>
-      <span className="min-w-0 flex-1">
-        {estimate.isLoading && 'estimating…'}
-        {estimate.isError && (estimate.error instanceof Error ? estimate.error.message : 'estimate failed')}
-        {est && `~${est.files.toLocaleString('en-US')}${est.capped ? '+' : ''} files · about ${hours} h at the current pace`}
-      </span>
-      <Btn
-        variant="secondary"
-        size="sm"
-        disabled={start.isPending}
-        onClick={() =>
-          start.mutate({ connectorId, accountId, years }, { onSuccess: () => setOpen(false), onError })
-        }
-      >
-        start backfill
-      </Btn>
-      <Btn variant="ghost" size="sm" onClick={() => setOpen(false)}>close</Btn>
-    </div>
-  );
-}
-```
-
-A 409 "Scheduler not running" from start surfaces through `onError` as a toast with the server's message.
-
-- [ ] **Step 6: Wire it in + catalog card**
-
-In `ConnectorAccounts.tsx`, import `{ AccountBackfill, BACKFILL_CONNECTORS }` and inside each account row, after the context/enabled row `</div>`:
-
-```tsx
-            {BACKFILL_CONNECTORS.has(connector.id) && (
-              <AccountBackfill connectorId={connector.id} accountId={a.id} onReauth={() => onReauth(a.id)} />
-            )}
-```
-
-In `connector-catalog.ts`, after the `calendar` card:
-
-```ts
+  Export `BACKFILL_CONNECTORS = new Set(['gmail', 'gdrive'])`. Progress lines keep Gmail's exact wording. For Drive, when present, add ` · ${updated} updated` after imported and ` · ${tooLarge} too large` after failed. Everything else stays shared: dialog, a11y, 409 handling, the confirm on cancel, reauthorize.
+- **`ConnectorAccounts.tsx`.** Replace the `connector.id === 'gmail'` check with `BACKFILL_CONNECTORS.has(connector.id)` and render `<AccountBackfill connectorId={connector.id} … />`.
+- **Catalog card.** Insert it after `calendar`:
+  ```ts
   {
     id: 'gdrive',
     displayName: 'Google Drive',
@@ -3176,22 +2358,18 @@ In `connector-catalog.ts`, after the `calendar` card:
     docsUrl: 'https://console.cloud.google.com/apis/library',
     group: 'google',
   },
-```
+  ```
 
-If `connector-catalog.test.ts` asserts the exact list/count of cards or google group members, update it to include `gdrive`.
+**Tests:**
+- `GmailBackfill.test.tsx` stays green, changing only imports or renamed symbols.
+- New `DriveBackfill.test.tsx`, modelled on the Gmail test, rendering `ConnectorAccounts` for a `gdrive` connector:
+  - The dialog estimate shows `~5,000+ files you own or edited` for `{files: 5000, capped: true}`, and start POSTs `{years: 3}` to `/v1/connectors/gdrive/accounts/a%40x.com/backfill`.
+  - The running line includes `updated` and `too large`.
+  - An auth error shows reauthorize.
+  - Done shows dismiss, which DELETEs.
+- Run `cd desktop && npx vitest run` (the whole suite) and `npm run typecheck`.
 
-- [ ] **Step 7: Run tests + typecheck**
-
-Run: `cd desktop && npx vitest run src/renderer/__tests__/AccountBackfill.test.tsx src/renderer/__tests__/ConnectorAccounts.test.tsx src/renderer/__tests__/connector-catalog.test.ts && npm run typecheck`
-Expected: PASS, typecheck clean. (`ConnectorAccounts.test.tsx` uses `id: 'gmail'`, so no backfill row renders there and it stays green.)
-
-- [ ] **Step 8: Commit**
-
-```bash
-cd /Users/jannik/development/nikrich/ghost-brain/.claude/worktrees/gdrive-connector && git add desktop/src && git commit -m "feat(gdrive): desktop card, backfill hooks and per-account backfill UI
-
-Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
-```
+Commit: `feat(gdrive): desktop card; generalise backfill UI to gmail + drive`.
 
 ---
 
