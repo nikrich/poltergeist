@@ -13,6 +13,7 @@ import logging
 import os
 import tempfile
 import threading
+import time
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -35,7 +36,11 @@ BATCH_SIZE = 25
 MAX_YEARS = 10
 NUM_RETRIES = 3  # googleapiclient built-in backoff per request
 
+TICK_BUDGET_SECONDS = 60  # stop taking new threads once a tick ran this long
+ROUTING_FALLBACK_LIMIT = 5  # consecutive LLM-routing failures before pausing
+
 AUTH_ERROR_MESSAGE = "needs re-auth"
+ROUTING_ERROR_MESSAGE = "AI routing unavailable — resume later"
 _STATE_PREFIX = "gmail_backfill."
 
 _lock = threading.Lock()
@@ -47,6 +52,10 @@ def _today() -> date:
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+def _monotonic() -> float:
+    return time.monotonic()
 
 
 # ---------------------------------------------------------------------------
@@ -79,16 +88,29 @@ def _write(path: Path, state: dict) -> None:
         raise
 
 
-def _update(account: str, **fields) -> dict | None:
+def _update(
+    account: str,
+    *,
+    _started: str | None = None,
+    _incr: dict[str, int] | None = None,
+    **fields,
+) -> dict | None:
     """Merge ``fields`` into the on-disk state under the lock.
 
     Re-reads first so a pause/cancel issued mid-tick is never overwritten.
-    Returns the new state, or None when the state file is gone."""
+    ``_incr`` adds to counters of the re-read state. With ``_started`` the
+    write only happens while the stored ``startedAt`` still matches (i.e. the
+    backfill was not cancelled and restarted meanwhile).
+    Returns the new state, or None when the state file is gone / replaced."""
     path = _state_path(account)
     with _lock:
         state = _read(path)
         if state is None:
             return None
+        if _started is not None and state.get("startedAt") != _started:
+            return None
+        for key, n in (_incr or {}).items():
+            state[key] = int(state.get(key) or 0) + n
         state.update(fields)
         state["updatedAt"] = _now().isoformat()
         _write(path, state)
@@ -187,7 +209,7 @@ def pause(account: str) -> dict | None:
 
 
 def resume(account: str) -> dict | None:
-    return _set_status(account, "running", error=None)
+    return _set_status(account, "running", error=None, routingFallbacks=0)
 
 
 def cancel(account: str) -> bool:
@@ -229,15 +251,26 @@ def run_tick(
     Never raises for Gmail/network trouble: auth failures park the backfill
     in ``error``; transient failures record ``error`` (type name only), keep
     it ``running`` and leave cursor/pageToken alone so the page is retried
-    (dedup makes that idempotent)."""
+    (dedup makes that idempotent).
+
+    Every write is tied to the ``startedAt`` of the state this tick picked:
+    once the backfill was cancelled (and maybe restarted) the tick ends
+    without touching the new state. The tick stops taking new threads after
+    ``TICK_BUDGET_SECONDS``; the handled thread ids are kept in ``pageDone``
+    and cursor/pageToken only advance once the whole page was handled."""
+    t0 = _monotonic()
     state = _pick_next()
     if state is None:
         return {"skipped": "idle"}
     account = state["account"]
+    started = state.get("startedAt")
     if process is None:
         from ghostbrain.worker.pipeline import process_event as process
 
     counts = {"imported": 0, "skipped": 0, "failed": 0}
+
+    def update(**fields) -> dict | None:
+        return _update(account, _started=started, **fields)
 
     def summary(st: dict | None) -> dict:
         if st is None:  # cancelled mid-tick
@@ -247,12 +280,14 @@ def run_tick(
 
     def gmail_failed(e: Exception) -> dict:
         if _classify(e) == "auth":
-            return summary(_auth_failed(account))
+            log.warning("gmail backfill %s: %s", account, AUTH_ERROR_MESSAGE)
+            return summary(update(status="error", error=AUTH_ERROR_MESSAGE))
         log.warning("gmail backfill %s: transient %s; retrying next tick",
                     account, type(e).__name__)
-        return summary(_update(account, error=type(e).__name__))
+        return summary(update(error=type(e).__name__))
 
     cursor = state["cursor"]
+    page_token = state.get("pageToken")
     first = _month_start(cursor)
     query = (f"{QUERY_BASE} after:{first:%Y/%m/%d} "
              f"before:{_next_month(first):%Y/%m/%d}")
@@ -260,17 +295,31 @@ def run_tick(
         service = (service_factory or _build_service)(account)
         resp = service.users().threads().list(
             userId="me", q=query, maxResults=batch_size,
-            pageToken=state.get("pageToken"),
+            pageToken=page_token,
         ).execute(num_retries=NUM_RETRIES)
-    except Exception as e:  # noqa: BLE001 — classified in gmail_failed
-        return gmail_failed(e)
+    except Exception as e:  # noqa: BLE001 — classified below
+        status = _rejected_status(e)
+        if status is None:
+            return gmail_failed(e)
+        if page_token:
+            # A stale/invalid page token: redo the month from the start
+            # (dedup makes that safe).
+            log.warning("gmail backfill %s: list rejected (%s) with a page "
+                        "token; restarting month %s", account, status, cursor)
+            return summary(update(pageToken=None, pageDone=[],
+                                  error=type(e).__name__))
+        log.warning("gmail backfill %s: query rejected (%s)", account, status)
+        return summary(update(status="error",
+                              error=f"Gmail rejected the query ({status})"))
 
+    stubs = [s for s in (resp.get("threads") or []) if s.get("id")]
+    done_ids: list[str] = [str(i) for i in state.get("pageDone") or []]
+    todo = [s for s in stubs if s["id"] not in set(done_ids)]
     existing = _existing_gmail_ids()
     denylist = _denylist()
-    for stub in resp.get("threads") or []:
-        tid = stub.get("id")
-        if not tid:
-            continue
+    for i, stub in enumerate(todo):
+        tid = stub["id"]
+        routing_fallback: bool | None = None
         try:
             full = service.users().threads().get(
                 userId="me", id=tid, format="full",
@@ -283,21 +332,43 @@ def run_tick(
             outcome = "failed"
         else:
             try:
-                outcome = _import_thread(full, account, existing, denylist, process)
+                outcome, result = _import_thread(full, account, existing, denylist, process)
             except Exception as e:  # noqa: BLE001
                 log.warning("gmail backfill %s: thread %s failed: %s",
                             account, tid, type(e).__name__)
                 outcome = "failed"
+            else:
+                if outcome == "imported":
+                    routing_fallback = _is_routing_fallback(result)
         counts[outcome] += 1
-        new = _update(account, **{outcome: int(state.get(outcome) or 0) + 1})
+        done_ids.append(tid)
+        fields: dict = {}
+        if routing_fallback is not None:
+            streak = (int(state.get("routingFallbacks") or 0) + 1
+                      if routing_fallback else 0)
+            fields["routingFallbacks"] = streak
+            if streak >= ROUTING_FALLBACK_LIMIT:
+                log.warning("gmail backfill %s: %d threads in a row fell back "
+                            "to needs_review; pausing", account, streak)
+                fields.update(status="error", error=ROUTING_ERROR_MESSAGE,
+                              pageDone=done_ids)
+        remaining = i + 1 < len(todo)
+        over_budget = remaining and _monotonic() - t0 >= TICK_BUDGET_SECONDS
+        if over_budget:
+            fields.update(pageDone=done_ids, error=None)
+        new = update(_incr={outcome: 1}, **fields)
         if new is None:
             return summary(None)
         state = new
         if state.get("status") != "running":
             return summary(state)
+        if over_budget:
+            log.info("gmail backfill %s: tick budget used; continuing next tick",
+                     account)
+            return summary(state)
 
     token = resp.get("nextPageToken")
-    fields: dict = {"error": None}
+    fields = {"error": None, "pageDone": []}
     if token:
         fields["pageToken"] = token
     else:
@@ -305,7 +376,7 @@ def run_tick(
         fields.update(cursor=_prev_month_key(cursor), pageToken=None)
         if last_day < date.fromisoformat(state["since"]):
             fields["status"] = "done"
-    return summary(_update(account, **fields))
+    return summary(update(**fields))
 
 
 # ---------------------------------------------------------------------------
@@ -364,20 +435,36 @@ def _classify_403(exc) -> str:
     return "transient" if ("rate" in text or "quota" in text) else "auth"
 
 
-def _import_thread(full, account, existing, denylist, process) -> str:
+def _rejected_status(exc: BaseException) -> int | None:
+    """The HTTP status when Gmail rejected a request with a non-auth,
+    non-transient 4xx (bad query / page token); else None."""
+    from googleapiclient.errors import HttpError  # lazy — heavy
+
+    if not isinstance(exc, HttpError) or _classify(exc) != "thread":
+        return None
+    status = int(getattr(exc, "status_code", None) or getattr(exc.resp, "status", 0) or 0)
+    return status if 400 <= status < 500 else None
+
+
+def _is_routing_fallback(result) -> bool:
+    """True when the pipeline parked the note in needs_review because the
+    LLM router failed (router ``method == "fallback"``). Gmail threads always
+    have a title, so the router's other fallback (no classifiable content)
+    cannot occur here."""
+    return (isinstance(result, dict)
+            and result.get("method") == "fallback"
+            and result.get("context") == "needs_review")
+
+
+def _import_thread(full, account, existing, denylist, process) -> tuple[str, dict | None]:
     event = _normalize_thread(full, account=account)
     if event is None or _is_denied(event, denylist) or _is_promotional(event):
-        return "skipped"
+        return "skipped", None
     if event["id"] in existing:
-        return "skipped"
-    process(event)
+        return "skipped", None
+    result = process(event)
     existing.add(event["id"])
-    return "imported"
-
-
-def _auth_failed(account: str) -> dict | None:
-    log.warning("gmail backfill %s: %s", account, AUTH_ERROR_MESSAGE)
-    return _update(account, status="error", error=AUTH_ERROR_MESSAGE)
+    return "imported", result
 
 
 def _pick_next() -> dict | None:
