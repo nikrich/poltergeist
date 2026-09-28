@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import tempfile
 from pathlib import Path
 
 log = logging.getLogger("ghostbrain.connectors.calendar.google.auth")
@@ -46,6 +47,21 @@ def token_path(account_email: str) -> Path:
     return state_dir() / f"google_calendar.{slug}.token"
 
 
+def _write_token_atomic(path: Path, text: str) -> None:
+    """Replace the token file atomically (temp file in the same dir, mode
+    600, ``os.replace``) so a crash or a concurrent reader never sees a
+    truncated token."""
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
 def load_credentials(account_email: str):
     """Return refreshed `google.oauth2.credentials.Credentials` for the
     account. Raises ``GoogleAuthError`` when missing or unrefreshable."""
@@ -71,8 +87,7 @@ def load_credentials(account_email: str):
                     f"Refresh token rejected for {account_email}: {e}. "
                     f"Re-run: ghostbrain-calendar-auth google {account_email}"
                 ) from e
-            tpath.write_text(creds.to_json(), encoding="utf-8")
-            tpath.chmod(0o600)
+            _write_token_atomic(tpath, creds.to_json())
         else:
             raise GoogleAuthError(
                 f"Credentials invalid for {account_email} and no refresh "

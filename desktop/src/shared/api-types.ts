@@ -41,6 +41,32 @@ export interface ConnectorAccount {
   health: AccountHealth | null;
 }
 
+export type GmailBackfillStatus = 'running' | 'paused' | 'done' | 'error';
+
+/** Per-account Gmail backfill job state (GET /v1/connectors/gmail/accounts/{id}/backfill). */
+export interface GmailBackfill {
+  account: string;
+  status: GmailBackfillStatus;
+  since: string;
+  /** Month being processed, 'YYYY-MM'. */
+  cursor: string;
+  pageToken: string | null;
+  imported: number;
+  skipped: number;
+  failed: number;
+  /** "needs re-auth" for auth failures; an exception type name for transient ones. */
+  error: string | null;
+  startedAt: string;
+  updatedAt: string;
+  monthsTotal: number;
+  monthsDone: number;
+}
+
+export interface GmailBackfillEstimate {
+  threads: number;
+  since: string;
+}
+
 export interface ConnectorDetail extends Connector {
   scopes: string[];
   pulls: string[];

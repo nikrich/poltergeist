@@ -13,6 +13,8 @@ import type {
   ConfluenceExportResponse,
   Connector,
   ConnectorDetail,
+  GmailBackfill,
+  GmailBackfillEstimate,
   Conversation,
   ConversationSummary,
   CreateJotRequest,
@@ -45,7 +47,7 @@ import type {
   McpServersResponse,
   McpServerWrite,
 } from '../../../shared/api-types';
-import { del, get, patch, post, put } from './client';
+import { ApiError, del, get, patch, post, put } from './client';
 
 export function useVaultStats() {
   return useQuery({
@@ -767,6 +769,62 @@ export function useUpdateAccount() {
       qc.invalidateQueries({ queryKey: ['connector', a.connectorId] });
       qc.invalidateQueries({ queryKey: ['connectors'] });
     },
+  });
+}
+
+const backfillPath = (accountId: string) =>
+  `/v1/connectors/gmail/accounts/${encodeURIComponent(accountId)}/backfill`;
+
+/** Gmail backfill state for one account; `null` when none exists (404).
+ * Polls every 15 s only while the job is running. */
+export function useGmailBackfill(accountId: string, enabled = true) {
+  return useQuery({
+    queryKey: ['gmail-backfill', accountId],
+    queryFn: async ({ signal }) => {
+      try {
+        return await get<GmailBackfill>(backfillPath(accountId), { signal });
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 404) return null;
+        throw e;
+      }
+    },
+    enabled,
+    refetchInterval: (query) => (query.state.data?.status === 'running' ? 15_000 : false),
+  });
+}
+
+export function useBackfillEstimate(accountId: string, years: number, enabled = true) {
+  return useQuery({
+    queryKey: ['gmail-backfill-estimate', accountId, years],
+    queryFn: ({ signal }) =>
+      get<GmailBackfillEstimate>(`${backfillPath(accountId)}/estimate?years=${years}`, { signal }),
+    enabled,
+    retry: false,
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useStartBackfill() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (a: { accountId: string; years: number }) =>
+      post<GmailBackfill>(backfillPath(a.accountId), { years: a.years }),
+    onSettled: (_data, _err, a) =>
+      qc.invalidateQueries({ queryKey: ['gmail-backfill', a.accountId] }),
+  });
+}
+
+export type BackfillAction = 'pause' | 'resume' | 'cancel';
+
+export function useBackfillAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (a: { accountId: string; action: BackfillAction }) =>
+      a.action === 'cancel'
+        ? del(backfillPath(a.accountId))
+        : post(`${backfillPath(a.accountId)}/${a.action}`),
+    onSettled: (_data, _err, a) =>
+      qc.invalidateQueries({ queryKey: ['gmail-backfill', a.accountId] }),
   });
 }
 
