@@ -207,3 +207,23 @@ def test_delete_backfill_is_idempotent(
     )
     assert resp.status_code == 200
     assert resp.json() == {"ok": True}
+
+
+def test_delete_backfill_404_for_unknown_account(
+    client: TestClient, auth_headers, tmp_vault: Path,
+):
+    _register_gmail_account(tmp_vault)
+    resp = client.delete(
+        "/v1/connectors/gmail/accounts/nobody@example.com/backfill", headers=auth_headers,
+    )
+    assert resp.status_code == 404
+
+
+def test_delete_backfill_ok_for_known_account_without_backfill(
+    client: TestClient, auth_headers, tmp_vault: Path,
+):
+    _register_gmail_account(tmp_vault)
+    resp = client.delete(
+        f"/v1/connectors/gmail/accounts/{ACCOUNT}/backfill", headers=auth_headers,
+    )
+    assert resp.status_code == 200 and resp.json() == {"ok": True}

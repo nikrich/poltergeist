@@ -135,6 +135,7 @@ def resume_backfill(account_id: str) -> dict:
 
 @router.delete("/gmail/accounts/{account_id}/backfill")
 def delete_backfill(account_id: str) -> dict:
+    _gmail_account_or_404(account_id)
     gmail_backfill.cancel(account_id)
     return {"ok": True}
 
