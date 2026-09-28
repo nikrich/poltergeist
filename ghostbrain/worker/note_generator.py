@@ -123,6 +123,11 @@ def _build_frontmatter(
                     "user_name", "permalink", "is_dm", "is_mpim", "thread_ts"):
             if md.get(key) is not None:
                 front[key] = md[key]
+    elif source == "gdrive":
+        for key in ("fileId", "mimeType", "driveModifiedTime", "owners", "folder",
+                    "accountId", "truncated"):
+            if md.get(key) is not None:
+                front[key] = md[key]
 
     return front
 
@@ -133,6 +138,14 @@ def _render(front: dict[str, Any], body: str) -> str:
 
 
 def _filename_for(event: dict, note_id: str) -> str:
+    if event.get("source") == "gdrive":
+        # One note per Drive file, updated in place: no timestamp, and the raw
+        # file id (filesystem-safe, case-sensitive) is the lookup key.
+        file_id = (event.get("metadata") or {}).get("fileId")
+        if file_id:
+            title_slug = _slugify(event.get("title") or "")[:60] or "doc"
+            return f"{title_slug}-{file_id}.md"
+
     ts = event.get("timestamp") or datetime.now(timezone.utc).isoformat()
     ts_slug = re.sub(r"[^0-9TZ]", "", ts)[:15]  # 20260507T103000
     title = event.get("title") or note_id
