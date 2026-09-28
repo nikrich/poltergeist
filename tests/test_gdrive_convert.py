@@ -86,6 +86,33 @@ def test_sheet_truncation_from_grid_size():
     assert "_…truncated (document continues in Drive)_" in res.body
 
 
+def test_sheet_chart_and_data_source_tabs_are_skipped():
+    sh = FakeSheets(
+        {"s1": {"Chart 1": [], "Budget": [["Item"], ["Laptop"]], "Data": [], "Notes": [["n"]]}},
+        sheet_types={"s1": {"Chart 1": "OBJECT", "Data": "DATA_SOURCE", "Notes": "GRID"}},
+    )
+    res = convert.convert(fake_services(sheets=sh), drive_file("s1", mime=drive.GSHEET))
+    assert "sheetType" in sh.get_calls[0]["fields"]
+    # "Budget" reports no sheetType: that counts as GRID
+    assert sh.batch_calls[0]["ranges"] == ["'Budget'!A1:AX5000", "'Notes'!A1:AX5000"]
+    assert "## Budget" in res.body and "## Notes" in res.body
+    assert "Chart 1" not in res.body and "more tab" not in res.body
+
+
+def test_sheet_with_only_chart_tabs_is_empty():
+    sh = FakeSheets({"s1": {"Chart": []}}, sheet_types={"s1": {"Chart": "OBJECT"}})
+    res = convert.convert(fake_services(sheets=sh), drive_file("s1", mime=drive.GSHEET))
+    assert sh.batch_calls == [] and res.body == convert.EMPTY_BODY
+
+
+def test_non_grid_tabs_do_not_count_toward_the_tab_cap():
+    tabs = {f"T{i}": [["v"]] for i in range(tables.MAX_TABS + 2)}
+    tabs["Chart"] = []
+    sh = FakeSheets({"s1": tabs}, sheet_types={"s1": {"Chart": "OBJECT"}})
+    res = convert.convert(fake_services(sheets=sh), drive_file("s1", mime=drive.GSHEET))
+    assert res.body.endswith("_…2 more tabs_")
+
+
 def test_sheet_tab_cap():
     sh = FakeSheets({"s1": {f"T{i}": [["v"]] for i in range(tables.MAX_TABS + 4)}})
     res = convert.convert(fake_services(sheets=sh), drive_file("s1", mime=drive.GSHEET))

@@ -122,12 +122,18 @@ class FakeDocs:
 
 class FakeSheets:
     """``sheets``: {spreadsheetId: {tab title: rows}}; ``grid``: optional
-    {spreadsheetId: {tab title: (rowCount, columnCount)}}."""
+    {spreadsheetId: {tab title: (rowCount, columnCount)}}; ``sheet_types``:
+    optional {spreadsheetId: {tab title: sheetType}} — tabs without an entry
+    report no ``sheetType``. Like the real API, ``batchGet`` rejects an A1
+    range on a non-GRID (chart / data-source) tab with a 400."""
 
     def __init__(self, sheets: dict[str, dict[str, list[list]]] | None = None,
-                 grid: dict[str, dict[str, tuple[int, int]]] | None = None):
+                 grid: dict[str, dict[str, tuple[int, int]]] | None = None,
+                 sheet_types: dict[str, dict[str, str]] | None = None):
         self.sheets = sheets or {}
         self.grid = grid or {}
+        self.sheet_types = sheet_types or {}
+        self.get_calls: list[dict] = []
         self.batch_calls: list[dict] = []
         self.fail_next: list[Exception] = []
 
@@ -138,15 +144,21 @@ class FakeSheets:
         return self
 
     def get(self, spreadsheetId, fields=None):
+        self.get_calls.append({"spreadsheetId": spreadsheetId, "fields": fields})
+
+        def props(t, rows):
+            kind = self.sheet_types.get(spreadsheetId, {}).get(t)
+            out: dict = {"title": t}
+            if kind is not None:
+                out["sheetType"] = kind
+            if kind in (None, "GRID"):
+                grid = self.grid.get(spreadsheetId, {})
+                out["gridProperties"] = {"rowCount": grid.get(t, (len(rows), 26))[0],
+                                         "columnCount": grid.get(t, (len(rows), 26))[1]}
+            return {"properties": out}
+
         def run():
-            tabs = self.sheets[spreadsheetId]
-            grid = self.grid.get(spreadsheetId, {})
-            return {"sheets": [
-                {"properties": {"title": t, "gridProperties": {
-                    "rowCount": grid.get(t, (len(rows), 26))[0],
-                    "columnCount": grid.get(t, (len(rows), 26))[1]}}}
-                for t, rows in tabs.items()
-            ]}
+            return {"sheets": [props(t, rows) for t, rows in self.sheets[spreadsheetId].items()]}
         return _Req(self, run)
 
     def batchGet(self, spreadsheetId, ranges, valueRenderOption=None):
@@ -157,6 +169,8 @@ class FakeSheets:
             out = []
             for r in ranges:
                 title = r.rsplit("!", 1)[0][1:-1].replace("''", "'")
+                if self.sheet_types.get(spreadsheetId, {}).get(title, "GRID") != "GRID":
+                    raise http_error(400, "badRequest", f"Unable to parse range: {r}")
                 rows = tabs[title]
                 vr = {"range": r}
                 if rows:

@@ -79,9 +79,12 @@ def _sheet(services: drive.Services, file: dict) -> tuple[str, bool]:
     sid = file["id"]
     meta = drive.execute(services.sheets.spreadsheets().get(
         spreadsheetId=sid,
-        fields="sheets.properties(title,gridProperties(rowCount,columnCount))",
+        fields="sheets.properties(title,sheetType,gridProperties(rowCount,columnCount))",
     ), api="Sheets")
-    props = [s["properties"] for s in meta.get("sheets") or []]
+    # Chart (OBJECT) and DATA_SOURCE tabs have no cells: an A1 range on one
+    # fails the whole batchGet, so only GRID tabs (the default) are read.
+    props = [s["properties"] for s in meta.get("sheets") or []
+             if s["properties"].get("sheetType", "GRID") == "GRID"]
     shown = props[:tables.MAX_TABS]
     if not shown:
         return "", False
