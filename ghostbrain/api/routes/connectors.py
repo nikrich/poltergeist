@@ -6,6 +6,7 @@ from dataclasses import asdict
 from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from httplib2 import HttpLib2Error
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ghostbrain import accounts
@@ -13,7 +14,7 @@ from ghostbrain.api.models.connector import Connector, ConnectorDetail
 from ghostbrain.api.repo.connectors import get_connector, list_connectors
 from ghostbrain.connectors.gdrive import backfill as gdrive_backfill
 from ghostbrain.connectors.gdrive.auth import GdriveAuthError
-from ghostbrain.connectors.gdrive.drive import DriveApiDisabled
+from ghostbrain.connectors.gdrive.drive import DriveApiDisabled, DriveRateLimited
 from ghostbrain.connectors.gmail import backfill as gmail_backfill
 from ghostbrain.connectors.gmail.auth import GmailAuthError
 
@@ -143,6 +144,9 @@ def delete_backfill(account_id: str) -> dict:
     return {"ok": True}
 
 
+GDRIVE_BUSY_MESSAGE = "Google Drive is busy — try the estimate again in a minute"
+
+
 def _gdrive_account_or_404(account_id: str) -> None:
     if accounts.get_account("gdrive", account_id) is None:
         raise HTTPException(status_code=404, detail=f"Account not found: {account_id}")
@@ -167,6 +171,8 @@ def gdrive_backfill_estimate(account_id: str, years: int = Query(..., ge=1, le=1
         raise HTTPException(status_code=409, detail=gdrive_backfill.AUTH_ERROR_MESSAGE) from e
     except DriveApiDisabled as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
+    except (DriveRateLimited, OSError, TimeoutError, HttpLib2Error) as e:
+        raise HTTPException(status_code=503, detail=GDRIVE_BUSY_MESSAGE) from e
     return {**result, "since": since.isoformat()}
 
 

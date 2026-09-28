@@ -275,3 +275,29 @@ def test_delete_backfill_ok_for_known_account_without_backfill(
         f"/v1/connectors/gdrive/accounts/{ACCOUNT}/backfill", headers=auth_headers,
     )
     assert resp.status_code == 200 and resp.json() == {"ok": True}
+
+
+def _transient_errors():
+    import httplib2
+
+    from ghostbrain.connectors.gdrive.drive import DriveRateLimited
+
+    return [DriveRateLimited("slow down"), OSError("net down"), TimeoutError("t"),
+            httplib2.ServerNotFoundError("no dns")]
+
+
+def test_estimate_transient_errors_return_503(
+    client: TestClient, auth_headers, tmp_vault: Path, monkeypatch,
+):
+    _register_gdrive_account(tmp_vault)
+    for exc in _transient_errors():
+        def _raise(account, *, since, exc=exc):
+            raise exc
+
+        monkeypatch.setattr(backfill, "estimate", _raise)
+        resp = client.get(
+            f"/v1/connectors/gdrive/accounts/{ACCOUNT}/backfill/estimate?years=3",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 503, type(exc).__name__
+        assert resp.json()["detail"] == "Google Drive is busy — try the estimate again in a minute"
