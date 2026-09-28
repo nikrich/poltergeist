@@ -207,3 +207,90 @@ def test_concurrent_add_context_all_present(tmp_path):
     assert len(active) == len(set(active)) == 12
     for n in names:
         assert n in active
+
+
+# --- final review fixes --------------------------------------------------
+
+
+def test_archive_restore_cycles_do_not_grow_file(v):
+    rc.add_context("agencyx", v)
+    after_add = _text(v)
+    for _ in range(3):
+        rc.archive_context("agencyx", v)
+        rc.add_context("agencyx", v)
+    assert _text(v) == after_add
+
+
+@pytest.mark.parametrize("name", ["yes", "off", "no", "2024", "0x1f", "2024-01-01", "017", "null", "true"])
+def test_names_yaml_reads_as_non_string_rejected(v, name):
+    with pytest.raises(rc.ContextError, match="would be read as a number/boolean/date"):
+        rc.add_context(name, v)
+    assert _text(v) == COMMENTED
+
+
+def test_unusual_layout_logs_warning_with_path(tmp_path, caplog):
+    root = tmp_path / "vault"
+    (root / "90-meta").mkdir(parents=True)
+    # Two `contexts:` keys: the block writer rewrites the first, YAML loads
+    # the last — verification fails.
+    (root / "90-meta" / "routing.yaml").write_text(
+        "contexts:\n  - personal\n  - work\nsecret: hunter2\ncontexts:\n  - personal\n  - work\n",
+        encoding="utf-8",
+    )
+    with (
+        caplog.at_level("WARNING", logger="ghostbrain.routing_config"),
+        pytest.raises(rc.ContextError, match="unusual contexts layout"),
+    ):
+        rc.add_context("agencyx", root)
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any("routing.yaml" in m and "unusual" in m for m in msgs)
+    assert not any("hunter2" in m for m in msgs)
+
+
+def test_restore_legacy_archived_name_not_matching_regex(tmp_path):
+    root = tmp_path / "vault"
+    (root / "90-meta").mkdir(parents=True)
+    (root / "90-meta" / "routing.yaml").write_text(
+        "contexts:\n  - personal\narchived_contexts:\n  - Agency_X\n", encoding="utf-8"
+    )
+    assert rc.add_context("Agency_X", root) == ("personal", "Agency_X")
+    assert rc.archived_contexts(root) == ()
+    # A brand-new name with the same shape is still rejected.
+    with pytest.raises(rc.ContextError):
+        rc.add_context("Other_Y", root)
+
+
+def test_routing_write_lock_shared_with_merge_routing(tmp_path, monkeypatch):
+    from ghostbrain.api.repo import routing as repo_routing
+
+    root = tmp_path / "vault"
+    (root / "90-meta").mkdir(parents=True)
+    (root / "90-meta" / "routing.yaml").write_text("contexts:\n  - personal\n", encoding="utf-8")
+    monkeypatch.setenv("VAULT_PATH", str(root))
+
+    done = threading.Event()
+
+    def _merge():
+        repo_routing.merge_routing({"joplin": {"host": "h"}})
+        done.set()
+
+    with rc.routing_write_lock():
+        t = threading.Thread(target=_merge)
+        t.start()
+        assert not done.wait(0.3)       # blocked while the context writer holds the lock
+    assert done.wait(5)
+    t.join()
+    assert yaml.safe_load(_text(root))["joplin"] == {"host": "h"}
+
+    done.clear()
+
+    def _remove():
+        repo_routing.remove_routing_path("joplin.host")
+        done.set()
+
+    with rc.routing_write_lock():
+        t = threading.Thread(target=_remove)
+        t.start()
+        assert not done.wait(0.3)
+    assert done.wait(5)
+    t.join()

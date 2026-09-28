@@ -15,6 +15,8 @@ import os
 import re
 import tempfile
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import yaml
@@ -38,6 +40,18 @@ _warned = False
 # can't interleave and lose an update. Reentrant: add_context/archive_context
 # hold it across their own call into _write_context_blocks.
 _lock = threading.RLock()
+
+# Public alias: every in-process writer of routing.yaml (this module's context
+# writer and api/repo/routing.py's merge/remove) takes this same lock, so a
+# connect flow can't race a context add and lose one side's change.
+ROUTING_WRITE_LOCK = _lock
+
+
+@contextmanager
+def routing_write_lock() -> Iterator[None]:
+    """Hold the process-wide routing.yaml write lock (reentrant)."""
+    with _lock:
+        yield
 
 
 class ContextError(ValueError):
@@ -148,6 +162,16 @@ def _block(
     return out
 
 
+def _unusual_layout(f: Path) -> ContextError:
+    # Path only — never the file content (it can hold tokens).
+    log.warning(
+        "refusing to rewrite contexts in %s: unusual contexts layout "
+        "(the result would change more than the contexts lists)",
+        f,
+    )
+    return ContextError("routing.yaml has an unusual contexts layout; edit it by hand")
+
+
 def _write_context_blocks(
     root: Path | None, active: list[str], archived: list[str]
 ) -> None:
@@ -173,6 +197,16 @@ def _write_context_blocks(
                 # Empty list → remove existing block, write nothing new.
                 if span is not None:
                     start, end = span
+                    # Also drop the one blank separator line before the block
+                    # when nothing but blank lines/EOF follows it — the shape
+                    # the append below produces — so archive/restore cycles
+                    # don't accumulate blank lines.
+                    if (
+                        start > 0
+                        and new_lines[start - 1].strip() == ""
+                        and (end == len(new_lines) or new_lines[end].strip() == "")
+                    ):
+                        start -= 1
                     new_lines = new_lines[:start] + new_lines[end:]
                 continue
             if span is not None:
@@ -192,32 +226,20 @@ def _write_context_blocks(
         try:
             verify_data = yaml.safe_load(new_text)
         except yaml.YAMLError as e:
-            raise ContextError(
-                "routing.yaml has an unusual contexts layout; edit it by hand"
-            ) from e
+            raise _unusual_layout(f) from e
         if not isinstance(verify_data, dict):
-            raise ContextError(
-                "routing.yaml has an unusual contexts layout; edit it by hand"
-            )
+            raise _unusual_layout(f)
         if verify_data.get("contexts") != active:
-            raise ContextError(
-                "routing.yaml has an unusual contexts layout; edit it by hand"
-            )
+            raise _unusual_layout(f)
         if archived:
             if verify_data.get("archived_contexts") != archived:
-                raise ContextError(
-                    "routing.yaml has an unusual contexts layout; edit it by hand"
-                )
+                raise _unusual_layout(f)
         elif "archived_contexts" in verify_data:
-            raise ContextError(
-                "routing.yaml has an unusual contexts layout; edit it by hand"
-            )
+            raise _unusual_layout(f)
         other_old = {k: v for k, v in old_data.items() if k not in ("contexts", "archived_contexts")}
         other_new = {k: v for k, v in verify_data.items() if k not in ("contexts", "archived_contexts")}
         if other_old != other_new:
-            raise ContextError(
-                "routing.yaml has an unusual contexts layout; edit it by hand"
-            )
+            raise _unusual_layout(f)
 
         f.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp_path = tempfile.mkstemp(dir=str(f.parent), prefix=".routing.yaml.", suffix=".tmp")
@@ -233,18 +255,38 @@ def _write_context_blocks(
             raise
 
 
-def add_context(name: str, root: Path | None = None) -> tuple[str, ...]:
-    name = (name or "").strip()
+def _check_new_name(name: str) -> None:
     if not CONTEXT_NAME_RE.match(name) or name in RESERVED_CONTEXTS:
         raise ContextError(
             "context names use lowercase letters, digits and hyphens (max 40), "
             f"and can't be {sorted(RESERVED_CONTEXTS)}"
         )
+    try:
+        loaded = yaml.safe_load(name)
+    except yaml.YAMLError:
+        loaded = None
+    if loaded != name:
+        raise ContextError(
+            f"context name {name!r} would be read as a number/boolean/date in "
+            "routing.yaml; add a letter"
+        )
+
+
+def add_context(name: str, root: Path | None = None) -> tuple[str, ...]:
+    """Create ``name``, or restore it if it's in ``archived_contexts``.
+
+    Restoring skips the name-format check so legacy hand-archived names
+    (which may predate CONTEXT_NAME_RE) can still be brought back.
+    """
+    name = (name or "").strip()
     with _lock:
+        archived_now = archived_contexts(root)
+        if name not in archived_now or name in RESERVED_CONTEXTS:
+            _check_new_name(name)
         active = list(contexts(root))
         if name in active:
             raise ContextError(f"context {name!r} already exists")
-        archived = [c for c in archived_contexts(root) if c != name]
+        archived = [c for c in archived_now if c != name]
         active.append(name)
         _write_context_blocks(root, active, archived)
         from ghostbrain.bootstrap import ensure_context_dirs

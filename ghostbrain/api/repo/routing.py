@@ -11,6 +11,7 @@ from pathlib import Path
 import yaml
 
 from ghostbrain.paths import vault_path
+from ghostbrain.routing_config import routing_write_lock
 
 
 def _path() -> Path:
@@ -51,19 +52,23 @@ def _deep_merge(base: dict, patch: dict) -> dict:
 
 
 def merge_routing(patch: dict) -> dict:
-    doc = load_routing()
-    _deep_merge(doc, patch)
-    _write_atomic(doc)
-    return doc
+    # Same lock as routing_config's context writer, so a connect flow and a
+    # context add can't interleave their read-modify-write cycles.
+    with routing_write_lock():
+        doc = load_routing()
+        _deep_merge(doc, patch)
+        _write_atomic(doc)
+        return doc
 
 
 def remove_routing_path(dotted: str) -> None:
-    doc = load_routing()
-    parts = dotted.split(".")
-    node = doc
-    for key in parts[:-1]:
-        if not isinstance(node.get(key), dict):
-            return
-        node = node[key]
-    node.pop(parts[-1], None)
-    _write_atomic(doc)
+    with routing_write_lock():
+        doc = load_routing()
+        parts = dotted.split(".")
+        node = doc
+        for key in parts[:-1]:
+            if not isinstance(node.get(key), dict):
+                return
+            node = node[key]
+        node.pop(parts[-1], None)
+        _write_atomic(doc)
