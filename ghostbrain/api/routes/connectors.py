@@ -3,12 +3,16 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import asdict
+from datetime import UTC, date, datetime
 
-from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, model_validator
+from fastapi import APIRouter, HTTPException, Query, Request
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from ghostbrain import accounts
 from ghostbrain.api.models.connector import Connector, ConnectorDetail
 from ghostbrain.api.repo.connectors import get_connector, list_connectors
+from ghostbrain.connectors.gmail import backfill as gmail_backfill
+from ghostbrain.connectors.gmail.auth import GmailAuthError
 
 router = APIRouter(prefix="/v1/connectors", tags=["connectors"])
 
@@ -58,6 +62,81 @@ async def sync_all(request: Request) -> dict:
         )
     results = await sched.run_all()
     return {name: asdict(r) for name, r in results.items()}
+
+
+def _since_for_years(years: int) -> date:
+    today = datetime.now(UTC).astimezone().date()  # local calendar day
+    try:
+        return today.replace(year=today.year - years)
+    except ValueError:  # Feb 29 -> Feb 28
+        return today.replace(year=today.year - years, day=28)
+
+
+def _gmail_account_or_404(account_id: str) -> None:
+    if accounts.get_account("gmail", account_id) is None:
+        raise HTTPException(status_code=404, detail=f"Account not found: {account_id}")
+
+
+class BackfillStartBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    years: int = Field(ge=1, le=10)
+
+
+@router.get("/gmail/accounts/{account_id}/backfill")
+def get_backfill(account_id: str) -> dict:
+    _gmail_account_or_404(account_id)
+    state = gmail_backfill.get(account_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="No backfill for this account")
+    return state
+
+
+@router.get("/gmail/accounts/{account_id}/backfill/estimate")
+def backfill_estimate(account_id: str, years: int = Query(..., ge=1, le=10)) -> dict:
+    _gmail_account_or_404(account_id)
+    since = _since_for_years(years)
+    try:
+        threads = gmail_backfill.estimate(account_id, since=since)
+    except GmailAuthError as e:
+        raise HTTPException(status_code=409, detail=gmail_backfill.AUTH_ERROR_MESSAGE) from e
+    return {"threads": threads, "since": since.isoformat()}
+
+
+@router.post("/gmail/accounts/{account_id}/backfill", status_code=201)
+def start_backfill(account_id: str, body: BackfillStartBody, request: Request) -> dict:
+    sched = getattr(request.app.state, "scheduler", None)
+    if sched is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Backfill needs the in-app scheduler. Enable 'Run scheduler in-app' in Settings.",
+        )
+    _gmail_account_or_404(account_id)
+    gmail_backfill.start(account_id, since=_since_for_years(body.years))
+    return gmail_backfill.get(account_id)
+
+
+@router.post("/gmail/accounts/{account_id}/backfill/pause")
+def pause_backfill(account_id: str) -> dict:
+    _gmail_account_or_404(account_id)
+    state = gmail_backfill.pause(account_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="No backfill for this account")
+    return state
+
+
+@router.post("/gmail/accounts/{account_id}/backfill/resume")
+def resume_backfill(account_id: str) -> dict:
+    _gmail_account_or_404(account_id)
+    state = gmail_backfill.resume(account_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="No backfill for this account")
+    return state
+
+
+@router.delete("/gmail/accounts/{account_id}/backfill")
+def delete_backfill(account_id: str) -> dict:
+    gmail_backfill.cancel(account_id)
+    return {"ok": True}
 
 
 class AccountPatch(BaseModel):

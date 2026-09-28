@@ -17,6 +17,7 @@ from ghostbrain.connectors._runner import RunResult
 from ghostbrain.connectors.calendar import runner as calendar_runner
 from ghostbrain.connectors.confluence import runner as confluence_runner
 from ghostbrain.connectors.github import runner as github_runner
+from ghostbrain.connectors.gmail import backfill as gmail_backfill
 from ghostbrain.connectors.gmail import runner as gmail_runner
 from ghostbrain.connectors.jira import runner as jira_runner
 from ghostbrain.connectors.joplin import runner as joplin_runner
@@ -174,6 +175,17 @@ def _meeting_prep_prewarm_job() -> RunResult:
     return _wrap_job("meeting-prep-prewarm", work)
 
 
+def _gmail_backfill_job() -> RunResult:
+    """Process one batch for the running Gmail backfill, if any.
+
+    Mirrors run once every 2 minutes; `run_tick` never raises for
+    Gmail/network trouble (auth + transient failures are recorded on the
+    backfill's own state), so `_wrap_job` only ever sees a bug in our own
+    code as a failed RunResult.
+    """
+    return _wrap_job("gmail-backfill", lambda: gmail_backfill.run_tick())
+
+
 def _semantic_refresh() -> RunResult:
     """Run a semantic index refresh and translate the result into RunResult.
 
@@ -258,6 +270,12 @@ def register_connectors(scheduler: Scheduler) -> None:
         Interval(seconds=60),
         _meeting_prep_prewarm_job,
         "every 60s",
+    )
+    scheduler.add_job(
+        "gmail-backfill",
+        Interval(seconds=120),
+        _gmail_backfill_job,
+        "every 2m",
     )
 
 
