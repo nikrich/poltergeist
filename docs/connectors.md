@@ -10,11 +10,12 @@ Every Poltergeist connector follows the same shape: **create a credential → au
 - [Jira + Confluence](#jira--confluence)
 - [Calendar (Google)](#calendar-google)
 - [Gmail](#gmail)
+- [Google Drive](#google-drive)
 - [Slack](#slack)
 
 ## Multiple accounts and contexts
 
-Every account-bearing connector (`gmail`, `calendar_google`, `slack`, `jira`, `confluence`, `github`, `microsoft`) supports any number of accounts. Manage contexts and accounts through the app or by hand-editing files.
+Every account-bearing connector (`gmail`, `gdrive`, `calendar_google`, `slack`, `jira`, `confluence`, `github`, `microsoft`) supports any number of accounts. Manage contexts and accounts through the app or by hand-editing files.
 
 ### Managing contexts in the app
 
@@ -292,6 +293,42 @@ The daily fetch above only looks at the last 24h. To index older mail for an acc
 - **Re-auth:** if the account's Gmail token expires mid-backfill, the row shows "needs re-auth" — click **reauthorize**, complete the OAuth flow, then **resume** to continue from where it stopped.
 - **Transient errors:** ordinary Gmail API hiccups (rate limits, timeouts) are retried automatically on the next tick; they don't stop the backfill or require any action.
 - **AI routing outages:** if the LLM router fails for 5 threads in a row (they land in `needs_review`), the backfill stops with "AI routing unavailable — resume later". Click **resume** once the LLM provider works again.
+
+## Google Drive
+
+Imports Google Docs, Google Sheets, PDFs, Word (`.docx`) and Excel (`.xlsx`) files **you own or have edited** — one note per file, named `<title>-<fileId>.md`. Files land in `<vault>/00-inbox/raw/gdrive/` and route to `<vault>/20-contexts/<ctx>/gdrive/`; in-place updates rewrite every copy (its context is kept; no re-routing). Files only shared with you, not owned or edited, are ignored.
+
+Edits you make to a Drive note's body in the vault are replaced when the file changes in Drive; frontmatter such as its context and tags is kept.
+
+### One-time setup
+
+1. Reuse the Desktop OAuth client from Gmail/Calendar (`~/.ghostbrain/state/google_oauth_client.json`). If you skipped those, do steps 1–3 from the [calendar setup](#calendar-google) first.
+2. In that client's Google Cloud project, enable the **Google Drive API**, **Google Docs API** and **Google Sheets API** (APIs & Services → Library) — all three, since Docs and Sheets need their own APIs beyond Drive itself. A missing one surfaces on the connector as `Enable the Google <Drive|Docs|Sheets> API in Google Cloud for your OAuth client's project (APIs & Services → Library)`, naming the specific API that's missing.
+3. Connect in the app: Connectors → Google Drive → add account. This registers the account, unassigned, in `<vault>/90-meta/accounts.yaml` — assign it a context the same way as any other account-bearing connector (see [Multiple accounts and contexts](#multiple-accounts-and-contexts)).
+
+### Run
+
+- **Hourly sync:** files modified since the account's last run (first run: last 7 days), kept only if you own them or have edited them. Files edited in the last 30 minutes wait for the next run (a 30-minute debounce, so a file mid-edit isn't imported half-written). New files become notes in the inbox and, once routed, in the context; changed files are rewritten in place in both locations — same note, same context, no re-routing.
+- **Backfill:** Connectors → Google Drive → account → **backfill…**, to index older files (1–5 years). See below.
+
+### Backfilling past files
+
+The hourly sync above only looks back 7 days on first run. To index older files for an account, open **Connectors → Google Drive** in the app and click **backfill…** on that account's row, then choose how far back to go — 1, 2, 3 (default) or 5 years.
+
+- **What's included:** files you own or have edited (Drive's `ownedByMe` or `modifiedByMe`) — the same filter the hourly sync applies. Files merely shared with you are skipped.
+- **How it's processed:** each file goes through the same ingest path as the hourly sync — new files become notes, changed files are rewritten in place (context kept, no re-routing), and files already imported and unchanged are left alone. The account row and dialog report five running counts: imported, updated, already had (unchanged, skipped), failed, and too large.
+- **Pace:** up to ~750 files/hour (up to 25 of your files per 2-minute tick; slower when AI routing is needed). It runs in small batches between other jobs, walking backwards month by month, each tick capped at about a minute. Files that aren't yours are passed over without slowing it down. A multi-year backfill can take hours to finish; that's expected. Assigning the account a context (on its row) avoids AI routing for its files and speeds the backfill up.
+- **Pause / resume / cancel:** the dialog and the account row show progress once a backfill starts, with buttons to pause, resume, or cancel it. Cancelling stops the job but keeps every note already imported — nothing is deleted.
+- **Restarts:** progress is saved to a per-account state file after every file, so a backfill picks up where it left off after an app restart or crash — re-processing a file is harmless since ingest always upserts the same note.
+- **Requires the in-app scheduler:** backfill is driven by the same scheduler as the rest of Poltergeist's background work, so **Settings → Background → "Run scheduler in-app"** must be on. If it's off, starting a backfill is blocked with a message explaining why.
+- **Re-auth:** if the account's Drive token expires mid-backfill, the row shows "needs re-auth" — click **reauthorize**, complete the OAuth flow, then **resume** to continue from where it stopped.
+- **API not enabled:** if the Drive, Docs or Sheets API isn't enabled on the OAuth client's project, the backfill stops with the same `Enable the Google <API> API…` message the hourly sync shows. Enable the named API in Google Cloud, then **resume** — no reauthorize needed, since the account's own credentials were fine.
+- **Transient errors:** ordinary Drive API hiccups (rate limits, timeouts) are retried automatically on the next tick; they don't stop the backfill or require any action.
+- **AI routing outages:** if the LLM router fails for 5 files in a row (they land in `needs_review`), the backfill stops with "AI routing unavailable — resume later". Click **resume** once the LLM provider works again.
+
+### Limits
+
+Uploaded files (PDF, Word, Excel) over 200 MB are skipped (reported as "too large"). Native Google Docs and Sheets aren't downloaded, so that cap doesn't apply to them, but the note and Sheets caps below still do. Sheets: chart and data-source tabs are skipped; first 50 tabs, 5,000 rows × 50 columns per tab. Note bodies are capped at 1,000,000 characters. Truncation is marked in the note (`_…truncated at 5,000 rows_`, `_…truncated at 50 columns_`, `_…N more tabs_`, `_…truncated (document continues in Drive)_`); a file with no extractable text notes `_No extractable text — open in Drive._` instead of an empty body.
 
 ## Slack
 

@@ -2,18 +2,22 @@ import { useEffect, useRef, useState } from 'react';
 
 import { Btn } from './Btn';
 import { Lucide } from './Lucide';
-import type { GmailBackfill as BackfillState } from '../../shared/api-types';
+import type {
+  BackfillState,
+  DriveBackfillEstimate,
+  GmailBackfillEstimate,
+} from '../../shared/api-types';
 import { ApiError } from '../lib/api/client';
 import {
   type BackfillAction,
+  useAccountBackfill,
   useBackfillAction,
   useBackfillEstimate,
-  useGmailBackfill,
   useStartBackfill,
 } from '../lib/api/hooks';
 import { toast } from '../stores/toast';
 
-/** Threads per hour the scheduler gets through (25 threads every 120 s). */
+/** Items per hour the scheduler gets through (25 items every 120 s), for both connectors. */
 const PACE_PER_HOUR = 750;
 const YEAR_OPTIONS = [1, 2, 3, 5] as const;
 const DEFAULT_YEARS = 3;
@@ -21,6 +25,44 @@ const AUTH_ERROR = 'needs re-auth';
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const fmt = (n: number) => n.toLocaleString('en-US');
+
+const paceText = (n: number) =>
+  n < PACE_PER_HOUR
+    ? 'under an hour at the current pace'
+    : `roughly ${Math.ceil(n / PACE_PER_HOUR)} h or more`;
+
+type BackfillEstimate = GmailBackfillEstimate | DriveBackfillEstimate;
+
+interface ConnectorConfig {
+  /** Blurb shown at the top of the backfill dialog. */
+  blurb: string;
+  /** Estimate line shown under the years selector, given the estimate response. */
+  estimateLine: (data: BackfillEstimate) => string;
+}
+
+const CONNECTOR_CONFIG: Record<string, ConnectorConfig> = {
+  gmail: {
+    blurb:
+      'Import past threads you took part in — sent by you, starred or important — ' +
+      'skipping promotions. Runs in the background a small batch at a time.',
+    estimateLine: (data) => {
+      const n = (data as GmailBackfillEstimate).threads;
+      return `~${fmt(n)} threads you took part in · ${paceText(n)}`;
+    },
+  },
+  gdrive: {
+    blurb:
+      'Import past Docs, Sheets, PDFs and Word/Excel files you own or edited. Runs in the ' +
+      'background a small batch at a time.',
+    estimateLine: (data) => {
+      const { files, capped } = data as DriveBackfillEstimate;
+      return `~${fmt(files)}${capped ? '+' : ''} files you own or edited · ${paceText(files)}`;
+    },
+  },
+};
+
+/** Connector ids that support the backfill entry point + progress line. */
+export const BACKFILL_CONNECTORS: ReadonlySet<string> = new Set(Object.keys(CONNECTOR_CONFIG));
 
 /** 'YYYY-MM' → 'Mon YYYY'; anything unexpected is shown as-is. */
 function monthLabel(cursor: string): string {
@@ -32,14 +74,15 @@ function monthLabel(cursor: string): string {
 const errMessage = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
 
 interface Props {
+  connectorId: string;
   accountId: string;
   onReauth: (accountId: string) => void;
 }
 
-/** Backfill entry point + progress line for one Gmail account row. */
-export function GmailBackfill({ accountId, onReauth }: Props) {
+/** Backfill entry point + progress line for one account row (Gmail or Drive). */
+export function AccountBackfill({ connectorId, accountId, onReauth }: Props) {
   const [dialogOpen, setDialogOpen] = useState(false);
-  const backfill = useGmailBackfill(accountId);
+  const backfill = useAccountBackfill(connectorId, accountId);
   const action = useBackfillAction();
 
   // First load: don't flash the "backfill…" button before we know whether a
@@ -57,7 +100,7 @@ export function GmailBackfill({ accountId, onReauth }: Props) {
       if (!ok) return;
     }
     action.mutate(
-      { accountId, action: a },
+      { connectorId, accountId, action: a },
       { onError: (e) => toast.error(errMessage(e, `${accountId}: backfill ${a} failed`)) },
     );
   };
@@ -77,6 +120,7 @@ export function GmailBackfill({ accountId, onReauth }: Props) {
         </Btn>
         {dialogOpen && (
           <BackfillDialog
+            connectorId={connectorId}
             accountId={accountId}
             onClose={() => setDialogOpen(false)}
             onReauth={onReauth}
@@ -102,10 +146,12 @@ export function GmailBackfill({ accountId, onReauth }: Props) {
   let text: React.ReactNode;
   let buttons: React.ReactNode;
   if (state.status === 'running') {
+    const updatedPart = state.updated !== undefined ? ` · ${fmt(state.updated)} updated` : '';
+    const tooLargePart = state.tooLarge !== undefined ? ` · ${fmt(state.tooLarge)} too large` : '';
     text = (
       <>
         <span>
-          {`backfilling · ${monthLabel(state.cursor)} · ${fmt(state.imported)} imported · ${fmt(state.skipped)} already had · ${fmt(state.failed)} failed`}
+          {`backfilling · ${monthLabel(state.cursor)} · ${fmt(state.imported)} imported${updatedPart} · ${fmt(state.skipped)} already had · ${fmt(state.failed)} failed${tooLargePart}`}
         </span>
         {state.error && <span className="text-ink-3">{`retrying after ${state.error}`}</span>}
       </>
@@ -172,15 +218,20 @@ export function GmailBackfill({ accountId, onReauth }: Props) {
 }
 
 interface DialogProps {
+  connectorId: string;
   accountId: string;
   onClose: () => void;
   onReauth: (accountId: string) => void;
 }
 
-function BackfillDialog({ accountId, onClose, onReauth }: DialogProps) {
+function BackfillDialog({ connectorId, accountId, onClose, onReauth }: DialogProps) {
   const [years, setYears] = useState<number>(DEFAULT_YEARS);
   const [blocked, setBlocked] = useState<string | null>(null);
-  const estimate = useBackfillEstimate(accountId, years);
+  // Only rendered for connectors in BACKFILL_CONNECTORS (the keys of
+  // CONNECTOR_CONFIG). Should that ever not hold, show no blurb or estimate
+  // text rather than another connector's.
+  const config: ConnectorConfig | undefined = CONNECTOR_CONFIG[connectorId];
+  const estimate = useBackfillEstimate<BackfillEstimate>(connectorId, accountId, years);
   const start = useStartBackfill();
   const dialogRef = useRef<HTMLDivElement>(null);
 
@@ -196,15 +247,19 @@ function BackfillDialog({ accountId, onClose, onReauth }: DialogProps) {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  // 409 from the estimate means the account's token is unusable: starting
-  // would only park the backfill in "needs re-auth". Any other estimate
-  // failure is informational and must not block starting.
+  // A 409 "needs re-auth" from the estimate means the account's token is
+  // unusable: starting would only park the backfill there. Any other estimate
+  // failure (e.g. a 409 asking to enable a Google API, a 503 when Drive is
+  // busy) is shown as the estimate line and must not block starting.
   const needsReauth =
-    estimate.isError && estimate.error instanceof ApiError && estimate.error.status === 409;
+    estimate.isError &&
+    estimate.error instanceof ApiError &&
+    estimate.error.status === 409 &&
+    estimate.error.message === AUTH_ERROR;
 
   const onStart = () =>
     start.mutate(
-      { accountId, years },
+      { connectorId, accountId, years },
       {
         onSuccess: () => {
           toast.info(`${accountId}: backfill started`);
@@ -221,14 +276,7 @@ function BackfillDialog({ accountId, onClose, onReauth }: DialogProps) {
   let estimateLine: string;
   if (estimate.isPending) estimateLine = 'estimating…';
   else if (estimate.isError) estimateLine = errMessage(estimate.error, 'estimate unavailable');
-  else {
-    const n = estimate.data.threads;
-    const pace =
-      n < PACE_PER_HOUR
-        ? 'under an hour at the current pace'
-        : `roughly ${Math.ceil(n / PACE_PER_HOUR)} h or more`;
-    estimateLine = `~${fmt(n)} threads you took part in · ${pace}`;
-  }
+  else estimateLine = config ? config.estimateLine(estimate.data) : '';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
@@ -252,10 +300,7 @@ function BackfillDialog({ accountId, onClose, onReauth }: DialogProps) {
           </button>
         </div>
         <div className="flex flex-col gap-3 p-4">
-          <div className="text-12 text-ink-1">
-            Import past threads you took part in — sent by you, starred or important —
-            skipping promotions. Runs in the background a small batch at a time.
-          </div>
+          {config && <div className="text-12 text-ink-1">{config.blurb}</div>}
           <label className="flex items-center gap-2 text-12 text-ink-1">
             go back
             <select

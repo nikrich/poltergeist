@@ -69,7 +69,8 @@ Do not tell the user setup is complete before this step succeeds.
 ## 5. Connectors
 
 Ask which of these matter: Claude Code, GitHub, Jira/Confluence, Slack,
-Gmail, Google Calendar, Apple Calendar, Microsoft 365, Joplin. For each:
+Gmail, Google Drive, Google Calendar, Apple Calendar, Microsoft 365, Joplin.
+For each:
 
 - Point them at the app's connector card (Connectors screen) for the
   credential step. The cards work.

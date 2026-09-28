@@ -16,6 +16,8 @@ from pathlib import Path
 from ghostbrain.connectors._runner import RunResult
 from ghostbrain.connectors.calendar import runner as calendar_runner
 from ghostbrain.connectors.confluence import runner as confluence_runner
+from ghostbrain.connectors.gdrive import backfill as gdrive_backfill
+from ghostbrain.connectors.gdrive import runner as gdrive_runner
 from ghostbrain.connectors.github import runner as github_runner
 from ghostbrain.connectors.gmail import backfill as gmail_backfill
 from ghostbrain.connectors.gmail import runner as gmail_runner
@@ -186,6 +188,16 @@ def _gmail_backfill_job() -> RunResult:
     return _wrap_job("gmail-backfill", lambda: gmail_backfill.run_tick())
 
 
+def _gdrive_backfill_job() -> RunResult:
+    """Process one page for the running Google Drive backfill, if any.
+
+    Runs once every 2 minutes; like Gmail's, `run_tick` never raises for
+    Drive/network trouble (recorded on the backfill's own state), so
+    `_wrap_job` only ever sees a bug in our own code as a failed RunResult.
+    """
+    return _wrap_job("gdrive-backfill", lambda: gdrive_backfill.run_tick())
+
+
 def _semantic_refresh() -> RunResult:
     """Run a semantic index refresh and translate the result into RunResult.
 
@@ -230,6 +242,7 @@ def register_connectors(scheduler: Scheduler) -> None:
     """Wire every connector with its scheduling cadence."""
     scheduler.add_job("github", Interval(seconds=7200), github_runner.run, "every 2h")
     scheduler.add_job("gmail", Interval(seconds=3600), gmail_runner.run, "every 1h")
+    scheduler.add_job("gdrive", Interval(seconds=3600), gdrive_runner.run, "every 1h")
     scheduler.add_job("calendar", Interval(seconds=3600), calendar_runner.run, "every 1h")
     scheduler.add_job("slack", Interval(seconds=3600), slack_runner.run, "every 1h")
     scheduler.add_job("jira", Interval(seconds=14400), jira_runner.run, "every 4h")
@@ -275,6 +288,12 @@ def register_connectors(scheduler: Scheduler) -> None:
         "gmail-backfill",
         Interval(seconds=120),
         _gmail_backfill_job,
+        "every 2m",
+    )
+    scheduler.add_job(
+        "gdrive-backfill",
+        Interval(seconds=120),
+        _gdrive_backfill_job,
         "every 2m",
     )
 

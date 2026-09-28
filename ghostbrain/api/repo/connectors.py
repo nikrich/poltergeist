@@ -62,6 +62,12 @@ _DISPLAY: dict[str, dict] = {
         "pulls": ["threads", "attachments"],
         "vaultDestination": "20-contexts/{ctx}/gmail/",
     },
+    "gdrive": {
+        "displayName": "Google Drive",
+        "scopes": ["drive.readonly"],
+        "pulls": ["Docs", "Sheets", "PDF / Word / Excel files you own or edited"],
+        "vaultDestination": "20-contexts/{ctx}/gdrive/",
+    },
     "outlook_mail": {
         "displayName": "Outlook Mail",
         "scopes": ["Mail.Read"],

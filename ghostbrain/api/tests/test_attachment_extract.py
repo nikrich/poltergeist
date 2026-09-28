@@ -4,7 +4,6 @@ import pytest
 
 from ghostbrain.api.repo import attachment_extract as ex
 
-
 # A minimal single-page PDF drawing "Hello PDF world" via a BT/Tj text object.
 # pypdf logs a recoverable "incorrect startxref" warning and still extracts —
 # that warning is expected and harmless.
@@ -115,3 +114,12 @@ def _add_second_sheet(data: bytes) -> bytes:
 def test_extract_empty_xlsx_raises():
     with pytest.raises(ex.ExtractionError):
         ex.extract_text("a.xlsx", ex.XLSX_MIME, _xlsx_bytes())
+
+
+def test_extract_text_accepts_a_path(tmp_path):
+    p = tmp_path / "a.docx"
+    p.write_bytes(_docx_bytes("From a path"))
+    assert "From a path" in ex.extract_text("a.docx", ex.DOCX_MIME, p)
+    pdf = tmp_path / "a.pdf"
+    pdf.write_bytes(MINIMAL_PDF)
+    assert "Hello PDF world" in ex.extract_text("a.pdf", "application/pdf", pdf)
