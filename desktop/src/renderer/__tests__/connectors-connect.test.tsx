@@ -112,6 +112,16 @@ beforeEach(() => {
 });
 
 describe('ConnectorsScreen connect flow', () => {
+  it('detail hero and body never shrink inside the scrolling pane', async () => {
+    // The pane is a flex column with overflow-y-auto. Without shrink-0 a tall
+    // body squashes the hero, whose overflow-hidden then clips the title and
+    // the connect/reauthorize button (seen on calendar with an error banner).
+    render(wrap(<ConnectorsScreen />));
+    await screen.findByRole('button', { name: /connect slack/i });
+    expect(screen.getByTestId('connector-detail-hero')).toHaveClass('shrink-0');
+    expect(screen.getByTestId('connector-detail-body')).toHaveClass('shrink-0');
+  });
+
   it('opens the auth flow when clicking connect on an off connector', async () => {
     render(wrap(<ConnectorsScreen />));
 
