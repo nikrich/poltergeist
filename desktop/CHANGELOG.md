@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.10.1](https://github.com/nikrich/poltergeist/compare/v1.10.0...v1.10.1) (2026-09-29)
+
+
+### Bug Fixes
+
+* fix(desktop): connector detail header no longer gets squashed and clipped
+* fix(desktop): Google Drive connector icon (assets/connectors/gdrive.svg)
+
 ## [1.10.0](https://github.com/nikrich/poltergeist/compare/v1.9.0...v1.10.0) (2026-09-28)
 
 
