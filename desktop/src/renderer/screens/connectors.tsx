@@ -434,8 +434,13 @@ function ConnectorDetailPanel({ c }: ConnectorDetailProps) {
   return (
     <>
     <aside className="flex flex-col overflow-y-auto border-l border-hairline bg-vellum">
-      {/* hero */}
-      <div className="gb-noise relative overflow-hidden border-b border-hairline p-6">
+      {/* hero — shrink-0: in this scrolling flex column a tall body (many
+          accounts + an error banner) would otherwise squash the hero, and its
+          overflow-hidden clips the title and the reauthorize button. */}
+      <div
+        data-testid="connector-detail-hero"
+        className="gb-noise relative shrink-0 overflow-hidden border-b border-hairline p-6"
+      >
         <div className="relative mb-[14px] flex items-center gap-[14px]">
           <div className="flex h-14 w-14 items-center justify-center rounded-lg border border-hairline bg-paper">
             <img src={connectorIconSrc(c.id)} alt="" width={32} height={32} />
@@ -516,7 +521,7 @@ function ConnectorDetailPanel({ c }: ConnectorDetailProps) {
       </div>
 
       {/* details */}
-      <div className="flex flex-col gap-[22px] px-6 py-5">
+      <div data-testid="connector-detail-body" className="flex shrink-0 flex-col gap-[22px] px-6 py-5">
         {c.state === 'err' && (
           <div className="flex gap-[10px] rounded-r6 border border-oxblood/30 bg-oxblood/10 p-3">
             <Lucide name="alert-triangle" size={14} color="var(--oxblood)" />
