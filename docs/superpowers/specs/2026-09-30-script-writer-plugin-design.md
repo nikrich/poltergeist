@@ -49,8 +49,8 @@ Rain hammers the glass. MARA (40s) ...
 ```
 
 - Body is **raw Fountain**. The Fountain title page is *not* written in the body — frontmatter is the title page; it's mapped to Fountain title-page keys on export/import.
-- `<context>` is one of the known contexts (`sanlam`, `codeship`, `reducedrecipes`, `personal`), matching `_KNOWN_CONTEXTS` in `ghostbrain/api/routes/notes.py`.
-- Slugs: `^[a-z0-9-]+$`, derived from the title, deduplicated with `-2`, `-3`.
+- `<context>` / `<project-slug>` come from the app's **project registry** (`GET /v1/projects` → `[{id, context, slug, name, description, archived}]`, stored in `90-meta/projects.json`; its folder template is exactly `20-contexts/{context}/projects/{slug}`). New projects are created with `POST /v1/projects {context, name}` (409 = already exists → use the existing one). Contexts come from `GET /v1/vault/contexts` → `{contexts: string[], archived: string[]}` — never hard-coded.
+- Script slugs: `^[a-z0-9-]+$`, derived from the title, deduplicated against the plugin's registry with `-2`, `-3`.
 
 ### Library registry
 
@@ -220,7 +220,7 @@ The actions run on the selection, or on the current scene when nothing is select
 ## 6. Library, import, export
 
 - **Library screen** (the plugin's landing view): cards for the registry entries, sorted by `updated`, showing title, project, pages, and last edited.
-- **New script** dialog: title, context (dropdown), project (a new or existing slug from the registry), and title-page fields. It creates the file with `FADE IN:` and one scene heading.
+- **New script** dialog: title, project (dropdown of `GET /v1/projects`, grouped by context) or "+ New project" (context dropdown from `GET /v1/vault/contexts` + name → `POST /v1/projects`), and title-page fields. It creates the file with `FADE IN:` and one scene heading.
 - **Import**: `.fountain` (title page becomes frontmatter) and `.fdx` (slice 2), via a main-process file dialog.
 - **Export** (main-process IPC; a save dialog, then write):
   - **PDF**: `pageHtml` goes into a hidden `BrowserWindow`, which calls `webContents.printToPDF({pageSize: 'Letter' | 'A4', margins: {marginType: 'none'}, printBackground: false})` because the HTML already carries the margins. The window is destroyed afterward.
