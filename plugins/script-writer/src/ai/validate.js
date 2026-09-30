@@ -7,7 +7,14 @@ export function stripFences(s) {
   const text = String(s ?? '').replace(/\r\n?/g, '\n');
   const fenceMatch = text.match(/^\s*```/m);
   if (!fenceMatch) return text.trim();
-  const startIdx = text.indexOf('\n', fenceMatch.index) + 1;
+  const fenceLine = text.substring(fenceMatch.index, text.indexOf('\n', fenceMatch.index));
+  const isTagOnly = /^\s*```[\w-]*\s*$/.test(fenceLine);
+  let startIdx;
+  if (isTagOnly) {
+    startIdx = text.indexOf('\n', fenceMatch.index) + 1;
+  } else {
+    startIdx = fenceMatch.index + 3;
+  }
   const remaining = text.substring(startIdx);
   const endFenceMatch = remaining.match(/^\s*```/m);
   if (!endFenceMatch) return remaining.trim();
@@ -15,11 +22,10 @@ export function stripFences(s) {
 }
 
 export function checkFountain(original, result, { minKeep = 0.6, keepHeading = false, requireStructure = false } = {}) {
-  const hasFences = /^\s*```/m.test(result);
   const text = stripFences(result);
   if (!text) return { ok: false, reason: 'empty result', text };
   const firstLine = text.split('\n')[0];
-  if (/^(sure|here('s| is| are)?|certainly|of course|okay|ok|absolutely)\s*:/i.test(firstLine)) {
+  if (/^(sure|here('s| is| are)?|certainly|of course|okay|ok|absolutely)\b.*:\s*$/i.test(firstLine)) {
     return { ok: false, reason: 'assistant chatter instead of screenplay text', text };
   }
   const els = parse(text);
@@ -31,7 +37,7 @@ export function checkFountain(original, result, { minKeep = 0.6, keepHeading = f
   }
   const a = nonBlank(original);
   const b = nonBlank(text);
-  if (!hasFences && minKeep > 0 && a >= 5 && b < a * minKeep) {
+  if (minKeep > 0 && a >= 5 && b < a * minKeep) {
     return { ok: false, reason: `lost ${Math.round(100 - (100 * b) / a)}% of its lines`, text };
   }
   if (keepHeading && origEls.some((e) => e.type === 'scene_heading') && !els.some((e) => e.type === 'scene_heading')) {
