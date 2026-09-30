@@ -2,7 +2,7 @@ import { ArrowLeft, Download, Eye, FileText, Focus, Hash, ListTree, Moon } from 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { readScript, writeScript } from '../api/backend.js';
 import { draftKey, parseScriptPath, toFountain } from '../fountain/document.js';
-import { setType } from '../editor/commands.js';
+import { typeAt, setType } from '../editor/commands.js';
 import { insertSceneAfterCursor, toggleEmphasis } from '../editor/format.js';
 import { characters as listCharacters, moveScene, scenes as listScenes } from '../fountain/outline.js';
 import { parse } from '../fountain/parse.js';
@@ -128,6 +128,7 @@ export function EditorScreen({ plugin, path, onBack, notify }) {
       onAi: () => patchUi({ panel: 'ai' }),
     });
     viewRef.current = view;
+    setCursorType(typeAt(view.state, view.state.doc.lineAt(view.state.selection.main.head).number));
     setElements(parse(loaded.body));
     view.focus();
     return () => { clearTimeout(analyzeTimer.current); writeMirror(); view.destroy(); viewRef.current = null; };

@@ -14,6 +14,7 @@ import { proposalExtension, showProposal } from './proposal.js';
 const focusSlot = new Compartment();
 
 export function createEditor({ parent, doc, onDocChange, onCursorLine, onSave, onToggleFocus, onAi }) {
+  let last = { line0: -1, type: undefined };
   const state = EditorState.create({
     doc,
     extensions: [
@@ -33,9 +34,12 @@ export function createEditor({ parent, doc, onDocChange, onCursorLine, onSave, o
       EditorView.domEventHandlers({ blur: () => { onSave?.(); return false; } }),
       EditorView.updateListener.of((u) => {
         if (u.docChanged) onDocChange?.(u.state.doc.toString());
-        if (u.docChanged || u.selectionSet) {
-          const line0 = u.state.doc.lineAt(u.state.selection.main.head).number - 1;
-          onCursorLine?.(line0, typeAt(u.state, line0 + 1));
+        // Every update: hint-only transitions change the line type without a doc/selection change.
+        const line0 = u.state.doc.lineAt(u.state.selection.main.head).number - 1;
+        const type = typeAt(u.state, line0 + 1);
+        if (line0 !== last.line0 || type !== last.type) {
+          last = { line0, type };
+          onCursorLine?.(line0, type);
         }
       }),
     ],

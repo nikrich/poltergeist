@@ -8,7 +8,7 @@ export function SceneNav({ scenes, cursorLine, onJump, onMove, onAdd }) {
     <div>
       <div className="sw-h sw-h-row">
         <span>Scenes &middot; {scenes.length}</span>
-        {onAdd && <button type="button" className="sw-icon" title="New scene after the cursor" onMouseDown={(e) => { e.preventDefault(); onAdd(); }}>+</button>}
+        {onAdd && <button type="button" className="sw-icon" title="New scene after the cursor" onMouseDown={(e) => e.preventDefault()} onClick={onAdd}>+</button>}
       </div>
       {scenes.map((s) => (
         <div key={`${s.line}-${s.heading}`} draggable
