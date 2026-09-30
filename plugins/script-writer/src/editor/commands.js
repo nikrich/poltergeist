@@ -12,7 +12,9 @@ const isBlankLine = (state, n) => n < 1 || n > state.doc.lines || state.doc.line
 
 function retype(state, line, type) {
   const empty = line.text.trim() === '';
-  const insert = empty ? (type === 'parenthetical' ? '()' : '') : applyType(line.text, type);
+  let insert = empty ? (type === 'parenthetical' ? '()' : '') : applyType(line.text, type);
+  // A cue directly under text needs Fountain's forced-character marker.
+  if (type === 'character' && insert && !isBlankLine(state, line.number - 1) && !insert.startsWith('@')) insert = `@${insert}`;
   const cursor = line.from + (type === 'parenthetical' ? insert.length - 1 : insert.length);
   return state.update({
     changes: { from: line.from, to: line.to, insert },
