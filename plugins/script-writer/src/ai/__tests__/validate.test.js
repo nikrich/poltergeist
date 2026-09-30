@@ -19,4 +19,22 @@ describe('validate', () => {
   it('allows shortening when minKeep is 0', () => {
     expect(checkFountain(SCENE, 'INT. A - DAY\n\nMara waits.', { minKeep: 0 }).ok).toBe(true);
   });
+  it('extracts content from first fenced block if fences exist', () => {
+    expect(stripFences('Here you go:\n```fountain\nINT. A - DAY\n\nHi.\n```\nHope that helps')).toBe('INT. A - DAY\n\nHi.');
+    expect(stripFences('```\nINT. A - DAY\n```')).toBe('INT. A - DAY');
+  });
+  it('rejects assistant chatter instead of screenplay text', () => {
+    expect(checkFountain(SCENE, 'Sure: INT. A - DAY')).toMatchObject({ ok: false, reason: 'assistant chatter instead of screenplay text' });
+    expect(checkFountain(SCENE, "Here's: INT. A - DAY")).toMatchObject({ ok: false, reason: 'assistant chatter instead of screenplay text' });
+    expect(checkFountain(SCENE, 'Okay: INT. A - DAY')).toMatchObject({ ok: false, reason: 'assistant chatter instead of screenplay text' });
+  });
+  it('rejects prose-only when requireStructure is true and original has structure', () => {
+    expect(checkFountain(SCENE, 'Mara waits.', { requireStructure: true })).toMatchObject({ ok: false, reason: 'lost its screenplay structure' });
+  });
+  it('accepts prose-only with requireStructure false and minKeep 0', () => {
+    expect(checkFountain(SCENE, 'Mara waits.', { requireStructure: false, minKeep: 0 }).ok).toBe(true);
+  });
+  it('accepts preamble plus fenced scene, extracting inner text', () => {
+    expect(checkFountain(SCENE, 'Here is the scene:\n```fountain\nINT. A - DAY\n\nMara waits.\n```').ok).toBe(true);
+  });
 });

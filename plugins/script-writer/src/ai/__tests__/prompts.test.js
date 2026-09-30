@@ -41,4 +41,8 @@ describe('prompts', () => {
     expect(prompt).toContain('MARA');
     expect(jsonSchema.required).toEqual(['fountain']);
   });
+  it('throws when no known polish pass ids are selected', () => {
+    expect(() => polishPrompt({ passes: [], sceneText: 'TEXT' })).toThrow('Pick at least one polish pass');
+    expect(() => polishPrompt({ passes: ['unknown'], sceneText: 'TEXT' })).toThrow('Pick at least one polish pass');
+  });
 });

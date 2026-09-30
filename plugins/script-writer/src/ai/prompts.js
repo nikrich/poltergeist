@@ -77,7 +77,9 @@ export const POLISH_PASSES = [
 ];
 
 export function polishPrompt({ passes, sceneText, characterNames = [] }) {
-  const rules = POLISH_PASSES.filter((p) => passes.includes(p.id)).map((p, i) => `${i + 1}. ${p.rule}`).join('\n');
+  const selectedPasses = POLISH_PASSES.filter((p) => passes.includes(p.id));
+  if (!selectedPasses.length) throw Error('Pick at least one polish pass');
+  const rules = selectedPasses.map((p, i) => `${i + 1}. ${p.rule}`).join('\n');
   const system = `${SYSTEM_BASE} ${FOUNTAIN_RULES} You are polishing one section of a longer script. `
     + 'Return the whole section, polished, in "fountain", and a one-line summary of what you changed in "changes".';
   const prompt = [
