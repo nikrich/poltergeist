@@ -94,7 +94,7 @@ export function parse(text) {
       i++;
       continue;
     }
-    if (prevBlank && nextBlank && t.endsWith('TO:') && t === t.toUpperCase()) { single('transition', t); continue; }
+    if (prevBlank && nextBlank && t.endsWith('TO:') && t === t.toUpperCase() && !t.startsWith('!')) { single('transition', t); continue; }
     if (prevBlank && !nextBlank && (t.startsWith('@') || (!t.startsWith('!') && isUpperCue(t)))) {
       i = readDialogue(lines, i, out);
       continue;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parse } from '../parse.js';
-import { characters, cueName, moveScene, scenes } from '../outline.js';
+import { characters, cueName, joinBlocks, moveScene, sceneBlocks, sceneInsertPos, sceneRange, scenes } from '../outline.js';
 
 const SRC = 'FADE IN:\n\nINT. A - DAY\n\n= Mara arrives.\n\nMARA\nHi.\n\nINT. B - NIGHT #9#\n\nJOE (V.O.)\nYo.\n\nMARA (CONT\'D)\nAgain.\n\nEXT. C - DAY\n\nEnd.\n';
 
@@ -34,5 +34,27 @@ describe('outline', () => {
   it('is a no-op for out-of-range or same-index moves', () => {
     expect(moveScene(SRC, 1, 1)).toBe(SRC);
     expect(moveScene(SRC, 5, 0)).toBe(SRC);
+  });
+});
+
+describe('scene blocks', () => {
+  const T = 'FADE IN:\n\nINT. A - DAY\n\nHi.\n\n\nINT. B - DAY\n\nYo.\n';
+  it('splits preamble and scenes, trimming trailing blank lines', () => {
+    expect(sceneBlocks(T)).toEqual({ pre: 'FADE IN:', blocks: [{ line: 2, text: 'INT. A - DAY\n\nHi.' }, { line: 7, text: 'INT. B - DAY\n\nYo.' }], trailingNewline: true });
+  });
+  it('joins with one blank line and round-trips normalised text', () => {
+    expect(joinBlocks(sceneBlocks(T))).toBe('FADE IN:\n\nINT. A - DAY\n\nHi.\n\nINT. B - DAY\n\nYo.\n');
+    const norm = joinBlocks(sceneBlocks(T));
+    expect(joinBlocks(sceneBlocks(norm))).toBe(norm);
+  });
+  it('handles no headings and no preamble', () => {
+    expect(sceneBlocks('Just action.')).toEqual({ pre: 'Just action.', blocks: [], trailingNewline: false });
+    expect(joinBlocks(sceneBlocks('INT. A - DAY\n\nGo.'))).toBe('INT. A - DAY\n\nGo.');
+  });
+  it('finds the scene range around a line and the insert position after it', () => {
+    expect(sceneRange(T, 4)).toEqual({ startLine: 2, endLine: 4 });
+    expect(sceneRange(T, 0)).toEqual({ startLine: 0, endLine: 0 });
+    expect(sceneRange(T, 9)).toEqual({ startLine: 7, endLine: 9 });
+    expect(sceneInsertPos(T, 4)).toBe('FADE IN:\n\nINT. A - DAY\n\nHi.'.length);
   });
 });

@@ -34,14 +34,44 @@ const trimBlankTail = (arr) => {
   return a;
 };
 
-export function moveScene(text, from, to) {
+export function sceneBlocks(text) {
   const heads = parse(text).filter((e) => e.type === 'scene_heading').map((e) => e.line);
-  if (from === to || from < 0 || to < 0 || from >= heads.length || to >= heads.length) return text;
   const lines = text.split('\n');
-  const pre = trimBlankTail(lines.slice(0, heads[0]));
-  const blocks = heads.map((h, k) => trimBlankTail(lines.slice(h, heads[k + 1] ?? lines.length)));
+  const first = heads.length ? heads[0] : lines.length;
+  return {
+    pre: trimBlankTail(lines.slice(0, first)).join('\n'),
+    blocks: heads.map((h, k) => ({ line: h, text: trimBlankTail(lines.slice(h, heads[k + 1] ?? lines.length)).join('\n') })),
+    trailingNewline: text.endsWith('\n'),
+  };
+}
+
+export function joinBlocks({ pre, blocks, trailingNewline }) {
+  const parts = [pre, ...blocks.map((b) => b.text)].filter((p) => p.trim() !== '');
+  return parts.join('\n\n') + (trailingNewline ? '\n' : '');
+}
+
+export function moveScene(text, from, to) {
+  const sb = sceneBlocks(text);
+  const n = sb.blocks.length;
+  if (from === to || from < 0 || to < 0 || from >= n || to >= n) return text;
+  const blocks = [...sb.blocks];
   const [moved] = blocks.splice(from, 1);
   blocks.splice(to, 0, moved);
-  const body = blocks.map((b) => b.join('\n')).join('\n\n');
-  return (pre.length ? `${pre.join('\n')}\n\n` : '') + body + (text.endsWith('\n') ? '\n' : '');
+  return joinBlocks({ ...sb, blocks });
+}
+
+export function sceneRange(text, line0) {
+  const lines = text.split('\n');
+  const heads = parse(text).filter((e) => e.type === 'scene_heading').map((e) => e.line);
+  let start = 0;
+  for (const h of heads) if (h <= line0) start = h;
+  const next = heads.find((h) => h > line0);
+  let end = (next ?? lines.length) - 1;
+  while (end > start && lines[end].trim() === '') end--;
+  return { startLine: start, endLine: Math.max(start, end) };
+}
+
+export function sceneInsertPos(text, line0) {
+  const { endLine } = sceneRange(text, line0);
+  return text.split('\n').slice(0, endLine + 1).join('\n').length;
 }

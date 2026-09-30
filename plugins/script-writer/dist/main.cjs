@@ -24,8 +24,8 @@ __export(main_exports, {
 });
 module.exports = __toCommonJS(main_exports);
 var import_electron = require("electron");
-var import_node_fs3 = require("node:fs");
-var import_node_path3 = require("node:path");
+var import_node_fs4 = require("node:fs");
+var import_node_path4 = require("node:path");
 
 // src/main/drafts.js
 var import_node_fs = require("node:fs");
@@ -58,9 +58,46 @@ function clearDraft(dataDir, key) {
   return true;
 }
 
-// src/main/files.js
+// src/main/threads.js
 var import_node_fs2 = require("node:fs");
 var import_node_path2 = require("node:path");
+var KEY2 = /^[a-z0-9-]{1,120}$/;
+var MAX_MESSAGES = 200;
+function threadFile(dataDir, key) {
+  if (!KEY2.test(String(key))) throw new Error(`invalid thread key: ${JSON.stringify(key)}`);
+  return (0, import_node_path2.join)(dataDir, "threads", `${key}.json`);
+}
+function readThread(dataDir, key) {
+  try {
+    const v = JSON.parse((0, import_node_fs2.readFileSync)(threadFile(dataDir, key), "utf-8"));
+    return Array.isArray(v) ? v : [];
+  } catch (e) {
+    if (e.code === "ENOENT" || e instanceof SyntaxError) return [];
+    throw e;
+  }
+}
+function writeThread(dataDir, { key, messages } = {}) {
+  const file = threadFile(dataDir, key);
+  if (!Array.isArray(messages)) throw new Error("thread messages must be an array");
+  if (messages.length > MAX_MESSAGES) throw new Error(`a thread holds at most ${MAX_MESSAGES} messages`);
+  for (const m of messages) {
+    if (!m || m.role !== "user" && m.role !== "assistant") throw new Error("each message needs role user|assistant");
+    if (typeof m.text !== "string") throw new Error("each message needs a text string");
+  }
+  (0, import_node_fs2.mkdirSync)((0, import_node_path2.join)(dataDir, "threads"), { recursive: true });
+  const tmp = `${file}.tmp`;
+  (0, import_node_fs2.writeFileSync)(tmp, JSON.stringify(messages));
+  (0, import_node_fs2.renameSync)(tmp, file);
+  return true;
+}
+function clearThread(dataDir, key) {
+  (0, import_node_fs2.rmSync)(threadFile(dataDir, key), { force: true });
+  return true;
+}
+
+// src/main/files.js
+var import_node_fs3 = require("node:fs");
+var import_node_path3 = require("node:path");
 
 // src/fountain/document.js
 var DEFAULT_META = Object.freeze({
@@ -96,8 +133,8 @@ var FONT_FILES = [
 ];
 
 // src/main/files.js
-var IMPORT_EXTS = ["fountain", "spmd", "txt"];
-var EXPORT_EXTS = ["fountain", "txt"];
+var IMPORT_EXTS = ["fountain", "spmd", "txt", "fdx"];
+var EXPORT_EXTS = ["fountain", "txt", "fdx"];
 var MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 function exportName(name, ext) {
   const base = String(name ?? "").replace(/[\\/:*?"<>|]+/g, "-").trim() || "screenplay";
@@ -107,7 +144,7 @@ function inlineFonts(html, fontDir) {
   const re = new RegExp(`${FONT_PLACEHOLDER}([^"')\\s]+)`, "g");
   return html.replace(re, (_, name) => {
     if (!FONT_FILES.includes(name)) throw new Error(`unknown font: ${name}`);
-    return `data:font/woff2;base64,${(0, import_node_fs2.readFileSync)((0, import_node_path2.join)(fontDir, name)).toString("base64")}`;
+    return `data:font/woff2;base64,${(0, import_node_fs3.readFileSync)((0, import_node_path3.join)(fontDir, name)).toString("base64")}`;
   });
 }
 function withTimeout(work, ms, message) {
@@ -132,10 +169,10 @@ async function exportFile(req) {
   if (typeof content !== "string") throw new Error("export-file: content must be a string");
   const r = await withParent(import_electron.dialog.showSaveDialog.bind(import_electron.dialog), {
     defaultPath: exportName(defaultName, ext),
-    filters: [{ name: ext === "fountain" ? "Fountain" : "Text", extensions: [ext] }]
+    filters: [{ name: { fountain: "Fountain", fdx: "Final Draft" }[ext] ?? "Text", extensions: [ext] }]
   });
   if (r.canceled || !r.filePath) return { canceled: true };
-  (0, import_node_fs3.writeFileSync)(r.filePath, content, "utf-8");
+  (0, import_node_fs4.writeFileSync)(r.filePath, content, "utf-8");
   return { path: r.filePath };
 }
 async function importFile() {
@@ -145,8 +182,8 @@ async function importFile() {
   });
   if (r.canceled || !r.filePaths?.length) return { canceled: true };
   const file = r.filePaths[0];
-  if ((0, import_node_fs3.statSync)(file).size > MAX_IMPORT_BYTES) throw new Error(`${(0, import_node_path3.basename)(file)} is larger than 5 MB`);
-  return { name: (0, import_node_path3.basename)(file), content: (0, import_node_fs3.readFileSync)(file, "utf-8") };
+  if ((0, import_node_fs4.statSync)(file).size > MAX_IMPORT_BYTES) throw new Error(`${(0, import_node_path4.basename)(file)} is larger than 5 MB`);
+  return { name: (0, import_node_path4.basename)(file), content: (0, import_node_fs4.readFileSync)(file, "utf-8") };
 }
 async function exportPdf(req) {
   const c = ctx;
@@ -159,10 +196,10 @@ async function exportPdf(req) {
   });
   if (r.canceled || !r.filePath) return { canceled: true };
   if (!ctx) throw new Error("script-writer is not active");
-  const tmpDir = (0, import_node_path3.join)(c.dataDir, "tmp");
-  (0, import_node_fs3.mkdirSync)(tmpDir, { recursive: true });
-  const tmp = (0, import_node_path3.join)(tmpDir, `print-${Date.now()}-${Math.random().toString(36).slice(2)}.html`);
-  (0, import_node_fs3.writeFileSync)(tmp, inlineFonts(html, (0, import_node_path3.join)(c.pluginDir, "dist", "fonts")), "utf-8");
+  const tmpDir = (0, import_node_path4.join)(c.dataDir, "tmp");
+  (0, import_node_fs4.mkdirSync)(tmpDir, { recursive: true });
+  const tmp = (0, import_node_path4.join)(tmpDir, `print-${Date.now()}-${Math.random().toString(36).slice(2)}.html`);
+  (0, import_node_fs4.writeFileSync)(tmp, inlineFonts(html, (0, import_node_path4.join)(c.pluginDir, "dist", "fonts")), "utf-8");
   const win = new import_electron.BrowserWindow({ show: false, webPreferences: { sandbox: true } });
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   win.webContents.on("will-navigate", (e) => e.preventDefault());
@@ -178,12 +215,12 @@ async function exportPdf(req) {
         margins: { top: 0, bottom: 0, left: 0, right: 0 }
       });
     })(), PDF_TIMEOUT_MS, "PDF export timed out");
-    (0, import_node_fs3.writeFileSync)(r.filePath, pdf);
+    (0, import_node_fs4.writeFileSync)(r.filePath, pdf);
     return { path: r.filePath };
   } finally {
     printWindows.delete(win);
     if (!win.isDestroyed()) win.destroy();
-    (0, import_node_fs3.rmSync)(tmp, { force: true });
+    (0, import_node_fs4.rmSync)(tmp, { force: true });
   }
 }
 function activate(context) {
@@ -191,6 +228,9 @@ function activate(context) {
   ctx.ipc.handle("draft-write", (req) => writeDraft(ctx.dataDir, req ?? {}));
   ctx.ipc.handle("draft-read", (key) => readDraft(ctx.dataDir, key));
   ctx.ipc.handle("draft-clear", (key) => clearDraft(ctx.dataDir, key));
+  ctx.ipc.handle("thread-read", (key) => readThread(ctx.dataDir, key));
+  ctx.ipc.handle("thread-write", (req) => writeThread(ctx.dataDir, req ?? {}));
+  ctx.ipc.handle("thread-clear", (key) => clearThread(ctx.dataDir, key));
   ctx.ipc.handle("export-file", exportFile);
   ctx.ipc.handle("import-file", importFile);
   ctx.ipc.handle("export-pdf", exportPdf);

@@ -4,6 +4,7 @@ import { BrowserWindow, dialog } from 'electron';
 import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { clearDraft, readDraft, writeDraft } from './main/drafts.js';
+import { clearThread, readThread, writeThread } from './main/threads.js';
 import { EXPORT_EXTS, IMPORT_EXTS, MAX_IMPORT_BYTES, exportName, inlineFonts, withTimeout } from './main/files.js';
 
 const PDF_TIMEOUT_MS = 30_000;
@@ -21,7 +22,7 @@ async function exportFile(req) {
   if (!EXPORT_EXTS.includes(ext)) throw new Error(`export-file: unsupported extension ${JSON.stringify(ext)}`);
   if (typeof content !== 'string') throw new Error('export-file: content must be a string');
   const r = await withParent(dialog.showSaveDialog.bind(dialog), {
-    defaultPath: exportName(defaultName, ext), filters: [{ name: ext === 'fountain' ? 'Fountain' : 'Text', extensions: [ext] }],
+    defaultPath: exportName(defaultName, ext), filters: [{ name: { fountain: 'Fountain', fdx: 'Final Draft' }[ext] ?? 'Text', extensions: [ext] }],
   });
   if (r.canceled || !r.filePath) return { canceled: true };
   writeFileSync(r.filePath, content, 'utf-8');
@@ -83,6 +84,9 @@ export function activate(context) {
   ctx.ipc.handle('draft-write', (req) => writeDraft(ctx.dataDir, req ?? {}));
   ctx.ipc.handle('draft-read', (key) => readDraft(ctx.dataDir, key));
   ctx.ipc.handle('draft-clear', (key) => clearDraft(ctx.dataDir, key));
+  ctx.ipc.handle('thread-read', (key) => readThread(ctx.dataDir, key));
+  ctx.ipc.handle('thread-write', (req) => writeThread(ctx.dataDir, req ?? {}));
+  ctx.ipc.handle('thread-clear', (key) => clearThread(ctx.dataDir, key));
   ctx.ipc.handle('export-file', exportFile);
   ctx.ipc.handle('import-file', importFile);
   ctx.ipc.handle('export-pdf', exportPdf);

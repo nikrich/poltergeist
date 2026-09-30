@@ -38,4 +38,16 @@ describe('createEditor', () => {
     expect(last.className).toContain('sw-l-action');
     view.destroy();
   });
+
+  it('reports the new line type after a hint-only Enter', () => {
+    const parent = document.createElement('div');
+    document.body.appendChild(parent);
+    const calls = [];
+    const view = createEditor({ parent, doc: 'MARA\nHi.', onCursorLine: (l, t) => calls.push([l, t]) });
+    view.dispatch({ selection: { anchor: view.state.doc.length } });
+    enter({ state: view.state, dispatch: view.dispatch.bind(view) });
+    enter({ state: view.state, dispatch: view.dispatch.bind(view) });
+    expect(calls.at(-1)[1]).toBe('action');
+    view.destroy();
+  });
 });

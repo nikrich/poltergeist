@@ -1,16 +1,26 @@
-import { ArrowLeft, Download, Eye, FileText, Focus, Hash, ListTree, Moon } from 'lucide-react';
+import { ArrowLeft, Download, Eye, FileText, Focus, Hash, ListTree, Moon, Sparkles, WandSparkles } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { readScript, writeScript } from '../api/backend.js';
+import { toFdx } from '../fdx/export.js';
 import { draftKey, parseScriptPath, toFountain } from '../fountain/document.js';
+import { typeAt, setType } from '../editor/commands.js';
+import { insertSceneAfterCursor, toggleEmphasis } from '../editor/format.js';
 import { characters as listCharacters, moveScene, scenes as listScenes } from '../fountain/outline.js';
 import { parse } from '../fountain/parse.js';
-import { createEditor, jumpToLine, setFocusMode } from '../editor/setup.js';
+import { isStaleProposal } from '../editor/proposal.js';
+import { editorContext } from '../editor/context.js';
+import { createEditor, jumpToLine, proposeEdit, setFocusMode } from '../editor/setup.js';
 import { paginate } from '../paginate/paginate.js';
 import { documentHtml, FONT_PLACEHOLDER } from '../render/pageHtml.js';
 import { entryFor, markMissing, upsertEntry } from '../store/registry.js';
 import { createSaver, shouldOfferDraft } from '../store/saver.js';
+import { AiPanel } from './AiPanel.jsx';
 import { CharacterList } from './CharacterList.jsx';
+import { FormatBar } from './FormatBar.jsx';
 import { PageView } from './PageView.jsx';
+import { PolishDialog } from './PolishDialog.jsx';
+import { PolishReview } from './PolishReview.jsx';
+import { planPolishApply } from './polishApply.js';
 import { SceneNav } from './SceneNav.jsx';
 import { TitlePageFields } from './TitlePageFields.jsx';
 import { useUiSettings } from './useUiSettings.js';
@@ -25,9 +35,12 @@ export function EditorScreen({ plugin, path, onBack, notify }) {
   const [status, setStatus] = useState({ s: 'saved' });
   const [elements, setElements] = useState([]);
   const [cursorLine, setCursorLine] = useState(0);
+  const [cursorType, setCursorType] = useState(null);
   const [draft, setDraft] = useState(null);
   const [titleEdit, setTitleEdit] = useState(null);
   const [menu, setMenu] = useState(false);
+  const [aiFocus, setAiFocus] = useState(0);
+  const [polish, setPolish] = useState(null); // null | {stage:'dialog'|'review', startText, result?}
   const hostRef = useRef(null);
   const viewRef = useRef(null);
   const metaRef = useRef(null);
@@ -118,11 +131,13 @@ export function EditorScreen({ plugin, path, onBack, notify }) {
       parent: hostRef.current,
       doc: loaded.body,
       onDocChange: (text) => { saverRef.current?.change(text); mirrorSoon(text); analyzeSoon(text); },
-      onCursorLine: setCursorLine,
+      onCursorLine: (line0, type) => { setCursorLine(line0); setCursorType(type); },
       onSave: () => saverRef.current?.flush(),
       onToggleFocus: () => patchUi({ focus: !viewRef.current?.swFocus }),
+      onAi: () => { patchUi({ panel: 'ai' }); setAiFocus((n) => n + 1); },
     });
     viewRef.current = view;
+    setCursorType(typeAt(view.state, view.state.doc.lineAt(view.state.selection.main.head).number));
     setElements(parse(loaded.body));
     view.focus();
     return () => { clearTimeout(analyzeTimer.current); writeMirror(); view.destroy(); viewRef.current = null; };
@@ -140,6 +155,20 @@ export function EditorScreen({ plugin, path, onBack, notify }) {
   const charList = useMemo(() => listCharacters(elements), [elements]);
 
   const jump = (line0) => viewRef.current && jumpToLine(viewRef.current, line0);
+  const withView = (fn) => () => { const v = viewRef.current; if (v) { fn(v); v.focus(); } };
+  const getContext = useCallback(() => editorContext(viewRef.current.state), []);
+  const onPropose = useCallback((p) => {
+    const v = viewRef.current;
+    if (!v) return;
+    if (isStaleProposal(v.state, p)) {
+      notify('The script changed while the AI was working \u2014 run it again.', 'error');
+      return;
+    }
+    proposeEdit(v, { from: p.from, to: p.to, text: p.text, mode: p.mode, label: p.label });
+  }, [notify]);
+  const onSetType = (type) => withView((v) => setType(type)(v))();
+  const onEmphasis = (kind) => withView((v) => toggleEmphasis(kind)(v))();
+  const onNewScene = withView((v) => insertSceneAfterCursor(v));
   const touch = () => viewRef.current && saverRef.current?.change(viewRef.current.state.doc.toString());
   const updateMeta = (patch) => {
     const next = { ...metaRef.current, ...patch };
@@ -160,6 +189,27 @@ export function EditorScreen({ plugin, path, onBack, notify }) {
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: draft.content } });
     setDraft(null);
     notify('Unsaved draft restored.');
+  }
+
+  function applyPolish(text) {
+    const view = viewRef.current;
+    const current = view.state.doc.toString();
+    const plan = planPolishApply({ current, startText: polish.startText, text });
+    setPolish(null);
+    if (plan === 'stale') {
+      notify('The script changed while polishing \u2014 run Polish again so nothing you typed is overwritten.', 'error');
+      return;
+    }
+    if (plan === 'noop') {
+      notify('Nothing changed.');
+      return;
+    }
+    view.dispatch({ changes: { from: 0, to: current.length, insert: text },
+      selection: { anchor: Math.min(view.state.selection.main.head, text.length) },
+      scrollIntoView: true,
+      userEvent: 'input.polish',
+    });
+    notify('Polish applied \u2014 \u2318Z to undo.');
   }
 
   async function exportPdf() {
@@ -186,6 +236,17 @@ export function EditorScreen({ plugin, path, onBack, notify }) {
     }
   }
 
+  async function exportFdx() {
+    setMenu(false);
+    try {
+      const content = toFdx(metaRef.current, viewRef.current.state.doc.toString());
+      const r = await plugin.ipc.invoke('export-file', { defaultName: slug, ext: 'fdx', content });
+      if (r?.path) notify(`Final Draft file saved to ${r.path}`);
+    } catch (e) {
+      notify(`Export failed: ${e.message}`, 'error');
+    }
+  }
+
   if (!loaded || !meta) return <div className="sw-lib sw-muted">Opening&hellip;</div>;
   const statusLabel = status.s === 'error'
     ? `Unsaved \u2014 retrying in ${Math.round((status.info?.retryInMs ?? 0) / 1000)}s`
@@ -201,6 +262,7 @@ export function EditorScreen({ plugin, path, onBack, notify }) {
         <span className={`sw-status${status.s === 'error' ? ' sw-err' : ''}`} title={status.info?.message ?? ''}>{statusLabel}</span>
         <button type="button" className={`sw-btn${ui.sceneNav ? ' sw-on' : ''}`} onClick={() => patchUi({ sceneNav: !ui.sceneNav })} title="Scenes & characters"><ListTree size={14} /></button>
         <button type="button" className={`sw-btn${ui.panel === 'page' ? ' sw-on' : ''}`} onClick={() => patchUi({ panel: ui.panel === 'page' ? null : 'page' })} title="Page view"><Eye size={14} /></button>
+        <button type="button" className={`sw-btn${ui.panel === 'ai' ? ' sw-on' : ''}`} onClick={() => patchUi({ panel: ui.panel === 'ai' ? null : 'ai' })} title={'AI co-writer (\u2318K)'}><Sparkles size={14} /></button>
         <button type="button" className={`sw-btn${meta.scene_numbers ? ' sw-on' : ''}`} onClick={() => updateMeta({ scene_numbers: !meta.scene_numbers })} title="Scene numbers"><Hash size={14} /></button>
         <button type="button" className={`sw-btn${ui.focus ? ' sw-on' : ''}`} onClick={() => patchUi({ focus: !ui.focus })} title={'Focus mode (\u2318\u21e7F)'}><Focus size={14} /></button>
         <button type="button" className={`sw-btn${ui.dark ? ' sw-on' : ''}`} onClick={() => patchUi({ dark: !ui.dark })} title="Dark page"><Moon size={14} /></button>
@@ -208,12 +270,14 @@ export function EditorScreen({ plugin, path, onBack, notify }) {
           <option value="letter">US Letter</option>
           <option value="a4">A4</option>
         </select>
+        <button type="button" className="sw-btn" onClick={() => setPolish({ stage: 'dialog', startText: viewRef.current.state.doc.toString() })} title="Polish the whole script with AI"><WandSparkles size={14} />Polish</button>
         <div className="sw-menu">
           <button type="button" className="sw-btn" onClick={() => setMenu(!menu)}><Download size={14} />Export</button>
           {menu && (
             <div className="sw-menu-list">
               <button type="button" onClick={exportPdf}>PDF</button>
               <button type="button" onClick={exportFountain}><FileText size={12} /> Fountain</button>
+              <button type="button" onClick={exportFdx}><FileText size={12} /> Final Draft (.fdx)</button>
             </div>
           )}
         </div>
@@ -226,10 +290,11 @@ export function EditorScreen({ plugin, path, onBack, notify }) {
           <button type="button" className="sw-btn" onClick={() => { plugin.ipc.invoke('draft-clear', key).catch(() => {}); setDraft(null); }}>Discard</button>
         </div>
       )}
+      <FormatBar currentType={cursorType} onSetType={onSetType} onEmphasis={onEmphasis} onNewScene={onNewScene} />
       <div className="sw-body">
         {ui.sceneNav && (
           <aside className="sw-side">
-            <SceneNav scenes={sceneList} cursorLine={cursorLine} onJump={jump} onMove={onMoveScene} />
+            <SceneNav scenes={sceneList} cursorLine={cursorLine} onJump={jump} onMove={onMoveScene} onAdd={onNewScene} />
             <CharacterList characters={charList} onJump={jump} />
           </aside>
         )}
@@ -238,6 +303,11 @@ export function EditorScreen({ plugin, path, onBack, notify }) {
         </main>
         {ui.panel === 'page' && (
           <aside className="sw-right"><PageView meta={meta} pages={pages} paper={ui.paper} /></aside>
+        )}
+        {ui.panel === 'ai' && (
+          <aside className="sw-right sw-right-ai">
+            <AiPanel plugin={plugin} scriptPath={path} getContext={getContext} onPropose={onPropose} notify={notify} focusToken={aiFocus} />
+          </aside>
         )}
       </div>
       {titleEdit && (
@@ -252,6 +322,11 @@ export function EditorScreen({ plugin, path, onBack, notify }) {
           </div>
         </div>
       )}
+      {polish?.stage === 'dialog' && (
+        <PolishDialog plugin={plugin} text={polish.startText} onCancel={() => setPolish(null)}
+          onDone={(result) => setPolish((p) => ({ ...p, stage: 'review', result }))} />
+      )}
+      {polish?.stage === 'review' && <PolishReview result={polish.result} onApply={applyPolish} onClose={() => setPolish(null)} />}
     </>
   );
 }

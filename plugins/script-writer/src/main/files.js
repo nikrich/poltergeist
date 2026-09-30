@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { FONT_FILES, FONT_PLACEHOLDER } from '../render/pageHtml.js';
 
-export const IMPORT_EXTS = ['fountain', 'spmd', 'txt'];
-export const EXPORT_EXTS = ['fountain', 'txt'];
+export const IMPORT_EXTS = ['fountain', 'spmd', 'txt', 'fdx'];
+export const EXPORT_EXTS = ['fountain', 'txt', 'fdx'];
 export const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 
 export function exportName(name, ext) {

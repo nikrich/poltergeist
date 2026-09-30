@@ -1,12 +1,15 @@
 import { useState } from 'react';
 
-export function SceneNav({ scenes, cursorLine, onJump, onMove }) {
+export function SceneNav({ scenes, cursorLine, onJump, onMove, onAdd }) {
   const [drag, setDrag] = useState(null);
   const [over, setOver] = useState(null);
   const active = scenes.reduce((cur, s) => (s.line <= cursorLine ? s.index : cur), -1);
   return (
     <div>
-      <div className="sw-h">Scenes &middot; {scenes.length}</div>
+      <div className="sw-h sw-h-row">
+        <span>Scenes &middot; {scenes.length}</span>
+        {onAdd && <button type="button" className="sw-icon" title="New scene after the cursor" onMouseDown={(e) => e.preventDefault()} onClick={onAdd}>+</button>}
+      </div>
       {scenes.map((s) => (
         <div key={`${s.line}-${s.heading}`} draggable
           className={`sw-scene${s.index === active ? ' sw-active' : ''}${over === s.index && drag !== null ? ' sw-over' : ''}`}
