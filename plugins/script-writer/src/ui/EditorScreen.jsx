@@ -6,6 +6,7 @@ import { typeAt, setType } from '../editor/commands.js';
 import { insertSceneAfterCursor, toggleEmphasis } from '../editor/format.js';
 import { characters as listCharacters, moveScene, scenes as listScenes } from '../fountain/outline.js';
 import { parse } from '../fountain/parse.js';
+import { isStaleProposal } from '../editor/proposal.js';
 import { editorContext } from '../editor/context.js';
 import { createEditor, jumpToLine, proposeEdit, setFocusMode } from '../editor/setup.js';
 import { paginate } from '../paginate/paginate.js';
@@ -154,7 +155,7 @@ export function EditorScreen({ plugin, path, onBack, notify }) {
   const onPropose = useCallback((p) => {
     const v = viewRef.current;
     if (!v) return;
-    if (p.to > v.state.doc.length || v.state.sliceDoc(p.anchorFrom ?? p.from, p.to) !== p.original) {
+    if (isStaleProposal(v.state, p)) {
       notify('The script changed while the AI was working \u2014 run it again.', 'error');
       return;
     }

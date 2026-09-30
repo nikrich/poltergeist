@@ -4,7 +4,7 @@ import { EditorView } from '@codemirror/view';
 import { describe, expect, it } from 'vitest';
 import { analysisField } from '../analysis.js';
 import { editorContext } from '../context.js';
-import { acceptProposal, insertProposal, proposalExtension, proposalField, rejectProposal, showProposal } from '../proposal.js';
+import { acceptProposal, isStaleProposal, insertProposal, proposalExtension, proposalField, rejectProposal, showProposal } from '../proposal.js';
 
 const DOC = 'INT. A - DAY\n\nMara waits.\n\nINT. B - DAY\n\nGo.';
 const mk = (doc = DOC, sel = EditorSelection.cursor(16)) => EditorState.create({ doc, selection: sel, extensions: [analysisField, proposalExtension] });
@@ -60,5 +60,21 @@ describe('editorContext', () => {
     expect(ctx.selection).toEqual({ from: 14, to: 18, text: 'Mara' });
     expect(ctx.cursorLine).toBe(2);
     expect(ctx.elements.length).toBeGreaterThan(0);
+  });
+});
+
+describe('isStaleProposal', () => {
+  const s = mk();
+  const orig = DOC.slice(14, 25);
+  it('is fresh when the range still holds the original, stale once edited', () => {
+    expect(isStaleProposal(s, { from: 14, to: 25, original: orig })).toBe(false);
+    expect(isStaleProposal(mk('INT. A - DAY\n\nMara sits down.\n\nINT. B - DAY\n\nGo.'), { from: 14, to: 25, original: orig })).toBe(true);
+  });
+  it('checks insert proposals against anchorFrom', () => {
+    expect(isStaleProposal(s, { from: 25, to: 25, anchorFrom: 14, original: orig })).toBe(false);
+    expect(isStaleProposal(s, { from: 25, to: 25, anchorFrom: 13, original: orig })).toBe(true);
+  });
+  it('is stale when out of range', () => {
+    expect(isStaleProposal(s, { from: 0, to: 9999, original: orig })).toBe(true);
   });
 });

@@ -98,3 +98,8 @@ export const proposalExtension = [
   proposalField,
   keymap.of([{ key: 'Escape', run: rejectProposal }]),
 ];
+
+// True when the script changed under an in-flight AI proposal.
+export function isStaleProposal(state, p) {
+  return p.to > state.doc.length || state.sliceDoc(p.anchorFrom ?? p.from, p.to) !== p.original;
+}

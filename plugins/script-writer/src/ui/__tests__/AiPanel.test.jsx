@@ -14,6 +14,7 @@ function fakePlugin({ llm }) {
   return {
     calls,
     threads,
+    openExternal: vi.fn(),
     ipc: {
       invoke: async (ch, arg) => {
         if (ch === 'thread-read') return threads[arg] ?? [];
@@ -56,6 +57,27 @@ describe('renderAnswer', () => {
     expect(html).toContain('<strong>Mara</strong>');
     expect(html).toContain('<button type="button" class="sw-cite" data-n="1">[1]</button>');
     expect(html).not.toContain('<script>');
+  });
+  it('neutralises links, images and raw html, and only exposes http(s) links as buttons', () => {
+    const html = renderAnswer('[x](https://a.b) <img src=x onerror=1> [y](javascript:alert(1)) ![p](http://i)');
+    expect(html).not.toContain('<a ');
+    expect(html).not.toContain('<img');
+    expect(html).not.toContain('onerror');
+    expect(html).not.toContain('javascript:');
+    expect(html).toContain('class="sw-link" data-href="https://a.b"');
+    expect(html).toContain('y');
+    expect(html).toContain('p');
+  });
+
+  it('only turns [n] in prose text into citations, not code or attributes', () => {
+    const html = renderAnswer('`code [1]` and [1]');
+    expect(html.match(/class="sw-cite"/g)).toHaveLength(1);
+    expect(html).toContain('<code>code [1]</code>');
+    const d = document.createElement('div');
+    d.innerHTML = renderAnswer('[a](https://x "t[1]")');
+    expect(d.querySelectorAll('.sw-link').length).toBeLessThanOrEqual(1);
+    expect(d.querySelectorAll('.sw-cite')).toHaveLength(0);
+    expect(d.innerHTML).not.toContain('data-n');
   });
 });
 
@@ -123,6 +145,29 @@ describe('AiPanel', () => {
     await act(async () => { el.querySelector('.sw-ai-actions .sw-primary').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     await flush();
     expect(el.querySelector('.sw-err').textContent).toContain('Budget exceeded');
+    act(() => root.unmount());
+  });
+  it('opens external links through the host', async () => {
+    const plugin = fakePlugin({ llm: () => ({ text: 'See [docs](https://a.b/x).', structured: null, error: null }) });
+    plugin.threads['20-contexts-personal-projects-night-draft-screenplay-md'] = [{ role: 'user', text: 'q' }, { role: 'assistant', text: 'See [docs](https://a.b/x).' }];
+    const { el, root } = await mount(plugin);
+    await act(async () => { el.querySelector('.sw-link').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(plugin.openExternal).toHaveBeenCalledWith('https://a.b/x');
+    act(() => root.unmount());
+  });
+
+  it('disables input, Run and Clear until the thread has loaded', async () => {
+    let release;
+    const plugin = fakePlugin({ llm: () => ({ text: '', structured: null, error: null }) });
+    plugin.ipc.invoke = (ch) => (ch === 'thread-read' ? new Promise((r) => { release = r; }) : Promise.resolve(true));
+    const { el, root } = await mount(plugin);
+    expect(el.querySelector('textarea').disabled).toBe(true);
+    expect(el.querySelector('.sw-ai-actions .sw-primary').disabled).toBe(true);
+    expect(el.querySelector('button[title="Clear conversation"]').disabled).toBe(true);
+    await act(async () => { release([]); });
+    await flush();
+    expect(el.querySelector('textarea').disabled).toBe(false);
+    expect(el.querySelector('.sw-ai-actions .sw-primary').disabled).toBe(false);
     act(() => root.unmount());
   });
 });

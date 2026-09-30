@@ -1,14 +1,29 @@
 import { Send, Sparkles, Trash2 } from 'lucide-react';
-import { marked } from 'marked';
-import { useEffect, useRef, useState } from 'react';
+import { Marked } from 'marked';
+import { memo, useEffect, useRef, useState } from 'react';
 import { BUDGETS, runLlm } from '../ai/llm.js';
 import { ACTIONS, REWRITE_PRESETS, actionPrompt, askPrompt, outlineText } from '../ai/prompts.js';
 import { retrieve, SCOPES } from '../ai/retrieve.js';
 import { checkFountain } from '../ai/validate.js';
 import { draftKey } from '../fountain/document.js';
 
-// LLM and vault content is untrusted: markdown renders, raw HTML does not.
-marked.use({ renderer: { html: () => '' } });
+// LLM and vault content is untrusted: markdown renders, raw HTML, images and
+// non-http(s) links do not. http(s) links become buttons opened by the host.
+const escapeAttr = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const md = new Marked({
+  renderer: {
+    html: () => '',
+    link(href, title, text) {
+      const stripped = String(text ?? '').replace(/<[^>]*>/g, '');
+      if (/^https?:\/\//i.test(String(href ?? ''))) {
+        return `<button type="button" class="sw-link" data-href="${escapeAttr(href)}">${stripped}</button>`;
+      }
+      return stripped;
+    },
+    image: (href, title, text) => escapeAttr(text),
+    text: (text) => String(text).replace(/\[(\d{1,2})\]/g, '<button type="button" class="sw-cite" data-n="$1">[$1]</button>'),
+  },
+});
 
 const MAX_THREAD = 100;
 const FENCE = '```';
@@ -16,9 +31,12 @@ const SCOPE_LABEL = { project: 'This project', context: 'This context', vault: '
 const WIDENED = 'Nothing in this project matched \u2014 searched the whole context.';
 
 export function renderAnswer(text) {
-  return String(marked.parse(String(text ?? '')))
-    .replace(/\[(\d{1,2})\]/g, '<button type="button" class="sw-cite" data-n="$1">[$1]</button>');
+  return String(md.parse(String(text ?? '')));
 }
+
+const MessageBody = memo(function MessageBody({ text }) {
+  return <div className="sw-md" dangerouslySetInnerHTML={{ __html: renderAnswer(text) }} />;
+});
 
 const slim = (sources) => sources.map(({ n, path, title, snippet, content }) => ({
   n, path, title, snippet, ...(content ? { content: content.slice(0, 1500) } : {}),
@@ -34,6 +52,8 @@ export function AiPanel({ plugin, scriptPath, getContext, onPropose, notify, foc
   const [actionId, setActionId] = useState('continue');
   const [direction, setDirection] = useState('');
   const [openSource, setOpenSource] = useState(null);
+  const [loaded, setLoaded] = useState(false);
+  const mounted = useRef(true);
   const latest = useRef([]);
   const inputRef = useRef(null);
   const listRef = useRef(null);
@@ -41,15 +61,18 @@ export function AiPanel({ plugin, scriptPath, getContext, onPropose, notify, foc
 
   useEffect(() => {
     let live = true;
+    setLoaded(false);
     plugin.ipc.invoke('thread-read', key).then((m) => {
       if (live && Array.isArray(m)) { latest.current = m; setMessages(m); }
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => { if (live) setLoaded(true); });
     return () => { live = false; };
   }, [plugin, key]);
+  useEffect(() => () => { mounted.current = false; }, []);
   useEffect(() => { inputRef.current?.focus(); }, [focusToken]);
   useEffect(() => { const l = listRef.current; if (l) l.scrollTop = l.scrollHeight; }, [messages, busy]);
 
   const push = (msgs) => {
+    if (!mounted.current) return;
     const kept = msgs.slice(-MAX_THREAD);
     latest.current = kept;
     setMessages(kept);
@@ -59,7 +82,7 @@ export function AiPanel({ plugin, scriptPath, getContext, onPropose, notify, foc
   async function ask(e) {
     e?.preventDefault?.();
     const question = input.trim();
-    if (!question || busy) return;
+    if (!question || busy || !loaded) return;
     const history = latest.current;
     const withQ = [...history, { role: 'user', text: question }];
     push(withQ);
@@ -80,15 +103,15 @@ export function AiPanel({ plugin, scriptPath, getContext, onPropose, notify, foc
   }
 
   async function runAction() {
-    if (busy) return;
-    const ctx = getContext();
-    const target = ctx.selection.text.trim() ? ctx.selection : ctx.scene;
-    if (!target.text.trim()) { notify('Put the cursor in a scene or select some text first.', 'error'); return; }
+    if (busy || !loaded) return;
     if (action.needsDirection && !direction.trim()) { notify('Say how to rewrite it, or pick a preset.', 'error'); return; }
     const request = { role: 'user', text: `${plainLabel(action)}${direction.trim() && action.needsDirection ? `: ${direction.trim()}` : ''}` };
     const base = [...latest.current, request];
     setBusy(`${plainLabel(action)}\u2026`);
     try {
+      const ctx = getContext();
+      const target = ctx.selection.text.trim() ? ctx.selection : ctx.scene;
+      if (!target.text.trim()) { notify('Put the cursor in a scene or select some text first.', 'error'); return; }
       const r = await retrieve(plugin, { query: target.text.slice(0, 500), scriptPath, scope });
       const { system, prompt, jsonSchema } = actionPrompt({
         action, direction: action.needsDirection ? direction.trim() : '', target: target.text, outline: outlineText(ctx.elements), sources: r.sources,
@@ -117,6 +140,8 @@ export function AiPanel({ plugin, scriptPath, getContext, onPropose, notify, foc
   }
 
   function onListClick(e) {
+    const link = e.target?.closest?.('.sw-link');
+    if (link) { plugin.openExternal?.(link.dataset.href); return; }
     const n = e.target?.dataset?.n;
     const holder = e.target?.closest?.('[data-msg]');
     if (!n || !holder) return;
@@ -131,13 +156,13 @@ export function AiPanel({ plugin, scriptPath, getContext, onPropose, notify, foc
         <select className="sw-btn" value={scope} onChange={(e) => setScope(e.target.value)} title="Where to look in your vault">
           {SCOPES.map((s) => <option key={s} value={s}>{SCOPE_LABEL[s]}</option>)}
         </select>
-        <button type="button" className="sw-btn" title="Clear conversation" onClick={() => push([])}><Trash2 size={14} /></button>
+        <button type="button" className="sw-btn" title="Clear conversation" disabled={!loaded || !!busy} onClick={() => push([])}><Trash2 size={14} /></button>
       </div>
       <div className="sw-ai-actions">
         <select className="sw-btn" value={actionId} onChange={(e) => setActionId(e.target.value)} title="Works on the selection, or the scene at the cursor">
           {ACTIONS.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
         </select>
-        <button type="button" className="sw-btn sw-primary" disabled={!!busy} onClick={runAction}>Run</button>
+        <button type="button" className="sw-btn sw-primary" disabled={!!busy || !loaded} onClick={runAction}>Run</button>
         {action.needsDirection && (
           <div className="sw-ai-dir">
             <input value={direction} onChange={(e) => setDirection(e.target.value)} placeholder={'How? e.g. tighter, darker\u2026'} />
@@ -157,7 +182,7 @@ export function AiPanel({ plugin, scriptPath, getContext, onPropose, notify, foc
             <div key={i} data-msg={i} className={`sw-msg sw-msg-${m.role}`}>
               {m.role === 'user' && <div>{m.text}</div>}
               {m.role === 'assistant' && m.error && <div className="sw-status sw-err">{m.error}</div>}
-              {m.role === 'assistant' && !m.error && <div className="sw-md" dangerouslySetInnerHTML={{ __html: renderAnswer(m.text) }} />}
+              {m.role === 'assistant' && !m.error && <MessageBody text={m.text} />}
               {m.note && <div className="sw-muted">{m.note}</div>}
               {open && (
                 <div className="sw-source">
@@ -172,7 +197,7 @@ export function AiPanel({ plugin, scriptPath, getContext, onPropose, notify, foc
         {busy && <div className="sw-muted sw-busy">{busy}</div>}
       </div>
       <form className="sw-ai-input" onSubmit={ask}>
-        <textarea ref={inputRef} rows={3} value={input} onChange={(e) => setInput(e.target.value)}
+        <textarea ref={inputRef} rows={3} disabled={!loaded} value={input} onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); } }}
           placeholder={'Ask about your story, characters, research\u2026'} />
         <button type="submit" className="sw-btn sw-primary" disabled={!!busy || !input.trim()} title="Ask"><Send size={14} /></button>
