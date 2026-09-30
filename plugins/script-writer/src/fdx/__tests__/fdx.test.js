@@ -67,4 +67,12 @@ describe('fdx', () => {
     expect(fountainLine('action', 'INT. HOUSE')).toBe('!INT. HOUSE');
     expect(fountainLine('action', '=== x')).toBe('!=== x');
   });
+  it('keeps multi-line actions as one action', () => {
+    const one = (t) => els(wrap(P('Action', t)));
+    for (const t of ['BANG!\nThe door opens.', 'Wow\n!?', 'INT. HOUSE\nis dark']) {
+      const e = one(t);
+      expect(e.map((x) => x.type)).toEqual(['action']);
+      expect(e[0].text).toBe(t);
+    }
+  });
 });

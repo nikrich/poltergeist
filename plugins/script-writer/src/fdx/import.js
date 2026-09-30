@@ -17,7 +17,12 @@ export function fountainLine(type, text) {
     case 'transition': return u.endsWith('TO:') ? u : `>${u}`;
     case 'parenthetical': return /^\(.*\)$/s.test(t) ? t : `(${t})`;
     case 'dialogue': return t;
-    default: return /^[.!@~>=#[]/.test(t) || isUpperCue(t) || SCENE_PREFIX.test(t) ? `!${t}` : t;
+    default: {
+      const [first, ...rest] = t.split('\n');
+      const force = /^[.!@~>=#[]/.test(first) || isUpperCue(first) || SCENE_PREFIX.test(first)
+        || (first === first.toUpperCase() && first.trim().endsWith('TO:'));
+      return [force ? `!${first}` : first, ...rest.map((l) => (l.startsWith('!') ? `!${l}` : l))].join('\n');
+    }
   }
 }
 const NOT_FDX = 'Not a Final Draft (.fdx) file';

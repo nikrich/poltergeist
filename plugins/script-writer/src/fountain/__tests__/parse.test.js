@@ -94,4 +94,9 @@ describe('isUpperCue', () => {
     expect(isUpperCue('Mara')).toBe(false);
     expect(isUpperCue('123')).toBe(false);
   });
+  it('a !-forced line ending in TO: stays action', () => {
+    const e = parse('Go.\n\n!CUT TO:\n\nx');
+    expect(e.map((x) => x.type)).toEqual(['action', 'action', 'action']);
+    expect(e[1].text).toBe('CUT TO:');
+  });
 });
