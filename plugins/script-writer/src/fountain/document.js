@@ -36,7 +36,7 @@ export function toFountain(meta, body) {
 }
 
 export function fromFountain(text) {
-  const src = String(text ?? '').replace(/\r\n?/g, '\n');
+  const src = String(text ?? '').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
   const lines = src.split('\n');
   const first = lines[0]?.match(/^([A-Za-z][A-Za-z ]*):/);
   if (!first || !LABEL_TO_KEY[first[1].toLowerCase()]) return { meta: { ...DEFAULT_META }, body: src };

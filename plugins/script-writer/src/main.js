@@ -37,17 +37,22 @@ async function importFile() {
 }
 
 async function exportPdf(req) {
+  const c = ctx;
+  if (!c) throw new Error('script-writer is not active');
   const { html, defaultName, paper } = req ?? {};
   if (typeof html !== 'string' || !html.startsWith('<!doctype html>')) throw new Error('export-pdf: expected an html document');
   const r = await withParent(dialog.showSaveDialog.bind(dialog), {
     defaultPath: exportName(defaultName, 'pdf'), filters: [{ name: 'PDF', extensions: ['pdf'] }],
   });
   if (r.canceled || !r.filePath) return { canceled: true };
-  const tmpDir = join(ctx.dataDir, 'tmp');
+  if (!ctx) throw new Error('script-writer is not active');
+  const tmpDir = join(c.dataDir, 'tmp');
   mkdirSync(tmpDir, { recursive: true });
-  const tmp = join(tmpDir, `print-${Date.now()}.html`);
-  writeFileSync(tmp, inlineFonts(html, join(ctx.pluginDir, 'dist', 'fonts')), 'utf-8');
+  const tmp = join(tmpDir, `print-${Date.now()}-${Math.random().toString(36).slice(2)}.html`);
+  writeFileSync(tmp, inlineFonts(html, join(c.pluginDir, 'dist', 'fonts')), 'utf-8');
   const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true } });
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.on('will-navigate', (e) => e.preventDefault());
   printWindows.add(win);
   try {
     await win.loadFile(tmp);

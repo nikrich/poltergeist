@@ -77,3 +77,11 @@ describe('slugs + paths', () => {
     expect(path).toBe('20-contexts/personal/projects/p/night-3.screenplay.md');
   });
 });
+
+describe('fromFountain BOM', () => {
+  it('strips a leading UTF-8 BOM so the title page is detected', () => {
+    const r = fromFountain('\uFEFFTitle: X\n\nGo.');
+    expect(r.meta.title).toBe('X');
+    expect(r.body).toBe('Go.');
+  });
+});

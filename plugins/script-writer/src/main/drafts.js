@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const KEY = /^[a-z0-9-]{1,120}$/;
@@ -12,7 +12,9 @@ export function writeDraft(dataDir, { key, content, savedAt }) {
   const file = draftFile(dataDir, key);
   if (typeof content !== 'string') throw new Error('draft content must be a string');
   mkdirSync(join(dataDir, 'drafts'), { recursive: true });
-  writeFileSync(file, JSON.stringify({ content, savedAt: String(savedAt ?? '') }));
+  const tmp = `${file}.tmp`;
+  writeFileSync(tmp, JSON.stringify({ content, savedAt: String(savedAt ?? '') }));
+  renameSync(tmp, file);
   return true;
 }
 

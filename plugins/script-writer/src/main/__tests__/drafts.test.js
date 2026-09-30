@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -25,5 +25,10 @@ describe('drafts', () => {
     mkdirSync(join(d, 'drafts'));
     writeFileSync(join(d, 'drafts', 'bad.json'), '{nope');
     expect(readDraft(d, 'bad')).toBeNull();
+  });
+  it('leaves no .tmp file after a write', () => {
+    const d = dir();
+    writeDraft(d, { key: 'k', content: 'x', savedAt: 'T' });
+    expect(readdirSync(join(d, 'drafts'))).toEqual(['k.json']);
   });
 });
