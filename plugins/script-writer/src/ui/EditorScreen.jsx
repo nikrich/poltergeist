@@ -1,4 +1,4 @@
-import { ArrowLeft, Download, Eye, FileText, Focus, Hash, ListTree, Moon } from 'lucide-react';
+import { ArrowLeft, Download, Eye, FileText, Focus, Hash, ListTree, Moon, Sparkles } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { readScript, writeScript } from '../api/backend.js';
 import { draftKey, parseScriptPath, toFountain } from '../fountain/document.js';
@@ -6,11 +6,13 @@ import { typeAt, setType } from '../editor/commands.js';
 import { insertSceneAfterCursor, toggleEmphasis } from '../editor/format.js';
 import { characters as listCharacters, moveScene, scenes as listScenes } from '../fountain/outline.js';
 import { parse } from '../fountain/parse.js';
-import { createEditor, jumpToLine, setFocusMode } from '../editor/setup.js';
+import { editorContext } from '../editor/context.js';
+import { createEditor, jumpToLine, proposeEdit, setFocusMode } from '../editor/setup.js';
 import { paginate } from '../paginate/paginate.js';
 import { documentHtml, FONT_PLACEHOLDER } from '../render/pageHtml.js';
 import { entryFor, markMissing, upsertEntry } from '../store/registry.js';
 import { createSaver, shouldOfferDraft } from '../store/saver.js';
+import { AiPanel } from './AiPanel.jsx';
 import { CharacterList } from './CharacterList.jsx';
 import { FormatBar } from './FormatBar.jsx';
 import { PageView } from './PageView.jsx';
@@ -32,6 +34,7 @@ export function EditorScreen({ plugin, path, onBack, notify }) {
   const [draft, setDraft] = useState(null);
   const [titleEdit, setTitleEdit] = useState(null);
   const [menu, setMenu] = useState(false);
+  const [aiFocus, setAiFocus] = useState(0);
   const hostRef = useRef(null);
   const viewRef = useRef(null);
   const metaRef = useRef(null);
@@ -125,7 +128,7 @@ export function EditorScreen({ plugin, path, onBack, notify }) {
       onCursorLine: (line0, type) => { setCursorLine(line0); setCursorType(type); },
       onSave: () => saverRef.current?.flush(),
       onToggleFocus: () => patchUi({ focus: !viewRef.current?.swFocus }),
-      onAi: () => patchUi({ panel: 'ai' }),
+      onAi: () => { patchUi({ panel: 'ai' }); setAiFocus((n) => n + 1); },
     });
     viewRef.current = view;
     setCursorType(typeAt(view.state, view.state.doc.lineAt(view.state.selection.main.head).number));
@@ -147,6 +150,16 @@ export function EditorScreen({ plugin, path, onBack, notify }) {
 
   const jump = (line0) => viewRef.current && jumpToLine(viewRef.current, line0);
   const withView = (fn) => () => { const v = viewRef.current; if (v) { fn(v); v.focus(); } };
+  const getContext = useCallback(() => editorContext(viewRef.current.state), []);
+  const onPropose = useCallback((p) => {
+    const v = viewRef.current;
+    if (!v) return;
+    if (p.to > v.state.doc.length || v.state.sliceDoc(p.anchorFrom ?? p.from, p.to) !== p.original) {
+      notify('The script changed while the AI was working \u2014 run it again.', 'error');
+      return;
+    }
+    proposeEdit(v, { from: p.from, to: p.to, text: p.text, mode: p.mode, label: p.label });
+  }, [notify]);
   const onSetType = (type) => withView((v) => setType(type)(v))();
   const onEmphasis = (kind) => withView((v) => toggleEmphasis(kind)(v))();
   const onNewScene = withView((v) => insertSceneAfterCursor(v));
@@ -211,6 +224,7 @@ export function EditorScreen({ plugin, path, onBack, notify }) {
         <span className={`sw-status${status.s === 'error' ? ' sw-err' : ''}`} title={status.info?.message ?? ''}>{statusLabel}</span>
         <button type="button" className={`sw-btn${ui.sceneNav ? ' sw-on' : ''}`} onClick={() => patchUi({ sceneNav: !ui.sceneNav })} title="Scenes & characters"><ListTree size={14} /></button>
         <button type="button" className={`sw-btn${ui.panel === 'page' ? ' sw-on' : ''}`} onClick={() => patchUi({ panel: ui.panel === 'page' ? null : 'page' })} title="Page view"><Eye size={14} /></button>
+        <button type="button" className={`sw-btn${ui.panel === 'ai' ? ' sw-on' : ''}`} onClick={() => patchUi({ panel: ui.panel === 'ai' ? null : 'ai' })} title={'AI co-writer (\u2318K)'}><Sparkles size={14} /></button>
         <button type="button" className={`sw-btn${meta.scene_numbers ? ' sw-on' : ''}`} onClick={() => updateMeta({ scene_numbers: !meta.scene_numbers })} title="Scene numbers"><Hash size={14} /></button>
         <button type="button" className={`sw-btn${ui.focus ? ' sw-on' : ''}`} onClick={() => patchUi({ focus: !ui.focus })} title={'Focus mode (\u2318\u21e7F)'}><Focus size={14} /></button>
         <button type="button" className={`sw-btn${ui.dark ? ' sw-on' : ''}`} onClick={() => patchUi({ dark: !ui.dark })} title="Dark page"><Moon size={14} /></button>
@@ -249,6 +263,11 @@ export function EditorScreen({ plugin, path, onBack, notify }) {
         </main>
         {ui.panel === 'page' && (
           <aside className="sw-right"><PageView meta={meta} pages={pages} paper={ui.paper} /></aside>
+        )}
+        {ui.panel === 'ai' && (
+          <aside className="sw-right sw-right-ai">
+            <AiPanel plugin={plugin} scriptPath={path} getContext={getContext} onPropose={onPropose} notify={notify} focusToken={aiFocus} />
+          </aside>
         )}
       </div>
       {titleEdit && (
