@@ -16,6 +16,7 @@ import { TitlePageFields } from './TitlePageFields.jsx';
 import { useUiSettings } from './useUiSettings.js';
 
 const STATUS_TEXT = { saved: 'Saved', dirty: 'Unsaved', saving: 'Saving\u2026' };
+const MIRROR_MS = 300;
 
 export function EditorScreen({ plugin, path, onBack, notify }) {
   const [loaded, setLoaded] = useState(null); // {meta, body}
@@ -32,6 +33,7 @@ export function EditorScreen({ plugin, path, onBack, notify }) {
   const metaRef = useRef(null);
   const saverRef = useRef(null);
   const analyzeTimer = useRef(null);
+  const mirror = useRef({ timer: null, text: null });
   const key = draftKey(path);
   const slug = parseScriptPath(path)?.slug ?? 'screenplay';
 
@@ -90,13 +92,32 @@ export function EditorScreen({ plugin, path, onBack, notify }) {
     };
   }, [loaded, plugin, path, key]);
 
+  // Mirror every change to the local draft on a short debounce, independent of
+  // the saver, so quitting mid-idle loses at most MIRROR_MS of typing. Safe after
+  // a save: a mirror equal to the saved body is never offered (shouldOfferDraft).
+  const writeMirror = useCallback(() => {
+    const m = mirror.current;
+    clearTimeout(m.timer);
+    m.timer = null;
+    if (m.text === null) return;
+    const content = m.text;
+    m.text = null;
+    plugin.ipc.invoke('draft-write', { key, content, savedAt: new Date().toISOString() }).catch(() => {});
+  }, [plugin, key]);
+  const mirrorSoon = useCallback((text) => {
+    const m = mirror.current;
+    m.text = text;
+    clearTimeout(m.timer);
+    m.timer = setTimeout(writeMirror, MIRROR_MS);
+  }, [writeMirror]);
+
   // CodeMirror view.
   useEffect(() => {
     if (!loaded || !hostRef.current) return undefined;
     const view = createEditor({
       parent: hostRef.current,
       doc: loaded.body,
-      onDocChange: (text) => { saverRef.current?.change(text); analyzeSoon(text); },
+      onDocChange: (text) => { saverRef.current?.change(text); mirrorSoon(text); analyzeSoon(text); },
       onCursorLine: setCursorLine,
       onSave: () => saverRef.current?.flush(),
       onToggleFocus: () => patchUi({ focus: !viewRef.current?.swFocus }),
@@ -104,8 +125,8 @@ export function EditorScreen({ plugin, path, onBack, notify }) {
     viewRef.current = view;
     setElements(parse(loaded.body));
     view.focus();
-    return () => { clearTimeout(analyzeTimer.current); view.destroy(); viewRef.current = null; };
-  }, [loaded, analyzeSoon, patchUi]);
+    return () => { clearTimeout(analyzeTimer.current); writeMirror(); view.destroy(); viewRef.current = null; };
+  }, [loaded, analyzeSoon, mirrorSoon, writeMirror, patchUi]);
 
   useEffect(() => {
     const view = viewRef.current;
