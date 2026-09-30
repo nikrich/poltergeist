@@ -3,6 +3,7 @@ import { Compartment, EditorState } from '@codemirror/state';
 import { drawSelection, EditorView, keymap } from '@codemirror/view';
 import { analysisField } from './analysis.js';
 import { autoCaps } from './autocaps.js';
+import { typeAt } from './commands.js';
 import { scriptCompletions } from './complete.js';
 import { decorations } from './decorations.js';
 import { focusMode } from './focus.js';
@@ -12,7 +13,7 @@ import { proposalExtension, showProposal } from './proposal.js';
 
 const focusSlot = new Compartment();
 
-export function createEditor({ parent, doc, onDocChange, onCursorLine, onSave, onToggleFocus }) {
+export function createEditor({ parent, doc, onDocChange, onCursorLine, onSave, onToggleFocus, onAi }) {
   const state = EditorState.create({
     doc,
     extensions: [
@@ -21,7 +22,7 @@ export function createEditor({ parent, doc, onDocChange, onCursorLine, onSave, o
       history(),
       drawSelection(),
       EditorView.lineWrapping,
-      scriptKeymap({ onSave, onToggleFocus }),
+      scriptKeymap({ onSave, onToggleFocus, onAi }),
       keymap.of([...historyKeymap, ...defaultKeymap]),
       decorations,
       proposalExtension,
@@ -32,7 +33,10 @@ export function createEditor({ parent, doc, onDocChange, onCursorLine, onSave, o
       EditorView.domEventHandlers({ blur: () => { onSave?.(); return false; } }),
       EditorView.updateListener.of((u) => {
         if (u.docChanged) onDocChange?.(u.state.doc.toString());
-        if (u.docChanged || u.selectionSet) onCursorLine?.(u.state.doc.lineAt(u.state.selection.main.head).number - 1);
+        if (u.docChanged || u.selectionSet) {
+          const line0 = u.state.doc.lineAt(u.state.selection.main.head).number - 1;
+          onCursorLine?.(line0, typeAt(u.state, line0 + 1));
+        }
       }),
     ],
   });

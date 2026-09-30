@@ -2,6 +2,8 @@ import { ArrowLeft, Download, Eye, FileText, Focus, Hash, ListTree, Moon } from 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { readScript, writeScript } from '../api/backend.js';
 import { draftKey, parseScriptPath, toFountain } from '../fountain/document.js';
+import { setType } from '../editor/commands.js';
+import { insertSceneAfterCursor, toggleEmphasis } from '../editor/format.js';
 import { characters as listCharacters, moveScene, scenes as listScenes } from '../fountain/outline.js';
 import { parse } from '../fountain/parse.js';
 import { createEditor, jumpToLine, setFocusMode } from '../editor/setup.js';
@@ -10,6 +12,7 @@ import { documentHtml, FONT_PLACEHOLDER } from '../render/pageHtml.js';
 import { entryFor, markMissing, upsertEntry } from '../store/registry.js';
 import { createSaver, shouldOfferDraft } from '../store/saver.js';
 import { CharacterList } from './CharacterList.jsx';
+import { FormatBar } from './FormatBar.jsx';
 import { PageView } from './PageView.jsx';
 import { SceneNav } from './SceneNav.jsx';
 import { TitlePageFields } from './TitlePageFields.jsx';
@@ -25,6 +28,7 @@ export function EditorScreen({ plugin, path, onBack, notify }) {
   const [status, setStatus] = useState({ s: 'saved' });
   const [elements, setElements] = useState([]);
   const [cursorLine, setCursorLine] = useState(0);
+  const [cursorType, setCursorType] = useState(null);
   const [draft, setDraft] = useState(null);
   const [titleEdit, setTitleEdit] = useState(null);
   const [menu, setMenu] = useState(false);
@@ -118,9 +122,10 @@ export function EditorScreen({ plugin, path, onBack, notify }) {
       parent: hostRef.current,
       doc: loaded.body,
       onDocChange: (text) => { saverRef.current?.change(text); mirrorSoon(text); analyzeSoon(text); },
-      onCursorLine: setCursorLine,
+      onCursorLine: (line0, type) => { setCursorLine(line0); setCursorType(type); },
       onSave: () => saverRef.current?.flush(),
       onToggleFocus: () => patchUi({ focus: !viewRef.current?.swFocus }),
+      onAi: () => patchUi({ panel: 'ai' }),
     });
     viewRef.current = view;
     setElements(parse(loaded.body));
@@ -140,6 +145,10 @@ export function EditorScreen({ plugin, path, onBack, notify }) {
   const charList = useMemo(() => listCharacters(elements), [elements]);
 
   const jump = (line0) => viewRef.current && jumpToLine(viewRef.current, line0);
+  const withView = (fn) => () => { const v = viewRef.current; if (v) { fn(v); v.focus(); } };
+  const onSetType = (type) => withView((v) => setType(type)(v))();
+  const onEmphasis = (kind) => withView((v) => toggleEmphasis(kind)(v))();
+  const onNewScene = withView((v) => insertSceneAfterCursor(v));
   const touch = () => viewRef.current && saverRef.current?.change(viewRef.current.state.doc.toString());
   const updateMeta = (patch) => {
     const next = { ...metaRef.current, ...patch };
@@ -226,10 +235,11 @@ export function EditorScreen({ plugin, path, onBack, notify }) {
           <button type="button" className="sw-btn" onClick={() => { plugin.ipc.invoke('draft-clear', key).catch(() => {}); setDraft(null); }}>Discard</button>
         </div>
       )}
+      <FormatBar currentType={cursorType} onSetType={onSetType} onEmphasis={onEmphasis} onNewScene={onNewScene} />
       <div className="sw-body">
         {ui.sceneNav && (
           <aside className="sw-side">
-            <SceneNav scenes={sceneList} cursorLine={cursorLine} onJump={jump} onMove={onMoveScene} />
+            <SceneNav scenes={sceneList} cursorLine={cursorLine} onJump={jump} onMove={onMoveScene} onAdd={onNewScene} />
             <CharacterList characters={charList} onJump={jump} />
           </aside>
         )}

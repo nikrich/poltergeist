@@ -72,5 +72,10 @@ export function appCss() {
 .sw-proposal-head{font-weight:600;margin-bottom:6px}
 .sw-proposal-text{margin:0 0 8px;white-space:pre-wrap;font-family:'Courier Prime','Courier New',monospace;font-size:12pt;line-height:.1667in}
 .sw-proposal-bar{display:flex;gap:6px}
+.sw-formatbar{display:flex;align-items:center;gap:6px;padding:6px 12px;border-bottom:1px solid var(--hairline,#2a2a2a)}
+.sw-fmt{min-width:30px;justify-content:center}
+.sw-sep{width:1px;align-self:stretch;background:var(--hairline,#2a2a2a);margin:0 4px}
+.sw-h-row{display:flex;align-items:center;justify-content:space-between;padding-right:8px}
+.sw-icon{background:none;border:1px solid var(--hairline,#2a2a2a);color:inherit;border-radius:4px;width:22px;height:22px;cursor:pointer;line-height:1}
 `;
 }
