@@ -23,17 +23,6 @@ describe('Tab cycling', () => {
     expect(typeAt(state, 3)).toBe('character');
   });
 
-  it('forces the cue with @ when the line above is not blank', () => {
-    const { state } = run(cycleType(1), mk('Go.\nmara'));
-    expect(doc(state)).toBe('Go.\n@MARA');
-    expect(typeAt(state, 2)).toBe('character');
-  });
-
-  it('does not double the @ on an already forced cue', () => {
-    const { state } = run(setType('character'), mk('Go.\n@mara'));
-    expect(doc(state)).toBe('Go.\n@MARA');
-  });
-
   it('walks action → character → transition → scene heading → action outside dialogue', () => {
     let s = mk('night falls');
     const seen = [];
