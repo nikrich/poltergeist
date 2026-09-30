@@ -664,8 +664,8 @@ describe('backend', () => {
   });
 
   it('lists contexts', async () => {
-    const p = fakePlugin({ 'GET /v1/vault/contexts': () => ({ ok: true, data: { contexts: ['personal', 'codeship'], archived: [] } }) });
-    expect(await listContexts(p)).toEqual(['personal', 'codeship']);
+    const p = fakePlugin({ 'GET /v1/vault/contexts': () => ({ ok: true, data: { contexts: ['personal', 'work'], archived: [] } }) });
+    expect(await listContexts(p)).toEqual(['personal', 'work']);
   });
 
   it('createProject falls back to the existing project on 409', async () => {
