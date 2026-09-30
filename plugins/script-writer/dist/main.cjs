@@ -71,8 +71,10 @@ var DEFAULT_META = Object.freeze({
   draft_date: "",
   contact: "",
   scene_numbers: false,
-  updated: ""
+  updated: "",
+  extra: Object.freeze({})
 });
+var KEYS = ["title", "credit", "author", "source", "draft_date", "contact", "scene_numbers", "updated"];
 var TITLE_KEYS = [
   ["title", "Title"],
   ["credit", "Credit"],
@@ -82,6 +84,7 @@ var TITLE_KEYS = [
   ["contact", "Contact"]
 ];
 var LABEL_TO_KEY = { ...Object.fromEntries(TITLE_KEYS.map(([k, l]) => [l.toLowerCase(), k])), authors: "author" };
+var RESERVED = /* @__PURE__ */ new Set(["type", ...KEYS]);
 
 // src/render/pageHtml.js
 var FONT_PLACEHOLDER = "__FONT_BASE__";
@@ -107,8 +110,16 @@ function inlineFonts(html, fontDir) {
     return `data:font/woff2;base64,${(0, import_node_fs2.readFileSync)((0, import_node_path2.join)(fontDir, name)).toString("base64")}`;
   });
 }
+function withTimeout(work, ms, message) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
+}
 
 // src/main.js
+var PDF_TIMEOUT_MS = 3e4;
 var ctx = null;
 var printWindows = /* @__PURE__ */ new Set();
 var withParent = (fn, opts) => {
@@ -157,14 +168,16 @@ async function exportPdf(req) {
   win.webContents.on("will-navigate", (e) => e.preventDefault());
   printWindows.add(win);
   try {
-    await win.loadFile(tmp);
-    await win.webContents.executeJavaScript("document.fonts.ready.then(() => true)");
-    const pdf = await win.webContents.printToPDF({
-      pageSize: paper === "a4" ? "A4" : "Letter",
-      printBackground: true,
-      preferCSSPageSize: true,
-      margins: { marginType: "none" }
-    });
+    const pdf = await withTimeout((async () => {
+      await win.loadFile(tmp);
+      await win.webContents.executeJavaScript("document.fonts.ready.then(() => true)");
+      return win.webContents.printToPDF({
+        pageSize: paper === "a4" ? "A4" : "Letter",
+        printBackground: true,
+        preferCSSPageSize: true,
+        margins: { top: 0, bottom: 0, left: 0, right: 0 }
+      });
+    })(), PDF_TIMEOUT_MS, "PDF export timed out");
     (0, import_node_fs3.writeFileSync)(r.filePath, pdf);
     return { path: r.filePath };
   } finally {
