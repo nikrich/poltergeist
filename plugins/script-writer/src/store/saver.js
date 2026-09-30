@@ -6,13 +6,35 @@ export function createSaver({ save, mirror, onStatus = () => {}, delayMs = 1500 
   let pending = null;
   let timer = null;
   let inflight = null;
+  let mirrorInFlight = null;
+  let mirrorNeeded = false;
   let attempt = 0;
   let disposed = false;
   let status = 'saved';
-  const setStatus = (s, info) => { status = s; onStatus(s, info); };
+  const setStatus = (s, info) => { status = s; try { onStatus(s, info); } catch { /* ignore onStatus errors */ } };
   const schedule = (ms) => { clearTimeout(timer); timer = setTimeout(run, ms); };
 
+  async function mirrorLatest() {
+    const toMirror = pending;
+    if (mirrorInFlight) {
+      mirrorNeeded = true;
+      return;
+    }
+    mirrorInFlight = (async () => {
+      try {
+        await mirror(toMirror);
+      } catch { /* best effort: the editor still holds the text */ }
+      mirrorInFlight = null;
+      if (mirrorNeeded) {
+        mirrorNeeded = false;
+        await mirrorLatest();
+      }
+    })();
+    await mirrorInFlight;
+  }
+
   function run() {
+    clearTimeout(timer);
     timer = null;
     if (pending === null || inflight) return inflight ?? Promise.resolve();
     const content = pending;
@@ -23,13 +45,13 @@ export function createSaver({ save, mirror, onStatus = () => {}, delayMs = 1500 
         await save(content);
         attempt = 0;
         if (pending === null) setStatus('saved');
-        else if (!disposed) schedule(delayMs);
+        else { setStatus('dirty'); if (!disposed) schedule(delayMs); }
       } catch (err) {
         if (pending === null) pending = content;
         const wait = BACKOFF_MS[Math.min(attempt, BACKOFF_MS.length - 1)];
         attempt++;
         setStatus('error', { message: err?.message ?? String(err), retryInMs: wait });
-        try { await mirror(pending); } catch { /* best effort: the editor still holds the text */ }
+        await mirrorLatest();
         if (!disposed) schedule(wait);
       } finally {
         inflight = null;
@@ -41,7 +63,8 @@ export function createSaver({ save, mirror, onStatus = () => {}, delayMs = 1500 
   return {
     change(content) {
       pending = content;
-      if (status === 'error') return; // keep the backoff schedule during an outage
+      if (disposed) return; // no-op after dispose
+      if (status === 'error') { mirrorLatest(); return; } // keep backoff schedule, mirror latest
       setStatus('dirty');
       schedule(delayMs);
     },
@@ -54,6 +77,7 @@ export function createSaver({ save, mirror, onStatus = () => {}, delayMs = 1500 
     dispose() {
       disposed = true;
       clearTimeout(timer);
+      if (pending !== null && status !== 'error') mirrorLatest(); // best effort: mirror pending if not already mirrored in catch
     },
     get status() { return status; },
   };
