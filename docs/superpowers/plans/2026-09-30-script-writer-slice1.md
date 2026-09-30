@@ -19,7 +19,7 @@
   - `id` `script-writer` (`^[a-z][a-z0-9-]{1,31}$`), `apiVersion` literally `1`, `icon` `clapperboard`.
   - `entry.main` `dist/main.cjs`, `entry.renderer` `dist/renderer.mjs`.
 - **`dist/` is committed.** The app never builds plugins.
-- **Renderer backend calls go through `plugin.api.fetch(method, path, body)`.** It resolves to `{ok: true, data}` or `{ok: false, error, status?}` and never throws for HTTP errors. Only `/v1/*` paths are used.
+- **Renderer backend calls go through `plugin.sidecar.request(method, path, body)`.** It resolves to `{ok: true, data}` or `{ok: false, error, status?}` and never throws for HTTP errors. Only `/v1/*` paths are used.
 - **IPC channels match `^[a-z0-9:_-]+$`, and each is registered once.** Handler args are exactly the args given to `plugin.ipc.invoke(channel, ...args)`. Everything crossing IPC is plain JSON.
 - **Mutable plugin files go only under `ctx.dataDir`,** never `pluginDir`.
 - **Script path is `20-contexts/<context>/projects/<project-slug>/<script-slug>.screenplay.md`.** Frontmatter `type: screenplay` plus the title-page keys `title, credit, author, source, draft_date, contact, scene_numbers, updated`. The body is raw Fountain.

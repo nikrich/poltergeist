@@ -249,7 +249,7 @@ plugins/script-writer/
   README.md
 ```
 
-The renderer talks to the backend only through `api.fetch`; filesystem and dialogs go through main IPC. IPC channels (all `^[a-z0-9:_-]+$`): `export-pdf`, `export-file`, `import-file`, `draft-read`, `draft-write`, `thread-read`, `thread-write`.
+The renderer talks to the backend only through `plugin.sidecar.request`; filesystem and dialogs go through main IPC. IPC channels (all `^[a-z0-9:_-]+$`): `export-pdf`, `export-file`, `import-file`, `draft-read`, `draft-write`, `thread-read`, `thread-write`.
 
 Theming: UI chrome uses `api.theme` values (`--paper`, `--ink-*`, `--neon`, `--hairline`) with fallbacks. The script page itself is always paper-white with black Courier in paper mode, since it's a print representation.
 

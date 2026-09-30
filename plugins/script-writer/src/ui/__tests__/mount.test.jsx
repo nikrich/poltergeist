@@ -10,7 +10,7 @@ function fakePlugin(scripts = []) {
     pluginId: 'script-writer',
     theme: { '--paper': '#101010', '--ink-0': '#eee' },
     settings: { get: async (k) => store.get(k), set: async (k, v) => { store.set(k, v); } },
-    api: { fetch: async () => ({ ok: true, data: [] }) },
+    sidecar: { request: async () => ({ ok: true, data: [] }) },
     ipc: { invoke: async () => null, on: () => () => {} },
     openExternal: () => {},
   };

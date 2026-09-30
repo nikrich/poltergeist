@@ -1,8 +1,11 @@
-// Thin client over plugin.api.fetch (resolves {ok,data}|{ok:false,error,status}).
+// Thin client over plugin.sidecar.request (resolves {ok,data}|{ok:false,error,status}).
 import { normalizeMeta, serializeFile, slugify } from '../fountain/document.js';
 
 export async function call(plugin, method, path, body) {
-  const r = await plugin.api.fetch(method, path, body);
+  if (typeof plugin?.sidecar?.request !== 'function') {
+    throw new Error('plugin.sidecar.request is unavailable');
+  }
+  const r = await plugin.sidecar.request(method, path, body);
   if (!r || !r.ok) {
     const err = new Error(r?.error ?? `${method} ${path} failed`);
     err.status = r?.status;

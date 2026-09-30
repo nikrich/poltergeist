@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { createProject, listContexts, readScript, writeScript } from '../backend.js';
+import { call, createProject, listContexts, readScript, writeScript } from '../backend.js';
 
 function fakePlugin(routes) {
   const calls = [];
   return {
     calls,
-    api: {
-      fetch: async (method, path, body) => {
+    sidecar: {
+      request: async (method, path, body) => {
         calls.push({ method, path, body });
         const h = routes[`${method} ${path.split('?')[0]}`];
         return h ? h(path, body) : { ok: false, error: 'no route', status: 500 };
@@ -16,6 +16,17 @@ function fakePlugin(routes) {
 }
 
 describe('backend', () => {
+  it('call() goes through plugin.sidecar.request and returns data', async () => {
+    const p = fakePlugin({ 'GET /v1/projects': () => ({ ok: true, data: ['x'] }) });
+    expect(await call(p, 'GET', '/v1/projects')).toEqual(['x']);
+    expect(p.calls).toEqual([{ method: 'GET', path: '/v1/projects', body: undefined }]);
+  });
+
+  it('call() throws a clear Error when plugin.sidecar is missing', async () => {
+    await expect(call({ api: { fetch: async () => ({ ok: true }) } }, 'GET', '/v1/projects'))
+      .rejects.toThrow('plugin.sidecar.request is unavailable');
+  });
+
   it('reads a script, normalising meta; returns null on 404', async () => {
     const p = fakePlugin({
       'GET /v1/notes': (path) => (path.includes('missing')
