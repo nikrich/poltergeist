@@ -207,7 +207,7 @@ The actions run on the selection, or on the current scene when nothing is select
 
 | Action | Output |
 |---|---|
-| Continue scene | Fountain appended after the cursor |
+| Continue scene | Fountain appended after the scene (or selection) |
 | Rewrite… (presets: tighter, funnier, darker, more subtext + free text) | replacement Fountain |
 | Punch up dialogue | replacement Fountain, dialogue only |
 | Scene from beat (selection is a synopsis/beat) | new scene Fountain |

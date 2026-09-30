@@ -68,7 +68,7 @@ export function AiPanel({ plugin, scriptPath, getContext, onPropose, notify, foc
     return () => { live = false; };
   }, [plugin, key]);
   useEffect(() => () => { mounted.current = false; }, []);
-  useEffect(() => { inputRef.current?.focus(); }, [focusToken]);
+  useEffect(() => { if (loaded) inputRef.current?.focus(); }, [focusToken, loaded]);
   useEffect(() => { const l = listRef.current; if (l) l.scrollTop = l.scrollHeight; }, [messages, busy]);
 
   const push = (msgs) => {
@@ -127,8 +127,10 @@ export function AiPanel({ plugin, scriptPath, getContext, onPropose, notify, foc
         return;
       }
       const insert = action.edits === 'insert';
+      const lead = target.text.match(/^\s*/)[0];
+      const trail = target.text.match(/\s*$/)[0];
       onPropose({
-        from: insert ? target.to : target.from, to: target.to, text: check.text, mode: action.edits, label: plainLabel(action),
+        from: insert ? target.to : target.from, to: target.to, text: insert ? check.text : lead + check.text + trail, mode: action.edits, label: plainLabel(action),
         original: target.text, anchorFrom: target.from,
       });
       push([...base, { role: 'assistant', text: out.structured?.notes || 'Suggestion shown in the script \u2014 accept or reject it there.' }]);

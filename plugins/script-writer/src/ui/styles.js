@@ -69,6 +69,8 @@ export function appCss() {
 .cm-tooltip-autocomplete{font-family:'Courier Prime','Courier New',monospace}
 .sw-del{text-decoration:line-through;background:rgba(224,108,117,.18)}
 .sw-proposal{margin:.1667in 0;padding:10px 12px;border-left:3px solid var(--neon,#b8f25c);background:rgba(184,242,92,.10);font-family:system-ui,sans-serif;font-size:12px}
+.sw-proposal .sw-btn{background:#fff;color:#111;border-color:#bbb}
+.sw-proposal .sw-btn.sw-primary{background:var(--neon,#b8f25c);color:#111;border-color:transparent}
 .sw-proposal-head{font-weight:600;margin-bottom:6px}
 .sw-proposal-text{margin:0 0 8px;white-space:pre-wrap;font-family:'Courier Prime','Courier New',monospace;font-size:12pt;line-height:.1667in}
 .sw-proposal-bar{display:flex;gap:6px}

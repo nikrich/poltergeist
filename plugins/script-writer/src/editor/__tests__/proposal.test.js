@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { EditorSelection, EditorState } from '@codemirror/state';
-import { EditorView } from '@codemirror/view';
+import { defaultKeymap } from '@codemirror/commands';
+import { EditorView, keymap, runScopeHandlers } from '@codemirror/view';
 import { describe, expect, it } from 'vitest';
 import { analysisField } from '../analysis.js';
 import { editorContext } from '../context.js';
@@ -76,5 +77,30 @@ describe('isStaleProposal', () => {
   });
   it('is stale when out of range', () => {
     expect(isStaleProposal(s, { from: 0, to: 9999, original: orig })).toBe(true);
+  });
+});
+
+describe('proposal edge cases', () => {
+  const withProposal = (doc, p) => viewOf(EditorState.create({ doc, extensions: [proposalExtension] }).update({ effects: showProposal.of({ mode: 'insert', label: 'l', ...p }) }).state);
+  it('keeps a blank line before a following non-newline char', () => {
+    const v = withProposal('AB', { from: 1, to: 1, text: 'X' });
+    insertProposal(v);
+    expect(v.state.doc.toString()).toBe('A\n\nX\n\nB');
+  });
+  it('inserts right after a newline with single newlines', () => {
+    const v = withProposal('A\nB', { from: 2, to: 2, text: 'X' });
+    insertProposal(v);
+    expect(v.state.doc.toString()).toBe('A\n\nX\nB');
+  });
+  it('Escape rejects the proposal even with a non-empty selection and defaultKeymap', () => {
+    const parent = document.createElement('div');
+    document.body.appendChild(parent);
+    const state = EditorState.create({ doc: DOC, selection: EditorSelection.range(14, 25), extensions: [keymap.of(defaultKeymap), analysisField, proposalExtension] });
+    const view = new EditorView({ state, parent });
+    view.dispatch({ effects: showProposal.of(P) });
+    expect(view.state.field(proposalField)).not.toBeNull();
+    runScopeHandlers(view, new KeyboardEvent('keydown', { key: 'Escape' }), 'editor');
+    expect(view.state.field(proposalField)).toBeNull();
+    view.destroy();
   });
 });

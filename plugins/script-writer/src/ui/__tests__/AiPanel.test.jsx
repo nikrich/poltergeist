@@ -46,7 +46,7 @@ async function mount(plugin, props = {}) {
   const el = document.createElement('div');
   document.body.appendChild(el);
   const root = createRoot(el);
-  await act(async () => { root.render(<AiPanel plugin={plugin} scriptPath={SCRIPT} getContext={() => ctx} onPropose={props.onPropose ?? (() => {})} notify={props.notify ?? (() => {})} focusToken={0} />); });
+  await act(async () => { root.render(<AiPanel plugin={plugin} scriptPath={SCRIPT} getContext={() => props.ctx ?? ctx} onPropose={props.onPropose ?? (() => {})} notify={props.notify ?? (() => {})} focusToken={0} />); });
   await flush();
   return { el, root };
 }
@@ -168,6 +168,32 @@ describe('AiPanel', () => {
     await flush();
     expect(el.querySelector('textarea').disabled).toBe(false);
     expect(el.querySelector('.sw-ai-actions .sw-primary').disabled).toBe(false);
+    act(() => root.unmount());
+  });
+
+  it('keeps the trailing newline of a whole-line selection in a replace proposal', async () => {
+    const onPropose = vi.fn();
+    const plugin = fakePlugin({ llm: () => ({ text: '', structured: { fountain: 'INT. A - DAY\n\nMara paces.' }, error: null }) });
+    const sel = { from: 14, to: 26, text: 'Mara waits.\n' };
+    const { el, root } = await mount(plugin, { onPropose, ctx: { ...ctx, selection: sel } });
+    const select = el.querySelector('.sw-ai-actions select');
+    await act(async () => { select.value = 'punchup'; select.dispatchEvent(new Event('change', { bubbles: true })); });
+    await act(async () => { el.querySelector('.sw-ai-actions .sw-primary').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+    expect(onPropose).toHaveBeenCalledTimes(1);
+    expect(onPropose.mock.calls[0][0].text.endsWith('\n')).toBe(true);
+    act(() => root.unmount());
+  });
+
+  it('focuses the textarea once the thread has loaded', async () => {
+    const plugin = fakePlugin({ llm: () => ({ text: '', structured: null, error: null }) });
+    let release;
+    plugin.ipc.invoke = (ch) => (ch === 'thread-read' ? new Promise((r) => { release = r; }) : Promise.resolve(true));
+    const { el, root } = await mount(plugin);
+    expect(document.activeElement).not.toBe(el.querySelector('textarea'));
+    await act(async () => { release([]); });
+    await flush();
+    expect(document.activeElement).toBe(el.querySelector('textarea'));
     act(() => root.unmount());
   });
 });

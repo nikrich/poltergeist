@@ -1,7 +1,7 @@
 // An AI suggestion shown inline: the target range struck through and the
 // proposed Fountain in a block widget with Accept / Insert / Reject.
 // Editing inside (or at the edges of) the target cancels the proposal.
-import { StateEffect, StateField } from '@codemirror/state';
+import { Prec, StateEffect, StateField } from '@codemirror/state';
 import { Decoration, EditorView, keymap, WidgetType } from '@codemirror/view';
 
 export const showProposal = StateEffect.define();
@@ -39,7 +39,12 @@ export function acceptProposal(view) {
 export function insertProposal(view) {
   const p = view.state.field(proposalField, false);
   if (!p) return false;
-  const insert = `\n\n${p.text}`;
+  const doc = view.state.doc;
+  const next = p.to < doc.length ? doc.sliceString(p.to, p.to + 1) : '';
+  const afterNewline = p.to > 0 && doc.sliceString(p.to - 1, p.to) === '\n';
+  const insert = afterNewline
+    ? `\n${p.text}\n`
+    : `\n\n${p.text}${next && next !== '\n' ? '\n\n' : ''}`;
   view.dispatch({
     changes: { from: p.to, insert },
     selection: { anchor: p.to + insert.length },
@@ -96,7 +101,7 @@ function buildDecorations(p) {
 
 export const proposalExtension = [
   proposalField,
-  keymap.of([{ key: 'Escape', run: rejectProposal }]),
+  Prec.high(keymap.of([{ key: 'Escape', run: rejectProposal }])),
 ];
 
 // True when the script changed under an in-flight AI proposal.

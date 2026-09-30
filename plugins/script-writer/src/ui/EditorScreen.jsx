@@ -204,7 +204,11 @@ export function EditorScreen({ plugin, path, onBack, notify }) {
       notify('Nothing changed.');
       return;
     }
-    view.dispatch({ changes: { from: 0, to: current.length, insert: text }, userEvent: 'input.polish' });
+    view.dispatch({ changes: { from: 0, to: current.length, insert: text },
+      selection: { anchor: Math.min(view.state.selection.main.head, text.length) },
+      scrollIntoView: true,
+      userEvent: 'input.polish',
+    });
     notify('Polish applied \u2014 \u2318Z to undo.');
   }
 

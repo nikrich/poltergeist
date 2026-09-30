@@ -27,7 +27,7 @@ export function PolishReview({ result, onApply, onClose }) {
       <div className="sw-dialog sw-polish-review">
         <div className="sw-row" style={{ justifyContent: 'space-between', marginTop: 0 }}>
           <h2 style={{ margin: 0 }}>Polish review</h2>
-          <span className="sw-muted">{keys.length} changes &middot; {keys.length - off.size} kept</span>
+          <span className="sw-muted">{keys.length} {keys.length === 1 ? 'change' : 'changes'} &middot; {keys.length - off.size} kept</span>
         </div>
         {flagged.length > 0 && (
           <div className="sw-pl-flags">
