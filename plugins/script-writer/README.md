@@ -26,6 +26,8 @@ If the backend is unreachable, saving retries automatically and your text is mir
 
 Courier Prime 12pt, 1.5" / 1" margins, 54 lines per page. Pagination handles `(MORE)` / `(CONT'D)`, never ends a page on a scene heading, and has optional scene numbers. US Letter or A4. Export PDF or `.fountain`, and import `.fountain`.
 
+The editor loads Courier Prime from the plugin. On older app versions, whose content security policy blocks plugin fonts, the editor falls back to Courier New with the same 10 cpi layout. PDF export always embeds Courier Prime.
+
 Courier Prime is © Quote-Unquote Apps, SIL Open Font License (see `dist/fonts/OFL.txt`).
 
 ## Develop
