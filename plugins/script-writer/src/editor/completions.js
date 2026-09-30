@@ -37,7 +37,7 @@ export function completionsFor({ text, type, prevBlank, elements }) {
     const r = filtered(PREFIXES, text, 0);
     if (r) return r;
   }
-  if (type === 'character' || (prevBlank && /^[A-Z][A-Z0-9 .’-]*$/.test(text))) {
+  if (type === 'character' || (prevBlank && /^[A-Z][A-Z0-9 .'\u2019-]*$/.test(text))) {
     const paren = text.lastIndexOf('(');
     if (paren >= 0) return filtered(EXTENSIONS, text.slice(paren), paren);
     return filtered(characters(elements).map((ch) => ch.name), text.trim(), 0);

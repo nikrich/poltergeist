@@ -41,9 +41,18 @@ describe('completions', () => {
     expect(completionsFor({ text: 'She walks', type: 'action', prevBlank: true, elements: els })).toBeNull();
   });
   it('matches character names with curly apostrophes', () => {
-    const elWithApostrophe = parse('INT. ROOM\n\nO’BRIEN\nHello.');
-    expect(completionsFor({ text: "O’B", type: 'action', prevBlank: true, elements: elWithApostrophe }))
-      .toEqual({ from: 0, options: ["O’BRIEN"] });
+    const name = "O" + String.fromCharCode(0x2019) + "BRIEN";
+    const elWithApostrophe = parse("INT. ROOM\n\n" + name + "\nHello.");
+    const typed = "O" + String.fromCharCode(0x2019) + "B";
+    expect(completionsFor({ text: typed, type: 'action', prevBlank: true, elements: elWithApostrophe }))
+      .toEqual({ from: 0, options: [name] });
+  });
+  it('matches character names with straight apostrophes', () => {
+    const name = "O" + String.fromCharCode(0x27) + "BRIEN";
+    const elWithStraightApostrophe = parse("INT. ROOM\n\n" + name + "\nHello.");
+    const typed = "O" + String.fromCharCode(0x27) + "B";
+    expect(completionsFor({ text: typed, type: 'action', prevBlank: true, elements: elWithStraightApostrophe }))
+      .toEqual({ from: 0, options: [name] });
   });
 });
 
@@ -63,7 +72,7 @@ describe('complete source (adapter)', () => {
       doc: docWithCharacter,
       extensions: [analysisField],
     });
-    const pos = docWithCharacter.length; // At end of 'J'
+    const pos = docWithCharacter.length;
     const ctx = new CompletionContext(state, pos, false);
     const result = scriptCompletionSource(ctx);
     expect(result).not.toBeNull();
