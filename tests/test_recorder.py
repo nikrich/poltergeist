@@ -18,6 +18,15 @@ from ghostbrain.recorder.sources.base import events_from_connector_dicts
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _no_real_audit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests drive _start_recording/_finalize with fake backends; never
+    let their audit_log calls land in the developer's real vault."""
+    from ghostbrain.recorder import daemon
+    monkeypatch.setattr(daemon, "audit_log", lambda *a, **k: None)
+
+
+
 def test_policy_skips_focus_titles() -> None:
     policy = RecorderPolicy(excluded_titles=("Focus", "focus"))
     ok, reason = should_record(title="Focus", context="work", policy=policy)
@@ -271,6 +280,7 @@ def test_start_recording_uses_backend(
     audio_switcher/audio_capture calls."""
     from ghostbrain.recorder import daemon, state as state_mod
     backend = FakeBackend()
+    monkeypatch.setenv("GHOSTBRAIN_STATE_DIR", str(tmp_path))
     monkeypatch.setattr(daemon, "DEFAULT_RECORDINGS_DIR", tmp_path)
     config = daemon.DaemonConfig(
         poll_interval_s=30, end_grace_s=60, audio_device="Ghost Brain",
@@ -304,6 +314,7 @@ def test_start_recording_ends_route_on_capture_failure(
             raise RuntimeError("ffmpeg boom")
 
     backend = FailingBackend()
+    monkeypatch.setenv("GHOSTBRAIN_STATE_DIR", str(tmp_path))
     monkeypatch.setattr(daemon, "DEFAULT_RECORDINGS_DIR", tmp_path)
     config = daemon.DaemonConfig(
         poll_interval_s=30, end_grace_s=60, audio_device="Ghost Brain",

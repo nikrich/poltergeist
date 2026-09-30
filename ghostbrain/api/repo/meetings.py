@@ -50,10 +50,16 @@ def _format_duration(seconds: float) -> str:
     return f"{hours}h" if rem == 0 else f"{hours}h{rem:02d}m"
 
 
-def _date_from(fm: dict, path: Path) -> str:
+def _started_from(fm: dict) -> datetime | None:
+    """Full start instant (local tz) when the note carries one."""
     started = _parse_started(fm.get("started") or fm.get("created"))
+    return started.astimezone() if started is not None else None
+
+
+def _date_from(fm: dict, path: Path) -> str:
+    started = _started_from(fm)
     if started is not None:
-        return started.astimezone().strftime("%Y-%m-%d")
+        return started.strftime("%Y-%m-%d")
     raw = fm.get("date")
     if isinstance(raw, str):
         return raw
@@ -80,6 +86,7 @@ def _parse(path: Path) -> dict | None:
     if "title" not in fm:
         return None
     date = _date_from(fm, path)
+    started = _started_from(fm)
     dur = _dur_from(fm)
     if not date and not dur:
         return None
@@ -93,6 +100,10 @@ def _parse(path: Path) -> dict | None:
         "id": path.stem,
         "title": str(fm["title"]),
         "date": date,
+        # Full instant + local clock time so the list can order and label
+        # same-day meetings; None for notes that only carry a date.
+        "startedAt": started.isoformat() if started is not None else None,
+        "time": started.strftime("%H:%M") if started is not None else None,
         "dur": dur,
         "speakers": int(fm["speakers"]) if isinstance(fm.get("speakers"), int) else 0,
         "tags": [str(t) for t in tags],
@@ -102,6 +113,8 @@ def _parse(path: Path) -> dict | None:
 
 def list_meetings(limit: int = 50, offset: int = 0) -> dict:
     items = [m for m in (_parse(p) for p in _walk_meeting_files()) if m is not None]
-    items.sort(key=lambda m: m["date"], reverse=True)
+    # Newest first by full start time; date-only notes sort as the start of
+    # their day (so a timed meeting on the same day lands above them).
+    items.sort(key=lambda m: m["startedAt"] or f"{m['date']}T00:00:00", reverse=True)
     total = len(items)
     return {"total": total, "items": items[offset : offset + limit]}

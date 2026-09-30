@@ -79,3 +79,20 @@ def test_worker_processes_pending_event(vault: Path) -> None:
     # Pipeline now records routing context too.
     assert success[0].get("context") == "consulting"
     assert success[0].get("method") == "path"
+
+
+def test_processed_audit_fields_let_summary_status_win():
+    """Regression: audit_log(..., status='success', **summary) raised
+    TypeError when the pipeline summary also carried 'status' (skipped
+    claude-code events), losing the audit line after the event was done."""
+    from ghostbrain.scheduler_jobs import processed_audit_fields
+
+    fields = processed_audit_fields(
+        {"source": "claude-code"},
+        {"status": "skipped", "reason": "missing_transcript", "event_id": "x", "none": None},
+    )
+    assert fields == {"status": "skipped", "source": "claude-code",
+                      "reason": "missing_transcript", "event_id": "x"}
+    assert processed_audit_fields({"source": "calendar"}, {"context": "work"}) == {
+        "status": "success", "source": "calendar", "context": "work",
+    }

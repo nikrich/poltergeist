@@ -224,3 +224,35 @@ def test_diagnostics_off_darwin_have_null_helper(client: TestClient, auth_header
     body = res.json()
     assert body["capture_helper"] is None
     assert body["effective_backend"] == "unsupported"
+
+
+def test_status_reports_transcribing_while_daemon_finalizes(
+    client: TestClient, auth_headers: dict[str, str], tmp_state_dir: Path,
+):
+    """Stopping a calendar-started recording from the UI kills the capture
+    process; the daemon transcribes + links on its next tick. Until it clears
+    its active record, status must say 'transcribing' (owner daemon), not
+    'idle' — the UI otherwise drops to the lobby with no feedback."""
+    (tmp_state_dir / "recorder.json").write_text(json.dumps({
+        "active": {
+            "event_id": "calendar:macos:Calendar:abc", "title": "TrustFlow MVP: DSUA",
+            "context": "sanlam", "pid": 34586, "wav_path": "/tmp/m.wav",
+            "started_at": "2026-09-14T08:29:47+00:00", "scheduled_end": "2026-09-14T09:01:00+00:00",
+            "capture_backend": "native", "awaiting_target_choice": False,
+        },
+        "processed": {},
+    }))
+    fake_backend = MagicMock()
+    fake_backend.capture_alive.return_value = False
+    with patch("ghostbrain.recorder.audio.get_backend", return_value=fake_backend):
+        res = client.get("/v1/recorder/status", headers=auth_headers)
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["phase"] == "transcribing"
+    assert body["owner"] == "daemon"
+    assert body["title"] == "TrustFlow MVP: DSUA"
+    assert body["captureBackend"] == "native"
+
+    fake_backend.capture_alive.return_value = True
+    with patch("ghostbrain.recorder.audio.get_backend", return_value=fake_backend):
+        assert client.get("/v1/recorder/status", headers=auth_headers).json()["phase"] == "recording"

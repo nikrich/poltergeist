@@ -844,7 +844,10 @@ function HistoryRow({ m, onOpen }: HistoryRowProps) {
     (m.path ? ' cursor-pointer hover:bg-paper' : ' opacity-70');
   const content = (
     <>
-      <span className="font-mono text-11 text-ink-2">{m.date}</span>
+      <span className="font-mono text-11 text-ink-2">
+        {m.date}
+        {m.time ? <span className="text-ink-3"> {m.time}</span> : null}
+      </span>
       <span className="text-13 text-ink-0">{m.title}</span>
       <span className="font-mono text-11 text-ink-1">{m.dur}</span>
       <span className="font-mono text-11 text-ink-1">{m.speakers}</span>

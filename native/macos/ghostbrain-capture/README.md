@@ -27,7 +27,17 @@ swift test                      # XCTest, Core library only (no ScreenCaptureKit
 # from the repo root — stages desktop/resources/bin/ghostbrain-capture (gitignored)
 scripts/build-native-macos.sh
 scripts/build-native-macos.sh --install   # + ~/.local/bin, ad-hoc signed
+
+# once per clone: pre-push hook that builds + tests this package when a push touches it
+scripts/install-hooks.sh
 ```
+
+CI compiles this package on GitHub's `macos-15` runner with **Xcode 26 / Swift
+6.2** (selected explicitly in `ci.yml`; Xcode 16.4's Swift 6.1 rejects parts of
+`CaptureSession.swift` under strict concurrency). A different local toolchain
+can accept code CI rejects, so a green local build is not proof of a green CI;
+the pre-push hook prints a warning when the versions differ. Prefer explicit `Sendable` / `@unchecked Sendable` boxes over
+relying on inference.
 
 Layout:
 

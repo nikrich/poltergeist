@@ -33,6 +33,11 @@ mac:
     NSScreenCaptureUsageDescription: Poltergeist records the audio of your meetings and captures presentation slides via ScreenCaptureKit.
     NSMicrophoneUsageDescription: Poltergeist records your microphone during meetings so your own voice is in the transcript.
     NSAudioCaptureUsageDescription: Poltergeist records system audio during meetings so the other participants are in the transcript.
+    # Without these macOS silently denies EventKit to the sidecar; the calendar
+    # connector then falls back to AppleScript, which cannot expand recurring
+    # events, so recurring meetings never auto-record.
+    NSCalendarsFullAccessUsageDescription: Poltergeist reads your calendar to know which meetings to record and to file transcripts against them.
+    NSCalendarsUsageDescription: Poltergeist reads your calendar to know which meetings to record and to file transcripts against them.
   # The native ScreenCaptureKit capture helper (native/macos/ghostbrain-capture),
   # built by scripts/build-native-macos.sh into resources/bin/ before packaging.
   # macOS-only, hence under mac: rather than the top-level extraResources.

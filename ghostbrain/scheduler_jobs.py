@@ -306,6 +306,18 @@ def register_connectors(scheduler: Scheduler) -> None:
 # ---------------------------------------------------------------------------
 
 
+def processed_audit_fields(event: dict, summary: dict) -> dict:
+    """Audit fields for a processed event. The pipeline's summary may carry its
+    own ``status`` (e.g. ``skipped`` for a Claude session without a
+    transcript) and ``source``; those win over the defaults. Passing both as
+    keyword arguments used to raise TypeError *after* the event had already
+    been moved to done/, so the audit line was lost and the worker logged a
+    traceback for every such event."""
+    fields: dict = {"status": "success", "source": event.get("source")}
+    fields.update({k: v for k, v in summary.items() if v is not None})
+    return fields
+
+
 async def worker_daemon(stop: asyncio.Event) -> None:
     from ghostbrain.worker.audit import audit_log
     from ghostbrain.worker.main import (
@@ -335,13 +347,7 @@ async def worker_daemon(stop: asyncio.Event) -> None:
             event_id = event.get("id", event_id)
             summary = await asyncio.to_thread(process_event, event) or {}
             await asyncio.to_thread(_move, event_path, root / "done")
-            audit_log(
-                "event_processed",
-                event_id,
-                status="success",
-                source=event.get("source"),
-                **{k: v for k, v in summary.items() if v is not None},
-            )
+            audit_log("event_processed", event_id, **processed_audit_fields(event, summary))
         except Exception as e:  # noqa: BLE001
             log.exception("worker processing failed for %s", event_id)
             # Failed-handling must itself be resilient: if the event file is
