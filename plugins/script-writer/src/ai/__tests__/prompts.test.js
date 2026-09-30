@@ -7,7 +7,7 @@ const sources = [{ n: 1, path: 'p/a.md', title: 'Mara bio', snippet: 's', conten
 
 describe('prompts', () => {
   it('outlines scenes with synopses', () => {
-    expect(outlineText(els)).toBe('1. INT. A - DAY — She arrives.\n2. EXT. B - NIGHT');
+    expect(outlineText(els)).toBe('1. INT. A - DAY \u2014 She arrives.\n2. EXT. B - NIGHT');
   });
   it('builds an ask prompt with numbered sources, scene, last 6 turns and the question', () => {
     const history = Array.from({ length: 8 }, (_, k) => ({ role: k % 2 ? 'assistant' : 'user', text: `t${k}` }));
