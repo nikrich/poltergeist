@@ -139,4 +139,10 @@ describe('paginate', () => {
     const pages = P(`${actions(20)}\n\nMARA\n${lines.join('\n')}`);
     expect(pages[0].lines.filter((l) => l.type === 'dialogue').at(-1).text).toBe('Stop here.”');
   });
+
+  it('recognizes straight quotes as sentence ends when splitting dialogue', () => {
+    const lines = Array.from({ length: 20 }, (_, k) => (k === 9 ? 'Stop here."' : 'and on'));
+    const pages = P(`${actions(20)}\n\nMARA\n${lines.join('\n')}`);
+    expect(pages[0].lines.filter((l) => l.type === 'dialogue').at(-1).text).toBe('Stop here."');
+  });
 });
