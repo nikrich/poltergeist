@@ -19,7 +19,7 @@ const DUAL = {
   dialogue: { x: 0, width: 28 },
 };
 const DUAL_RIGHT = 31;
-const SENTENCE_END = /[.!?…][“”‘’"'')]*$/;
+const SENTENCE_END = /[.!?…][“‘’”’’)]*$/;
 const CONT_D_PATTERN = /\(CONT[‘’']D\)/i;
 
 const clean = (s) => s.replace(/\[\[[\s\S]*?\]\]/g, '').replace(/\/\*[\s\S]*?\*\//g, '')

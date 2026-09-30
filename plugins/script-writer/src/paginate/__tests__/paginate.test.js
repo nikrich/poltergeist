@@ -135,9 +135,8 @@ describe('paginate', () => {
   });
 
   it('recognizes curly quotes as sentence ends when splitting dialogue', () => {
-    const pages = P(`${actions(20)}\n\nMARA\nFirst.\nSecond with “curly”.\nThird.`);
-    // Should split after "Second with "curly"." because it ends with a curly quote
-    const p1Dialogues = pages[0].lines.filter((l) => l.type === 'dialogue');
-    expect(p1Dialogues.some((l) => l.text.includes('curly'))).toBe(true);
+    const lines = Array.from({ length: 20 }, (_, k) => (k === 9 ? 'Stop here.”' : 'and on'));
+    const pages = P(`${actions(20)}\n\nMARA\n${lines.join('\n')}`);
+    expect(pages[0].lines.filter((l) => l.type === 'dialogue').at(-1).text).toBe('Stop here.”');
   });
 });
