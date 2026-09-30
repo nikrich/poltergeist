@@ -19,3 +19,10 @@ export function inlineFonts(html, fontDir) {
     return `data:font/woff2;base64,${readFileSync(join(fontDir, name)).toString('base64')}`;
   });
 }
+
+/** Settle with `work`, or reject with Error(message) if it takes longer than `ms`. */
+export function withTimeout(work, ms, message) {
+  let timer;
+  const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); });
+  return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
+}

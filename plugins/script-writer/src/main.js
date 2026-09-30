@@ -4,7 +4,9 @@ import { BrowserWindow, dialog } from 'electron';
 import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { clearDraft, readDraft, writeDraft } from './main/drafts.js';
-import { EXPORT_EXTS, IMPORT_EXTS, MAX_IMPORT_BYTES, exportName, inlineFonts } from './main/files.js';
+import { EXPORT_EXTS, IMPORT_EXTS, MAX_IMPORT_BYTES, exportName, inlineFonts, withTimeout } from './main/files.js';
+
+const PDF_TIMEOUT_MS = 30_000;
 
 let ctx = null;
 const printWindows = new Set();
@@ -55,14 +57,18 @@ async function exportPdf(req) {
   win.webContents.on('will-navigate', (e) => e.preventDefault());
   printWindows.add(win);
   try {
-    await win.loadFile(tmp);
-    await win.webContents.executeJavaScript('document.fonts.ready.then(() => true)');
-    const pdf = await win.webContents.printToPDF({
-      pageSize: paper === 'a4' ? 'A4' : 'Letter',
-      printBackground: true,
-      preferCSSPageSize: true,
-      margins: { marginType: 'none' },
-    });
+    const pdf = await withTimeout((async () => {
+      await win.loadFile(tmp);
+      await win.webContents.executeJavaScript('document.fonts.ready.then(() => true)');
+      // printToPDF ignores print()'s marginType and defaults to 0.4in; zero it
+      // explicitly so the page CSS owns the screenplay margins.
+      return win.webContents.printToPDF({
+        pageSize: paper === 'a4' ? 'A4' : 'Letter',
+        printBackground: true,
+        preferCSSPageSize: true,
+        margins: { top: 0, bottom: 0, left: 0, right: 0 },
+      });
+    })(), PDF_TIMEOUT_MS, 'PDF export timed out');
     writeFileSync(r.filePath, pdf);
     return { path: r.filePath };
   } finally {
