@@ -8,6 +8,7 @@ import { decorations } from './decorations.js';
 import { focusMode } from './focus.js';
 import { hintField } from './hints.js';
 import { scriptKeymap } from './keymap.js';
+import { proposalExtension, showProposal } from './proposal.js';
 
 const focusSlot = new Compartment();
 
@@ -23,6 +24,7 @@ export function createEditor({ parent, doc, onDocChange, onCursorLine, onSave, o
       scriptKeymap({ onSave, onToggleFocus }),
       keymap.of([...historyKeymap, ...defaultKeymap]),
       decorations,
+      proposalExtension,
       scriptCompletions(),
       autoCaps,
       focusSlot.of([]),
@@ -46,4 +48,8 @@ export function jumpToLine(view, line0) {
   const pos = view.state.doc.line(n).from;
   view.dispatch({ selection: { anchor: pos }, effects: EditorView.scrollIntoView(pos, { y: 'start', yMargin: 96 }) });
   view.focus();
+}
+
+export function proposeEdit(view, proposal) {
+  view.dispatch({ effects: [showProposal.of(proposal), EditorView.scrollIntoView(proposal.to, { y: 'center' })] });
 }
