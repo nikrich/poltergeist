@@ -1,6 +1,7 @@
 import { ArrowLeft, Download, Eye, FileText, Focus, Hash, ListTree, Moon, Sparkles, WandSparkles } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { readScript, writeScript } from '../api/backend.js';
+import { toFdx } from '../fdx/export.js';
 import { draftKey, parseScriptPath, toFountain } from '../fountain/document.js';
 import { typeAt, setType } from '../editor/commands.js';
 import { insertSceneAfterCursor, toggleEmphasis } from '../editor/format.js';
@@ -231,6 +232,17 @@ export function EditorScreen({ plugin, path, onBack, notify }) {
     }
   }
 
+  async function exportFdx() {
+    setMenu(false);
+    try {
+      const content = toFdx(metaRef.current, viewRef.current.state.doc.toString());
+      const r = await plugin.ipc.invoke('export-file', { defaultName: slug, ext: 'fdx', content });
+      if (r?.path) notify(`Final Draft file saved to ${r.path}`);
+    } catch (e) {
+      notify(`Export failed: ${e.message}`, 'error');
+    }
+  }
+
   if (!loaded || !meta) return <div className="sw-lib sw-muted">Opening&hellip;</div>;
   const statusLabel = status.s === 'error'
     ? `Unsaved \u2014 retrying in ${Math.round((status.info?.retryInMs ?? 0) / 1000)}s`
@@ -261,6 +273,7 @@ export function EditorScreen({ plugin, path, onBack, notify }) {
             <div className="sw-menu-list">
               <button type="button" onClick={exportPdf}>PDF</button>
               <button type="button" onClick={exportFountain}><FileText size={12} /> Fountain</button>
+              <button type="button" onClick={exportFdx}><FileText size={12} /> Final Draft (.fdx)</button>
             </div>
           )}
         </div>

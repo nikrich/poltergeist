@@ -22,7 +22,7 @@ async function exportFile(req) {
   if (!EXPORT_EXTS.includes(ext)) throw new Error(`export-file: unsupported extension ${JSON.stringify(ext)}`);
   if (typeof content !== 'string') throw new Error('export-file: content must be a string');
   const r = await withParent(dialog.showSaveDialog.bind(dialog), {
-    defaultPath: exportName(defaultName, ext), filters: [{ name: ext === 'fountain' ? 'Fountain' : 'Text', extensions: [ext] }],
+    defaultPath: exportName(defaultName, ext), filters: [{ name: { fountain: 'Fountain', fdx: 'Final Draft' }[ext] ?? 'Text', extensions: [ext] }],
   });
   if (r.canceled || !r.filePath) return { canceled: true };
   writeFileSync(r.filePath, content, 'utf-8');

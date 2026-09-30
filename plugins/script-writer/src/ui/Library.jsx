@@ -1,5 +1,6 @@
 import { Clapperboard, FileUp, Plus, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import { fromFdx } from '../fdx/import.js';
 import { fromFountain } from '../fountain/document.js';
 import { loadRegistry, removeEntry } from '../store/registry.js';
 import { NewScriptDialog } from './NewScriptDialog.jsx';
@@ -20,7 +21,7 @@ export function Library({ plugin, onOpen, notify }) {
     try {
       const r = await plugin.ipc.invoke('import-file');
       if (!r || r.canceled) return;
-      const parsed = fromFountain(r.content);
+      const parsed = /\.fdx$/i.test(r.name) ? fromFdx(r.content) : fromFountain(r.content);
       if (parsed.meta.title === 'Untitled') parsed.meta.title = r.name.replace(/\.[^.]+$/, '');
       setDialog({ initial: parsed });
     } catch (e) {
@@ -34,7 +35,7 @@ export function Library({ plugin, onOpen, notify }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <Clapperboard size={20} />
         <h1 style={{ margin: 0, fontSize: 20, flex: 1 }}>Scripts</h1>
-        <button type="button" className="sw-btn" onClick={importFountain}><FileUp size={14} />Import .fountain</button>
+        <button type="button" className="sw-btn" onClick={importFountain}><FileUp size={14} />Import script</button>
         <button type="button" className="sw-btn sw-primary" onClick={() => setDialog({})}><Plus size={14} />New script</button>
       </div>
       {entries && sorted.length === 0 && <p className="sw-muted" style={{ marginTop: 24 }}>No scripts yet. Create one or import a .fountain file.</p>}
