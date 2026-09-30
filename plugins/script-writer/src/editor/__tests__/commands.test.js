@@ -1,8 +1,9 @@
+import { history, undo } from '@codemirror/commands';
 import { EditorSelection, EditorState } from '@codemirror/state';
 import { describe, expect, it } from 'vitest';
 import { analysisField } from '../analysis.js';
 import { cycleType, enter, setType, typeAt } from '../commands.js';
-import { hintField } from '../hints.js';
+import { hintAt, hintField } from '../hints.js';
 
 const mk = (doc, cursor = doc.length) => EditorState.create({
   doc, selection: EditorSelection.cursor(cursor), extensions: [analysisField, hintField],
@@ -87,5 +88,65 @@ describe('Enter flow', () => {
   it('falls through (returns false) mid-line and on plain empty lines', () => {
     expect(run(enter, mk('Hello there', 3)).handled).toBe(false);
     expect(run(enter, mk('Go.\n\n')).handled).toBe(false);
+  });
+});
+
+describe('hint lifecycle', () => {
+  it('deleting the newline after Enter on a cue leaves no stale dialogue hint', () => {
+    const s = run(enter, mk('MARA')).state;
+    const st = s.update({ changes: { from: 4, to: 5 } }).state;
+    expect(doc(st)).toBe('MARA');
+    expect(typeAt(st, 1)).not.toBe('dialogue');
+    expect(st.field(hintField)).toHaveLength(1);
+  });
+
+  it('a whole-doc replace leaves no hints', () => {
+    const s = run(enter, mk('MARA')).state;
+    const st = s.update({ changes: { from: 0, to: s.doc.length, insert: 'x' } }).state;
+    expect(st.field(hintField)).toEqual([]);
+  });
+
+  it('typing at the start of a hinted empty dialogue line keeps the hint', () => {
+    const s = run(enter, mk('MARA')).state;
+    const st = s.update({ changes: { from: 5, insert: 'H' }, selection: EditorSelection.cursor(6) }).state;
+    expect(typeAt(st, 2)).toBe('dialogue');
+  });
+
+  it('undoing an Enter after a cue never leaves a dialogue hint', () => {
+    const base = EditorState.create({
+      doc: 'MARA', selection: EditorSelection.cursor(4), extensions: [analysisField, hintField, history()],
+    });
+    const after = run(enter, base).state;
+    const { state } = run(undo, after);
+    expect(doc(state)).toBe('MARA');
+    expect(['character', 'action']).toContain(typeAt(state, 1));
+  });
+
+  it('hintAt is null outside the document', () => {
+    const s = mk('a');
+    expect(hintAt(s, 0)).toBeNull();
+    expect(hintAt(s, 5)).toBeNull();
+  });
+});
+
+describe('Enter with content below', () => {
+  it('action line with a paragraph below gets its own blank-separated paragraph', () => {
+    const { state } = run(enter, mk('Line one\nnext para', 8));
+    expect(doc(state)).toBe('Line one\n\n\n\nnext para');
+    expect(state.doc.lineAt(head(state)).number).toBe(3);
+  });
+
+  it('a cue with dialogue below just moves into the dialogue', () => {
+    const { state, handled } = run(enter, mk('MARA\nHello.', 4));
+    expect(handled).toBe(true);
+    expect(doc(state)).toBe('MARA\nHello.');
+    expect(head(state)).toBe(5);
+  });
+
+  it('dialogue with more text below opens a new cue paragraph', () => {
+    const { state } = run(enter, mk('MARA\nHi.\nMore.', 8));
+    expect(doc(state)).toBe('MARA\nHi.\n\n\n\nMore.');
+    expect(state.doc.lineAt(head(state)).number).toBe(4);
+    expect(typeAt(state, 4)).toBe('character');
   });
 });

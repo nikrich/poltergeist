@@ -52,11 +52,20 @@ export function enter({ state, dispatch }) {
   if (type === 'action' && isBlankLine(state, line.number - 1) && looksLikeCue(line.text)) type = 'character';
   const rule = NEXT_ON_ENTER[type] ?? NEXT_ON_ENTER.action;
   const text = CAPS_TYPES.has(type) ? line.text.toUpperCase() : line.text;
+  const nextNonBlank = !isBlankLine(state, line.number + 1);
+  if (nextNonBlank && (type === 'character' || type === 'parenthetical')) {
+    // Dialogue already follows: just step into it.
+    const spec = { selection: EditorSelection.cursor(line.from + text.length + 1), scrollIntoView: true };
+    if (text !== line.text) spec.changes = { from: line.from, to: line.to, insert: text };
+    dispatch(state.update(spec));
+    return true;
+  }
+  const insert = nextNonBlank && rule.insert === '\n\n' ? '\n\n\n' : rule.insert;
   const pos = line.from + text.length + rule.insert.length;
   const effects = [setHint.of({ pos, type: rule.next })];
   if (type === 'character') effects.push(setHint.of({ pos: line.from, type: 'character' }));
   dispatch(state.update({
-    changes: { from: line.from, to: line.to, insert: text + rule.insert },
+    changes: { from: line.from, to: line.to, insert: text + insert },
     selection: EditorSelection.cursor(pos),
     effects,
     scrollIntoView: true,
