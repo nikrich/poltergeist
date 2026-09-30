@@ -26,19 +26,20 @@ export function appCss() {
 .sw-num{display:inline-block;min-width:24px;color:var(--ink-2,#888);font-variant-numeric:tabular-nums}
 .sw-syn{font-size:12px;color:var(--ink-2,#888);margin-left:24px}
 .sw-char{display:flex;justify-content:space-between;padding:4px 12px;cursor:pointer}.sw-char:hover{background:var(--vellum,#1a1a1a)}
-.sw-main{flex:1;overflow:auto;background:var(--fog,#0c0c0c)}
+.sw-main{flex:1;min-width:0;overflow:auto;background:var(--fog,#0c0c0c)}
 .sw-right{width:460px;flex:none;overflow:auto;border-left:1px solid var(--hairline,#2a2a2a);background:var(--fog,#0c0c0c)}
 .sw-sheet{width:8.5in;min-height:11in;margin:24px auto 64px;background:#fff;color:#111;box-shadow:0 2px 24px rgba(0,0,0,.35)}
 .sw-dark .sw-sheet{background:#1d1c1a;color:#e9e4da}
-.sw-sheet .cm-editor{font-family:'Courier Prime','Courier New',monospace;font-size:12pt;outline:none}
+.sw-sheet .cm-editor{font-family:'Courier Prime','Courier New',Courier,monospace;font-size:12pt;outline:none}
+.sw-sheet .cm-editor .cm-scroller{font-family:'Courier Prime','Courier New',Courier,monospace;font-size:12pt;line-height:.1667in}
 .sw-sheet .cm-editor.cm-focused{outline:none}
 .sw-sheet .cm-content{padding:1in 1in 1in 1.5in;caret-color:currentColor}
-.sw-sheet .cm-line{line-height:.1667in;padding:0!important}
+.sw-sheet .cm-editor .cm-line{line-height:inherit;padding:0}
 .sw-sheet .cm-cursor{border-left-color:currentColor}
 .sw-l-scene_heading{font-weight:700}
-.sw-l-character{padding-left:2.2in!important}
-.sw-l-parenthetical{padding-left:1.6in!important;padding-right:1.9in!important}
-.sw-l-dialogue{padding-left:1.0in!important;padding-right:1.5in!important}
+.sw-sheet .cm-editor .cm-line.sw-l-character{padding-left:2.2in}
+.sw-sheet .cm-editor .cm-line.sw-l-parenthetical{padding-left:1.6in;padding-right:1.9in}
+.sw-sheet .cm-editor .cm-line.sw-l-dialogue{padding-left:1.0in;padding-right:1.5in}
 .sw-l-transition{text-align:right}
 .sw-l-centered{text-align:center}
 .sw-l-lyric{font-style:italic}
