@@ -15,6 +15,31 @@ A screenplay editor for Poltergeist. Write in plain [Fountain](https://fountain.
 
 Autocomplete offers `INT./EXT.` prefixes, known locations, `DAY/NIGHT/…`, character names, and `(V.O.)/(O.S.)/(CONT'D)`.
 
+## Formatting
+
+Use the formatting bar above the page:
+- The **element dropdown** shows the current line's element and changes it (the same as Tab or ⌘1–7).
+- **B / I / U** wrap the selection in bold, italic or underline (⌘B / ⌘I / ⌘U). They unwrap it if it's already wrapped.
+- **+ Scene** starts a new scene after the one you're in.
+
+You can also type Fountain directly:
+- `**bold**`, `*italic*`, `_underline_`
+- `>THE END<` for centered text
+- `===` for a page break
+- `[[note]]` for a note that doesn't print
+
+## AI co-writer (⌘K)
+
+Everything uses the AI provider you've set up in Poltergeist.
+
+- **Ask.** It searches your vault, starting with this script's project folder, then the whole context. It answers with clickable `[n]` citations to your notes. Each script keeps its own conversation.
+- **Actions.** Continue scene, Rewrite (tighter, funnier, darker, more subtext, or your own direction), Punch up dialogue, Scene from beat, and Continuity check. They work on the selection, or on the scene at the cursor. Suggestions appear in the script as an Accept / Insert / Reject block, and editing that text cancels the suggestion.
+- **Polish.** Polishes the whole script, scene by scene, with Formatting, Language, Tighten prose and Punch up dialogue passes. You review every change in one view and keep or drop each one. Apply is a single ⌘Z. A scene the AI mangled is kept as it was and flagged.
+
+## Final Draft
+
+Import `.fdx` files from the Library. Export `.fdx` from the Export menu.
+
 ## Where scripts live
 
 Each script is a vault note in its project folder:
