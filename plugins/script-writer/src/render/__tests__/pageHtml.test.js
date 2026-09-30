@@ -33,6 +33,14 @@ describe('title page + document', () => {
     expect(renderTitlePage({ title: '' })).toBe('');
     expect(renderTitlePage({ title: 'A <B>', author: 'Me' })).toContain('A &lt;B&gt;');
   });
+  it('does not parse emphasis markup in metadata fields', () => {
+    const html = renderTitlePage({ title: 'X', contact: 'jo_hn_doe@x.com' });
+    expect(html).toContain('jo_hn_doe@x.com');
+    expect(html).not.toContain('<span');
+  });
+  it('escapes HTML in metadata fields like author', () => {
+    expect(renderTitlePage({ title: 'X', author: '<b>' })).toContain('&lt;b&gt;');
+  });
   it('builds a full printable document with font faces', () => {
     const html = documentHtml({ meta: { title: 'X' }, pages: paginate(parse('Go.')), paper: 'a4', fontBase: '__FONT_BASE__' });
     expect(html.startsWith('<!doctype html>')).toBe(true);

@@ -58,7 +58,8 @@ export function renderTitlePage(meta) {
   let html = '<div class="sw-page sw-title-page">';
   const block = (y0, value, cls, pos) => value.split('\n').forEach((line, n) => {
     const style = pos === 'center' ? `top:${top(y0 + n)}` : `top:${top(y0 + n)};left:1.5in`;
-    html += `<div class="sw-ln ${cls}" style="${style}">${inlineHtml(line, fresh())}</div>`;
+    const clsAttr = cls ? ` ${cls}` : '';
+    html += `<div class="sw-ln${clsAttr}" style="${style}">${esc(line)}</div>`;
   });
   block(18, m.title.toUpperCase(), 'sw-center sw-tp-title', 'center');
   if (m.credit) block(21, m.credit, 'sw-center', 'center');
