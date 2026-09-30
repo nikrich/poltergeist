@@ -4,21 +4,16 @@ const PRINTED = new Set(['scene_heading', 'action', 'character', 'dialogue', 'pa
 const nonBlank = (s) => s.split('\n').filter((l) => l.trim()).length;
 
 export function stripFences(s) {
-  const text = String(s ?? '').replace(/\r\n?/g, '\n');
-  const fenceMatch = text.match(/^\s*```/m);
-  if (!fenceMatch) return text.trim();
-  const fenceLine = text.substring(fenceMatch.index, text.indexOf('\n', fenceMatch.index));
-  const isTagOnly = /^\s*```[\w-]*\s*$/.test(fenceLine);
-  let startIdx;
-  if (isTagOnly) {
-    startIdx = text.indexOf('\n', fenceMatch.index) + 1;
-  } else {
-    startIdx = fenceMatch.index + 3;
+  const lines = String(s ?? '').replace(/\r\n?/g, '\n').split('\n');
+  const open = lines.findIndex((l) => /^[ \t]*```/.test(l));
+  if (open < 0) return lines.join('\n').trim();
+  const rest = lines[open].replace(/^[ \t]*```/, '');
+  const body = /^[\w-]*\s*$/.test(rest) ? [] : [rest];
+  for (let i = open + 1; i < lines.length; i++) {
+    if (/^[ \t]*```/.test(lines[i])) break;
+    body.push(lines[i]);
   }
-  const remaining = text.substring(startIdx);
-  const endFenceMatch = remaining.match(/^\s*```/m);
-  if (!endFenceMatch) return remaining.trim();
-  return remaining.substring(0, endFenceMatch.index).trim();
+  return body.join('\n').trim();
 }
 
 export function checkFountain(original, result, { minKeep = 0.6, keepHeading = false, requireStructure = false } = {}) {

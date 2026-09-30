@@ -22,6 +22,9 @@ describe('validate', () => {
   it('extracts content from first fenced block if fences exist', () => {
     expect(stripFences('Here you go:\n```fountain\nINT. A - DAY\n\nHi.\n```\nHope that helps')).toBe('INT. A - DAY\n\nHi.');
     expect(stripFences('```\nINT. A - DAY\n```')).toBe('INT. A - DAY');
+    expect(stripFences('Here:\n\n```fountain\nINT. A - DAY\n\nHi.\n```\nbye')).toBe('INT. A - DAY\n\nHi.');
+    expect(stripFences('\n```\nINT. A\n```')).toBe('INT. A');
+    expect(stripFences('x\n```fountain')).toBe('');
   });
   it('preserves content on same line as opening fence if not tag-only', () => {
     expect(stripFences('```INT. A - DAY\nHi.\n```')).toBe('INT. A - DAY\nHi.');
