@@ -89,6 +89,7 @@ export function appCss() {
 .sw-msg-user{align-self:flex-end;background:var(--vellum,#1a1a1a)}
 .sw-msg-assistant{border:1px solid var(--hairline,#2a2a2a)}
 .sw-md p{margin:.3em 0}.sw-md pre{white-space:pre-wrap;font-family:'Courier Prime','Courier New',monospace}
+.sw-link{border:none;background:none;color:var(--neon,#b8f25c);cursor:pointer;padding:0;font:inherit;text-decoration:underline}
 .sw-cite{border:none;background:none;color:var(--neon,#b8f25c);cursor:pointer;padding:0 1px;font:inherit}
 .sw-source{margin-top:8px;padding:8px;border-left:2px solid var(--neon,#b8f25c);background:var(--vellum,#1a1a1a)}
 .sw-source pre{white-space:pre-wrap;max-height:240px;overflow:auto;margin:6px 0 0;font:12px/1.4 system-ui,sans-serif}
