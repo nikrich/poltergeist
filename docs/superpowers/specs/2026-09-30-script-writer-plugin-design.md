@@ -197,13 +197,13 @@ The prompt to `POST /v1/llm/run` contains:
 - The numbered sources.
 - The last 6 turns.
 
-The call passes `model` from settings (default `sonnet`), `timeoutSeconds: 300`, and an **explicit `budgetUsd`** (setting, default `2.0`) so the client's $0.50 default cap never truncates it.
+The call omits `model` (server default, which works with every configured provider), passes `timeoutSeconds: 240` (the renderer's sidecar bridge times out at 300s), and passes an **explicit `budgetUsd`** so the client's $0.50 default cap never truncates it: Ask $1.00, actions $1.00, Polish $0.50 per section.
 
 Answers render as markdown (`marked`). `[n]` citations are clickable and open a source drawer with the note title, path, and content.
 
 ### Actions
 
-The actions run on the selection, or on the current scene when nothing is selected. They are available from a toolbar, a right-click menu, and `Cmd+K`:
+The actions run on the selection, or on the current scene when nothing is selected. They are available from the AI panel's action bar, and `Cmd+K` opens the AI panel (the right-click menu was dropped as redundant):
 
 | Action | Output |
 |---|---|
@@ -216,6 +216,37 @@ The actions run on the selection, or on the current scene when nothing is select
 - Each edit action requests `jsonSchema: {fountain: string, notes: string}` and runs the same retrieval (using the selection as the query) so the output respects your bios and research.
 - The result appears as an **inline diff widget** in the editor (deleted text struck through, new text highlighted) with **Accept / Reject / Insert below** controls. Accept is a single undoable transaction.
 - The returned Fountain is validated with `parse()`. If it contains no dialogue or action elements, the result is shown as text instead of a diff.
+
+### Polish (whole document)
+
+A **Polish** button in the top bar opens a dialog with four passes:
+
+| Pass | Default | Does |
+|---|---|---|
+| Formatting | on | Makes the Fountain industry-correct: uppercase headings and cues, one blank line between elements, dialogue under its cue, consistent character names and extensions, `(CONT'D)`. No word changes. |
+| Language | on | Spelling, grammar and punctuation only; keeps the writer's voice. |
+| Tighten prose | off | Trims action lines; dialogue untouched. |
+| Punch up dialogue | off | Sharper voice and subtext; keeps what happens. |
+
+- **Execution.** The script is split into sections: the preamble plus one per scene. Sections are polished through `/v1/llm/run`, three at a time, with a progress bar and Cancel. Each section has a $0.50 cap, and the dialog shows the section count and the worst-case total before you run it. Title-page metadata is never sent.
+- **Validation.** Each polished section is checked with `parse()` and kept as the original, flagged, when any of these is true:
+  - it is empty;
+  - it has no screenplay elements;
+  - it lost more than 40% of its non-blank lines;
+  - a scene lost its heading.
+  A failing or erroring section never sinks the rest.
+- **Review.** One whole-document review view lists every change, grouped by scene: removed lines struck through, added lines highlighted, word-level highlights for 1:1 line edits. Each change has a keep toggle, defaulting to on.
+  - **Accept all / Reject all / Apply.**
+  - Apply replaces the document in one transaction, so it is a single ⌘Z.
+  - Apply is refused if the script changed while polishing.
+
+### Formatting toolbar and new scenes
+
+- **Formatting toolbar.** A formatting row above the page holds:
+  - an **element dropdown** showing the current line's element and setting it, the same as ⌘1–7;
+  - **B / I / U** buttons that wrap the selection in `**` / `*` / `_`, or unwrap it if it is already wrapped (⌘B / ⌘I / ⌘U);
+  - a **+ Scene** button.
+- **+ Scene** (also in the Scenes navigator header). It inserts a blank line and `INT. ` after the scene containing the cursor, puts the cursor after `INT. ` and opens autocomplete.
 
 ## 6. Library, import, export
 
