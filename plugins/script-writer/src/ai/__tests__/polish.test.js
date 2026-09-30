@@ -47,6 +47,11 @@ describe('polishDocument', () => {
     expect(out.results[1].summary).toBe('grammar');
     expect(progress.at(-1)).toEqual({ done: 4, total: 4 });
   });
+  it('survives a throwing onProgress callback', async () => {
+    const plugin = fakePlugin((section) => ({ ok: true, data: { text: '', structured: { fountain: section.trim() }, error: null } }));
+    const out = await polishDocument(plugin, { text: DOC, passes: ['language'], onProgress: () => { throw new Error('ui blew up'); } });
+    expect(out.results.map((r) => r.status)).toEqual(['unchanged', 'unchanged', 'unchanged', 'unchanged']);
+  });
   it('rejects a scene polished into prose with no cue or heading', async () => {
     const plugin = fakePlugin((section) => {
       if (section.startsWith('INT. A')) return { ok: true, data: { text: '', structured: { fountain: 'Mara waits and asks now.\nShe sits.\nShe stands.\nShe waits.' }, error: null } };

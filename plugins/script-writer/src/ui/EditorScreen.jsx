@@ -1,4 +1,4 @@
-import { ArrowLeft, Download, Eye, FileText, Focus, Hash, ListTree, Moon, Sparkles } from 'lucide-react';
+import { ArrowLeft, Download, Eye, FileText, Focus, Hash, ListTree, Moon, Sparkles, WandSparkles } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { readScript, writeScript } from '../api/backend.js';
 import { draftKey, parseScriptPath, toFountain } from '../fountain/document.js';
@@ -17,6 +17,9 @@ import { AiPanel } from './AiPanel.jsx';
 import { CharacterList } from './CharacterList.jsx';
 import { FormatBar } from './FormatBar.jsx';
 import { PageView } from './PageView.jsx';
+import { PolishDialog } from './PolishDialog.jsx';
+import { PolishReview } from './PolishReview.jsx';
+import { planPolishApply } from './polishApply.js';
 import { SceneNav } from './SceneNav.jsx';
 import { TitlePageFields } from './TitlePageFields.jsx';
 import { useUiSettings } from './useUiSettings.js';
@@ -36,6 +39,7 @@ export function EditorScreen({ plugin, path, onBack, notify }) {
   const [titleEdit, setTitleEdit] = useState(null);
   const [menu, setMenu] = useState(false);
   const [aiFocus, setAiFocus] = useState(0);
+  const [polish, setPolish] = useState(null); // null | {stage:'dialog'|'review', startText, result?}
   const hostRef = useRef(null);
   const viewRef = useRef(null);
   const metaRef = useRef(null);
@@ -186,6 +190,23 @@ export function EditorScreen({ plugin, path, onBack, notify }) {
     notify('Unsaved draft restored.');
   }
 
+  function applyPolish(text) {
+    const view = viewRef.current;
+    const current = view.state.doc.toString();
+    const plan = planPolishApply({ current, startText: polish.startText, text });
+    setPolish(null);
+    if (plan === 'stale') {
+      notify('The script changed while polishing \u2014 run Polish again so nothing you typed is overwritten.', 'error');
+      return;
+    }
+    if (plan === 'noop') {
+      notify('Nothing changed.');
+      return;
+    }
+    view.dispatch({ changes: { from: 0, to: current.length, insert: text }, userEvent: 'input.polish' });
+    notify('Polish applied \u2014 \u2318Z to undo.');
+  }
+
   async function exportPdf() {
     setMenu(false);
     try {
@@ -233,6 +254,7 @@ export function EditorScreen({ plugin, path, onBack, notify }) {
           <option value="letter">US Letter</option>
           <option value="a4">A4</option>
         </select>
+        <button type="button" className="sw-btn" onClick={() => setPolish({ stage: 'dialog', startText: viewRef.current.state.doc.toString() })} title="Polish the whole script with AI"><WandSparkles size={14} />Polish</button>
         <div className="sw-menu">
           <button type="button" className="sw-btn" onClick={() => setMenu(!menu)}><Download size={14} />Export</button>
           {menu && (
@@ -283,6 +305,11 @@ export function EditorScreen({ plugin, path, onBack, notify }) {
           </div>
         </div>
       )}
+      {polish?.stage === 'dialog' && (
+        <PolishDialog plugin={plugin} text={polish.startText} onCancel={() => setPolish(null)}
+          onDone={(result) => setPolish((p) => ({ ...p, stage: 'review', result }))} />
+      )}
+      {polish?.stage === 'review' && <PolishReview result={polish.result} onApply={applyPolish} onClose={() => setPolish(null)} />}
     </>
   );
 }

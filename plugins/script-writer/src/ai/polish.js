@@ -17,6 +17,7 @@ export function polishUnits(text) {
   return { sb, units };
 }
 
+/** text must be the script BODY only; the title page lives in meta and must never be sent. */
 export async function polishDocument(plugin, {
   text, passes, budgetPerSection = BUDGETS.polishPerSection, concurrency = POLISH_CONCURRENCY, onProgress = () => {}, signal,
 }) {
@@ -43,7 +44,7 @@ export async function polishDocument(plugin, {
         results[k] = { ...unit, polished: unit.text, status: 'error', reason: err.message };
       }
       done++;
-      onProgress({ done, total: units.length });
+      try { onProgress({ done, total: units.length }); } catch { /* a UI callback must never sink the run */ }
     }
   }
 
