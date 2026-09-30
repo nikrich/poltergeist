@@ -7,7 +7,7 @@ import {
 describe('meta + file', () => {
   it('normalises frontmatter, coercing types and defaulting missing keys', () => {
     const m = normalizeMeta({ title: 'Night', scene_numbers: 'yes', draft_date: 20260930, extra: 1 });
-    expect(m).toEqual({ ...DEFAULT_META, title: 'Night', scene_numbers: true, draft_date: '20260930' });
+    expect(m).toEqual({ ...DEFAULT_META, title: 'Night', scene_numbers: true, draft_date: '20260930', extra: { extra: 1 } });
   });
 
   it('serialises frontmatter as YAML-safe JSON strings with the body after it', () => {
@@ -19,7 +19,48 @@ describe('meta + file', () => {
   });
 });
 
+describe('unknown frontmatter keys', () => {
+  const fmValue = (out, key) => {
+    const line = out.split('\n').find((l) => l.startsWith(`${key}: `));
+    return line === undefined ? undefined : JSON.parse(line.slice(key.length + 2));
+  };
+
+  it('keeps unknown keys as meta.extra, not as top-level meta', () => {
+    const m = normalizeMeta({ type: 'screenplay', title: 'X', related: ['[[a]]'], rating: 3 });
+    expect(m.extra).toEqual({ related: ['[[a]]'], rating: 3 });
+    expect(m).not.toHaveProperty('related');
+    expect(normalizeMeta({ title: 'X' }).extra).toEqual({});
+  });
+
+  it('passes an existing extra object through normalizeMeta unchanged', () => {
+    const once = normalizeMeta({ title: 'X', tags: ['x'] });
+    expect(normalizeMeta({ ...once, title: 'Y' }).extra).toEqual({ tags: ['x'] });
+  });
+
+  it('round-trips unknown keys through normalizeMeta + serializeFile', () => {
+    const out = serializeFile(normalizeMeta({ title: 'X', related: ['[[a]]'], tags: ['x', 'y'], rating: 3 }), 'Go.');
+    expect(fmValue(out, 'title')).toBe('X');
+    expect(fmValue(out, 'related')).toEqual(['[[a]]']);
+    expect(fmValue(out, 'tags')).toEqual(['x', 'y']);
+    expect(fmValue(out, 'rating')).toBe(3);
+    expect(out.endsWith('---\nGo.')).toBe(true);
+  });
+
+  it('writes type: screenplay exactly once and never duplicates known keys', () => {
+    const out = serializeFile(normalizeMeta({ type: 'screenplay', title: 'X', extra: { type: 'other', title: 'Z', note: 'n' } }), '');
+    expect(out.split('\n').filter((l) => l.startsWith('type: '))).toEqual(['type: screenplay']);
+    expect(out.split('\n').filter((l) => l.startsWith('title: '))).toEqual(['title: "X"']);
+    expect(fmValue(out, 'note')).toBe('n');
+  });
+});
+
 describe('Fountain title page', () => {
+  it('detects a title page after leading blank lines and drops them from the body', () => {
+    const r = fromFountain('\n\nTitle: X\n\nGo.');
+    expect(r.meta.title).toBe('X');
+    expect(r.body).toBe('Go.');
+  });
+
   it('writes a title page from meta, with multi-line values indented', () => {
     const out = toFountain({ title: 'Night', author: 'J R', contact: 'a@b.c\n555 1234' }, 'FADE IN:');
     expect(out).toBe('Title: Night\nCredit: Written by\nAuthor: J R\nContact:\n    a@b.c\n    555 1234\n\nFADE IN:');

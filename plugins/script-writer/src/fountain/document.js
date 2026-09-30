@@ -2,7 +2,7 @@
 
 export const DEFAULT_META = Object.freeze({
   title: 'Untitled', credit: 'Written by', author: '', source: '',
-  draft_date: '', contact: '', scene_numbers: false, updated: '',
+  draft_date: '', contact: '', scene_numbers: false, updated: '', extra: Object.freeze({}),
 });
 const KEYS = ['title', 'credit', 'author', 'source', 'draft_date', 'contact', 'scene_numbers', 'updated'];
 const TITLE_KEYS = [
@@ -11,6 +11,12 @@ const TITLE_KEYS = [
 ];
 const LABEL_TO_KEY = { ...Object.fromEntries(TITLE_KEYS.map(([k, l]) => [l.toLowerCase(), k])), authors: 'author' };
 
+const RESERVED = new Set(['type', ...KEYS]);
+const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+// Frontmatter keys the plugin does not own (e.g. `related:`, `tags:`) live in
+// meta.extra so a save writes them back. A plain-object `extra` is an already
+// normalised meta's passthrough; any other key not owned here is collected.
 export function normalizeMeta(fm = {}) {
   const m = { ...DEFAULT_META };
   for (const k of KEYS) {
@@ -18,13 +24,24 @@ export function normalizeMeta(fm = {}) {
     if (v === undefined || v === null) continue;
     m[k] = k === 'scene_numbers' ? Boolean(v) : String(v);
   }
+  const extra = {};
+  const add = (k, v) => { if (!RESERVED.has(k) && v !== undefined) extra[k] = v; };
+  for (const [k, v] of Object.entries(fm ?? {})) {
+    if (k === 'extra' && isPlainObject(v)) Object.entries(v).forEach(([ek, ev]) => add(ek, ev));
+    else add(k, v);
+  }
+  m.extra = extra;
   return m;
 }
+
+const yamlKey = (k) => (/^[A-Za-z_][A-Za-z0-9_-]*$/.test(k) ? k : JSON.stringify(k));
 
 export function serializeFile(meta, body) {
   const m = normalizeMeta(meta);
   const fm = KEYS.map((k) => `${k}: ${k === 'scene_numbers' ? String(m[k]) : JSON.stringify(m[k])}`);
-  return ['---', 'type: screenplay', ...fm, '---', String(body ?? '').replace(/^\n+/, '')].join('\n');
+  // JSON is valid YAML: scalars stay quoted/typed, arrays and objects become flow style.
+  const rest = Object.entries(m.extra).map(([k, v]) => `${yamlKey(k)}: ${JSON.stringify(v) ?? 'null'}`);
+  return ['---', 'type: screenplay', ...fm, ...rest, '---', String(body ?? '').replace(/^\n+/, '')].join('\n');
 }
 
 export function toFountain(meta, body) {
@@ -37,7 +54,7 @@ export function toFountain(meta, body) {
 
 export function fromFountain(text) {
   const src = String(text ?? '').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
-  const lines = src.split('\n');
+  const lines = src.replace(/^(?:[ \t]*\n)+/, '').split('\n');
   const first = lines[0]?.match(/^([A-Za-z][A-Za-z ]*):/);
   if (!first || !LABEL_TO_KEY[first[1].toLowerCase()]) return { meta: { ...DEFAULT_META }, body: src };
   const found = {};
