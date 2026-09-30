@@ -1,11 +1,25 @@
 // Final Draft XML (FDX) -> Fountain + title meta. Uses the renderer's DOMParser.
 import { DEFAULT_META, normalizeMeta } from '../fountain/document.js';
-import { applyType } from '../editor/flow.js';
+import { SCENE_PREFIX, isUpperCue } from '../fountain/parse.js';
 
 const FROM = {
   'Scene Heading': 'scene_heading', Action: 'action', Character: 'character', Parenthetical: 'parenthetical',
   Dialogue: 'dialogue', Transition: 'transition', Shot: 'scene_heading', General: 'action',
 };
+
+/** Fountain source line for an FDX paragraph, forcing the element type without applyType's marker stripping. */
+export function fountainLine(type, text) {
+  const t = text.replace(/\n[ \t]*\n+/g, '\n');
+  const u = t.toUpperCase();
+  switch (type) {
+    case 'scene_heading': return SCENE_PREFIX.test(u) ? u : `.${u}`;
+    case 'character': return isUpperCue(u) && !/^[!@~>.=#[]/.test(u) ? u : `@${u}`;
+    case 'transition': return u.endsWith('TO:') ? u : `>${u}`;
+    case 'parenthetical': return /^\(.*\)$/s.test(t) ? t : `(${t})`;
+    case 'dialogue': return t;
+    default: return /^[.!@~>=#[]/.test(t) || isUpperCue(t) || SCENE_PREFIX.test(t) ? `!${t}` : t;
+  }
+}
 const NOT_FDX = 'Not a Final Draft (.fdx) file';
 const kids = (node, tag) => [...node.children].filter((c) => c.tagName === tag);
 
@@ -35,7 +49,7 @@ export function fromFdx(xml, parser = new DOMParser()) {
     const type = FROM[p.getAttribute('Type')] ?? 'action';
     const text = paraText(p).trim();
     if (!text) return;
-    let line = type === 'action' && p.getAttribute('Alignment') === 'Center' ? `>${text}<` : applyType(text, type);
+    let line = type === 'action' && p.getAttribute('Alignment') === 'Center' ? `>${text}<` : fountainLine(type, text);
     if (type === 'character' && dualRight) line += ' ^';
     if ((type === 'dialogue' || type === 'parenthetical') && out.length) out.push(line);
     else { if (out.length) out.push(''); out.push(line); }

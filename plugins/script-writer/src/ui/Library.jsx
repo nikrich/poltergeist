@@ -17,7 +17,7 @@ export function Library({ plugin, onOpen, notify }) {
   const reload = useCallback(() => loadRegistry(plugin.settings).then(setEntries).catch((e) => notify(e.message, 'error')), [plugin, notify]);
   useEffect(() => { reload(); }, [reload]);
 
-  async function importFountain() {
+  async function importScript() {
     try {
       const r = await plugin.ipc.invoke('import-file');
       if (!r || r.canceled) return;
@@ -35,10 +35,10 @@ export function Library({ plugin, onOpen, notify }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <Clapperboard size={20} />
         <h1 style={{ margin: 0, fontSize: 20, flex: 1 }}>Scripts</h1>
-        <button type="button" className="sw-btn" onClick={importFountain}><FileUp size={14} />Import script</button>
+        <button type="button" className="sw-btn" onClick={importScript}><FileUp size={14} />Import script</button>
         <button type="button" className="sw-btn sw-primary" onClick={() => setDialog({})}><Plus size={14} />New script</button>
       </div>
-      {entries && sorted.length === 0 && <p className="sw-muted" style={{ marginTop: 24 }}>No scripts yet. Create one or import a .fountain file.</p>}
+      {entries && sorted.length === 0 && <p className="sw-muted" style={{ marginTop: 24 }}>No scripts yet. Create one or import a .fountain or .fdx file.</p>}
       <div className="sw-grid">
         {sorted.map((e) => (
           <div key={e.path} className={`sw-card${e.missing ? ' sw-missing' : ''}`}
