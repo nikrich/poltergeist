@@ -106,4 +106,38 @@ describe('paginate', () => {
     expect(texts.filter((t) => /^Line \d+ of it\.$/.test(t))).toHaveLength(120);
     expect(texts.filter((t) => /^Action \d+\.$/.test(t))).toHaveLength(40);
   });
+
+  it('repeats dialogue splits with (MORE)/(CONT\'D) for oversized blocks', () => {
+    const pages = P(`${actions(1)}\n\nMARA\n${sentences(120)}`);
+    // Every page except the last must end with (MORE)
+    for (let p = 0; p < pages.length - 1; p++) {
+      expect(pages[p].lines.at(-1)).toMatchObject({ type: 'more', text: '(MORE)' });
+    }
+    // Every page after the first must start with MARA (CONT'D)
+    for (let p = 1; p < pages.length; p++) {
+      expect(pages[p].lines[0]).toMatchObject({ type: 'character', text: "MARA (CONT'D)" });
+    }
+    // All 120 dialogue lines must be present exactly once
+    const dialogueLines = pages.flatMap((p) => p.lines).filter((l) => l.type === 'dialogue' && l.el !== -1);
+    expect(dialogueLines).toHaveLength(120);
+  });
+
+  it('falls back to sequential blocks for dual dialogue exceeding page height', () => {
+    const pages = P(`BRICK\n${sentences(70)}\n\nSTEEL ^\n${sentences(70)}`);
+    // All lines must have y < 54
+    for (const p of pages) {
+      for (const l of p.lines) expect(l.y).toBeLessThan(LINES_PER_PAGE);
+    }
+    // All lines of both speakers must be present
+    const allLines = pages.flatMap((p) => p.lines).filter((l) => l.el !== -1 && l.type !== 'more');
+    expect(allLines.filter((l) => l.type === 'character')).toHaveLength(2); // BRICK and STEEL cues (may include CONT'D variants)
+    expect(allLines.filter((l) => l.type === 'dialogue')).toHaveLength(140); // 70 + 70 dialogue lines
+  });
+
+  it('recognizes curly quotes as sentence ends when splitting dialogue', () => {
+    const pages = P(`${actions(20)}\n\nMARA\nFirst.\nSecond with “curly”.\nThird.`);
+    // Should split after "Second with "curly"." because it ends with a curly quote
+    const p1Dialogues = pages[0].lines.filter((l) => l.type === 'dialogue');
+    expect(p1Dialogues.some((l) => l.text.includes('curly'))).toBe(true);
+  });
 });

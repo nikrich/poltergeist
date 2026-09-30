@@ -19,7 +19,8 @@ const DUAL = {
   dialogue: { x: 0, width: 28 },
 };
 const DUAL_RIGHT = 31;
-const SENTENCE_END = /[.!?…]["'"')]*$/;
+const SENTENCE_END = /[.!?…][“”‘’"'')]*$/;
+const CONT_D_PATTERN = /\(CONT[‘’']D\)/i;
 
 const clean = (s) => s.replace(/\[\[[\s\S]*?\]\]/g, '').replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/ {2,}/g, ' ').replace(/[ \t]+$/gm, '');
@@ -50,7 +51,7 @@ function toBlocks(elements, sceneNumbers) {
       const block = { kind: 'dialogue', dual: el.dual, cue: clean(el.text).toUpperCase(), lines: lay(LAYOUT, 0), narrow: (b) => lay(DUAL, b) };
       const prev = blocks[blocks.length - 1];
       if (el.dual === 'right' && prev?.kind === 'dialogue' && prev.dual === 'left') {
-        blocks[blocks.length - 1] = { kind: 'dual', left: prev.narrow(0), right: block.narrow(DUAL_RIGHT) };
+        blocks[blocks.length - 1] = { kind: 'dual', left: prev.narrow(0), right: block.narrow(DUAL_RIGHT), fallback: [prev, block] };
       } else {
         blocks.push(block);
       }
@@ -125,8 +126,18 @@ export function paginate(elements, { sceneNumbers = false, linesPerPage = LINES_
     if (best < 0) return false;
     put([...lines.slice(0, best), { type: 'more', text: '(MORE)', x: LAYOUT.character.x, el: -1 }], at);
     newPage();
-    const contd = /\(CONT['']D\)/i.test(cue) ? cue : `${cue} (CONT'D)`;
-    putForced([{ type: 'character', text: contd, x: LAYOUT.character.x, el: -1 }, ...lines.slice(best)]);
+    const contd = CONT_D_PATTERN.test(cue) ? cue : `${cue} (CONT'D)`;
+    const cueLinesToPut = { type: 'character', text: contd, x: LAYOUT.character.x, el: -1 };
+    const remainingLines = lines.slice(best);
+    const allRemainingLines = [cueLinesToPut, ...remainingLines];
+
+    // Try to fit remainder on this page or recursively split if needed
+    if (fits(allRemainingLines.length)) {
+      put(allRemainingLines, top());
+    } else if (!splitDialogue({ lines: allRemainingLines, cue: contd })) {
+      // No valid split found, force all remaining lines
+      putForced(allRemainingLines);
+    }
     return true;
   };
 
@@ -136,11 +147,22 @@ export function paginate(elements, { sceneNumbers = false, linesPerPage = LINES_
     if (block.kind === 'break') { if (y > 0) newPage(); continue; }
     if (block.kind === 'dual') {
       const h = height(block);
-      if (!fits(h) && y > 0) newPage();
-      const at = top();
-      block.left.forEach((l, n) => page.lines.push({ ...l, y: at + n }));
-      block.right.forEach((l, n) => page.lines.push({ ...l, y: at + n }));
-      y = at + h;
+      if (h > linesPerPage) {
+        // Fall back to sequential blocks if dual height exceeds page
+        for (const fb of block.fallback) {
+          const fbLines = fb.lines;
+          if (fits(fbLines.length)) { put(fbLines, top()); continue; }
+          if (fb.kind === 'action' && splitAction(fbLines)) continue;
+          if (fb.kind === 'dialogue' && splitDialogue(fb)) continue;
+          moveWhole(fbLines);
+        }
+      } else {
+        if (!fits(h) && y > 0) newPage();
+        const at = top();
+        block.left.forEach((l, n) => page.lines.push({ ...l, y: at + n }));
+        block.right.forEach((l, n) => page.lines.push({ ...l, y: at + n }));
+        y = at + h;
+      }
       continue;
     }
     const { lines } = block;
