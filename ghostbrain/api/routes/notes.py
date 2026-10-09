@@ -156,13 +156,15 @@ def patch_note_body(req: UpdateNoteBodyRequest, base_etag: str | None = Depends(
 def patch_note(
     req: UpdateNoteRequest,
     jot_id: str = PathParam(..., min_length=8, max_length=128),
+    base_etag: str | None = Depends(if_match),
 ) -> dict:
-    """Update the body (and re-derive tags) of an existing jot."""
+    """Update the body (and re-derive tags) of an existing jot. `If-Match` →
+    409 when the jot changed since the editor read it."""
     body = req.body
     if not body.strip():
         raise HTTPException(status_code=422, detail="body must not be empty")
     try:
-        return update_jot_body(jot_id, body)
+        return update_jot_body(jot_id, body, actor=USER, base_etag=base_etag)
     except JotNotFound:
         raise HTTPException(status_code=404, detail=f"Jot not found: {jot_id}")
 
@@ -223,6 +225,7 @@ def route_note(
             confidence=1.0,
             method="user",
             reasoning="manual re-route by user",
+            actor=USER,
         )
     except JotNotFound:
         raise HTTPException(status_code=404, detail=f"Jot not found: {jot_id}")
@@ -234,7 +237,7 @@ def delete_note(
 ) -> Response:
     """Delete a jot permanently."""
     try:
-        delete_jot(jot_id)
+        delete_jot(jot_id, actor=USER)
     except JotNotFound:
         raise HTTPException(status_code=404, detail=f"Jot not found: {jot_id}")
     return Response(status_code=204)
