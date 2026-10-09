@@ -52,6 +52,21 @@ describe('DiagramModal', () => {
     await screen.findByTestId('big'); // let the async render settle inside act
   });
 
+  it('Escape is stopped before outer window listeners (e.g. the note overlay) see it', async () => {
+    const onClose = vi.fn();
+    const outer = vi.fn();
+    window.addEventListener('keydown', outer);
+    try {
+      render(<DiagramModal source="x" onClose={onClose} />);
+      fireEvent.keyDown(screen.getByRole('dialog', { name: 'diagram' }), { key: 'Escape' });
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(outer).not.toHaveBeenCalled();
+      await screen.findByTestId('big');
+    } finally {
+      window.removeEventListener('keydown', outer);
+    }
+  });
+
   it('shows the error and source when rendering fails', async () => {
     renderMermaid.mockResolvedValue({ ok: false, error: 'Parse error' });
     render(<DiagramModal source="bad src" onClose={() => {}} />);

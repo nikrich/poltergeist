@@ -35,11 +35,14 @@ export function DiagramModal({ source, onClose }: Props) {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') {
         e.preventDefault();
+        // Capture phase + stop: outer overlays (e.g. NoteView) close on a
+        // bubble-phase window Escape and must not see this one.
+        e.stopPropagation();
         onClose();
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, [onClose]);
 
   const zoom = (factor: number): void => setScale((s) => clampScale(s * factor));
