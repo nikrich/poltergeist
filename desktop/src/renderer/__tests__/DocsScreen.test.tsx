@@ -138,4 +138,19 @@ describe('DocsScreen', () => {
     expect(screen.queryByText('your docs library is empty')).toBeNull();
     await waitFor(() => expect(useDocs.getState().selection).toBeNull());
   });
+
+  it('defaults to the first scope when the vault has no projects', async () => {
+    const tree = libraryFixture();
+    tree.scopes = tree.scopes.filter((sc) => !sc.project);
+    renderScreen(tree);
+    expect(await screen.findByTestId('folder-view')).toBeTruthy();
+    expect(screen.queryByText('your docs library is empty')).toBeNull();
+    expect((screen.getAllByRole('button', { name: /upload/ })[0] as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('shows the empty state only when there are no scopes at all', async () => {
+    renderScreen({ scopes: [], attention: [] });
+    expect(await screen.findByText('your docs library is empty')).toBeTruthy();
+    expect((screen.getAllByRole('button', { name: /upload/ })[0] as HTMLButtonElement).disabled).toBe(true);
+  });
 });

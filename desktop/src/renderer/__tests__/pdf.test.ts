@@ -10,13 +10,17 @@ const tasks: FakeTask[] = [];
 const renders: Array<{ width: number }> = [];
 let getPageGate: Promise<void> | null = null;
 let nextWidth = 100;
+const opened: Array<{ url: string; destroy: ReturnType<typeof vi.fn> }> = [];
 
 vi.mock('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: 'worker.js' }));
 vi.mock('pdfjs-dist', () => ({
   GlobalWorkerOptions: {},
-  getDocument: () => ({
-    promise: Promise.resolve({
+  getDocument: ({ url }: { url: string }) => {
+    const destroy = vi.fn(async () => {});
+    opened.push({ url, destroy });
+    return { promise: Promise.resolve({
       numPages: 1,
+      destroy,
       getPage: async () => {
         const gate = getPageGate;
         const width = nextWidth;
@@ -37,11 +41,11 @@ vi.mock('pdfjs-dist', () => ({
           }),
         };
       },
-    }),
-  }),
+    }) };
+  },
 }));
 
-import { cancelRender, renderThumb } from '../components/docs/pdf';
+import { cancelRender, MAX_OPEN_DOCS, openDocUrls, renderThumb } from '../components/docs/pdf';
 
 function makeCanvas(): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
@@ -101,5 +105,57 @@ describe('pdf render cancellation', () => {
     await expect(a).resolves.toBeUndefined();
     expect(renders).toHaveLength(0);
     expect(canvas.width).toBe(300); // jsdom default, untouched
+  });
+});
+
+describe('pdf document cache', () => {
+  beforeEach(() => {
+    tasks.length = 0;
+    renders.length = 0;
+    opened.length = 0;
+    getPageGate = null;
+  });
+
+  async function thumb(url: string): Promise<void> {
+    const n = tasks.length;
+    const p = renderThumb(makeCanvas(), url, 160);
+    await vi.waitFor(() => expect(tasks).toHaveLength(n + 1));
+    tasks[n]!.resolve();
+    await p;
+  }
+
+  it('keeps at most 8 documents and destroys the least recently used', async () => {
+    expect(MAX_OPEN_DOCS).toBe(8);
+    const base = 'gbdoc://lru-';
+    for (let i = 0; i < 8; i++) await thumb(`${base}${i}.pdf`);
+    await thumb(`${base}0.pdf`); // touch 0 → 1 is now the oldest
+    expect(opened.filter((o) => o.url.startsWith(base))).toHaveLength(8);
+    await thumb(`${base}8.pdf`);
+    const mine = openDocUrls().filter((u) => u.startsWith(base));
+    expect(mine).toHaveLength(8);
+    expect(mine).not.toContain(`${base}1.pdf`);
+    expect(mine).toContain(`${base}0.pdf`);
+    await vi.waitFor(() => expect(opened.find((o) => o.url === `${base}1.pdf`)!.destroy).toHaveBeenCalledTimes(1));
+    expect(opened.filter((o) => o.url !== `${base}1.pdf`).every((o) => o.destroy.mock.calls.length === 0)).toBe(true);
+    await thumb(`${base}1.pdf`); // evicted docs reopen on demand
+    expect(opened.filter((o) => o.url === `${base}1.pdf`)).toHaveLength(2);
+  });
+
+  it('never destroys a document while a render is using it', async () => {
+    const base = 'gbdoc://busy-';
+    const n = tasks.length;
+    const busy = renderThumb(makeCanvas(), `${base}held.pdf`, 160);
+    await vi.waitFor(() => expect(tasks).toHaveLength(n + 1));
+    for (let i = 0; i < 9; i++) await thumb(`${base}${i}.pdf`);
+    const held = opened.find((o) => o.url === `${base}held.pdf`)!;
+    expect(held.destroy).not.toHaveBeenCalled();
+    expect(openDocUrls()).toContain(`${base}held.pdf`);
+    expect(openDocUrls()[0]).toBe(`${base}held.pdf`); // oldest, yet kept while busy
+    tasks[n]!.resolve();
+    await busy;
+    await thumb(`${base}next.pdf`); // now idle, it is the first to go
+    expect(openDocUrls()).toHaveLength(8);
+    expect(openDocUrls()).not.toContain(`${base}held.pdf`);
+    await vi.waitFor(() => expect(held.destroy).toHaveBeenCalledTimes(1));
   });
 });

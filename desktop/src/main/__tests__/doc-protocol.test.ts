@@ -38,6 +38,11 @@ describe('docPathFromUrl', () => {
       resolve(V, '20-contexts/work/docs/a b.pdf'),
     );
   });
+  it('ignores the ?v= cache-buster query', () => {
+    expect(docPathFromUrl(V, 'gbdoc://doc/20-contexts/work/docs/a%20b.pdf?v=aaaaaaaaaaaa')).toBe(
+      resolve(V, '20-contexts/work/docs/a b.pdf'),
+    );
+  });
   it('returns bad-request on malformed escapes', () => {
     expect(docPathFromUrl(V, 'gbdoc://doc/20-contexts/work/docs/%E0%A4.pdf')).toBe('bad-request');
   });

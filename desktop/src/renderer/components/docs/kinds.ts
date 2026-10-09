@@ -28,8 +28,11 @@ export function kindLabel(doc: Pick<DocSummary, 'kind' | 'original'>): string {
   }
 }
 
-export function docUrl(originalPath: string): string {
-  return `gbdoc://doc/${originalPath.split('/').map(encodeURIComponent).join('/')}`;
+/** gbdoc:// URL for an original. `version` (the doc_id) busts URL-keyed caches when a
+ *  same-named file is deleted and re-uploaded; the protocol only reads the pathname. */
+export function docUrl(originalPath: string, version?: string): string {
+  const url = `gbdoc://doc/${originalPath.split('/').map(encodeURIComponent).join('/')}`;
+  return version ? `${url}?v=${encodeURIComponent(version)}` : url;
 }
 
 export function folderKey(ref: FolderRef): string {

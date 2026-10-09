@@ -31,11 +31,11 @@ function StatusPill({ status }: { status: DocSummary['index_status'] }) {
 }
 
 function Viewer({ doc, body, onOpenExternal }: Pick<Props, 'doc' | 'body' | 'onOpenExternal'>) {
-  if (doc.kind === 'pdf') return <PdfViewer url={docUrl(doc.original_path)} />;
+  if (doc.kind === 'pdf') return <PdfViewer url={docUrl(doc.original_path, doc.doc_id)} />;
   if (doc.kind === 'image') {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-6">
-        <img src={docUrl(doc.original_path)} alt={doc.title} className="max-h-full max-w-full rounded shadow-[0_20px_50px_rgba(0,0,0,.55)]" />
+        <img src={docUrl(doc.original_path, doc.doc_id)} alt={doc.title} className="max-h-full max-w-full rounded shadow-[0_20px_50px_rgba(0,0,0,.55)]" />
       </div>
     );
   }

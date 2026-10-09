@@ -30,7 +30,7 @@ describe('DocReader', () => {
 
   it('renders images from gbdoc://', () => {
     setup(doc({ kind: 'image', original: 'a.png', original_path: '20-contexts/work/docs/a.png' }));
-    expect(screen.getByRole('img').getAttribute('src')).toBe('gbdoc://doc/20-contexts/work/docs/a.png');
+    expect(screen.getByRole('img').getAttribute('src')).toBe('gbdoc://doc/20-contexts/work/docs/a.png?v=aaaaaaaaaaaa');
   });
 
   it('renders text-ish kinds from the extracted body', () => {

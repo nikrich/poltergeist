@@ -38,6 +38,7 @@ describe('kinds helpers', () => {
   it('builds keys, urls and labels', () => {
     expect(folderKey({ context: 'work', project: null, path: 'a/b' })).toBe('work/_/a/b');
     expect(docUrl('20-contexts/work/docs/a b.pdf')).toBe('gbdoc://doc/20-contexts/work/docs/a%20b.pdf');
+    expect(docUrl('20-contexts/work/docs/a b.pdf', 'aaaaaaaaaaaa')).toBe('gbdoc://doc/20-contexts/work/docs/a%20b.pdf?v=aaaaaaaaaaaa');
     expect(kindLabel({ kind: 'text', original: 'x.md' })).toBe('MD');
     expect(kindLabel({ kind: 'text', original: 'x.py' })).toBe('PY');
     expect(kindLabel({ kind: 'image', original: 'x.png' })).toBe('IMG');

@@ -12,22 +12,43 @@ const TINT: Record<string, string> = {
   opaque: 'var(--bg-fog)',
 };
 
+// True once the element has scrolled into view (immediately where IntersectionObserver
+// is unavailable, e.g. jsdom), so a grid of PDFs only loads the cards you can see.
+function useSeen(ref: React.RefObject<Element | null>): boolean {
+  const [seen, setSeen] = useState(() => typeof IntersectionObserver === 'undefined');
+  useEffect(() => {
+    const el = ref.current;
+    if (seen || !el) return;
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) {
+        setSeen(true);
+        io.disconnect();
+      }
+    }, { rootMargin: '200px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [ref, seen]);
+  return seen;
+}
+
 function PdfThumb({ doc }: { doc: DocSummary }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const [failed, setFailed] = useState(false);
+  const seen = useSeen(ref);
+  const url = docUrl(doc.original_path, doc.doc_id);
   useEffect(() => {
     setFailed(false);
     const canvas = ref.current;
-    if (!canvas) return;
+    if (!canvas || !seen) return;
     let cancelled = false;
-    renderThumb(canvas, docUrl(doc.original_path), 160).catch(() => {
+    renderThumb(canvas, url, 160).catch(() => {
       if (!cancelled) setFailed(true);
     });
     return () => {
       cancelled = true;
       cancelRender(canvas);
     };
-  }, [doc.original_path]);
+  }, [url, seen]);
   if (failed) return <TextThumb doc={doc} />;
   return <canvas ref={ref} className="mt-3 w-[62%] self-end rounded-t-[3px] bg-white shadow-[0_-4px_20px_rgba(0,0,0,.3)]" />;
 }
@@ -43,7 +64,7 @@ function TextThumb({ doc }: { doc: DocSummary }) {
 export function Thumb({ doc }: { doc: DocSummary }) {
   let inner: React.ReactNode;
   if (doc.kind === 'image') {
-    inner = <img src={docUrl(doc.original_path)} alt="" loading="lazy" className="h-full w-full object-cover" />;
+    inner = <img src={docUrl(doc.original_path, doc.doc_id)} alt="" loading="lazy" className="h-full w-full object-cover" />;
   } else if (doc.kind === 'pdf') {
     inner = <PdfThumb doc={doc} />;
   } else if (doc.kind === 'opaque') {

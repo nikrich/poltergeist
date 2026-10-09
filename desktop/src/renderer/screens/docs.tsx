@@ -51,14 +51,15 @@ export function DocsScreen() {
   const detail = useDocDetail(selectedDoc?.doc_id ?? null);
 
   // The folder shown in the main pane: the selected folder, or the selected doc's folder.
-  const firstProject = data?.scopes.find((s) => s.project);
+  // Default view: the first project, or — in a vault with no projects — the first scope.
+  const defaultScope = data?.scopes.find((s) => s.project) ?? data?.scopes[0];
   const folderRef: FolderRef | null =
     selection?.type === 'folder'
       ? selection.ref
       : selectedDoc
         ? { context: selectedDoc.context, project: selectedDoc.project, path: selectedDoc.folder }
-        : firstProject
-          ? { context: firstProject.context, project: firstProject.project, path: '' }
+        : defaultScope
+          ? { context: defaultScope.context, project: defaultScope.project, path: '' }
           : null;
 
   // A folder delete/move (or doc delete) can leave the selection dangling; fall back to the default view.
@@ -195,8 +196,14 @@ export function DocsScreen() {
       <div className="grid flex-1 place-items-center text-center text-13 text-ink-2">
         <div>
           <Lucide name="library" size={28} className="mx-auto mb-3 text-ink-3" />
-          <div className="text-ink-0">your docs library is empty</div>
-          create a project in settings, then drop files onto it
+          {data?.scopes.length ? (
+            <div className="text-ink-0">folder not found</div>
+          ) : (
+            <>
+              <div className="text-ink-0">your docs library is empty</div>
+              create a project in settings, then drop files onto it
+            </>
+          )}
         </div>
       </div>
     );
