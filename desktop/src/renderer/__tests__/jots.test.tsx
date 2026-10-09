@@ -23,6 +23,23 @@ function withConnectors(
         data: { contexts: ['work', 'consulting', 'side-project', 'personal'] },
       };
     }
+    if (path.startsWith('/v1/vault/backlinks')) {
+      return {
+        ok: true,
+        status: 200,
+        data: {
+          items: [
+            {
+              path: '20-contexts/work/notes/standup.md',
+              title: 'Standup',
+              context: 'work',
+              snippet: 'follow up on [[20-contexts/work/notes/manual-20260514T093015-a|first jot]]',
+            },
+          ],
+          indexing: false,
+        },
+      };
+    }
     return impl(method, path, body);
   };
 }
@@ -341,6 +358,22 @@ describe('JotsScreen', () => {
       );
       expect(routeAutoCall).toBeDefined();
     });
+  });
+
+  it('shows backlinks under the selected jot', async () => {
+    apiRequest.mockImplementation(withConnectors(async (_m, path) => {
+      if (path.includes('source=manual')) return { ok: true, status: 200, data: page };
+      return { ok: true, status: 200, data: detail };
+    }));
+
+    render(withQuery(<JotsScreen />));
+    await waitFor(() => expect(screen.getByText(/full body here/)).toBeInTheDocument());
+    expect(await screen.findByText('Standup')).toBeInTheDocument();
+    expect(screen.getByText('follow up on first jot')).toBeInTheDocument();
+    expect(apiRequest).toHaveBeenCalledWith(
+      'GET',
+      '/v1/vault/backlinks?path=20-contexts%2Fwork%2Fnotes%2Fmanual-20260514T093015-a.md',
+    );
   });
 });
 

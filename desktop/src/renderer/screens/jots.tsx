@@ -9,6 +9,8 @@ import { GuardedNoteEditor, confirmLeave, type GuardHandle } from '../components
 import type { EditorHandle } from '../components/RichMarkdownEditor';
 import { DocsAssistPanel } from '../components/DocsAssistPanel';
 import { get } from '../lib/api/client';
+import { BacklinksPanel } from '../components/BacklinksPanel';
+import { notePathFromTarget } from '../lib/editor/link-suggest';
 import {
   useAutoRouteJot,
   useConnectors,
@@ -332,7 +334,7 @@ export function JotsScreen() {
                   onSaveError={(err) => toast.error(`save failed: ${err.message}`)}
                   guardRef={guardRef}
                   editorProps={{
-                    onWikilinkClick: openNote,
+                    onWikilinkClick: (target) => openNote(notePathFromTarget(target)),
                     handleRef: editorHandle,
                     jotId: selectedId!,
                     openCameraSignal: cameraSignal,
@@ -359,6 +361,7 @@ export function JotsScreen() {
                   }}
                 />
               </div>
+              {selectedItem && <BacklinksPanel path={selectedItem.path} onOpen={openNote} />}
               <footer className="flex items-center gap-2 border-t border-hairline px-4 py-2 text-11 text-ink-2">
                 {selectedItem?.context && (
                   <Pill>

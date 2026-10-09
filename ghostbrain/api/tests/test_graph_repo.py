@@ -47,3 +47,68 @@ def test_wikilink_parent_edge(tmp_vault: Path, monkeypatch, tmp_path):
         "---\ntitle: C\nparent: '[[20-contexts/work/parent]]'\n---\nbody", encoding="utf-8")
     graph = build_graph()
     assert any(e["kind"] == "wikilink" for e in graph["edges"])
+
+
+def test_bare_wikilink_resolves_to_unique_note(tmp_vault: Path, monkeypatch, tmp_path):
+    monkeypatch.setenv("GHOSTBRAIN_SEMANTIC_INDEX_DIR", str(tmp_path / "sem"))
+    _note(tmp_vault, "20-contexts/work/beta.md", title="B")
+    _note(tmp_vault, "20-contexts/work/a.md", "see [[Beta]]", title="A")
+    graph = build_graph()
+    assert any(
+        {e["source"], e["target"]} == {"20-contexts/work/a.md", "20-contexts/work/beta.md"}
+        for e in graph["edges"]
+    )
+
+
+def test_graph_sees_notes_added_between_calls(tmp_vault: Path, monkeypatch, tmp_path):
+    monkeypatch.setenv("GHOSTBRAIN_SEMANTIC_INDEX_DIR", str(tmp_path / "sem"))
+    _note(tmp_vault, "20-contexts/work/a.md", title="A")
+    assert len(build_graph()["nodes"]) == 1
+    _note(tmp_vault, "20-contexts/work/b.md", title="B")
+    assert len(build_graph()["nodes"]) == 2
+
+
+def test_graph_nodes_stay_limited_to_contexts(tmp_vault: Path, monkeypatch, tmp_path):
+    monkeypatch.setenv("GHOSTBRAIN_SEMANTIC_INDEX_DIR", str(tmp_path / "sem"))
+    _note(tmp_vault, "20-contexts/work/a.md", "[[30-cross-context/people/alex]]", title="A")
+    _note(tmp_vault, "30-cross-context/people/alex.md", title="Alex")
+    _note(tmp_vault, "10-daily/2026-10-09.md", "[[20-contexts/work/a]]")
+    graph = build_graph()
+    assert [n["path"] for n in graph["nodes"]] == ["20-contexts/work/a.md"]
+    assert graph["edges"] == []
+
+
+def test_graph_uses_the_shared_link_index(tmp_vault: Path, monkeypatch, tmp_path):
+    monkeypatch.setenv("GHOSTBRAIN_SEMANTIC_INDEX_DIR", str(tmp_path / "sem"))
+    from ghostbrain.vault_index.links import get_link_index
+
+    _note(tmp_vault, "20-contexts/work/a.md", title="A")
+    build_graph()
+    assert get_link_index().get("20-contexts/work/a.md") is not None
+
+
+def test_layout_positions_match_backslash_keys(tmp_vault: Path, monkeypatch, tmp_path):
+    """Layout keys are OS-native (backslashes on Windows); nodes are posix."""
+    monkeypatch.setenv("GHOSTBRAIN_SEMANTIC_INDEX_DIR", str(tmp_path / "sem"))
+    from ghostbrain.api.repo import graph as graph_mod
+    from ghostbrain.semantic.projection import Layout
+
+    monkeypatch.setattr(
+        graph_mod,
+        "load_layout",
+        lambda: Layout(model_name="m", method="pca",
+                       positions={"20-contexts\\work\\a.md": [1.0, 2.0]}),
+    )
+    _note(tmp_vault, "20-contexts/work/a.md", title="A")
+    node = next(n for n in build_graph()["nodes"] if n["path"] == "20-contexts/work/a.md")
+    assert (node["x"], node["y"]) == (1.0, 2.0)
+
+
+def test_note_embed_produces_no_edge(tmp_vault: Path, monkeypatch, tmp_path):
+    """Embeds `![[...]]` are ignored by the shared link index (as for backlinks
+    and A6). This deliberately differs from the old walk-based graph, which
+    turned embeds into edges."""
+    monkeypatch.setenv("GHOSTBRAIN_SEMANTIC_INDEX_DIR", str(tmp_path / "sem"))
+    _note(tmp_vault, "20-contexts/work/b.md", title="B")
+    _note(tmp_vault, "20-contexts/work/a.md", "![[20-contexts/work/b]]", title="A")
+    assert build_graph()["edges"] == []

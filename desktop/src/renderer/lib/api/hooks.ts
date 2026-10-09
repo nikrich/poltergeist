@@ -12,6 +12,7 @@ import type {
   ConfluenceExportRequest,
   ConfluenceExportResponse,
   BackfillState,
+  BacklinksResponse,
   Connector,
   ConnectorDetail,
   Conversation,
@@ -95,6 +96,18 @@ export function useVaultGraph() {
     queryKey: ['vault', 'graph'],
     queryFn: () => get<VaultGraph>('/v1/vault/graph'),
     staleTime: 60_000,
+  });
+}
+
+export function useBacklinks(path: string | null) {
+  return useQuery({
+    queryKey: ['vault', 'backlinks', path],
+    queryFn: () =>
+      get<BacklinksResponse>(`/v1/vault/backlinks?path=${encodeURIComponent(path!)}`),
+    enabled: path !== null,
+    staleTime: 5_000,
+    // Cold link index on the sidecar: poll until it's built.
+    refetchInterval: (query) => (query.state.data?.indexing ? 3_000 : false),
   });
 }
 
@@ -574,7 +587,11 @@ export function useCreateJot() {
   return useMutation({
     mutationFn: (req: CreateJotRequest) =>
       post<CreateJotResponse>('/v1/notes', req),
-    onSuccess: () => qc.invalidateQueries({ queryKey: JOTS_KEY }),
+    onSuccess: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: JOTS_KEY }),
+        qc.invalidateQueries({ queryKey: ['vault', 'backlinks'] }),
+      ]),
   });
 }
 
@@ -590,6 +607,7 @@ export function useUpdateJot() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: JOTS_KEY });
       qc.invalidateQueries({ queryKey: ['note-by-path'] });
+      qc.invalidateQueries({ queryKey: ['vault', 'backlinks'] });
     },
   });
 }
@@ -656,6 +674,7 @@ export function useUpdateNoteByPath() {
       // and ['note-by-path'] (useJot/jots screen).
       qc.invalidateQueries({ queryKey: ['note'] });
       qc.invalidateQueries({ queryKey: ['note-by-path'] });
+      qc.invalidateQueries({ queryKey: ['vault', 'backlinks'] });
     },
   });
 }

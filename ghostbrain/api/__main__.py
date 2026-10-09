@@ -265,6 +265,11 @@ def _run_api_server() -> int:
     if not any(isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler) for h in root.handlers):
         root.addHandler(logging.StreamHandler(sys.stderr))
     app = create_app(token=token)
+    # Build the vault link index in the background so the first `[[`
+    # suggestion doesn't pay for a cold walk of the whole vault.
+    from ghostbrain.vault_index.links import warm_link_index
+
+    warm_link_index()
     # Keep the descriptor lock alive for the process lifetime by stashing it on
     # app.state (the OS frees it on exit/crash). None means another sidecar is
     # the primary and owns the descriptor — this instance still serves its

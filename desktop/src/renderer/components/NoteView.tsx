@@ -13,6 +13,8 @@ import { Pill } from './Pill';
 import { GuardedNoteEditor, confirmLeave, type GuardHandle } from './GuardedNoteEditor';
 import { SkeletonRows } from './SkeletonRows';
 import { PanelError } from './PanelError';
+import { notePathFromTarget } from '../lib/editor/link-suggest';
+import { BacklinksPanel } from './BacklinksPanel';
 
 interface Props {
   /** Test hook: receives the TipTap Editor instance once created. */
@@ -138,16 +140,25 @@ export function NoteView({ onEditorReady }: Props = {}) {
             </div>
           )}
           {initial !== undefined && (
-            <GuardedNoteEditor
-              key={path}
-              initialBody={initial.body}
-              initialEtag={initial.etag}
-              send={(body, ifMatch) => updateNote.mutateAsync({ path, body, ifMatch })}
-              fetchLatest={() => get<Note>(`/v1/notes?path=${encodeURIComponent(path)}`)}
-              onSaveError={(err) => toast.error(`save failed: ${err.message}`)}
-              guardRef={guardRef}
-              editorProps={{ jotId: path, onEditorReady, onWikilinkClick: openNote }}
-            />
+            <>
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <GuardedNoteEditor
+                  key={path}
+                  initialBody={initial.body}
+                  initialEtag={initial.etag}
+                  send={(body, ifMatch) => updateNote.mutateAsync({ path, body, ifMatch })}
+                  fetchLatest={() => get<Note>(`/v1/notes?path=${encodeURIComponent(path)}`)}
+                  onSaveError={(err) => toast.error(`save failed: ${err.message}`)}
+                  guardRef={guardRef}
+                  editorProps={{
+                    jotId: path,
+                    onEditorReady,
+                    onWikilinkClick: (target) => openNote(notePathFromTarget(target)),
+                  }}
+                />
+              </div>
+              <BacklinksPanel path={path} onOpen={openNote} />
+            </>
           )}
         </div>
       </div>
