@@ -16,10 +16,15 @@ def load(state_dir: Path) -> dict[str, dict]:
     if not f.exists():
         return {}
     try:
-        return dict(json.loads(f.read_text(encoding="utf-8")).get("chats") or {})
-    except (ValueError, AttributeError):
+        data = json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
         log.warning("ignoring unreadable %s", f)
         return {}
+    chats = data.get("chats") if isinstance(data, dict) else None
+    if not isinstance(chats, dict):
+        log.warning("ignoring unreadable %s", f)
+        return {}
+    return {jid: meta for jid, meta in chats.items() if isinstance(meta, dict)}
 
 
 def save(state_dir: Path, chats: dict[str, dict]) -> None:
