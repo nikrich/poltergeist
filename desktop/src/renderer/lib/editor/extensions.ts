@@ -11,6 +11,7 @@ import TaskItem from '@tiptap/extension-task-item';
 import { Markdown } from 'tiptap-markdown';
 import { Callout } from './callout';
 import { Status } from './status';
+import { Toc } from './toc';
 import { JotImage } from './image';
 import { SlashExtension } from './slash';
 import { WikilinkSuggest } from './wikilink-suggest';
@@ -58,6 +59,7 @@ export function buildEditorExtensions(): Extensions {
     ExtractCallout,
     Callout,
     Status,
+    Toc,
     Link.configure({ openOnClick: false }),
     JotImage.configure({ inline: false, allowBase64: false }),
     Table.configure({ resizable: false }),

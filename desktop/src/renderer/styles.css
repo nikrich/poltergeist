@@ -406,3 +406,29 @@ body[data-theme='light'] {
 .gb-status-red { color: var(--pill-oxblood-fg); }
 .gb-status-purple { color: var(--gb-plum, #b58ce0); }
 .gb-status.ProseMirror-selectednode { outline: 1px solid var(--neon); }
+.gb-toc {
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin: 0 0 1em;
+  background: var(--vellum);
+}
+.gb-toc-title {
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ink-2);
+  margin-bottom: 4px;
+}
+.gb-prose ol.gb-toc-list { list-style: none; margin: 0; }
+.gb-toc-list button {
+  background: transparent;
+  border: 0;
+  padding: 1px 0;
+  color: var(--neon-ink);
+  cursor: pointer;
+  text-align: left;
+}
+.gb-toc-list button:hover { text-decoration: underline; }
+.gb-toc-empty { color: var(--ink-3); font-size: 12px; }

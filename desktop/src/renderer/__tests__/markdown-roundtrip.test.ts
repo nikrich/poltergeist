@@ -76,6 +76,9 @@ const FIXTURES: Record<string, string> = {
   'status label with backtick': 'odd ``status:a`b/red`` label',
   'empty status label stays inline code': 'not a lozenge: `status:`',
   'status inside bold': '**`status:Done/green`**',
+  'table of contents': '```toc\n```',
+  'toc among headings': '# Title\n\n```toc\n```\n\n## Section\n\nbody',
+  'toc fence with plugin options stays code': '```toc\nstyle: number\n```',
 };
 
 describe('markdown round-trip (serialize(deserialize(md)))', () => {
