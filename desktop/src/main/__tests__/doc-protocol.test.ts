@@ -29,3 +29,20 @@ describe('resolveDocPath', () => {
     }
   });
 });
+
+import { docPathFromUrl } from '../doc-protocol';
+
+describe('docPathFromUrl', () => {
+  it('decodes and resolves', () => {
+    expect(docPathFromUrl(V, 'gbdoc://doc/20-contexts/work/docs/a%20b.pdf')).toBe(
+      resolve(V, '20-contexts/work/docs/a b.pdf'),
+    );
+  });
+  it('returns bad-request on malformed escapes', () => {
+    expect(docPathFromUrl(V, 'gbdoc://doc/20-contexts/work/docs/%E0%A4.pdf')).toBe('bad-request');
+  });
+  it('returns null for forbidden paths, incl. encoded traversal', () => {
+    expect(docPathFromUrl(V, 'gbdoc://doc/90-meta/projects.json')).toBeNull();
+    expect(docPathFromUrl(V, 'gbdoc://doc/20-contexts/work/docs/%2e%2e/x.md')).toBeNull();
+  });
+});

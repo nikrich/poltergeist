@@ -29,6 +29,7 @@ import {
   registerAssetProtocol,
   installAssetBridge,
 } from './assets';
+import { isInsideVault } from './vault-paths';
 import { registerDocProtocol } from './doc-protocol';
 import { handleDemoApi, DEMO_SETTINGS } from './demo/fixtures';
 import { runDemoChatStream, stopDemoChat } from './demo/chat';
@@ -205,9 +206,7 @@ ipcMain.handle('gb:shell:showItemInFolder', (_e, p: unknown) => {
     return { ok: false, error: 'showItemInFolder: path must be a non-empty string' };
   }
   const vaultPath = settings.getAll().vaultPath;
-  const normalized = p.replace(/\\/g, '/');
-  const allowed = (vaultPath ?? '').replace(/\\/g, '/');
-  if (!allowed || !normalized.startsWith(allowed + '/')) {
+  if (!vaultPath || !isInsideVault(vaultPath, p, { allowRoot: false })) {
     return { ok: false, error: 'showItemInFolder: only paths inside the vault are allowed' };
   }
   shell.showItemInFolder(p);
