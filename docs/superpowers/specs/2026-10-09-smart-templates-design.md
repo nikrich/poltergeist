@@ -148,9 +148,9 @@ The output is validated with `parse.py`. Invalid output gets one automatic repai
 ## Data flow (create from template)
 
 ```
-Split button → pick "1-1" → TemplatePromptDialog (person = Thando via suggest)
+Split button → pick "1-1" → TemplatePromptDialog (person = Alex via suggest)
 → POST /v1/templates/one-on-one/create {answers:{person:"30-cross-context/people/thando", focus:""}}
-  → render: folder 20-contexts/sanlam/one-on-ones, name "2026-10-09 Thando 1-1"
+  → render: folder 20-contexts/work/one-on-ones, name "2026-10-09 Alex 1-1"
   → vault_write.write(op=create, actor=user) → {path}
 → editor opens note → query NodeView → POST /v1/vault/query → open action items mentioning [[…/thando]]
 ```
