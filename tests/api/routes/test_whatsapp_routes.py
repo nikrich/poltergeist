@@ -102,3 +102,11 @@ def test_sqlite_auth_is_access_hint(client, monkeypatch):
     r = client.get("/v1/connectors/whatsapp/chats")
     assert r.status_code == 409
     assert r.json()["detail"] == ACCESS_HINT
+
+
+def test_untick_with_archived_context_is_allowed(client, tmp_path):
+    allowlist.save(tmp_path / "state", {A: {"name": "Alex", "context": "archived-ctx"}})
+    r = client.put("/v1/connectors/whatsapp/chats",
+                   json={"chats": {A: {"allowed": False, "context": "archived-ctx"}}})
+    assert r.status_code == 200
+    assert allowlist.load(tmp_path / "state") == {}

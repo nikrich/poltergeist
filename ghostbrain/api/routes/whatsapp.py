@@ -68,7 +68,8 @@ def list_whatsapp_chats() -> list[dict]:
 def save_whatsapp_chats(body: ChatsBody) -> list[dict]:
     valid = routing_config.contexts()
     for choice in body.chats.values():
-        if choice.context is not None and choice.context not in valid:
+        # Unticking must work even when the chat's context was since archived.
+        if choice.allowed and choice.context is not None and choice.context not in valid:
             raise HTTPException(
                 status_code=422,
                 detail=f"unknown context: {choice.context!r}; valid: {sorted(valid)}",
