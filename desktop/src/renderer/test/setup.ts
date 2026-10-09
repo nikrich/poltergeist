@@ -52,6 +52,7 @@ const stubBridge: GbBridge = {
   dialogs: { pickVaultFolder: async () => null },
   shell: {
     openPath: async () => ({ ok: true }),
+    showItemInFolder: async () => ({ ok: true }),
     openExternal: async () => ({ ok: true }),
   },
   cli: {

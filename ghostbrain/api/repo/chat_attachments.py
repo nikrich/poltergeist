@@ -15,26 +15,15 @@ from pathlib import Path
 import yaml
 
 from ghostbrain import vault_write
-from ghostbrain.api.repo import attachment_caption, attachment_extract
+from ghostbrain.api.repo import attachment_caption, attachment_extract, file_kinds
 from ghostbrain.paths import vault_path
 from ghostbrain.vault_write import USER
 
 ATTACHMENTS_DIR_REL = "20-contexts/chat-attachments"
-MAX_TEXT_BYTES = 1_000_000
-MAX_DOC_BYTES = 20_000_000
-MAX_IMAGE_BYTES = 20_000_000
-
-# Extension → fenced-code language. Markdown extensions map to "" (inline as-is).
-_LANG_BY_EXT = {
-    ".md": "", ".markdown": "",
-    ".txt": "", ".text": "", ".log": "",
-    ".py": "py", ".js": "js", ".ts": "ts", ".tsx": "tsx", ".jsx": "jsx",
-    ".go": "go", ".rs": "rs", ".java": "java", ".c": "c", ".h": "c",
-    ".cpp": "cpp", ".sh": "sh", ".rb": "rb", ".sql": "sql", ".html": "html",
-    ".css": "css", ".xml": "xml", ".toml": "toml", ".ini": "ini",
-    ".json": "json", ".yaml": "yaml", ".yml": "yaml", ".csv": "", ".tsv": "",
-}
-TEXT_EXTENSIONS = set(_LANG_BY_EXT)
+MAX_TEXT_BYTES = file_kinds.MAX_TEXT_BYTES
+MAX_DOC_BYTES = file_kinds.MAX_DOC_BYTES
+MAX_IMAGE_BYTES = file_kinds.MAX_IMAGE_BYTES
+TEXT_EXTENSIONS = file_kinds.TEXT_EXTENSIONS
 
 
 class UnsupportedAttachment(RuntimeError):
@@ -52,12 +41,7 @@ def _slug(name: str) -> str:
 
 
 def _classify(filename: str, mime: str) -> str | None:
-    ext = Path(filename).suffix.lower()
-    if ext in TEXT_EXTENSIONS or mime.startswith("text/"):
-        return "text"
-    if attachment_caption.is_image(filename, mime):
-        return "image"
-    return attachment_extract.classify(filename, mime)  # "pdf" | "docx" | None
+    return file_kinds.classify(filename, mime)
 
 
 def _cap_for(kind: str) -> int:
@@ -69,12 +53,7 @@ def _cap_for(kind: str) -> int:
 
 
 def _text_body(filename: str, content: bytes) -> str:
-    text = content.decode("utf-8")  # may raise UnicodeDecodeError (caught by caller)
-    ext = Path(filename).suffix.lower()
-    lang = _LANG_BY_EXT.get(ext, "")
-    if ext in (".md", ".markdown"):
-        return text
-    return f"```{lang}\n{text}\n```" if lang else text
+    return file_kinds.text_body(filename, content)
 
 
 def _render(front: dict, body: str) -> str:

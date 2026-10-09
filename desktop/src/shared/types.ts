@@ -53,6 +53,7 @@ export interface GbBridge {
   };
   shell: {
     openPath(path: string): Promise<{ ok: true } | { ok: false; error: string }>;
+    showItemInFolder(path: string): Promise<{ ok: boolean; error?: string }>;
     openExternal(url: string): Promise<{ ok: true } | { ok: false; error: string }>;
   };
   cli: {

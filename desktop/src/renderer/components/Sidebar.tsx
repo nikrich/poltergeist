@@ -18,6 +18,7 @@ const NAV_ITEMS: Array<{ id: ScreenId; icon: string; label: string }> = [
   { id: 'meetings', icon: 'mic', label: 'meetings' },
   { id: 'capture', icon: 'inbox', label: 'capture' },
   { id: 'jots', icon: 'pencil', label: 'jots' },
+  { id: 'docs', icon: 'library', label: 'docs' },
   { id: 'vault', icon: 'book-open', label: 'vault' },
   { id: 'plugins', icon: 'blocks', label: 'plugins' },
   { id: 'settings', icon: 'settings', label: 'settings' },
