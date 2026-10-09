@@ -18,8 +18,8 @@ const bridge: GbBridge = {
   },
   platform: process.platform,
   api: {
-    request: (method, path, body) =>
-      ipcRenderer.invoke('gb:api:request', method, path, body),
+    request: (method, path, body, opts) =>
+      ipcRenderer.invoke('gb:api:request', method, path, body, opts),
   },
   sidecar: {
     retry: () => ipcRenderer.invoke('gb:sidecar:retry'),

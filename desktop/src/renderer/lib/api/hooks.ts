@@ -38,6 +38,7 @@ import type {
   UpdateLlmSettings,
   UpdateNoteBodyRequest,
   UpdateNoteBodyResponse,
+  UpdateJotResponse,
   UpdateProjectRequest,
   UpdateRecorderSettings,
   VaultGraph,
@@ -580,10 +581,11 @@ export function useCreateJot() {
 export function useUpdateJot() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { id: string; body: string }) =>
-      patch<{ id: string; path: string; updated: string }>(
+    mutationFn: (vars: { id: string; body: string; ifMatch?: string | null }) =>
+      patch<UpdateJotResponse>(
         `/v1/notes/${encodeURIComponent(vars.id)}`,
         { body: vars.body },
+        { ifMatch: vars.ifMatch },
       ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: JOTS_KEY });
@@ -643,8 +645,12 @@ export function useDeleteJot() {
 export function useUpdateNoteByPath() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: UpdateNoteBodyRequest) =>
-      patch<UpdateNoteBodyResponse>('/v1/notes/body', vars),
+    mutationFn: (vars: UpdateNoteBodyRequest & { ifMatch?: string | null }) =>
+      patch<UpdateNoteBodyResponse>(
+        '/v1/notes/body',
+        { path: vars.path, body: vars.body },
+        { ifMatch: vars.ifMatch },
+      ),
     onSuccess: () => {
       // Both caches read GET /v1/notes?path= — ['note'] (useNote/NoteView)
       // and ['note-by-path'] (useJot/jots screen).
