@@ -64,10 +64,18 @@ describe('LiveTranscriptPanel', () => {
     expect(screen.getByText(/recording continues/i)).toBeInTheDocument();
   });
 
-  it('says live is off when the stream ends without a session', () => {
+  it('says live is off only when the setting is off', () => {
+    apply({ type: 'status', state: 'off', reason: null, lag_s: 0 });
     apply({ type: 'end' });
     render(<LiveTranscriptPanel />);
     expect(screen.getByText(/live transcript is off/i)).toBeInTheDocument();
+  });
+
+  it('does not claim "off" when the stream just ends without a session', () => {
+    apply({ type: 'end' });
+    render(<LiveTranscriptPanel />);
+    expect(screen.queryByText(/live transcript is off/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/isn't running for this recording/i)).toBeInTheDocument();
   });
 
   it('shows the lag only when well behind', () => {

@@ -34,7 +34,9 @@ export function LiveTranscriptPanel() {
     setFollowing(true);
   };
 
-  const off = state === null && ended;
+  const off = state === 'off';
+  // The stream closed without the sidecar ever reporting a session.
+  const missing = state === null && ended;
 
   return (
     <div className="relative flex min-h-[220px] flex-col rounded-lg border border-hairline bg-vellum p-5">
@@ -61,8 +63,14 @@ export function LiveTranscriptPanel() {
           transcribed when you stop.
         </p>
       )}
+      {missing && (
+        <p className="m-0 text-13 leading-[1.5] text-ink-2">
+          Live transcript isn&apos;t running for this recording. The recording continues and will be
+          transcribed when you stop.
+        </p>
+      )}
 
-      {!off && (
+      {!off && !missing && (
         <div
           ref={listRef}
           role="log"

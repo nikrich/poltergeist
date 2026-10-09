@@ -62,6 +62,24 @@ def read_chunks(wav: Path) -> list[dict]:
     return out
 
 
+def _resume_point(wav: Path) -> tuple[int, int]:
+    """(first sample not yet transcribed, last segment seq) from live.jsonl."""
+    path = live_path(wav)
+    if not path.exists():
+        return 0, 0
+    pos = seq = 0
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        if record.get("type") == "chunk":
+            pos = max(pos, int(record.get("end", 0)))
+        elif record.get("type") == "segment":
+            seq = max(seq, int(record.get("seq", 0)))
+    return pos, seq
+
+
 def language_runs(chunks: list[dict]) -> list[tuple[int, int, str]]:
     """Merge consecutive chunks into (start, end, lang) runs of one language.
     Silent chunks (lang None) join the run before them — or the first run,
@@ -104,6 +122,9 @@ class LiveSession:
         self._lag_s = 0.0
         self._stop = threading.Event()
         self._server: Any = None
+        # A recording that outlived the sidecar that started live transcription
+        # (app restart mid-meeting) resumes where that session left off.
+        self._resume_pos, self._seq = _resume_point(wav)
         self._thread = threading.Thread(target=self._run, daemon=True, name="recorder-live")
 
     # -- public -----------------------------------------------------------
@@ -202,7 +223,7 @@ class LiveSession:
             return
         self._set("live")
 
-        pos = 0
+        pos = self._resume_pos
         restarted = False
         while not self._stop.is_set():
             profile = CATCH_UP if self._lag_s > chunker.LIVE.max_s else chunker.LIVE
@@ -301,9 +322,16 @@ def current() -> LiveSession | None:
         return next(reversed(_sessions.values()), None)
 
 
-def follow(wav: Path | None = None, *, keepalive_s: float = 15.0) -> Iterator[dict | None]:
+def follow(
+    wav: Path | None = None, *, keepalive_s: float = 15.0, enabled: bool = True,
+) -> Iterator[dict | None]:
     """Replay a session's segments, then stream new events until ``end``.
-    Yields None every ``keepalive_s`` of quiet so SSE can send a heartbeat."""
+    Yields None every ``keepalive_s`` of quiet so SSE can send a heartbeat.
+    ``enabled=False`` (setting switched off) says so instead of streaming."""
+    if not enabled:
+        yield {"type": "status", "state": "off", "reason": None, "lag_s": 0.0}
+        yield {"type": "end"}
+        return
     with _registry_lock:
         session = _sessions.get(str(wav)) if wav is not None else next(
             reversed(_sessions.values()), None,
@@ -370,6 +398,11 @@ def final_pass_server(
             session.close()
             with _registry_lock:
                 _sessions.pop(str(wav), None)
+        # Also when the session belonged to a sidecar that has since exited.
+        try:
+            live_path(wav).unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def stop_all() -> None:

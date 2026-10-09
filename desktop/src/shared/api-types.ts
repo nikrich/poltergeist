@@ -289,7 +289,14 @@ export interface RecorderSettings {
 export type TranscriptionLanguage = 'auto' | 'en' | 'af';
 
 /** Live transcript state, as reported by GET /v1/recorder/live. */
-export type LiveTranscriptState = 'starting' | 'live' | 'unavailable' | 'finalizing' | 'ended';
+export type LiveTranscriptState =
+  | 'starting'
+  | 'live'
+  | 'unavailable'
+  | 'finalizing'
+  | 'ended'
+  /** Switched off in settings. */
+  | 'off';
 
 export interface LiveTranscriptSegment {
   type: 'segment';

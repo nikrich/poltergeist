@@ -45,12 +45,29 @@ def get_status() -> dict:
 def get_live() -> StreamingResponse:
     """The current recording's live transcript: already-transcribed segments
     first, then new ones as they land, until an ``end`` event."""
+    from pathlib import Path
+
+    from ghostbrain.recorder import config as rcfg
     from ghostbrain.recorder import live
+
+    try:
+        st = status()
+    except RecorderUnsupportedError as e:
+        raise HTTPException(status_code=501, detail=str(e))
+    wav = Path(st["wavPath"]) if st.get("phase") == "recording" and st.get("wavPath") else None
+    try:
+        enabled = rcfg.live_transcription_from(rcfg.load_recorder_block())
+    except Exception:  # noqa: BLE001 — a bad config must not break the panel
+        enabled = True
+    # The app restarted mid-meeting: this sidecar has no session for the
+    # recording yet. Start one; it resumes from what live.jsonl already holds.
+    if wav is not None and enabled and live.current() is None:
+        live.begin_from_config(wav)
 
     def gen():
         # Sync generator: starlette threadpools it and closes it on client
         # disconnect, which unsubscribes from the session.
-        for event in live.follow():
+        for event in live.follow(wav, enabled=enabled):
             if event is None:
                 yield ": keepalive\n\n"
             else:

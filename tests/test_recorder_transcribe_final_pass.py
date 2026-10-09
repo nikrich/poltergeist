@@ -200,3 +200,12 @@ def test_a_fixed_language_ignores_live_runs(tmp_path: Path, model_dir: Path) -> 
     tmod.transcribe(wav, language="en", server_factory=lambda: server)
     assert set(server.languages) == {"en"}
     assert max(t1 - t0 for t0, t1 in server.spans) > chunker.LIVE.max_s  # long chunks
+
+
+def test_final_pass_removes_a_leftover_live_file(tmp_path: Path, model_dir: Path) -> None:
+    # A session owned by a sidecar that has since exited leaves live.jsonl behind.
+    (model_dir / tmod.DEFAULT_MODEL).write_bytes(b"x")
+    wav = _wav(tmp_path, seconds=20)
+    _seed_live_chunks(wav, [(0, 10, "en")])
+    tmod.transcribe(wav, server_factory=lambda: FakeServer())
+    assert not live.live_path(wav).exists()

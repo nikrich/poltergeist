@@ -288,3 +288,31 @@ def test_language_runs_merge_and_absorb_silence() -> None:
 def test_language_runs_empty_without_any_language() -> None:
     assert live.language_runs([_c(0, 5, None)]) == []
     assert live.language_runs([]) == []
+
+
+def test_a_new_session_resumes_after_an_app_restart(wav: Path) -> None:
+    # First sidecar: transcribes one chunk, then "crashes" (session dropped).
+    first = FakeServer()
+    live.begin(wav, server_factory=lambda: first, poll_s=0.01)
+    _grow(wav, SPEECH)
+    _wait(lambda: len(_segments(wav)) == 1)
+    resumed_from = live.read_chunks(wav)[-1]["end"]
+    live.stop_all()
+
+    # Recording carries on; a fresh sidecar picks up where live left off.
+    _grow(wav, SPEECH)
+    second = FakeServer()
+    live.begin(wav, server_factory=lambda: second, poll_s=0.01)
+    _wait(lambda: len(_segments(wav)) == 2)
+    segs = _segments(wav)
+    assert [s["seq"] for s in segs] == [1, 2]
+    assert segs[1]["t0"] >= resumed_from / chunker.SAMPLE_RATE
+    assert second.calls == 1  # did not re-transcribe the first chunk
+
+
+def test_follow_reports_off_when_live_is_disabled(wav: Path) -> None:
+    events = list(live.follow(wav, keepalive_s=0.01, enabled=False))
+    assert events == [
+        {"type": "status", "state": "off", "reason": None, "lag_s": 0.0},
+        {"type": "end"},
+    ]
