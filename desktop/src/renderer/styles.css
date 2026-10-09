@@ -460,3 +460,20 @@ body[data-theme='light'] {
 .gb-mermaid > pre { margin: 0; border: 0; border-top: 1px solid var(--hairline); border-radius: 0 0 6px 6px; }
 .gb-mermaid-error { text-align: left; color: var(--pill-oxblood-fg); font-size: 12px; }
 .gb-mermaid-error pre { margin: 6px 0 0; color: var(--ink-1); }
+.gb-img-wrap { position: relative; display: inline-block; max-width: 100%; }
+.gb-img-wrap .gb-jot-img { display: block; }
+.gb-img-handle {
+  position: absolute;
+  top: 50%;
+  right: -4px;
+  width: 8px;
+  height: 40px;
+  transform: translateY(-50%);
+  border-radius: 4px;
+  background: var(--neon);
+  opacity: 0;
+  cursor: ew-resize;
+}
+.gb-img-wrap:hover .gb-img-handle,
+.gb-img-wrap.ProseMirror-selectednode .gb-img-handle { opacity: 0.8; }
+.gb-img-wrap.ProseMirror-selectednode .gb-jot-img { outline: 2px solid var(--neon); }

@@ -83,6 +83,10 @@ const FIXTURES: Record<string, string> = {
   'toc inside a list item': '- item\n\n  ```toc\n  ```\n\n- next',
   'mermaid diagram': '```mermaid\nflowchart TD\n  A[Start] --> B{Ok?}\n  B -->|yes| C\n```',
   'mermaid inside callout': '> [!note] Flow\n> ```mermaid\n> flowchart TD\n>   A --> B\n> ```\n\nafter',
+  'image with width': '![whiteboard|480](90-meta/assets/jots/2026/06/abc-1.jpg)',
+  'image with width and no alt': '![|320](90-meta/assets/jots/2026/06/abc-2.jpg)',
+  'image alt with a non-width pipe': '![a|b](90-meta/assets/jots/2026/06/abc-3.jpg)',
+  'image with width inside callout': '> [!info] T\n> ![a|240](90-meta/assets/x.jpg)',
 };
 
 describe('markdown round-trip (serialize(deserialize(md)))', () => {
