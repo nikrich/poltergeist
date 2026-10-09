@@ -8,6 +8,7 @@ import { Eyebrow } from '../components/Eyebrow';
 import { Toggle } from '../components/Toggle';
 import { ConnectorAuthFlow } from '../components/ConnectorAuthFlow';
 import { ConnectorAccounts } from '../components/ConnectorAccounts';
+import { WhatsAppChatPicker } from '../components/WhatsAppChatPicker';
 import type { Connector, ConnectorDetail, ConnectorState } from '../../shared/api-types';
 import {
   useConnector,
@@ -570,6 +571,12 @@ function ConnectorDetailPanel({ c }: ConnectorDetailProps) {
               onAddAccount={() => setAuthOpen(true)}
               onReauth={() => setAuthOpen(true)}
             />
+          </DetailBlock>
+        )}
+
+        {c.id === 'whatsapp' && (
+          <DetailBlock label="chats">
+            <WhatsAppChatPicker />
           </DetailBlock>
         )}
 

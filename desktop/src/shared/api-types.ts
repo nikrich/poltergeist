@@ -671,3 +671,13 @@ export interface LlmProvidersResponse {
   active: SidecarProviderId;
   providers: Record<SidecarProviderId, LlmProviderDiagnostics>;
 }
+
+export interface WhatsAppChat {
+  jid: string;
+  name: string;
+  kind: 'direct' | 'group';
+  lastMessageAt: string | null;
+  messageCount: number;
+  allowed: boolean;
+  context: string | null;
+}
