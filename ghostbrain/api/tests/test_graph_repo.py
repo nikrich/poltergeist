@@ -85,3 +85,30 @@ def test_graph_uses_the_shared_link_index(tmp_vault: Path, monkeypatch, tmp_path
     _note(tmp_vault, "20-contexts/work/a.md", title="A")
     build_graph()
     assert get_link_index().get("20-contexts/work/a.md") is not None
+
+
+def test_layout_positions_match_backslash_keys(tmp_vault: Path, monkeypatch, tmp_path):
+    """Layout keys are OS-native (backslashes on Windows); nodes are posix."""
+    monkeypatch.setenv("GHOSTBRAIN_SEMANTIC_INDEX_DIR", str(tmp_path / "sem"))
+    from ghostbrain.api.repo import graph as graph_mod
+    from ghostbrain.semantic.projection import Layout
+
+    monkeypatch.setattr(
+        graph_mod,
+        "load_layout",
+        lambda: Layout(model_name="m", method="pca",
+                       positions={"20-contexts\\work\\a.md": [1.0, 2.0]}),
+    )
+    _note(tmp_vault, "20-contexts/work/a.md", title="A")
+    node = next(n for n in build_graph()["nodes"] if n["path"] == "20-contexts/work/a.md")
+    assert (node["x"], node["y"]) == (1.0, 2.0)
+
+
+def test_note_embed_produces_no_edge(tmp_vault: Path, monkeypatch, tmp_path):
+    """Embeds `![[...]]` are ignored by the shared link index (as for backlinks
+    and A6). This deliberately differs from the old walk-based graph, which
+    turned embeds into edges."""
+    monkeypatch.setenv("GHOSTBRAIN_SEMANTIC_INDEX_DIR", str(tmp_path / "sem"))
+    _note(tmp_vault, "20-contexts/work/b.md", title="B")
+    _note(tmp_vault, "20-contexts/work/a.md", "![[20-contexts/work/b]]", title="A")
+    assert build_graph()["edges"] == []

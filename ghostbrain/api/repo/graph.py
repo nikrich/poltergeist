@@ -30,7 +30,11 @@ def build_graph() -> dict:
     index.refresh()  # graph is a slow, explicit view: always fully fresh
 
     layout = load_layout()
-    positions = layout.positions if layout else {}
+    # Layout keys come from str(Path.relative_to(...)), so they are
+    # backslash-separated on Windows; index paths are always posix.
+    positions = (
+        {k.replace("\\", "/"): v for k, v in layout.positions.items()} if layout else {}
+    )
 
     entries = sorted(
         (e for e in index.entries() if e.path.startswith(_GRAPH_ROOT)),
