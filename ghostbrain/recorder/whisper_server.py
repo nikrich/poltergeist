@@ -222,10 +222,18 @@ def _clear_pid() -> None:
 
 def _is_whisper_server(pid: int) -> bool:
     """True when ``pid`` is alive AND is a whisper-server (pids get recycled)."""
+    proc_cmdline = Path(f"/proc/{pid}/cmdline")
+    if sys.platform.startswith("linux") and proc_cmdline.exists():
+        # Untruncated; `ps` cuts the command at $COLUMNS on procps.
+        try:
+            return _PROCESS_MARKER in proc_cmdline.read_bytes().decode(errors="replace")
+        except OSError:
+            return False
     if sys.platform == "win32":
         cmd = ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"]
     else:
-        cmd = ["ps", "-p", str(pid), "-o", "command="]
+        # -ww: never truncate the command line to the terminal width.
+        cmd = ["ps", "-ww", "-p", str(pid), "-o", "command="]
     try:
         out = subprocess.run(cmd, capture_output=True, text=True, timeout=5, check=False).stdout
     except (OSError, subprocess.SubprocessError):
