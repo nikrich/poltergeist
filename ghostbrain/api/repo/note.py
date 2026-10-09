@@ -46,9 +46,14 @@ def get_note(rel_path: str) -> dict:
         raise NoteNotFound(rel_path)
     try:
         snap = vault_write.read(rel_path, suffixes=(".md",))
-        meta = snap.metadata()
     except (vault_write.MalformedNote, vault_write.FileMissing) as e:
         raise NoteNotFound(f"could not parse: {e}")
+    try:
+        meta = snap.metadata()
+    except vault_write.MalformedNote:
+        # Frontmatter that is not valid YAML or not a mapping (e.g. a paragraph
+        # between two rules): still open the note, with no metadata.
+        meta = {}
     fm = _jsonable(dict(meta))
     title = str(fm.get("title") or target.stem)
     return {

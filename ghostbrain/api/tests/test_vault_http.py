@@ -52,9 +52,38 @@ def test_get_route_includes_etag(client, tmp_vault, auth_headers):
     assert r.json()["etag"] == compute_etag(p.read_bytes())
 
 
-def test_get_note_invalid_yaml_is_still_404(client, tmp_vault, auth_headers):
-    write_note(tmp_vault, "20-contexts/work/notes/bad.md", "---\ntitle: [x\n---\n\nb\n")
+def test_get_note_invalid_yaml_opens_with_empty_frontmatter(client, tmp_vault, auth_headers):
+    p = write_note(tmp_vault, "20-contexts/work/notes/bad.md", "---\ntitle: [x\n---\n\nb\n")
     r = client.get("/v1/notes", params={"path": "20-contexts/work/notes/bad.md"}, headers=auth_headers)
+    assert r.status_code == 200
+    data = r.json()
+    assert data["frontmatter"] == {}
+    assert data["body"] == "b"
+    assert data["etag"] == compute_etag(p.read_bytes())
+
+
+def test_get_note_non_mapping_frontmatter_opens_with_empty_frontmatter(
+    client, tmp_vault, auth_headers
+):
+    p = write_note(
+        tmp_vault,
+        "20-contexts/work/notes/rules.md",
+        "---\nJust a paragraph between rules\n---\n\nbody\n",
+    )
+    r = client.get("/v1/notes", params={"path": "20-contexts/work/notes/rules.md"}, headers=auth_headers)
+    assert r.status_code == 200
+    data = r.json()
+    assert data["frontmatter"] == {}
+    assert data["body"] == "body"
+    assert data["title"] == "rules"
+    assert data["etag"] == compute_etag(p.read_bytes())
+
+
+def test_get_note_not_utf8_is_still_404(client, tmp_vault, auth_headers):
+    p = tmp_vault / "20-contexts/work/notes/latin1.md"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_bytes(b"---\ntitle: x\n---\n\ncaf\xe9\n")
+    r = client.get("/v1/notes", params={"path": "20-contexts/work/notes/latin1.md"}, headers=auth_headers)
     assert r.status_code == 404
 
 
