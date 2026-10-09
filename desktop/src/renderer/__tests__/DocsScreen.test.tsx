@@ -42,7 +42,7 @@ describe('DocsScreen', () => {
       clear: () => mem.clear(),
     });
     vi.clearAllMocks();
-    useDocs.setState({ selection: null, uploads: [], quickOpen: false, viewModes: {} });
+    useDocs.setState({ selection: null, uploads: [], quickOpen: false, viewModes: {}, treeCollapsed: false, inspectorCollapsed: false });
   });
 
   it('opens a doc from the tree into the reader + inspector', async () => {
@@ -152,5 +152,51 @@ describe('DocsScreen', () => {
     renderScreen({ scopes: [], attention: [] });
     expect(await screen.findByText('your docs library is empty')).toBeTruthy();
     expect((screen.getAllByRole('button', { name: /upload/ })[0] as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  describe('collapsible panes', () => {
+    it('collapses and expands the tree via buttons and persists', async () => {
+      renderScreen();
+      await screen.findByText('Payments');
+      fireEvent.click(screen.getByLabelText('collapse docs tree'));
+      expect(useDocs.getState().treeCollapsed).toBe(true);
+      expect(JSON.parse(localStorage.getItem('gb.docs.panes')!).treeCollapsed).toBe(true);
+      expect(screen.queryByLabelText('collapse docs tree')?.closest('aside')?.className).toContain('hidden');
+      expect(screen.getByLabelText('upload')).toBeTruthy();
+      fireEvent.click(screen.getByLabelText('expand docs tree'));
+      expect(useDocs.getState().treeCollapsed).toBe(false);
+      expect(screen.queryByLabelText('expand docs tree')).toBeNull();
+    });
+
+    it('collapses the inspector to a rail only when a doc is selected', async () => {
+      renderScreen();
+      await screen.findByText('Payments');
+      expect(screen.queryByLabelText('collapse inspector')).toBeNull();
+      expect(screen.queryByLabelText('expand inspector')).toBeNull();
+      useDocs.setState({ inspectorCollapsed: true });
+      expect(screen.queryByLabelText('expand inspector')).toBeNull(); // no doc: no rail
+      fireEvent.click(await screen.findByText('Payments API v2'));
+      fireEvent.click(await screen.findByLabelText('expand inspector'));
+      fireEvent.click(await screen.findByLabelText('collapse inspector'));
+      expect(useDocs.getState().inspectorCollapsed).toBe(true);
+      await screen.findByText(/\/ 1/);
+    });
+
+    it('toggles with mod+\\ and mod+alt+\\, ignoring typing targets', async () => {
+      renderScreen();
+      await screen.findByText('Payments');
+      fireEvent.keyDown(window, { key: '\\', metaKey: true });
+      expect(useDocs.getState().treeCollapsed).toBe(true);
+      fireEvent.keyDown(window, { key: '\\', ctrlKey: true });
+      expect(useDocs.getState().treeCollapsed).toBe(false);
+      fireEvent.keyDown(window, { key: '«', code: 'Backslash', metaKey: true, altKey: true });
+      expect(useDocs.getState().inspectorCollapsed).toBe(true);
+      expect(useDocs.getState().treeCollapsed).toBe(false);
+      const input = document.createElement('input');
+      document.body.appendChild(input);
+      fireEvent.keyDown(input, { key: '\\', metaKey: true });
+      expect(useDocs.getState().treeCollapsed).toBe(false);
+      input.remove();
+    });
   });
 });

@@ -32,7 +32,7 @@ const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export function DocsScreen() {
   const tree = useLibraryTree();
-  const { selection, select, uploads, addUpload, failUpload, removeUpload, quickOpen, setQuickOpen } = useDocs();
+  const { selection, select, uploads, addUpload, failUpload, removeUpload, quickOpen, setQuickOpen, treeCollapsed, inspectorCollapsed, toggleTree, toggleInspector, setTreeCollapsed, setInspectorCollapsed } = useDocs();
   const vaultPath = useSettings((s) => s.vaultPath);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -79,6 +79,20 @@ export function DocsScreen() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [setQuickOpen]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || (e.key !== '\\' && e.code !== 'Backslash')) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName) || t.isContentEditable)) return;
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey) return;
+      e.preventDefault();
+      if (e.altKey) toggleInspector();
+      else toggleTree();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [toggleTree, toggleInspector]);
 
   const uploadFiles = useCallback(
     async (files: File[], to: FolderRef) => {
@@ -211,9 +225,30 @@ export function DocsScreen() {
 
   return (
     <div className="flex flex-1 overflow-hidden bg-paper">
-      <aside className="flex w-[258px] shrink-0 flex-col border-r border-hairline">
+      {treeCollapsed && (
+        <div className="flex w-9 shrink-0 flex-col items-center gap-2 border-r border-hairline pt-3.5">
+          <button type="button" aria-label="expand docs tree" title="expand docs tree (⌘\\)" onClick={() => setTreeCollapsed(false)} className="text-ink-2 hover:text-ink-0">
+            <Lucide name="panel-left-open" size={16} />
+          </button>
+          <button
+            type="button"
+            aria-label="upload"
+            disabled={!folderRef || scopeArchived}
+            onClick={() => fileInput.current?.click()}
+            className="text-ink-2 hover:text-ink-0 disabled:opacity-40"
+          >
+            <Lucide name="upload" size={16} />
+          </button>
+        </div>
+      )}
+      <aside className={`${treeCollapsed ? 'hidden' : 'flex'} w-[258px] shrink-0 flex-col border-r border-hairline`}>
         <div className="flex items-center justify-between px-3.5 pb-2.5 pt-4">
-          <b className="text-15 font-medium text-ink-0">docs</b>
+          <div className="flex items-center gap-2">
+            <button type="button" aria-label="collapse docs tree" title="collapse docs tree (⌘\\)" onClick={() => setTreeCollapsed(true)} className="text-ink-3 hover:text-ink-0">
+              <Lucide name="panel-left-close" size={15} />
+            </button>
+            <b className="text-15 font-medium text-ink-0">docs</b>
+          </div>
           <button
             type="button"
             disabled={!folderRef || scopeArchived}
@@ -252,8 +287,16 @@ export function DocsScreen() {
         )}
       </aside>
       <section className="flex min-w-0 flex-1 flex-col">{main}</section>
-      {selectedDoc && (
+      {selectedDoc && inspectorCollapsed && (
+        <div className="flex w-9 shrink-0 flex-col items-center border-l border-hairline bg-vellum pt-3.5">
+          <button type="button" aria-label="expand inspector" title="expand inspector (⌘⌥\\)" onClick={() => setInspectorCollapsed(false)} className="text-ink-2 hover:text-ink-0">
+            <Lucide name="panel-right-open" size={16} />
+          </button>
+        </div>
+      )}
+      {selectedDoc && !inspectorCollapsed && (
         <DocInspector
+          onCollapse={() => setInspectorCollapsed(true)}
           doc={selectedDoc}
           scopeName={scopeName(selectedDoc.context, selectedDoc.project)}
           onRename={(title) => run(patchDoc.mutateAsync({ docId: selectedDoc.doc_id, title }))}

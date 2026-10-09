@@ -1,8 +1,19 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Lucide } from '../Lucide';
 import { cancelRender, loadPdf, type PdfHandle } from './pdf';
 
 const ZOOMS = [0.5, 0.75, 1, 1.25, 1.5, 2];
-const DEFAULT_ZOOM = 2; // index into ZOOMS → 1.0
+const PAD_X = 48; // scroller p-6, both sides
+const PAD_Y = 48;
+
+type ZoomMode = 'fit-width' | 'fit-page' | 'manual';
+
+function fitScaleFor(el: HTMLElement, mode: ZoomMode, base: { width: number; height: number }): number | null {
+  if (mode === 'manual' || !el.clientWidth || !base.width || !base.height) return null;
+  const byWidth = (el.clientWidth - PAD_X) / base.width;
+  const v = mode === 'fit-width' || !el.clientHeight ? byWidth : Math.min(byWidth, (el.clientHeight - PAD_Y) / base.height);
+  return v > 0 ? Math.round(v * 1000) / 1000 : null;
+}
 const GAP = 16;
 const NO_IO_RENDER = 3; // pages rendered when IntersectionObserver is unavailable (jsdom)
 
@@ -37,28 +48,36 @@ export function PdfViewer({ url }: { url: string }) {
   const [doc, setDoc] = useState<Loaded | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
-  const [zoom, setZoom] = useState(DEFAULT_ZOOM);
+  const [mode, setMode] = useState<ZoomMode>('fit-width');
+  const [fitScale, setFitScale] = useState<number | null>(null);
+  const [manualScale, setManualScale] = useState(1);
   const [shown, setShown] = useState<Set<number>>(new Set());
   const [sizes, setSizes] = useState<Map<number, Size>>(new Map()); // per page, at scale 1
   const requested = useRef(new Set<number>());
-  const prevZoom = useRef(DEFAULT_ZOOM);
+  const prevScale = useRef<number | null>(null);
+  const fitInit = useRef(false);
   const [jump, setJump] = useState<string | null>(null);
   const onError = useCallback((e: string) => setError(e), []);
 
   const numPages = doc?.pdf.numPages ?? 0;
-  const scale = ZOOMS[zoom]!;
+  const scale = mode === 'manual' ? manualScale : (fitScale ?? 1);
+  const scaleRef = useRef(scale);
+  scaleRef.current = scale;
 
   useEffect(() => {
     let live = true;
     setDoc(null);
     setPage(1);
-    setZoom(DEFAULT_ZOOM);
+    setMode('fit-width');
+    setFitScale(null);
+    setManualScale(1);
     setError(null);
     setShown(new Set());
     setJump(null);
     setSizes(new Map());
     requested.current = new Set();
-    prevZoom.current = DEFAULT_ZOOM;
+    prevScale.current = null;
+    fitInit.current = false;
     near.current = new Set();
     loadPdf(url)
       .then(async (pdf) => {
@@ -163,28 +182,78 @@ export function PdfViewer({ url }: { url: string }) {
     [numPages],
   );
 
-  // Zoom resizes every placeholder: keep the current page in view. Not on a url reset.
+  // A scale change resizes every placeholder: keep the current page in view. Not on a url reset.
   useLayoutEffect(() => {
-    if (zoom === prevZoom.current) return;
-    prevZoom.current = zoom;
+    if (scale === prevScale.current) return;
+    prevScale.current = scale;
     pageEls.current.get(page)?.scrollIntoView({ block: 'start' });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only on zoom changes
-  }, [zoom]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only on scale changes
+  }, [scale]);
 
-  // Shrink the render window in the same update as the zoom, so pages that
+  // Shrink the render window in the same update as a scale change, so pages that
   // scrolled away don't start renders at the new scale.
-  const applyZoom = (fn: (z: number) => number) => {
-    setZoom((z) => Math.min(Math.max(fn(z), 0), ZOOMS.length - 1));
+  const shrinkWindow = () => {
     if (typeof IntersectionObserver !== 'undefined') setShown(new Set(near.current));
   };
+
+  const setManual = (v: number) => {
+    setManualScale(v);
+    setMode('manual');
+    shrinkWindow();
+  };
+  const stepZoom = (dir: 1 | -1) => {
+    const cur = scaleRef.current;
+    const next = dir > 0 ? ZOOMS.find((z) => z > cur + 0.001) : [...ZOOMS].reverse().find((z) => z < cur - 0.001);
+    if (next !== undefined) setManual(next);
+  };
+  const fit = (m: 'fit-width' | 'fit-page') => {
+    setMode(m);
+    shrinkWindow();
+  };
+
+  // In a fit mode, the scale follows the scroller (window resize, panes collapsing).
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (!doc || !el || mode === 'manual') return;
+    const apply = () => {
+      const v = fitScaleFor(el, mode, doc.base);
+      if (v === null) return;
+      if (!fitInit.current) {
+        fitInit.current = true; // first fit on open: no scroll-restore
+        prevScale.current = v;
+      }
+      if (v !== scaleRef.current) {
+        scaleRef.current = v;
+        setFitScale(v);
+        shrinkWindow();
+      }
+    };
+    apply();
+    if (typeof ResizeObserver === 'undefined') return;
+    let pending: number | null = null;
+    const ro = new ResizeObserver(() => {
+      if (pending !== null) return;
+      pending = requestAnimationFrame(() => {
+        pending = null;
+        apply();
+      });
+    });
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      if (pending !== null) cancelAnimationFrame(pending);
+    };
+  }, [doc, mode]);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.defaultPrevented || isTyping(e.target) || !doc) return;
     // Modified keys stay with the app (⌘= etc. are window zoom).
     if (e.metaKey || e.ctrlKey || e.altKey) return;
-    if (e.key === '=' || e.key === '+') applyZoom((z) => z + 1);
-    else if (e.key === '-' || e.key === '_') applyZoom((z) => z - 1);
-    else if (e.key === '0') applyZoom(() => DEFAULT_ZOOM);
+    if (e.key === '=' || e.key === '+') stepZoom(1);
+    else if (e.key === '-' || e.key === '_') stepZoom(-1);
+    else if (e.key === '0') setManual(1);
+    else if (e.key === 'w') fit('fit-width');
+    else if (e.key === 'f') fit('fit-page');
     else if (!e.shiftKey && ['ArrowRight', 'j', 'ArrowLeft', 'k', 'Home', 'End'].includes(e.key)) {
       goTo(
         e.key === 'ArrowRight' || e.key === 'j' ? page + 1
@@ -255,9 +324,15 @@ export function PdfViewer({ url }: { url: string }) {
           <span>/ {numPages}</span>
           <button type="button" aria-label="next page" disabled={page >= numPages} onClick={() => goTo(page + 1)} className="disabled:opacity-30">›</button>
           <span className="text-ink-3">|</span>
-          <button type="button" aria-label="zoom out" disabled={zoom === 0} onClick={() => applyZoom((z) => z - 1)} className="disabled:opacity-30">−</button>
+          <button type="button" aria-label="zoom out" disabled={scale <= ZOOMS[0]! + 0.001} onClick={() => stepZoom(-1)} className="disabled:opacity-30">−</button>
           <span>{Math.round(scale * 100)}%</span>
-          <button type="button" aria-label="zoom in" disabled={zoom === ZOOMS.length - 1} onClick={() => applyZoom((z) => z + 1)} className="disabled:opacity-30">+</button>
+          <button type="button" aria-label="zoom in" disabled={scale >= ZOOMS[ZOOMS.length - 1]! - 0.001} onClick={() => stepZoom(1)} className="disabled:opacity-30">+</button>
+          <button type="button" aria-label="fit width" aria-pressed={mode === 'fit-width'} onClick={() => fit('fit-width')} className={mode === 'fit-width' ? 'text-neon' : 'text-ink-2'}>
+            <Lucide name="move-horizontal" size={14} />
+          </button>
+          <button type="button" aria-label="fit page" aria-pressed={mode === 'fit-page'} onClick={() => fit('fit-page')} className={mode === 'fit-page' ? 'text-neon' : 'text-ink-2'}>
+            <Lucide name="scan" size={14} />
+          </button>
         </div>
       )}
     </div>

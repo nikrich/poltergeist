@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { DocSummary } from '../../../shared/api-types';
+import { Lucide } from '../Lucide';
 import { formatSize, kindLabel } from './kinds';
 
 interface Props {
@@ -7,20 +8,28 @@ interface Props {
   scopeName: string;
   onRename: (title: string) => void;
   onReindex: () => void;
+  onCollapse?: () => void;
 }
 
 const Cap = ({ children }: { children: React.ReactNode }) => (
   <span className="font-mono text-10 uppercase tracking-[0.12em] text-ink-3">{children}</span>
 );
 
-export function DocInspector({ doc, scopeName, onRename, onReindex }: Props) {
+export function DocInspector({ doc, scopeName, onRename, onReindex, onCollapse }: Props) {
   const [editing, setEditing] = useState(false);
   const kindLine = `${kindLabel(doc)}${doc.pages ? ` · ${doc.pages} pages` : ''}`;
   const added = new Date(doc.created).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   return (
     <aside className="flex w-[268px] shrink-0 flex-col gap-[18px] border-l border-hairline bg-vellum px-4 py-[18px] text-[12.5px]">
       <div>
-        <Cap>document</Cap>
+        <div className="flex items-center justify-between">
+          <Cap>document</Cap>
+          {onCollapse && (
+            <button type="button" aria-label="collapse inspector" title="collapse inspector (⌘⌥\\)" onClick={onCollapse} className="text-ink-3 hover:text-ink-0">
+              <Lucide name="panel-right-close" size={14} />
+            </button>
+          )}
+        </div>
         {editing ? (
           <input
             autoFocus

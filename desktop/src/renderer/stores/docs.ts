@@ -27,7 +27,32 @@ function loadViewModes(): Record<string, ViewMode> {
   }
 }
 
+const PANES_KEY = 'gb.docs.panes';
+
+function loadPanes(): { treeCollapsed: boolean; inspectorCollapsed: boolean } {
+  try {
+    const v = JSON.parse(localStorage.getItem(PANES_KEY) ?? '{}') as Record<string, unknown>;
+    return { treeCollapsed: v.treeCollapsed === true, inspectorCollapsed: v.inspectorCollapsed === true };
+  } catch {
+    return { treeCollapsed: false, inspectorCollapsed: false };
+  }
+}
+
+function savePanes(p: { treeCollapsed: boolean; inspectorCollapsed: boolean }) {
+  try {
+    localStorage.setItem(PANES_KEY, JSON.stringify(p));
+  } catch {
+    // per-viewer convenience only
+  }
+}
+
 interface DocsState {
+  treeCollapsed: boolean;
+  inspectorCollapsed: boolean;
+  setTreeCollapsed: (b: boolean) => void;
+  setInspectorCollapsed: (b: boolean) => void;
+  toggleTree: () => void;
+  toggleInspector: () => void;
   selection: DocSelection;
   select: (s: DocSelection) => void;
   viewModes: Record<string, ViewMode>;
@@ -42,6 +67,17 @@ interface DocsState {
 }
 
 export const useDocs = create<DocsState>((set, get) => ({
+  ...loadPanes(),
+  setTreeCollapsed: (treeCollapsed) => {
+    set({ treeCollapsed });
+    savePanes({ treeCollapsed, inspectorCollapsed: get().inspectorCollapsed });
+  },
+  setInspectorCollapsed: (inspectorCollapsed) => {
+    set({ inspectorCollapsed });
+    savePanes({ treeCollapsed: get().treeCollapsed, inspectorCollapsed });
+  },
+  toggleTree: () => get().setTreeCollapsed(!get().treeCollapsed),
+  toggleInspector: () => get().setInspectorCollapsed(!get().inspectorCollapsed),
   selection: null,
   select: (selection) => set({ selection }),
   viewModes: loadViewModes(),

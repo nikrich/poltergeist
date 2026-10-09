@@ -180,3 +180,99 @@ describe('PdfViewer without IntersectionObserver', () => {
     await waitFor(() => expect(renderPage).toHaveBeenCalledTimes(3));
   });
 });
+
+describe('PdfViewer fit modes', () => {
+  let roCbs: Array<() => void> = [];
+  let dims = { w: 248, h: 1000 };
+  beforeEach(() => {
+    roCbs = [];
+    dims = { w: 248, h: 1000 };
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(cb: () => void) { roCbs.push(cb); }
+      observe() {}
+      disconnect() {}
+      unobserve() {}
+    });
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => dims.w });
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get: () => dims.h });
+  });
+  afterEach(() => {
+    delete (HTMLElement.prototype as unknown as Record<string, unknown>).clientWidth;
+    delete (HTMLElement.prototype as unknown as Record<string, unknown>).clientHeight;
+  });
+  const sc = () => document.querySelector('[tabindex="0"]')!;
+  const key = (k: string) => fireEvent.keyDown(sc(), { key: k });
+
+  it('opens in fit-width: (clientWidth - padding) / page-1 width', async () => {
+    await open();
+    expect(screen.getByText('200%')).toBeTruthy(); // (248-48)/100
+    expect((pageEl(7) as HTMLElement).style.width).toBe('200px');
+    expect(screen.getByLabelText('fit width').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('a resize recomputes the scale in fit mode and keeps the page in view', async () => {
+    await open();
+    scrollIntoView.mockClear();
+    dims.w = 148;
+    act(() => roCbs.forEach((cb) => cb()));
+    expect(screen.getByText('100%')).toBeTruthy();
+    expect(scrollIntoView).toHaveBeenCalledWith(pageEl(1));
+  });
+
+  it('a resize does not change the scale in manual mode', async () => {
+    await open();
+    key('0');
+    expect(screen.getByText('100%')).toBeTruthy();
+    dims.w = 448;
+    act(() => roCbs.forEach((cb) => cb()));
+    expect(screen.getByText('100%')).toBeTruthy();
+  });
+
+  it('refit shrinks the render window like a zoom', async () => {
+    await open();
+    fire(margin(), [entry(1, 1), entry(2, 1), entry(3, 1)]);
+    await waitFor(() => expect(renderPage).toHaveBeenCalledTimes(3));
+    fire(margin(), [entry(2, 0), entry(3, 0)]);
+    renderPage.mockClear();
+    dims.w = 148;
+    act(() => roCbs.forEach((cb) => cb()));
+    await waitFor(() => expect(renderPage).toHaveBeenCalledWith(expect.anything(), 1, 1));
+    expect(renderPage.mock.calls.map((c) => c[1])).toEqual([1]);
+  });
+
+  it('fit page uses the smaller of width and height fit', async () => {
+    await open();
+    dims.h = 188; // (188-48)/140 = 1 < 2
+    key('f');
+    expect(screen.getByText('100%')).toBeTruthy();
+    expect(screen.getByLabelText('fit page').getAttribute('aria-pressed')).toBe('true');
+    dims.h = 1000;
+    act(() => roCbs.forEach((cb) => cb()));
+    expect(screen.getByText('200%')).toBeTruthy(); // width is now the limit
+  });
+
+  it('w / f keys and the buttons switch between fit modes; -/+ go manual', async () => {
+    await open();
+    dims.h = 188;
+    key('f');
+    expect(screen.getByText('100%')).toBeTruthy();
+    key('w');
+    expect(screen.getByText('200%')).toBeTruthy();
+    key('-');
+    expect(screen.getByText('150%')).toBeTruthy(); // next preset below 200%
+    expect(screen.getByLabelText('fit width').getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(screen.getByLabelText('fit page'));
+    expect(screen.getByText('100%')).toBeTruthy();
+    key('=');
+    expect(screen.getByText('125%')).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('fit width'));
+    expect(screen.getByText('200%')).toBeTruthy();
+  });
+
+  it('w / f are ignored with modifiers', async () => {
+    await open();
+    key('0');
+    fireEvent.keyDown(sc(), { key: 'w', metaKey: true });
+    expect(screen.getByText('100%')).toBeTruthy();
+  });
+});

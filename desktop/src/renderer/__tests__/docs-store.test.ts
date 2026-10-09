@@ -12,7 +12,7 @@ describe('docs store', () => {
       removeItem: (k: string) => void mem.delete(k),
       clear: () => mem.clear(),
     });
-    useDocs.setState({ selection: null, uploads: [], quickOpen: false, viewModes: {} });
+    useDocs.setState({ selection: null, uploads: [], quickOpen: false, viewModes: {}, treeCollapsed: false, inspectorCollapsed: false });
   });
 
   it('persists the view mode per folder', () => {
@@ -20,6 +20,15 @@ describe('docs store', () => {
     useDocs.getState().setViewMode('work/_/specs', 'grid');
     expect(useDocs.getState().viewMode('work/_/specs')).toBe('grid');
     expect(JSON.parse(localStorage.getItem('gb.docs.viewModes')!)).toEqual({ 'work/_/specs': 'grid' });
+  });
+
+  it('persists pane collapse state', () => {
+    useDocs.getState().toggleTree();
+    useDocs.getState().setInspectorCollapsed(true);
+    expect(useDocs.getState().treeCollapsed).toBe(true);
+    expect(JSON.parse(localStorage.getItem('gb.docs.panes')!)).toEqual({ treeCollapsed: true, inspectorCollapsed: true });
+    useDocs.getState().toggleTree();
+    expect(JSON.parse(localStorage.getItem('gb.docs.panes')!)).toEqual({ treeCollapsed: false, inspectorCollapsed: true });
   });
 
   it('tracks upload ghosts', () => {
