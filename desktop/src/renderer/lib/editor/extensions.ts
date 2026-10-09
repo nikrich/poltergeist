@@ -10,6 +10,7 @@ import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import { Markdown } from 'tiptap-markdown';
 import { Callout } from './callout';
+import { Status } from './status';
 import { JotImage } from './image';
 import { SlashExtension } from './slash';
 import { WikilinkSuggest } from './wikilink-suggest';
@@ -56,6 +57,7 @@ export function buildEditorExtensions(): Extensions {
     StarterKit.configure({ blockquote: false }),
     ExtractCallout,
     Callout,
+    Status,
     Link.configure({ openOnClick: false }),
     JotImage.configure({ inline: false, allowBase64: false }),
     Table.configure({ resizable: false }),

@@ -70,6 +70,12 @@ const FIXTURES: Record<string, string> = {
   'callout starting with ordered list from 2': '> [!note] Steps\n>\n> 2. second\n> 3. third',
   'callout starting with a line of equals': '> [!tip] T\n>\n> ===\n>\n> after',
   'callout starting with an empty list item': '> [!warning] T\n>\n> -\n> - next',
+  'status lozenge': 'Build is `status:In progress/yellow` today',
+  'status without colour': 'State: `status:Blocked`',
+  'status-like code with unknown colour': 'see `status:a/orange` here',
+  'status label with backtick': 'odd ``status:a`b/red`` label',
+  'empty status label stays inline code': 'not a lozenge: `status:`',
+  'status inside bold': '**`status:Done/green`**',
 };
 
 describe('markdown round-trip (serialize(deserialize(md)))', () => {

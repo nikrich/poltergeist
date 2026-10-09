@@ -385,3 +385,24 @@ body[data-theme='light'] {
   color: var(--ink-0);
 }
 .gb-callout[data-collapsed='true'] > .gb-callout-body { display: none; }
+.gb-status {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 3px;
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 18px;
+  vertical-align: 1px;
+  cursor: pointer;
+  border: 1px solid currentColor;
+}
+.gb-status-grey { color: var(--ink-1); }
+.gb-status-blue { color: var(--pill-water-fg); }
+.gb-status-green { color: var(--pill-moss-fg); }
+.gb-status-yellow { color: var(--gb-amber, #e8b34b); }
+.gb-status-red { color: var(--pill-oxblood-fg); }
+.gb-status-purple { color: var(--gb-plum, #b58ce0); }
+.gb-status.ProseMirror-selectednode { outline: 1px solid var(--neon); }
