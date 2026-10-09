@@ -90,7 +90,11 @@ def open_store(path: Path) -> sqlite3.Connection:
         raise FileNotFoundError(path)
     conn = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True, timeout=5.0)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA query_only=1")
+    try:
+        conn.execute("PRAGMA query_only=1")
+    except Exception:
+        conn.close()
+        raise
     return conn
 
 

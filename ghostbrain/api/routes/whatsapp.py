@@ -7,6 +7,7 @@ from contextlib import closing
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict
 
+from ghostbrain import routing_config
 from ghostbrain.connectors.whatsapp import allowlist, store
 from ghostbrain.paths import state_dir
 
@@ -40,6 +41,9 @@ def _chats() -> list[store.Chat]:
         raise HTTPException(status_code=409, detail=str(e)) from e
     except (PermissionError, sqlite3.OperationalError) as e:
         raise HTTPException(status_code=409, detail=ACCESS_HINT) from e
+    except sqlite3.DatabaseError as e:
+        raise HTTPException(status_code=409,
+                            detail=f"WhatsApp store is unreadable: {e}") from e
 
 
 def _merged(chats: list[store.Chat]) -> list[dict]:
@@ -60,6 +64,13 @@ def list_whatsapp_chats() -> list[dict]:
 
 @router.put("/chats")
 def save_whatsapp_chats(body: ChatsBody) -> list[dict]:
+    valid = routing_config.contexts()
+    for choice in body.chats.values():
+        if choice.context is not None and choice.context not in valid:
+            raise HTTPException(
+                status_code=422,
+                detail=f"unknown context: {choice.context!r}; valid: {sorted(valid)}",
+            )
     chats = _chats()
     names = {c.jid: c.name for c in chats}
     current = allowlist.load(state_dir())

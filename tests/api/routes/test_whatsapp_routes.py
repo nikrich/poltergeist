@@ -68,3 +68,22 @@ def test_missing_store_is_409(client, monkeypatch, tmp_path):
 def test_whatsapp_is_listed_and_syncable(client):
     ids = [c["id"] for c in client.get("/v1/connectors").json()]
     assert "whatsapp" in ids
+
+
+def test_put_rejects_unknown_context(client, tmp_path):
+    allowlist.save(tmp_path / "state", {A: {"name": "Alex", "context": None}})
+    r = client.put("/v1/connectors/whatsapp/chats",
+                   json={"chats": {G: {"allowed": True, "context": "nope"}}})
+    assert r.status_code == 422
+    assert "nope" in r.json()["detail"]
+    assert allowlist.load(tmp_path / "state") == {A: {"name": "Alex", "context": None}}
+
+
+def test_corrupt_store(client, monkeypatch, tmp_path):
+    bad = tmp_path / "garbage.sqlite"
+    bad.write_bytes(b"this is not a sqlite database" * 100)
+    monkeypatch.setenv("GHOSTBRAIN_WHATSAPP_STORE", str(bad))
+    assert client.get("/v1/connectors/whatsapp/chats").status_code == 409
+    r = client.get("/v1/connectors")
+    assert r.status_code == 200
+    assert "whatsapp" in [c["id"] for c in r.json()]

@@ -41,3 +41,12 @@ def test_provider_denied_message(monkeypatch):
     assert nxt.kind == "need_grant" and "Full Disk Access" in nxt.message
     monkeypatch.setattr(cp, "_whatsapp_store_status", lambda: ("ok", None))
     assert WhatsAppStoreProvider().start("whatsapp", {}).kind == "done"
+
+
+def test_err_when_store_is_corrupt(monkeypatch, tmp_path):
+    bad = tmp_path / "garbage.sqlite"
+    bad.write_bytes(b"this is not a sqlite database" * 100)
+    monkeypatch.setenv("GHOSTBRAIN_WHATSAPP_STORE", str(bad))
+    monkeypatch.setattr(cp, "_platform", lambda: "darwin")
+    r = cp.probe("whatsapp")
+    assert r.state == "err" and "unreadable" in r.error
