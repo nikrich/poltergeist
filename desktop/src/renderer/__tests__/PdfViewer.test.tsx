@@ -2,8 +2,9 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const renderPage = vi.fn(async (..._a: unknown[]) => {});
+const pageSize = vi.fn(async (n: number, _s: number) => (n === 2 ? { width: 200, height: 100 } : { width: 100, height: 140 }));
 vi.mock('../components/docs/pdf', () => ({
-  loadPdf: vi.fn(async () => ({ numPages: 10, renderPage, pageSize: async () => ({ width: 100, height: 140 }) })),
+  loadPdf: vi.fn(async () => ({ numPages: 10, renderPage, pageSize: (n: number, sc: number) => pageSize(n, sc) })),
   renderThumb: vi.fn(async () => {}),
   cancelRender: vi.fn(),
 }));
@@ -17,6 +18,7 @@ const scrollIntoView = vi.fn();
 beforeEach(() => {
   observers = [];
   renderPage.mockClear();
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { cb(0); return 1; });
   scrollIntoView.mockClear();
   Element.prototype.scrollIntoView = function (this: Element) { scrollIntoView(this); };
   vi.stubGlobal('IntersectionObserver', class {
@@ -33,7 +35,6 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 const margin = () => observers.find((o) => o.opts?.rootMargin)!;
-const bare = () => observers.find((o) => !o.opts?.rootMargin)!;
 const pageEl = (n: number) => document.querySelector(`[data-page="${n}"]`)!;
 const entry = (n: number, ratio: number) =>
   ({ target: pageEl(n), isIntersecting: ratio > 0, intersectionRatio: ratio }) as unknown as IntersectionObserverEntry;
@@ -60,10 +61,29 @@ describe('PdfViewer continuous scroll', () => {
     expect(pageEl(5).querySelector('canvas')).toBeNull();
   });
 
-  it('pager follows the most visible page', async () => {
+  it('sizes each placeholder from its own page once known', async () => {
     await open();
-    fire(bare(), [entry(1, 0.2), entry(2, 0.8)]);
-    expect(screen.getByLabelText('go to page').textContent).toBe('2');
+    fire(margin(), [entry(1, 1), entry(2, 1)]);
+    await waitFor(() => expect((pageEl(2) as HTMLElement).style.width).toBe('200px'));
+    expect((pageEl(2) as HTMLElement).style.height).toBe('100px');
+    expect((pageEl(3) as HTMLElement).style.width).toBe('100px');
+  });
+
+  it('derives the current page from scroll position, so End then ← goes to N-1', async () => {
+    await open();
+    const sc = document.querySelector('[tabindex="0"]') as HTMLElement;
+    Object.defineProperty(sc, 'clientHeight', { value: 500, configurable: true });
+    Object.defineProperty(sc, 'scrollHeight', { value: 2000, configurable: true });
+    for (let n = 1; n <= 10; n++) Object.defineProperty(pageEl(n), 'offsetTop', { value: (n - 1) * 200, configurable: true });
+    sc.scrollTop = 450;
+    fireEvent.scroll(sc);
+    expect(screen.getByLabelText('go to page').textContent).toBe('3');
+    fireEvent.keyDown(sc, { key: 'End' });
+    sc.scrollTop = 1500; // max scroll: page 10 top is not at the viewport top
+    fireEvent.scroll(sc);
+    expect(screen.getByLabelText('go to page').textContent).toBe('10');
+    fireEvent.keyDown(sc, { key: 'ArrowLeft' });
+    expect(scrollIntoView).toHaveBeenLastCalledWith(pageEl(9));
   });
 
   it('prev/next buttons, arrows, j/k and Home/End scroll the right page into view', async () => {
@@ -92,22 +112,39 @@ describe('PdfViewer continuous scroll', () => {
     expect(scrollIntoView).toHaveBeenLastCalledWith(pageEl(6));
   });
 
-  it('cmd+= and cmd+- change zoom and preventDefault; cmd+0 resets', async () => {
+  it('+ / - / 0 change zoom and preventDefault; modified keys are left alone', async () => {
     await open();
     const scroller = document.querySelector('[tabindex="0"]')!;
-    const press = (key: string) => {
-      const ev = new KeyboardEvent('keydown', { key, metaKey: true, bubbles: true, cancelable: true });
+    const press = (key: string, mod: KeyboardEventInit = {}) => {
+      const ev = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...mod });
       act(() => { scroller.dispatchEvent(ev); });
       return ev;
     };
     expect(press('=').defaultPrevented).toBe(true);
     expect(screen.getByText('125%')).toBeTruthy();
     expect((pageEl(1) as HTMLElement).style.height).toBe('175px');
+    expect(press('+', { shiftKey: true }).defaultPrevented).toBe(true);
+    expect(screen.getByText('150%')).toBeTruthy();
     expect(press('-').defaultPrevented).toBe(true);
     expect(press('-').defaultPrevented).toBe(true);
-    expect(screen.getByText('75%')).toBeTruthy();
+    expect(screen.getByText('100%')).toBeTruthy();
+    expect(press('=', { metaKey: true }).defaultPrevented).toBe(false);
+    expect(press('-', { ctrlKey: true }).defaultPrevented).toBe(false);
+    expect(screen.getByText('100%')).toBeTruthy();
+    press('=');
     press('0');
     expect(screen.getByText('100%')).toBeTruthy();
+  });
+
+  it('after zoom only pages near the viewport render at the new scale', async () => {
+    await open();
+    fire(margin(), [entry(1, 1), entry(2, 1), entry(3, 1)]);
+    await waitFor(() => expect(renderPage).toHaveBeenCalledTimes(3));
+    fire(margin(), [entry(2, 0), entry(3, 0)]);
+    renderPage.mockClear();
+    fireEvent.keyDown(document.querySelector('[tabindex="0"]')!, { key: '=' });
+    await waitFor(() => expect(renderPage).toHaveBeenCalledWith(expect.anything(), 1, 1.25));
+    expect(renderPage.mock.calls.map((c) => c[1])).toEqual([1]);
   });
 
   it('ignores keys from inputs', async () => {
@@ -115,9 +152,18 @@ describe('PdfViewer continuous scroll', () => {
     const input = document.createElement('input');
     document.querySelector('[tabindex="0"]')!.appendChild(input);
     fireEvent.keyDown(input, { key: 'ArrowRight' });
-    fireEvent.keyDown(input, { key: '=', metaKey: true });
+    fireEvent.keyDown(input, { key: '=' });
     expect(scrollIntoView).not.toHaveBeenCalled();
     expect(screen.getByText('100%')).toBeTruthy();
+  });
+
+  it('does not steal focus from an input elsewhere', async () => {
+    const other = document.createElement('input');
+    document.body.appendChild(other);
+    other.focus();
+    await open();
+    expect(document.activeElement).toBe(other);
+    other.remove();
   });
 
   it('focuses the scroll container when the pdf opens', async () => {

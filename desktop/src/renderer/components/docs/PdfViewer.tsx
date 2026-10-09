@@ -6,9 +6,10 @@ const DEFAULT_ZOOM = 2; // index into ZOOMS → 1.0
 const GAP = 16;
 const NO_IO_RENDER = 3; // pages rendered when IntersectionObserver is unavailable (jsdom)
 
+interface Size { width: number; height: number }
 interface Loaded {
   pdf: PdfHandle;
-  base: { width: number; height: number }; // page 1 at scale 1
+  base: Size; // page 1 at scale 1: the default until a page's own size is known
 }
 
 function PageCanvas({ pdf, page, scale, onError }: { pdf: PdfHandle; page: number; scale: number; onError: (e: string) => void }) {
@@ -38,6 +39,9 @@ export function PdfViewer({ url }: { url: string }) {
   const [page, setPage] = useState(1);
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const [shown, setShown] = useState<Set<number>>(new Set());
+  const [sizes, setSizes] = useState<Map<number, Size>>(new Map()); // per page, at scale 1
+  const requested = useRef(new Set<number>());
+  const prevZoom = useRef(DEFAULT_ZOOM);
   const [jump, setJump] = useState<string | null>(null);
   const onError = useCallback((e: string) => setError(e), []);
 
@@ -52,6 +56,9 @@ export function PdfViewer({ url }: { url: string }) {
     setError(null);
     setShown(new Set());
     setJump(null);
+    setSizes(new Map());
+    requested.current = new Set();
+    prevZoom.current = DEFAULT_ZOOM;
     near.current = new Set();
     loadPdf(url)
       .then(async (pdf) => {
@@ -66,11 +73,29 @@ export function PdfViewer({ url }: { url: string }) {
 
   // Focus the column so keyboard navigation works as soon as a PDF opens.
   useEffect(() => {
-    if (doc) scroller.current?.focus({ preventScroll: true });
+    const el = scroller.current;
+    if (!doc || !el) return;
+    const active = document.activeElement;
+    if (!active || active === document.body || el.parentElement?.contains(active)) el.focus({ preventScroll: true });
   }, [doc]);
 
-  // Observers: one with a generous margin decides what to render, one on the
-  // bare viewport decides which page is "current".
+  // Real page sizes, fetched lazily for pages entering the render window.
+  useEffect(() => {
+    if (!doc) return;
+    const reqs = requested.current;
+    for (const n of shown) {
+      if (reqs.has(n)) continue;
+      reqs.add(n);
+      doc.pdf
+        .pageSize(n, 1)
+        .then((sz) => {
+          if (requested.current === reqs) setSizes((prev) => new Map(prev).set(n, sz));
+        })
+        .catch(() => reqs.delete(n));
+    }
+  }, [doc, shown]);
+
+  // A generous-margin observer decides which pages to render.
   useEffect(() => {
     if (!doc) return;
     if (typeof IntersectionObserver === 'undefined') {
@@ -93,26 +118,41 @@ export function PdfViewer({ url }: { url: string }) {
       },
       { root, rootMargin: `${root?.clientHeight || 800}px 0px` },
     );
-    const ratios = new Map<number, number>();
-    const currentIO = new IntersectionObserver(
-      (entries) => {
-        for (const en of entries) ratios.set(num(en.target), en.isIntersecting ? en.intersectionRatio : 0);
-        let best = 0;
-        let bestRatio = 0;
-        for (const [n, r] of ratios) if (r > bestRatio || (r === bestRatio && r > 0 && n < best)) { best = n; bestRatio = r; }
-        if (best) setPage(best);
-      },
-      { root, threshold: [0, 0.1, 0.25, 0.5, 0.75, 1] },
-    );
     pageEls.current.forEach((el) => {
       renderIO.observe(el);
-      currentIO.observe(el);
     });
     return () => {
       renderIO.disconnect();
-      currentIO.disconnect();
     };
   }, [doc]);
+
+  // Current page from scroll position: the last page whose top is at/above the
+  // viewport top (small offset), or the last page when scrolled to the bottom.
+  const currentFromScroll = useCallback((): number | null => {
+    const el = scroller.current;
+    if (!el || el.clientHeight === 0) return null; // no layout
+    if (el.scrollHeight > el.clientHeight && el.scrollTop + el.clientHeight >= el.scrollHeight - 1) return numPages;
+    const line = el.scrollTop + 8;
+    let cur = 1;
+    for (let n = 1; n <= numPages; n++) {
+      const top = pageEls.current.get(n)?.offsetTop;
+      if (top !== undefined && top <= line) cur = n;
+    }
+    return cur;
+  }, [numPages]);
+
+  const raf = useRef<number | null>(null);
+  const onScroll = () => {
+    if (raf.current !== null) return;
+    raf.current = requestAnimationFrame(() => {
+      raf.current = null;
+      const c = currentFromScroll();
+      if (c !== null) setPage(c);
+    });
+  };
+  useEffect(() => () => {
+    if (raf.current !== null) cancelAnimationFrame(raf.current);
+  }, []);
 
   const goTo = useCallback(
     (n: number) => {
@@ -123,56 +163,51 @@ export function PdfViewer({ url }: { url: string }) {
     [numPages],
   );
 
-  // Zoom resizes every placeholder: re-render only what is near, and keep the current page in view.
-  const firstZoom = useRef(true);
+  // Zoom resizes every placeholder: keep the current page in view. Not on a url reset.
   useLayoutEffect(() => {
-    if (firstZoom.current) {
-      firstZoom.current = false;
-      return;
-    }
-    if (typeof IntersectionObserver !== 'undefined') setShown(new Set(near.current));
+    if (zoom === prevZoom.current) return;
+    prevZoom.current = zoom;
     pageEls.current.get(page)?.scrollIntoView({ block: 'start' });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only on zoom changes
   }, [zoom]);
 
-  const changeZoom = (fn: (z: number) => number) => setZoom((z) => Math.min(Math.max(fn(z), 0), ZOOMS.length - 1));
+  // Shrink the render window in the same update as the zoom, so pages that
+  // scrolled away don't start renders at the new scale.
+  const applyZoom = (fn: (z: number) => number) => {
+    setZoom((z) => Math.min(Math.max(fn(z), 0), ZOOMS.length - 1));
+    if (typeof IntersectionObserver !== 'undefined') setShown(new Set(near.current));
+  };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.defaultPrevented || isTyping(e.target) || !doc) return;
-    if (e.metaKey || e.ctrlKey) {
-      if (e.altKey) return;
-      if (e.key === '=' || e.key === '+') changeZoom((z) => z + 1);
-      else if (e.key === '-' || e.key === '_') changeZoom((z) => z - 1);
-      else if (e.key === '0') setZoom(DEFAULT_ZOOM);
-      else return;
-      e.preventDefault();
-      return;
-    }
-    if (e.altKey || e.shiftKey) return;
-    let target: number | null = null;
-    if (e.key === 'ArrowRight' || e.key === 'j') target = page + 1;
-    else if (e.key === 'ArrowLeft' || e.key === 'k') target = page - 1;
-    else if (e.key === 'Home') target = 1;
-    else if (e.key === 'End') target = numPages;
-    if (target === null) return;
+    // Modified keys stay with the app (⌘= etc. are window zoom).
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === '=' || e.key === '+') applyZoom((z) => z + 1);
+    else if (e.key === '-' || e.key === '_') applyZoom((z) => z - 1);
+    else if (e.key === '0') applyZoom(() => DEFAULT_ZOOM);
+    else if (!e.shiftKey && ['ArrowRight', 'j', 'ArrowLeft', 'k', 'Home', 'End'].includes(e.key)) {
+      goTo(
+        e.key === 'ArrowRight' || e.key === 'j' ? page + 1
+          : e.key === 'ArrowLeft' || e.key === 'k' ? page - 1
+            : e.key === 'Home' ? 1 : numPages,
+      );
+    } else return;
     e.preventDefault();
-    goTo(target);
   };
 
   if (error) return <div className="p-8 text-13 text-oxblood">couldn&apos;t render this PDF: {error}</div>;
 
-  const w = doc ? doc.base.width * scale : 0;
-  const h = doc ? doc.base.height * scale : 0;
 
   return (
     <div
       ref={scroller}
       tabIndex={0}
       onKeyDown={onKeyDown}
+      onScroll={onScroll}
       className="relative min-h-0 flex-1 overflow-auto bg-[radial-gradient(1200px_400px_at_50%_-10%,rgba(197,255,61,.05),transparent_60%)] p-6 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hairline-2"
     >
       {doc && (
-        <div className="mx-auto flex w-fit flex-col pb-16" style={{ gap: GAP }}>
+        <div className="mx-auto flex w-fit flex-col items-center pb-16" style={{ gap: GAP }}>
           {Array.from({ length: numPages }, (_, i) => i + 1).map((n) => (
             <div
               key={n}
@@ -182,7 +217,7 @@ export function PdfViewer({ url }: { url: string }) {
                 else pageEls.current.delete(n);
               }}
               className="rounded-[3px] bg-vellum/40 shadow-[0_20px_50px_rgba(0,0,0,.55)]"
-              style={{ width: w, height: h }}
+              style={{ width: (sizes.get(n) ?? doc.base).width * scale, height: (sizes.get(n) ?? doc.base).height * scale }}
             >
               {shown.has(n) && <PageCanvas pdf={doc.pdf} page={n} scale={scale} onError={onError} />}
             </div>
@@ -214,15 +249,15 @@ export function PdfViewer({ url }: { url: string }) {
                   scroller.current?.focus({ preventScroll: true });
                 }
               }}
-              className="w-8 rounded bg-transparent text-center text-ink-0 outline-none ring-1 ring-hairline-2"
+              className="w-12 rounded bg-transparent text-center text-ink-0 outline-none ring-1 ring-hairline-2"
             />
           )}
           <span>/ {numPages}</span>
           <button type="button" aria-label="next page" disabled={page >= numPages} onClick={() => goTo(page + 1)} className="disabled:opacity-30">›</button>
           <span className="text-ink-3">|</span>
-          <button type="button" aria-label="zoom out" disabled={zoom === 0} onClick={() => changeZoom((z) => z - 1)} className="disabled:opacity-30">−</button>
+          <button type="button" aria-label="zoom out" disabled={zoom === 0} onClick={() => applyZoom((z) => z - 1)} className="disabled:opacity-30">−</button>
           <span>{Math.round(scale * 100)}%</span>
-          <button type="button" aria-label="zoom in" disabled={zoom === ZOOMS.length - 1} onClick={() => changeZoom((z) => z + 1)} className="disabled:opacity-30">+</button>
+          <button type="button" aria-label="zoom in" disabled={zoom === ZOOMS.length - 1} onClick={() => applyZoom((z) => z + 1)} className="disabled:opacity-30">+</button>
         </div>
       )}
     </div>
