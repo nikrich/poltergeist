@@ -26,6 +26,11 @@ DEFAULT_VOICE_MAX_PER_RUN = 40
 CURSOR_FILE = "whatsapp.cursor.json"
 
 
+def _int_or(value, default: int) -> int:
+    """Default only when the key is missing/None, so a configured 0 is honoured."""
+    return default if value is None else int(value)
+
+
 class WhatsAppConnector(Connector):
     name = "whatsapp"
 
@@ -33,12 +38,12 @@ class WhatsAppConnector(Connector):
                  now: Callable[[], datetime] | None = None, voice=None) -> None:
         super().__init__(config, queue_dir, state_dir)
         self.store_path = Path(config.get("store_path") or store.default_store_path())
-        self.lookback_days = int(config.get("initial_lookback_days") or DEFAULT_LOOKBACK_DAYS)
+        self.lookback_days = _int_or(config.get("initial_lookback_days"), DEFAULT_LOOKBACK_DAYS)
         self.tz = tz or store.local_tz()
         self._now = now or (lambda: datetime.now(UTC))
         self.voice = voice or VoiceTranscriber(
             state_dir / "whatsapp" / "voice",
-            budget=int(config.get("voice_max_per_run") or DEFAULT_VOICE_MAX_PER_RUN),
+            budget=_int_or(config.get("voice_max_per_run"), DEFAULT_VOICE_MAX_PER_RUN),
         )
 
     def health_check(self) -> bool:
@@ -71,7 +76,9 @@ class WhatsAppConnector(Connector):
             log.info("whatsapp: no chats selected; pick chats in Connectors → WhatsApp")
             return [], {**cursor, "chats": {}}
         now = self._now()
-        floor = now - timedelta(days=self.lookback_days)
+        # Day-aligned so lookback 0 means "today onward" (events are whole days).
+        floor = (now - timedelta(days=self.lookback_days)).astimezone(self.tz).replace(
+            hour=0, minute=0, second=0, microsecond=0)
         new = sorted(j for j in allowed if j not in cursor["chats"])
         known = sorted(j for j in allowed if j in cursor["chats"])
         root = store.media_root(self.store_path)

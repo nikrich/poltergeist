@@ -192,3 +192,19 @@ def test_non_object_cursor_starts_fresh(env):
     assert make(db, q, s).run() == 2
     assert isinstance(json.loads((s / "whatsapp.cursor.json").read_text()), dict)
     assert not (s / "whatsapp.cursor.json.tmp").exists()
+
+
+def test_zero_voice_budget_is_honoured(env):
+    db, q, s = env
+    c = WhatsAppConnector({"store_path": str(db), "voice_max_per_run": 0}, q, s, tz=TZ,
+                          now=lambda: NOW)
+    assert c.voice.budget == 0
+
+
+def test_zero_lookback_emits_only_today(env):
+    db, q, s = env
+    allowlist.save(s, {A: {"name": "Alex", "context": None}})
+    c = WhatsAppConnector({"store_path": str(db), "initial_lookback_days": 0}, q, s, tz=TZ,
+                          now=lambda: NOW, voice=NoVoice())
+    assert c.run() == 1
+    assert [e["metadata"]["day"] for e in queued(q)] == [NOW.date().isoformat()]
