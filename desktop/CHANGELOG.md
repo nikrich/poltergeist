@@ -1,5 +1,73 @@
 # Changelog
 
+## [1.11.0](https://github.com/nikrich/poltergeist/compare/v1.10.1...v1.11.0) (2026-10-09)
+
+
+### Features
+
+* feat(recorder): waveform follows the recording's real audio levels
+* feat(desktop): live transcript panel + transcription settings
+* feat(recorder): live multilingual transcription backend
+* feat(script-writer): v0.2.0 — AI co-writer, Polish, formatting bar, FDX
+* feat(script-writer): Final Draft (.fdx) import and export
+* feat(script-writer): Polish dialog + whole-document review
+* feat(script-writer): whole-document polish engine
+* feat(script-writer): AI co-writer panel — vault-grounded ask + inline actions
+* feat(script-writer): persist AI conversation threads
+* feat(script-writer): formatting toolbar, emphasis keys, + Scene
+* feat(script-writer): inline AI proposal widget + editor context
+* feat(script-writer): line/word diff for reviewing AI edits
+* feat(script-writer): scene blocks, AI prompts and output validation
+* feat(script-writer): LLM client + scoped vault retrieval
+* feat(script-writer): README + committed dist build
+* feat(script-writer): editor screen — live page, navigators, page view, autosave, export
+* feat(script-writer): UI shell — library, new-script/import dialog, styles
+* feat(script-writer): main-process drafts, import/export, PDF printing
+* feat(script-writer): library registry + backoff saver with draft mirror
+* feat(script-writer): screenplay autocomplete (prefixes, locations, times, cues)
+* feat(script-writer): Final Draft-style element flow (Tab/Enter/hints)
+* feat(script-writer): scene/character outline + scene reorder
+* feat(script-writer): page/title-page HTML renderer + printable document
+* feat(script-writer): word-wrap + industry-standard paginator
+* feat(script-writer): document model + backend client
+* feat(script-writer): Fountain parser
+* feat(script-writer): scaffold plugin (manifest, build, test harness)
+
+### Bug Fixes
+
+* fix(recorder): identify an orphan whisper-server from its full command line on Linux
+* fix(recorder): live/levels streams end cleanly where there is no audio backend; run the new recorder tests in CI
+* fix(jots): drop the image thumbnail from the jot sidebar
+* fix(recorder): resume live transcription after an app restart; honest 'off'
+* fix(recorder): final pass follows live language runs; sandbox recorder paths in tests
+* fix(recorder): put whisper-server routes behind a random secret path
+* fix(script-writer): slice 2 final review fixes (whole-line AI edits, Escape, focus, contrast, polish cursor)
+* fix(script-writer): FDX multi-line actions and forced-action transitions
+* fix(script-writer): FDX import preserves text that looks like Fountain markup
+* fix(script-writer): sanitize AI answer links/images, token-level citations, load gating, stale guard helper
+* fix(script-writer): live element dropdown, keyboard-reachable toolbar
+* fix: prompts.test.js ASCII compliance - replace raw em dash with escape
+* fix(script-writer): stripFences line-based parsing and ASCII compliance
+* fix(script-writer): stripFences and checkFountain defect corrections
+* fix(script-writer): checkFountain and stripFences review fixes
+* fix(script-writer): editor element indents, Courier metrics, sheet scroll
+* fix(script-writer): mirror the draft 300ms after every change
+* fix(script-writer): force a cue with @ when the line above is not blank
+* fix(script-writer): keep unknown frontmatter keys and find title pages after blank lines
+* fix(desktop): allow plugin: fonts in the renderer CSP
+* fix(script-writer): zero printToPDF margins and time out PDF export after 30s
+* fix(script-writer): call the backend through plugin.sidecar.request
+* fix(script-writer): strip BOM on import, atomic draft writes, harden PDF window
+* fix(script-writer): saver durability - mirror latest during outages, dispose safety, timer cleanup
+* fix(script-writer): ASCII-only regex patterns and straight quote test
+* fix(script-writer): autocomplete regex support for both apostrophe types
+* fix(script-writer): autocomplete source robustness and curly apostrophe regex
+* fix(script-writer): drop stale/duplicate hints; Enter with content below
+* fix(script-writer): renderTitlePage plain-text escaping + class formatting
+* fix(script-writer): replace F3 test with one that verifies curly quotes
+* fix(script-writer): repeat dialogue splits, dual overflow fallback, curly quotes
+* fix(script-writer): remove dist from .gitignore
+
 ## [1.10.1](https://github.com/nikrich/poltergeist/compare/v1.10.0...v1.10.1) (2026-09-29)
 
 
