@@ -10,6 +10,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone, tzinfo
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 CORE_DATA_EPOCH = 978307200
 
@@ -68,7 +69,19 @@ def media_root(store_path: Path) -> Path:
     return store_path.parent / "Message"
 
 
-def local_tz() -> tzinfo:
+def local_tz(localtime: Path = Path("/etc/localtime")) -> tzinfo:
+    """Resolve the machine's IANA zone (DST-aware) from the /etc/localtime symlink.
+
+    Falls back to the current fixed offset when the link is missing or does not
+    point into a zoneinfo database.
+    """
+    try:
+        if localtime.is_symlink():
+            target = str(localtime.resolve())
+            if "zoneinfo/" in target:
+                return ZoneInfo(target.rsplit("zoneinfo/", 1)[1])
+    except (ZoneInfoNotFoundError, OSError, ValueError):
+        pass
     return datetime.now().astimezone().tzinfo  # type: ignore[return-value]
 
 

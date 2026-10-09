@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -147,3 +147,39 @@ def test_group_sender_resolution_order(conn, tmp_path):
 
 def test_media_root_is_message_dir(tmp_path):
     assert store.media_root(tmp_path / "ChatStorage.sqlite") == tmp_path / "Message"
+
+
+def test_local_tz_resolves_iana_zone_from_symlink(tmp_path):
+    target = tmp_path / "usr" / "share" / "zoneinfo" / "America" / "New_York"
+    target.parent.mkdir(parents=True)
+    target.touch()
+    link = tmp_path / "localtime"
+    link.symlink_to(target)
+    assert store.local_tz(link) == ZoneInfo("America/New_York")
+
+
+def test_local_tz_falls_back_to_fixed_offset_for_plain_file(tmp_path):
+    plain = tmp_path / "localtime"
+    plain.touch()
+    tz = store.local_tz(plain)
+    assert tz is not None
+    assert tz.utcoffset(datetime.now()) is not None
+
+
+def test_dst_day_bucketing_keeps_late_message_on_its_local_day(tmp_path):
+    ny = ZoneInfo("America/New_York")
+    jid = "15550000001@s.whatsapp.net"
+    b = make_store(tmp_path / "ChatStorage.sqlite")
+    b.chat(1, jid, "Night Owl", kind=0, last=datetime(2026, 3, 7, 23, 30, tzinfo=ny))
+    b.message(200, 1, datetime(2026, 3, 7, 23, 30, tzinfo=ny), text="late, before spring-forward")
+    path = b.close()
+    c = store.open_store(path)
+    try:
+        since = datetime(2026, 3, 1, tzinfo=ny)
+        assert store.dirty_days(c, [jid], after_pk=0, since=since, tz=ny) == {(jid, date(2026, 3, 7))}
+        day_msgs = store.messages_for_day(c, jid, date(2026, 3, 7), tz=ny, media_root=tmp_path)
+        assert [m.pk for m in day_msgs] == [200]
+        assert day_msgs[0].at == datetime(2026, 3, 7, 23, 30, tzinfo=ny)
+        assert store.messages_for_day(c, jid, date(2026, 3, 8), tz=ny, media_root=tmp_path) == []
+    finally:
+        c.close()
