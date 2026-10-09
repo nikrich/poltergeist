@@ -3,10 +3,13 @@
 WhatsApp stores voice notes as .opus; whisper wants 16 kHz mono WAV, so each
 note goes through ffmpeg first. Transcripts are cached so rebuilding a day
 never re-transcribes; failures retry on later runs up to MAX_ATTEMPTS.
+A missing tool or model (ffmpeg, whisper-cli, a whisper model) is not the
+note's fault: it costs no attempt and leaves the day pending until it's fixed.
 """
 from __future__ import annotations
 
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -21,8 +24,13 @@ log = logging.getLogger("ghostbrain.connectors.whatsapp.voice")
 NOT_DOWNLOADED = "[voice note — not downloaded]"
 PENDING = "[voice note — transcription pending]"
 FAILED = "[voice note — transcription failed]"
+UNAVAILABLE = "[voice note — transcription unavailable]"
 MAX_ATTEMPTS = 3
 TRANSCRIBE_TIMEOUT_S = 300
+
+
+class VoiceUnavailable(RuntimeError):
+    """The transcription toolchain is missing; no note can be transcribed."""
 
 
 def _ffmpeg_binary() -> str | None:
@@ -48,9 +56,19 @@ def _ffmpeg_to_wav(src: Path, dst: Path) -> None:
 
 
 def _whisper(wav: Path, *, timeout_s: int) -> Path:
-    from ghostbrain.recorder.transcribe import transcribe
+    from ghostbrain.recorder import transcribe as tmod
 
-    return transcribe(wav, timeout_s=timeout_s)
+    try:
+        tmod._resolve_model(None)
+    except tmod.TranscribeError as e:
+        raise VoiceUnavailable(str(e)) from e
+    try:
+        return tmod.transcribe(wav, timeout_s=timeout_s)
+    except tmod.TranscribeError as e:
+        # transcribe() falls back to whisper-cli; without it nothing can work.
+        if shutil.which("whisper-cli") is None:
+            raise VoiceUnavailable(str(e)) from e
+        raise
 
 
 def _recording_live() -> bool:
@@ -61,6 +79,13 @@ def _recording_live() -> bool:
 
 def _key(stanza_id: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "_", stanza_id)
+
+
+def _attempts(failed: Path) -> int:
+    try:
+        return int(failed.read_text().strip() or 0)
+    except (OSError, ValueError):
+        return 0
 
 
 def _voice(text: str) -> str:
@@ -77,6 +102,7 @@ class VoiceTranscriber:
         self._transcribe = transcribe or _whisper
         self._to_wav = to_wav or _ffmpeg_to_wav
         self._recording_live = recording_live or _recording_live
+        self._unavailable = False
 
     def line_for(self, msg: Message) -> tuple[str, bool]:
         if msg.media_path is None or not msg.media_path.exists():
@@ -86,9 +112,11 @@ class VoiceTranscriber:
         if cached.exists():
             return _voice(cached.read_text(encoding="utf-8").strip()), False
         failed = self.cache_dir / f"{key}.failed"
-        attempts = int(failed.read_text() or 0) if failed.exists() else 0
+        attempts = _attempts(failed) if failed.exists() else 0
         if attempts >= MAX_ATTEMPTS:
             return FAILED, False
+        if self._unavailable:
+            return UNAVAILABLE, True
         # Never compete with a live meeting recording for whisper/CPU.
         if self.budget <= 0 or self._recording_live():
             return PENDING, True
@@ -96,18 +124,29 @@ class VoiceTranscriber:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         try:
             text = self._run(msg.media_path)
+        except VoiceUnavailable as e:
+            # Environment, not this note: burn no attempt, stop for this run.
+            log.warning("voice transcription unavailable: %s", e)
+            self._unavailable = True
+            self.budget = 0
+            return UNAVAILABLE, True
         except Exception as e:  # noqa: BLE001 — a voice note must never block the day note
             attempts += 1
             log.warning("voice transcription failed (attempt %d) for %s: %s", attempts, key, e)
             failed.write_text(str(attempts))
             return (FAILED, False) if attempts >= MAX_ATTEMPTS else (PENDING, True)
-        cached.write_text(text, encoding="utf-8")
+        tmp = cached.with_name(cached.name + ".tmp")
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, cached)
         failed.unlink(missing_ok=True)
         return _voice(text), False
 
     def _run(self, src: Path) -> str:
         with tempfile.TemporaryDirectory(prefix="gb-wa-voice-") as d:
             wav = Path(d) / "voice.wav"
-            self._to_wav(src, wav)
+            try:
+                self._to_wav(src, wav)
+            except FileNotFoundError as e:  # ffmpeg missing
+                raise VoiceUnavailable(str(e)) from e
             txt = self._transcribe(wav, timeout_s=TRANSCRIBE_TIMEOUT_S)
             return txt.read_text(encoding="utf-8").strip()
