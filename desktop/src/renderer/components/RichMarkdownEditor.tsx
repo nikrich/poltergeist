@@ -7,6 +7,7 @@ import { clipboardPayload, getMarkdown, restoreWikilinks } from '../lib/editor/m
 import { insertImageFile } from '../lib/editor/insert-image';
 import { toast } from '../stores/toast';
 import { Btn } from './Btn';
+import { DiagramModal } from './DiagramModal';
 import { EditorToolbar } from './EditorToolbar';
 import { JotEditor } from './JotEditor';
 import { Lucide } from './Lucide';
@@ -105,6 +106,8 @@ export function RichMarkdownEditor({
   const [templateOpen, setTemplateOpen] = useState(false);
   const [statusPos, setStatusPos] = useState<number | null>(null);
   const closeStatus = useCallback(() => setStatusPos(null), []);
+  const [diagramSource, setDiagramSource] = useState<string | null>(null);
+  const closeDiagram = useCallback(() => setDiagramSource(null), []);
   // Track previous openCameraSignal to skip the initial mount value.
   const prevCameraSignalRef = useRef(openCameraSignal);
 
@@ -258,6 +261,11 @@ export function RichMarkdownEditor({
   useEffect(() => {
     if (!editor) return;
     return onGb(editor, 'gb:status:edit', ({ pos }) => setStatusPos(pos));
+  }, [editor]);
+
+  useEffect(() => {
+    if (!editor) return;
+    return onGb(editor, 'gb:diagram:open', ({ source }) => setDiagramSource(source));
   }, [editor]);
 
   // Open the camera whenever openCameraSignal is incremented (skip initial mount).
@@ -470,6 +478,7 @@ export function RichMarkdownEditor({
       {mode === 'rich' && editor && statusPos !== null && (
         <StatusPopover key={statusPos} editor={editor} pos={statusPos} onClose={closeStatus} />
       )}
+      {diagramSource !== null && <DiagramModal source={diagramSource} onClose={closeDiagram} />}
       <WebcamCaptureModal
         open={camOpen}
         onClose={() => setCamOpen(false)}
