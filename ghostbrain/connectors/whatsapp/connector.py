@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from collections.abc import Callable
 from contextlib import closing
 from datetime import UTC, date, datetime, timedelta
@@ -68,7 +69,7 @@ class WhatsAppConnector(Connector):
         cursor = self._load_cursor()
         if not allowed:
             log.info("whatsapp: no chats selected; pick chats in Connectors → WhatsApp")
-            return [], cursor
+            return [], {**cursor, "chats": {}}
         now = self._now()
         floor = now - timedelta(days=self.lookback_days)
         new = sorted(j for j in allowed if j not in cursor["chats"])
@@ -98,7 +99,12 @@ class WhatsAppConnector(Connector):
         stamp = now.isoformat()
         cursor = {
             "max_pk": max_pk,
-            "chats": {**cursor["chats"], **{j: {"first_synced_at": stamp} for j in new}},
+            # Only currently-allowed chats stay "known": a deselected chat that is
+            # re-added counts as new and gets the lookback backfill.
+            "chats": {
+                **{j: v for j, v in cursor["chats"].items() if j in allowed},
+                **{j: {"first_synced_at": stamp} for j in new},
+            },
             "pending_days": pending,
         }
         return events, cursor
@@ -111,15 +117,21 @@ class WhatsAppConnector(Connector):
         f = self._cursor_path()
         if f.exists():
             try:
-                base.update(json.loads(f.read_text(encoding="utf-8")))
+                loaded = json.loads(f.read_text(encoding="utf-8"))
             except ValueError:
+                loaded = None
+            if isinstance(loaded, dict):
+                base.update(loaded)
+            else:
                 log.warning("whatsapp cursor unreadable; starting fresh")
         return base
 
     def _save_cursor(self, cursor: dict) -> None:
         f = self._cursor_path()
         f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(json.dumps(cursor, indent=2), encoding="utf-8")
+        tmp = f.with_name(f.name + ".tmp")
+        tmp.write_text(json.dumps(cursor, indent=2), encoding="utf-8")
+        os.replace(tmp, f)
 
 
 def _event(chat: store.Chat, day: date, msgs: list[store.Message], rendered: RenderedDay,

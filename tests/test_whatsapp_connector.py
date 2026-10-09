@@ -161,3 +161,34 @@ def test_runner_build_skips_off_macos_or_without_store(env, monkeypatch, tmp_pat
     assert built is not None and built.lookback_days == 7 and built.voice.budget == 2
     monkeypatch.setenv("GHOSTBRAIN_WHATSAPP_STORE", str(tmp_path / "nope.sqlite"))
     assert runner._build({}, q, s) is None
+
+
+def test_reselected_chat_backfills_messages_sent_while_deselected(env):
+    db, q, s = env
+    allowlist.save(s, {A: {"name": "Alex", "context": None}})
+    make(db, q, s).run()
+    allowlist.save(s, {})
+    assert make(db, q, s).run() == 0
+    import sqlite3
+    c = sqlite3.connect(db)
+    c.execute("INSERT INTO ZWAMESSAGE (Z_PK, ZCHATSESSION, ZMESSAGEDATE, ZTEXT, ZMESSAGETYPE,"
+              " ZISFROMME, ZSTANZAID) VALUES (20, 1, ?, 'while away', 0, 0, 'S20')",
+              (at(2).timestamp() - 978307200,))
+    c.commit()
+    c.close()
+    for p in (q / "pending").glob("*.json"):
+        p.unlink()
+    allowlist.save(s, {A: {"name": "Alex", "context": None}})
+    assert make(db, q, s).run() == 3
+    days = sorted(e["metadata"]["day"] for e in queued(q))
+    assert days == [at(5).date().isoformat(), at(2).date().isoformat(),
+                    NOW.date().isoformat()]
+
+
+def test_non_object_cursor_starts_fresh(env):
+    db, q, s = env
+    allowlist.save(s, {A: {"name": "Alex", "context": None}})
+    (s / "whatsapp.cursor.json").write_text("[1]", encoding="utf-8")
+    assert make(db, q, s).run() == 2
+    assert isinstance(json.loads((s / "whatsapp.cursor.json").read_text()), dict)
+    assert not (s / "whatsapp.cursor.json.tmp").exists()
