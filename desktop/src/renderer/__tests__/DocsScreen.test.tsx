@@ -108,10 +108,10 @@ describe('DocsScreen', () => {
     fireEvent.drop(target, { dataTransfer: { files, getData: () => '', types: ['Files'] } });
     await waitFor(() => expect(client.post).toHaveBeenCalledTimes(2));
     expect(useDocs.getState().uploads).toHaveLength(3);
-    releases[0]();
+    releases[0]?.();
     await waitFor(() => expect(client.post).toHaveBeenCalledTimes(3));
-    releases[1]();
-    releases[2]();
+    releases[1]?.();
+    releases[2]?.();
     await waitFor(() => expect(useDocs.getState().uploads).toHaveLength(0));
   });
 
