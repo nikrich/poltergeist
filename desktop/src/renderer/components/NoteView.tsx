@@ -1,14 +1,16 @@
 import { useEffect, useRef } from 'react';
 import type { Editor } from '@tiptap/core';
 
+import { get } from '../lib/api/client';
 import { useNote, useUpdateNoteByPath } from '../lib/api/hooks';
+import type { Note } from '../../shared/api-types';
 import { useNoteView } from '../stores/note-view';
 import { useSettings } from '../stores/settings';
 import { toast } from '../stores/toast';
 import { Lucide } from './Lucide';
 import { Btn } from './Btn';
 import { Pill } from './Pill';
-import { RichMarkdownEditor } from './RichMarkdownEditor';
+import { GuardedNoteEditor } from './GuardedNoteEditor';
 import { SkeletonRows } from './SkeletonRows';
 import { PanelError } from './PanelError';
 
@@ -34,23 +36,22 @@ export function NoteView({ onEditorReady }: Props = {}) {
     return () => window.removeEventListener('keydown', onKey);
   }, [path, close]);
 
-  // Freeze the FIRST fetched body per path (same pattern as JotsScreen):
+  // Freeze the FIRST fetched body + etag per path (same pattern as JotsScreen):
   // useUpdateNoteByPath invalidates ['note'] after every autosave, and a
-  // refetched body flowing back into the editor as a prop change would reset
-  // it mid-typing. key={path} below remounts the editor on note switch.
-  const initialBodyRef = useRef<{ path: string; body: string } | null>(null);
+  // refetched body flowing back into the editor would reset it mid-typing.
+  // The etag is frozen with it: GuardedNoteEditor chains etags itself.
+  const initialBodyRef = useRef<{ path: string; body: string; etag: string | null } | null>(null);
   if (
     note.data &&
     path &&
     (initialBodyRef.current === null || initialBodyRef.current.path !== path)
   ) {
-    initialBodyRef.current = { path, body: note.data.body };
+    initialBodyRef.current = { path, body: note.data.body, etag: note.data.etag ?? null };
   }
   if (path === null && initialBodyRef.current !== null) {
     initialBodyRef.current = null;
   }
-  const editorBody =
-    initialBodyRef.current?.path === path ? initialBodyRef.current.body : undefined;
+  const initial = initialBodyRef.current?.path === path ? initialBodyRef.current : undefined;
 
   if (path === null) return null;
 
@@ -66,14 +67,8 @@ export function NoteView({ onEditorReady }: Props = {}) {
   };
 
   // Closing the dialog mid-debounce cancels the pending save (editor unmount
-  // clears its timer) — deliberate: same JotEditor trade-off, a flush-on-close
-  // could write a half-edited doc. Edits within the last ~1s of closing are lost.
-  const handleSaveBody = (next: string) => {
-    updateNote.mutate(
-      { path, body: next },
-      { onError: (err) => toast.error(`save failed: ${err.message}`) },
-    );
-  };
+  // clears its timer) — deliberate: a flush-on-close could write a half-edited
+  // doc. Edits within the last ~1s of closing are lost.
 
   return (
     <div
@@ -132,14 +127,15 @@ export function NoteView({ onEditorReady }: Props = {}) {
               />
             </div>
           )}
-          {editorBody !== undefined && (
-            <RichMarkdownEditor
+          {initial !== undefined && (
+            <GuardedNoteEditor
               key={path}
-              markdown={editorBody}
-              onSave={handleSaveBody}
-              jotId={path}
-              onEditorReady={onEditorReady}
-              onWikilinkClick={openNote}
+              initialBody={initial.body}
+              initialEtag={initial.etag}
+              send={(body, ifMatch) => updateNote.mutateAsync({ path, body, ifMatch })}
+              fetchLatest={() => get<Note>(`/v1/notes?path=${encodeURIComponent(path)}`)}
+              onSaveError={(err) => toast.error(`save failed: ${err.message}`)}
+              editorProps={{ jotId: path, onEditorReady, onWikilinkClick: openNote }}
             />
           )}
         </div>

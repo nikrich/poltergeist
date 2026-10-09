@@ -5,9 +5,10 @@ import { ConfluenceExportDialog } from '../components/ConfluenceExportDialog';
 import { Lucide } from '../components/Lucide';
 import { Pill } from '../components/Pill';
 import { JotTree } from '../components/JotTree';
-import { RichMarkdownEditor } from '../components/RichMarkdownEditor';
+import { GuardedNoteEditor, type GuardHandle } from '../components/GuardedNoteEditor';
 import type { EditorHandle } from '../components/RichMarkdownEditor';
 import { DocsAssistPanel } from '../components/DocsAssistPanel';
+import { get } from '../lib/api/client';
 import {
   useAutoRouteJot,
   useConnectors,
@@ -21,6 +22,7 @@ import {
   useRouteJot,
   useUpdateJot,
 } from '../lib/api/hooks';
+import type { Note } from '../../shared/api-types';
 import { toast } from '../stores/toast';
 import { useNoteView } from '../stores/note-view';
 import { useDocsAssist } from '../stores/docs-assist';
@@ -57,19 +59,26 @@ export function JotsScreen() {
   // the `body` prop; subsequent RQ refetches change `detail.data.body` but do
   // NOT change `initialBody`, so the editor never sees a mid-session prop flip.
   // On jot switch the ref is cleared and repopulated when the new detail lands.
-  const initialBodyRef = useRef<{ id: string; body: string } | null>(null);
+  // The etag is frozen with the body: GuardedNoteEditor chains etags itself.
+  const initialBodyRef = useRef<{ id: string; body: string; etag: string | null } | null>(null);
   if (
     detail.data &&
     selectedId &&
     (initialBodyRef.current === null || initialBodyRef.current.id !== selectedId)
   ) {
-    initialBodyRef.current = { id: selectedId, body: detail.data.body };
+    initialBodyRef.current = { id: selectedId, body: detail.data.body, etag: detail.data.etag ?? null };
   }
   if (selectedId === null) {
     initialBodyRef.current = null;
   }
-  const editorBody =
-    initialBodyRef.current?.id === selectedId ? initialBodyRef.current.body : undefined;
+  const editorInitial =
+    initialBodyRef.current?.id === selectedId ? initialBodyRef.current : undefined;
+
+  // Latest path for conflict re-reads: a re-route moves the file while the
+  // editor stays mounted (keyed by id, not path).
+  const selectedPathRef = useRef<string | null>(null);
+  selectedPathRef.current = selectedItem?.path ?? null;
+  const guardRef = useRef<GuardHandle | null>(null);
 
   // Imperative handle wired to the editor for docs-assist and PDF export.
   const editorHandle = useRef<EditorHandle | null>(null);
@@ -177,11 +186,6 @@ export function JotsScreen() {
         onError: (err) => toast.error(`could not create jot: ${err.message}`),
       },
     );
-  }
-
-  function handleSaveBody(next: string) {
-    if (!selectedId) return;
-    updateJot.mutate({ id: selectedId, body: next });
   }
 
   function handleReroute(value: string) {
@@ -300,34 +304,45 @@ export function JotsScreen() {
           />
         </aside>
         <main className="flex flex-1 flex-col">
-          {editorBody !== undefined ? (
+          {editorInitial !== undefined ? (
             <>
               <div className="flex-1 overflow-auto">
                 {/* key={selectedId} remounts the editor on jot switch, wiping
                     internal debounce timers. The markdown prop is frozen to
                     the initial fetch so mid-session RQ refetches never reset
                     the editor's internal value. */}
-                <RichMarkdownEditor
+                <GuardedNoteEditor
                   key={selectedId!}
-                  markdown={editorBody}
-                  onSave={handleSaveBody}
-                  onWikilinkClick={openNote}
-                  handleRef={editorHandle}
-                  jotId={selectedId!}
-                  openCameraSignal={cameraSignal}
-                  onPhotoInserted={(jotId, assetPath) => {
-                    toast.info('reading photo…');
-                    extractPhoto.mutate({ jotId, assetPath }, {
-                      onSuccess: (res) => {
-                        if (res.extracted) {
-                          editorHandle.current?.replaceWith(res.body, 'doc');
-                          toast.success('photo text extracted');
-                        } else {
-                          toast.info(`couldn't read photo: ${res.reason ?? ''}`);
-                        }
-                      },
-                      onError: (err) => toast.error(`extract failed: ${err.message}`),
-                    });
+                  initialBody={editorInitial.body}
+                  initialEtag={editorInitial.etag}
+                  send={(body, ifMatch) => updateJot.mutateAsync({ id: selectedId!, body, ifMatch })}
+                  fetchLatest={() =>
+                    get<Note>(`/v1/notes?path=${encodeURIComponent(selectedPathRef.current ?? '')}`)
+                  }
+                  onSaveError={(err) => toast.error(`save failed: ${err.message}`)}
+                  guardRef={guardRef}
+                  editorProps={{
+                    onWikilinkClick: openNote,
+                    handleRef: editorHandle,
+                    jotId: selectedId!,
+                    openCameraSignal: cameraSignal,
+                    onPhotoInserted: (jotId, assetPath) => {
+                      toast.info('reading photo…');
+                      extractPhoto.mutate({ jotId, assetPath }, {
+                        onSuccess: (res) => {
+                          if (res.extracted) {
+                            // The server wrote the callout: take its etag before
+                            // the editor's own autosave of the same text.
+                            guardRef.current?.adopt(res.etag ?? null, res.body);
+                            editorHandle.current?.replaceWith(res.body, 'doc');
+                            toast.success('photo text extracted');
+                          } else {
+                            toast.info(`couldn't read photo: ${res.reason ?? ''}`);
+                          }
+                        },
+                        onError: (err) => toast.error(`extract failed: ${err.message}`),
+                      });
+                    },
                   }}
                 />
               </div>

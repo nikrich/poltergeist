@@ -124,4 +124,33 @@ describe('NoteView', () => {
       { timeout: 3000 },
     );
   });
+
+  it('sends the note etag as If-Match on autosave', async () => {
+    apiRequest.mockResolvedValue({ ok: true, data: { ...syncedNote, etag: '0123456789abcdef' } });
+    let editor: Editor | undefined;
+    render(
+      withQuery(
+        <NoteView
+          onEditorReady={(e) => {
+            editor = e;
+          }}
+        />,
+      ),
+    );
+    act(() => useNoteView.getState().open(syncedNote.path));
+    await waitFor(() => expect(editor).toBeDefined());
+    act(() => {
+      editor!.commands.insertContentAt(editor!.state.doc.content.size, 'edited tail');
+    });
+    await waitFor(
+      () =>
+        expect(apiRequest).toHaveBeenCalledWith(
+          'PATCH',
+          '/v1/notes/body',
+          { path: syncedNote.path, body: expect.stringContaining('edited tail') },
+          { ifMatch: '0123456789abcdef' },
+        ),
+      { timeout: 3000 },
+    );
+  });
 });
