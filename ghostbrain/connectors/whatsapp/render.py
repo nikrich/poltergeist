@@ -5,8 +5,8 @@ anything not listed here is dropped.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 from ghostbrain.connectors.whatsapp.store import Message
 

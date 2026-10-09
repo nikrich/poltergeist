@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 import sqlite3
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta, timezone, tzinfo
+from datetime import UTC, date, datetime, time, timedelta, tzinfo
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -107,7 +107,7 @@ def check_schema(conn: sqlite3.Connection) -> None:
 
 
 def _to_dt(core_seconds: float, tz: tzinfo) -> datetime:
-    return datetime.fromtimestamp(core_seconds + CORE_DATA_EPOCH, tz=timezone.utc).astimezone(tz)
+    return datetime.fromtimestamp(core_seconds + CORE_DATA_EPOCH, tz=UTC).astimezone(tz)
 
 
 def _core(dt: datetime) -> float:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -163,7 +163,7 @@ def test_local_tz_falls_back_to_fixed_offset_for_plain_file(tmp_path):
     plain.touch()
     tz = store.local_tz(plain)
     assert tz is not None
-    assert tz.utcoffset(datetime.now()) is not None
+    assert tz.utcoffset(datetime.now(UTC)) is not None
 
 
 def test_dst_day_bucketing_keeps_late_message_on_its_local_day(tmp_path):
