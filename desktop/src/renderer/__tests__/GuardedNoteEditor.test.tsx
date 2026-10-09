@@ -1,13 +1,17 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import type { Editor } from '@tiptap/core';
-import { GuardedNoteEditor } from '../components/GuardedNoteEditor';
+import { GuardedNoteEditor, type GuardHandle } from '../components/GuardedNoteEditor';
 import { ApiError } from '../lib/api/client';
 
 const E1 = 'aaaaaaaaaaaaaaaa';
 const E2 = 'cccccccccccccccc';
 
-function setup(send: ReturnType<typeof vi.fn>, fetchLatest: ReturnType<typeof vi.fn>) {
+function setup(
+  send: ReturnType<typeof vi.fn>,
+  fetchLatest: ReturnType<typeof vi.fn>,
+  guardRef?: React.MutableRefObject<GuardHandle | null>,
+) {
   let editor: Editor | undefined;
   render(
     <GuardedNoteEditor
@@ -15,6 +19,7 @@ function setup(send: ReturnType<typeof vi.fn>, fetchLatest: ReturnType<typeof vi
       initialEtag={E1}
       send={send}
       fetchLatest={fetchLatest}
+      guardRef={guardRef}
       editorProps={{
         jotId: 'n.md',
         debounceMs: 10,
@@ -115,5 +120,17 @@ describe('GuardedNoteEditor', () => {
       expect(send).toHaveBeenLastCalledWith(expect.stringContaining('my tail'), E2),
     );
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+  });
+
+  it('guardRef.hasConflict() is false before a 409 and true after', async () => {
+    const send = vi.fn().mockRejectedValueOnce(new ApiError('changed', 409));
+    const fetchLatest = vi.fn().mockResolvedValue({ body: 'their edit', etag: E2 });
+    const guardRef: React.MutableRefObject<GuardHandle | null> = { current: null };
+    const getEditor = setup(send, fetchLatest, guardRef);
+    await waitFor(() => expect(getEditor()).toBeDefined());
+    expect(guardRef.current?.hasConflict()).toBe(false);
+    await typeTail(getEditor);
+    await screen.findByRole('alert');
+    expect(guardRef.current?.hasConflict()).toBe(true);
   });
 });

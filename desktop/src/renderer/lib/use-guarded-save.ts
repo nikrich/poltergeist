@@ -24,6 +24,8 @@ export interface GuardedSave {
   keepMine: () => Promise<void>;
   keepTheirs: () => Conflict | null;
   adopt: (etag: string | null, body: string) => void;
+  /** Reads the live conflict state (a ref), never a stale render's. */
+  hasConflict: () => boolean;
 }
 
 /** GET bodies come back trimmed (both ends) by the server and keep the file's
@@ -79,6 +81,13 @@ export function useGuardedSave(
       onErrorRef.current?.(asError(err));
       // Keystrokes may have landed in the conflict while we awaited.
       setConflict({ mine: conflictRef.current?.mine ?? mine, theirs: '', theirsEtag: null, unread: true });
+      return;
+    }
+    if (sameBody(latest.body, mine)) {
+      // Disk already holds my text: nothing to resolve, just take its etag.
+      markSaved(mine, latest.etag);
+      const c = conflictRef.current;
+      if (c && sameBody(c.mine, mine)) setConflict(null);
       return;
     }
     if (allowAutoResolve && sameBody(latest.body, baseBodyRef.current)) {
@@ -162,5 +171,7 @@ export function useGuardedSave(
 
   const adopt = (etag: string | null, body: string) => markSaved(body, etag);
 
-  return { save, conflict, resolving, keepMine, keepTheirs, adopt };
+  const hasConflict = () => conflictRef.current !== null;
+
+  return { save, conflict, resolving, keepMine, keepTheirs, adopt, hasConflict };
 }

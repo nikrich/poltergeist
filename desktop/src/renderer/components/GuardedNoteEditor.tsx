@@ -1,10 +1,21 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useGuardedSave, type SaveTarget } from '../lib/use-guarded-save';
 import { ConflictBanner } from './ConflictBanner';
 import { RichMarkdownEditor, type RichMarkdownEditorProps } from './RichMarkdownEditor';
 
 export interface GuardHandle {
   adopt: (etag: string | null, body: string) => void;
+  /** True while the conflict banner is up (autosave paused, text unsaved). */
+  hasConflict: () => boolean;
+}
+
+const DISCARD_PROMPT =
+  'This note changed outside the editor and your text is not saved. Discard your text?';
+
+/** Call before navigating away from a guarded editor: true when it is safe to
+ * leave (no conflict, or the user agreed to discard their unsaved text). */
+export function confirmLeave(guardRef: React.MutableRefObject<GuardHandle | null>): boolean {
+  return !guardRef.current?.hasConflict() || window.confirm(DISCARD_PROMPT);
 }
 
 export interface GuardedNoteEditorProps {
@@ -35,7 +46,21 @@ export function GuardedNoteEditor({
     { send, fetchLatest },
     onSaveError,
   );
-  if (guardRef) guardRef.current = { adopt: guard.adopt };
+  const guardLatest = useRef(guard);
+  guardLatest.current = guard;
+  // One stable handle per mount, so unmount only clears its own registration
+  // (a key remount mounts the next editor's handle in the same commit).
+  const [handle] = useState<GuardHandle>(() => ({
+    adopt: (etag, body) => guardLatest.current.adopt(etag, body),
+    hasConflict: () => guardLatest.current.hasConflict(),
+  }));
+  useEffect(() => {
+    if (!guardRef) return;
+    guardRef.current = handle;
+    return () => {
+      if (guardRef.current === handle) guardRef.current = null;
+    };
+  }, [guardRef, handle]);
 
   const keepTheirs = () => {
     const c = guard.keepTheirs();

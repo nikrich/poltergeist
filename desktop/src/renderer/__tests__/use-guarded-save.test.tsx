@@ -68,6 +68,22 @@ describe('useGuardedSave', () => {
     expect(result.current.conflict).toBeNull();
   });
 
+  it('a 409 whose re-read body already equals mine adopts the etag without a banner', async () => {
+    const send = vi.fn().mockRejectedValueOnce(conflict()).mockResolvedValueOnce({ etag: 'e7' });
+    const fetchLatest = vi.fn().mockResolvedValue({ body: 'b', etag: 'e5' });
+    const { result } = renderHook(() =>
+      useGuardedSave({ body: 'a', etag: 'e1' }, { send, fetchLatest }),
+    );
+    act(() => result.current.save('b\n'));
+    await waitFor(() => expect(fetchLatest).toHaveBeenCalledTimes(1));
+    await act(async () => {});
+    expect(result.current.conflict).toBeNull();
+    expect(send).toHaveBeenCalledTimes(1);
+    act(() => result.current.save('c'));
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+    expect(send.mock.calls[1]).toEqual(['c', 'e5']);
+  });
+
   it('auto-resolves a frontmatter-only change on a CRLF note', async () => {
     const send = vi.fn().mockRejectedValueOnce(conflict()).mockResolvedValueOnce({ etag: 'e6' });
     const fetchLatest = vi.fn().mockResolvedValue({ body: 'a\r\nb', etag: 'e5' });

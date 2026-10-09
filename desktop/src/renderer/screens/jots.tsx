@@ -5,7 +5,7 @@ import { ConfluenceExportDialog } from '../components/ConfluenceExportDialog';
 import { Lucide } from '../components/Lucide';
 import { Pill } from '../components/Pill';
 import { JotTree } from '../components/JotTree';
-import { GuardedNoteEditor, type GuardHandle } from '../components/GuardedNoteEditor';
+import { GuardedNoteEditor, confirmLeave, type GuardHandle } from '../components/GuardedNoteEditor';
 import type { EditorHandle } from '../components/RichMarkdownEditor';
 import { DocsAssistPanel } from '../components/DocsAssistPanel';
 import { get } from '../lib/api/client';
@@ -79,6 +79,9 @@ export function JotsScreen() {
   const selectedPathRef = useRef<string | null>(null);
   selectedPathRef.current = selectedItem?.path ?? null;
   const guardRef = useRef<GuardHandle | null>(null);
+  // Late extract-photo results must not land in a jot the user has left.
+  const selectedIdRef = useRef(selectedId);
+  selectedIdRef.current = selectedId;
 
   // Imperative handle wired to the editor for docs-assist and PDF export.
   const editorHandle = useRef<EditorHandle | null>(null);
@@ -175,7 +178,14 @@ export function JotsScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Switching jots remounts the editor: under the conflict banner, ask first.
+  function selectJot(id: string) {
+    if (id !== selectedId && !confirmLeave(guardRef)) return;
+    setSelectedId(id);
+  }
+
   function handleNew() {
+    if (!confirmLeave(guardRef)) return;
     createJot.mutate(
       { body: 'new jot\n\n', route: false },
       {
@@ -300,7 +310,7 @@ export function JotsScreen() {
           <JotTree
             items={list.data?.items ?? []}
             selectedId={selectedId}
-            onSelect={setSelectedId}
+            onSelect={selectJot}
           />
         </aside>
         <main className="flex flex-1 flex-col">
@@ -332,9 +342,12 @@ export function JotsScreen() {
                         onSuccess: (res) => {
                           if (res.extracted) {
                             // The server wrote the callout: take its etag before
-                            // the editor's own autosave of the same text.
-                            guardRef.current?.adopt(res.etag ?? null, res.body);
-                            editorHandle.current?.replaceWith(res.body, 'doc');
+                            // the editor's own autosave of the same text — unless
+                            // the user has since switched to another jot.
+                            if (selectedIdRef.current === jotId) {
+                              guardRef.current?.adopt(res.etag ?? null, res.body);
+                              editorHandle.current?.replaceWith(res.body, 'doc');
+                            }
                             toast.success('photo text extracted');
                           } else {
                             toast.info(`couldn't read photo: ${res.reason ?? ''}`);

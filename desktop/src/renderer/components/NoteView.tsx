@@ -10,7 +10,7 @@ import { toast } from '../stores/toast';
 import { Lucide } from './Lucide';
 import { Btn } from './Btn';
 import { Pill } from './Pill';
-import { GuardedNoteEditor } from './GuardedNoteEditor';
+import { GuardedNoteEditor, confirmLeave, type GuardHandle } from './GuardedNoteEditor';
 import { SkeletonRows } from './SkeletonRows';
 import { PanelError } from './PanelError';
 
@@ -21,8 +21,18 @@ interface Props {
 
 export function NoteView({ onEditorReady }: Props = {}) {
   const path = useNoteView((s) => s.path);
-  const close = useNoteView((s) => s.close);
-  const openNote = useNoteView((s) => s.open);
+  const closeView = useNoteView((s) => s.close);
+  const openView = useNoteView((s) => s.open);
+  // Leaving under the conflict banner would drop the unsaved text: ask first.
+  const guardRef = useRef<GuardHandle | null>(null);
+  const close = () => {
+    if (confirmLeave(guardRef)) closeView();
+  };
+  const openNote = (target: string) => {
+    if (confirmLeave(guardRef)) openView(target);
+  };
+  const closeRef = useRef(close);
+  closeRef.current = close;
   const note = useNote(path);
   const vaultPath = useSettings((s) => s.vaultPath);
   const updateNote = useUpdateNoteByPath();
@@ -30,11 +40,11 @@ export function NoteView({ onEditorReady }: Props = {}) {
   useEffect(() => {
     if (path === null) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close();
+      if (e.key === 'Escape') closeRef.current();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [path, close]);
+  }, [path]);
 
   // Freeze the FIRST fetched body + etag per path (same pattern as JotsScreen):
   // useUpdateNoteByPath invalidates ['note'] after every autosave, and a
@@ -135,6 +145,7 @@ export function NoteView({ onEditorReady }: Props = {}) {
               send={(body, ifMatch) => updateNote.mutateAsync({ path, body, ifMatch })}
               fetchLatest={() => get<Note>(`/v1/notes?path=${encodeURIComponent(path)}`)}
               onSaveError={(err) => toast.error(`save failed: ${err.message}`)}
+              guardRef={guardRef}
               editorProps={{ jotId: path, onEditorReady, onWikilinkClick: openNote }}
             />
           )}
