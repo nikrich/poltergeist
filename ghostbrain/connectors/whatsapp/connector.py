@@ -120,18 +120,16 @@ class WhatsAppConnector(Connector):
         return self.state_dir / CURSOR_FILE
 
     def _load_cursor(self) -> dict:
-        base = {"max_pk": 0, "chats": {}, "pending_days": []}
+        loaded: object = None
         f = self._cursor_path()
         if f.exists():
             try:
                 loaded = json.loads(f.read_text(encoding="utf-8"))
             except ValueError:
                 loaded = None
-            if isinstance(loaded, dict):
-                base.update(loaded)
-            else:
+            if not isinstance(loaded, dict):
                 log.warning("whatsapp cursor unreadable; starting fresh")
-        return base
+        return _valid_cursor(loaded if isinstance(loaded, dict) else {})
 
     def _save_cursor(self, cursor: dict) -> None:
         f = self._cursor_path()
@@ -139,6 +137,33 @@ class WhatsAppConnector(Connector):
         tmp = f.with_name(f.name + ".tmp")
         tmp.write_text(json.dumps(cursor, indent=2), encoding="utf-8")
         os.replace(tmp, f)
+
+
+def _valid_cursor(raw: dict) -> dict:
+    """Coerce each cursor field to its expected shape; bad fields reset to defaults."""
+    max_pk = raw.get("max_pk")
+    chats = raw.get("chats")
+    pending = raw.get("pending_days")
+    hashes = raw.get("day_hashes")
+    return {
+        "max_pk": max_pk if isinstance(max_pk, int) and not isinstance(max_pk, bool) else 0,
+        "chats": chats if isinstance(chats, dict) else {},
+        "pending_days": ([p for p in pending if _valid_pending(p)]
+                         if isinstance(pending, list) else []),
+        "day_hashes": ({k: v for k, v in hashes.items() if isinstance(v, str)}
+                       if isinstance(hashes, dict) else {}),
+    }
+
+
+def _valid_pending(entry: object) -> bool:
+    if not (isinstance(entry, list) and len(entry) == 2
+            and all(isinstance(x, str) for x in entry)):
+        return False
+    try:
+        date.fromisoformat(entry[1])
+    except ValueError:
+        return False
+    return True
 
 
 def _event(chat: store.Chat, day: date, msgs: list[store.Message], rendered: RenderedDay,

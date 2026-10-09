@@ -241,3 +241,35 @@ def test_runner_does_not_touch_store_before_opt_in(env, monkeypatch, tmp_path, f
     result = runner.run()
     assert result.ok is True
     assert result.skipped_reason == "not configured"
+
+
+@pytest.mark.parametrize("bad", [
+    {"chats": None},
+    {"chats": [A]},
+    {"max_pk": "14"},
+    {"pending_days": None},
+    {"pending_days": [["x"]]},
+    {"pending_days": [[A, "2026-13-45"]]},
+    {"pending_days": [[A, 5]]},
+    {"day_hashes": ["nope"]},
+])
+def test_malformed_cursor_fields_fall_back_to_defaults(env, bad):
+    db, q, s = env
+    allowlist.save(s, {A: {"name": "Alex", "context": None}})
+    (s / "whatsapp.cursor.json").write_text(json.dumps(bad), encoding="utf-8")
+    assert make(db, q, s).run() == 2
+    cur = json.loads((s / "whatsapp.cursor.json").read_text())
+    assert cur["max_pk"] == 14 and A in cur["chats"] and cur["pending_days"] == []
+
+
+def test_valid_pending_days_survive_alongside_bad_ones(env):
+    db, q, s = env
+    allowlist.save(s, {A: {"name": "Alex", "context": None}})
+    make(db, q, s).run()
+    cur = json.loads((s / "whatsapp.cursor.json").read_text())
+    cur["pending_days"] = [["x"], [A, at(5).date().isoformat()], [A, "not-a-date"]]
+    (s / "whatsapp.cursor.json").write_text(json.dumps(cur), encoding="utf-8")
+    for p in (q / "pending").glob("*.json"):
+        p.unlink()
+    assert make(db, q, s).run() == 1
+    assert queued(q)[0]["metadata"]["day"] == at(5).date().isoformat()
