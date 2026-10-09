@@ -432,3 +432,31 @@ body[data-theme='light'] {
 }
 .gb-toc-list button:hover { text-decoration: underline; }
 .gb-toc-empty { color: var(--ink-3); font-size: 12px; }
+
+.gb-mermaid {
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  margin: 0 0 1em;
+  background: var(--vellum);
+}
+.gb-mermaid-bar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 4px 6px 0;
+}
+.gb-mermaid-bar button {
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  color: var(--ink-2);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.gb-mermaid-bar button:hover { color: var(--ink-0); }
+.gb-mermaid-preview { padding: 8px 12px; overflow-x: auto; cursor: pointer; text-align: center; }
+.gb-mermaid-preview svg { max-width: 100%; height: auto; }
+.gb-mermaid[data-editing='false'] > pre { display: none; }
+.gb-mermaid > pre { margin: 0; border: 0; border-top: 1px solid var(--hairline); border-radius: 0 0 6px 6px; }
+.gb-mermaid-error { text-align: left; color: var(--pill-oxblood-fg); font-size: 12px; }
+.gb-mermaid-error pre { margin: 6px 0 0; color: var(--ink-1); }

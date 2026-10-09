@@ -81,6 +81,8 @@ const FIXTURES: Record<string, string> = {
   'toc fence with plugin options stays code': '```toc\nstyle: number\n```',
   'toc inside a callout': '> [!info] T\n> ```toc\n> ```\n\nafter',
   'toc inside a list item': '- item\n\n  ```toc\n  ```\n\n- next',
+  'mermaid diagram': '```mermaid\nflowchart TD\n  A[Start] --> B{Ok?}\n  B -->|yes| C\n```',
+  'mermaid inside callout': '> [!note] Flow\n> ```mermaid\n> flowchart TD\n>   A --> B\n> ```\n\nafter',
 };
 
 describe('markdown round-trip (serialize(deserialize(md)))', () => {

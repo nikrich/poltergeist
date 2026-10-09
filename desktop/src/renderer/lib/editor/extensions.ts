@@ -12,6 +12,7 @@ import { Markdown } from 'tiptap-markdown';
 import { Callout } from './callout';
 import { Status } from './status';
 import { Toc } from './toc';
+import { GbCodeBlock } from './code-block';
 import { JotImage } from './image';
 import { SlashExtension } from './slash';
 import { WikilinkSuggest } from './wikilink-suggest';
@@ -55,7 +56,8 @@ const TaskListTight = Extension.create({
  */
 export function buildEditorExtensions(): Extensions {
   return [
-    StarterKit.configure({ blockquote: false }),
+    StarterKit.configure({ blockquote: false, codeBlock: false }),
+    GbCodeBlock,
     ExtractCallout,
     Callout,
     Status,
