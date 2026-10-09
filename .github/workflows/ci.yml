@@ -68,6 +68,7 @@ jobs:
             tests/test_file_kinds.py \
             tests/test_doc_library_*.py \
             tests/test_library_routes.py \
+            tests/test_history_store.py \
             -q
 
   desktop:
