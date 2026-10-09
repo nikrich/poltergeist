@@ -2,7 +2,8 @@
 atomic replace (spec B §1).
 
 B2 adds the history snapshot + change record and B3 the risk hold, both at
-the marked hook point inside ``write``. That is why ``actor`` is required and
+the marked hook point inside ``_write`` (under the file lock; the public
+``write`` wrapper only re-indexes the A2 link index afterwards). That is why ``actor`` is required and
 ``reason`` accepted now, though B1 stores neither.
 """
 from __future__ import annotations
