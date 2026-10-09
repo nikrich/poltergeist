@@ -88,7 +88,7 @@ All WhatsApp-specific SQL lives here. No other module touches the schema.
 - `messages_for_day(conn, jid, day, tz) -> list[Message]` returns
   `Message(pk, stanza_id, at, sender, is_from_me, type_code, text, caption, media_path)`, ordered
   by date, with every message type included. The connector's renderer decides keep, placeholder or drop.
-- Local days use the system timezone (`tzlocal`, as calendar notes already do).
+- Local days use the system timezone (stdlib `datetime.now().astimezone().tzinfo`); tests pass an explicit `ZoneInfo`.
 
 ### 2. Connector — `ghostbrain/connectors/whatsapp/connector.py`
 
@@ -139,6 +139,8 @@ All WhatsApp-specific SQL lives here. No other module touches the schema.
 - On a miss: ffmpeg converts the `.opus` file to a 16 kHz mono WAV in a temp dir, then
   `ghostbrain.recorder.transcribe.transcribe(wav)` runs (existing model resolution and language
   setting). The `.txt` result is moved into the cache and the temp files are deleted.
+- **Live recording:** while a meeting recording is live (`recorder.live.current()`), voice notes are left *pending*, so they never compete with it for whisper or CPU.
+- **ffmpeg lookup:** `shutil.which`, then `/opt/homebrew/bin` and `/usr/local/bin`, because the packaged sidecar's PATH often lacks Homebrew.
 - **Per-run budget:** `voice_max_per_run` (default 40), so the 90-day backfill doesn't block one
   run for a long time. Over budget returns `None` and the line renders as *pending*.
 - **Re-dirtying:** a day with pending voice notes is recorded in the cursor's `pending_days`, and
@@ -178,7 +180,7 @@ All WhatsApp-specific SQL lives here. No other module touches the schema.
     `routing.yaml` `whatsapp.default_context`, then `"personal"`, using `method="path"`.
   - No LLM routing call, so rewrites cost nothing.
 - **Note generator** (`ghostbrain/worker/note_generator.py`):
-  - **Filename:** `_filename_for` returns `<YYYY-MM-DD>-<chat-slug≤40>-<jid-digits≤12>.md` for
+  - **Filename:** `_filename_for` returns `<YYYY-MM-DD>-<chat-slug≤40>-<last 12 digits of the JID>.md` for
     `whatsapp`, with no run timestamp. The same chat-day therefore overwrites the same file in
     `00-inbox/raw/whatsapp/` and `20-contexts/<ctx>/whatsapp/`, as gdrive notes already do.
   - A chat rename changes the slug and leaves the old day notes under their old names. That's
