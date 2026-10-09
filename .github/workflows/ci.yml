@@ -64,6 +64,7 @@ jobs:
             tests/test_llm_providers_openai_http_chat.py \
             tests/test_llm_providers_vault_tools.py \
             tests/test_vault_index_parse.py \
+            tests/test_vault_index_links.py \
             -q
 
   desktop:
