@@ -57,6 +57,15 @@ const FIXTURES: Record<string, string> = {
     'context for **the helix wizard** and `route_event`:\n\n' +
     '- [ ] follow up with [the docs](https://example.com)\n- [x] shipped\n\n' +
     '```ts\nconst x = 1;\n```',
+  'callout with title': '> [!info] Heads up\n> Body text here.',
+  'callout without title': '> [!tip]\n> Use the slash menu.',
+  'callout with several paragraphs': '> [!warning] Careful\n> First para.\n>\n> Second para.',
+  'callout title only': '> [!success] Shipped',
+  'callout with a list body': '> [!error] Failures\n> - one\n> - two',
+  'callout raw title keeps markdown characters': '> [!note] Use *raw* title\n> body',
+  'foldable callout starts collapsed': '> [!note]- Details\n> Hidden body.',
+  'foldable callout starts open': '> [!note]+ Details\n> Shown body.',
+  'callout between paragraphs': 'before\n\n> [!info] Mid\n> body\n\nafter',
 };
 
 describe('markdown round-trip (serialize(deserialize(md)))', () => {

@@ -317,3 +317,30 @@ body[data-theme='light'] {
   border-radius: 2px;
   box-shadow: 0 0 0 2px var(--neon-mist);
 }
+/* ── A1 editor blocks ─────────────────────────────────────────────── */
+.gb-prose {
+  --gb-amber: #e8b34b;
+  --gb-plum: #b58ce0;
+}
+/* `.gb-prose .gb-callout` out-specifies `.gb-prose blockquote` (0,1,1). */
+.gb-callout,
+.gb-prose .gb-callout {
+  --callout-accent: var(--pill-water-fg);
+  border-left: 3px solid var(--callout-accent);
+  background: var(--vellum);
+  border-radius: 0 6px 6px 0;
+  padding: 6px 12px 2px;
+  margin: 0 0 1em;
+  font-style: normal;
+  color: var(--ink-0);
+}
+.gb-callout[data-callout='note'],
+.gb-callout[data-kind='note'] { --callout-accent: var(--ink-2); }
+.gb-callout[data-callout='tip'],
+.gb-callout[data-kind='tip'] { --callout-accent: var(--neon); }
+.gb-callout[data-callout='warning'],
+.gb-callout[data-kind='warning'] { --callout-accent: var(--gb-amber); }
+.gb-callout[data-callout='error'],
+.gb-callout[data-kind='error'] { --callout-accent: var(--oxblood); }
+.gb-callout[data-callout='success'],
+.gb-callout[data-kind='success'] { --callout-accent: var(--pill-moss-fg); }

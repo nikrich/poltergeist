@@ -9,6 +9,7 @@ import TableHeader from '@tiptap/extension-table-header';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import { Markdown } from 'tiptap-markdown';
+import { Callout } from './callout';
 import { JotImage } from './image';
 import { SlashExtension } from './slash';
 import { WikilinkSuggest } from './wikilink-suggest';
@@ -54,6 +55,7 @@ export function buildEditorExtensions(): Extensions {
   return [
     StarterKit.configure({ blockquote: false }),
     ExtractCallout,
+    Callout,
     Link.configure({ openOnClick: false }),
     JotImage.configure({ inline: false, allowBase64: false }),
     Table.configure({ resizable: false }),
