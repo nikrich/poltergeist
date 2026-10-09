@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../components/docs/pdf', () => ({
@@ -15,11 +15,12 @@ vi.mock('../lib/api/client', () => ({
 import * as client from '../lib/api/client';
 import { DocsScreen } from '../screens/docs';
 import { useDocs } from '../stores/docs';
+import { DRAG_MIME, encodeDrag } from '../components/docs/tree-model';
 import { doc, libraryFixture } from './fixtures/library';
 
-function renderScreen() {
+function renderScreen(tree = libraryFixture()) {
   vi.mocked(client.get).mockImplementation(((path: string) => {
-    if (path === '/v1/library/tree') return Promise.resolve(libraryFixture());
+    if (path === '/v1/library/tree') return Promise.resolve(tree);
     if (path.startsWith('/v1/library/docs/')) return Promise.resolve({ ...doc({}), body: 'body' });
     if (path.startsWith('/v1/library/search')) return Promise.resolve([doc({})]);
     return Promise.resolve([]);
@@ -83,5 +84,58 @@ describe('DocsScreen', () => {
     fireEvent.keyDown(screen.getByPlaceholderText('find a doc…'), { key: 'Enter' });
     await waitFor(() => expect(useDocs.getState().selection).toEqual({ type: 'doc', docId: 'aaaaaaaaaaaa' }));
     await screen.findByText(/\/ 1/);
+  });
+
+  it('dismisses an errored upload ghost', async () => {
+    renderScreen();
+    const target = await screen.findByTestId('folder-work/payments/specs');
+    const big = new File(['x'], 'big.zip');
+    Object.defineProperty(big, 'size', { value: 25_000_000 });
+    fireEvent.drop(target, { dataTransfer: { files: [big], getData: () => '', types: ['Files'] } });
+    // Ghosts render inside the folder view of the upload's target folder.
+    act(() => useDocs.getState().select({ type: 'folder', ref: { context: 'work', project: 'payments', path: 'specs' } }));
+    fireEvent.click(await screen.findByLabelText('dismiss big.zip'));
+    expect(useDocs.getState().uploads).toEqual([]);
+  });
+
+  it('uploads at most 2 files at a time', async () => {
+    renderScreen();
+    const releases: Array<() => void> = [];
+    vi.mocked(client.post).mockImplementation((() =>
+      new Promise((res) => releases.push(() => res({ ...doc({}), duplicate: false })))) as never);
+    const target = await screen.findByTestId('folder-work/payments/specs');
+    const files = ['a', 'b', 'c'].map((n) => new File([n], `${n}.md`, { type: 'text/markdown' }));
+    fireEvent.drop(target, { dataTransfer: { files, getData: () => '', types: ['Files'] } });
+    await waitFor(() => expect(client.post).toHaveBeenCalledTimes(2));
+    expect(useDocs.getState().uploads).toHaveLength(3);
+    releases[0]();
+    await waitFor(() => expect(client.post).toHaveBeenCalledTimes(3));
+    releases[1]();
+    releases[2]();
+    await waitFor(() => expect(useDocs.getState().uploads).toHaveLength(0));
+  });
+
+  it('picks the first free "new folder" name', async () => {
+    const tree = libraryFixture();
+    tree.scopes.find((sc) => sc.project === 'payments')!.folders.push({ name: 'new folder', path: 'new folder', folders: [], docs: [] });
+    renderScreen(tree);
+    fireEvent.click(await screen.findByText('folder'));
+    await waitFor(() => expect(client.post).toHaveBeenCalledWith('/v1/library/folders', { context: 'work', project: 'payments', path: 'new folder 2' }));
+  });
+
+  it('sends context, project and folder when a doc is drag-moved', async () => {
+    renderScreen();
+    const target = await screen.findByTestId('folder-work/payments/diagrams');
+    const payload = encodeDrag({ type: 'doc', docId: 'aaaaaaaaaaaa' });
+    fireEvent.drop(target, { dataTransfer: { files: [], getData: (m: string) => (m === DRAG_MIME ? payload : ''), types: [DRAG_MIME] } });
+    await waitFor(() => expect(client.patch).toHaveBeenCalledWith('/v1/library/docs/aaaaaaaaaaaa', { context: 'work', project: 'payments', folder: 'diagrams' }));
+  });
+
+  it('falls back to the default view when the selected folder no longer exists', async () => {
+    useDocs.setState({ selection: { type: 'folder', ref: { context: 'work', project: 'payments', path: 'gone' } } });
+    renderScreen();
+    expect(await screen.findByTestId('folder-view')).toBeTruthy();
+    expect(screen.queryByText('your docs library is empty')).toBeNull();
+    await waitFor(() => expect(useDocs.getState().selection).toBeNull());
   });
 });

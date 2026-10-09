@@ -19,6 +19,7 @@ interface Props {
   onOpenFolder: (ref: FolderRef) => void;
   onUploadFiles: (files: File[], ref: FolderRef) => void;
   onNewFolder: (ref: FolderRef) => void;
+  onDismissUpload?: (id: string) => void;
 }
 
 type SortKey = 'name' | 'kind' | 'modified' | 'size';
@@ -131,6 +132,11 @@ export function FolderView(p: Props) {
             <div key={g.id} className="relative grid grid-cols-[1fr_auto] items-center gap-2 overflow-hidden rounded-md px-2 py-1.5 text-ink-2">
               <span className="truncate">{g.name}</span>
               <span className={`font-mono text-10 ${g.status === 'error' ? 'text-oxblood' : ''}`}>{g.status === 'error' ? g.error : 'uploading…'}</span>
+              {g.status === 'error' && p.onDismissUpload && (
+                <button type="button" aria-label={`dismiss ${g.name}`} onClick={() => p.onDismissUpload?.(g.id)} className="absolute right-1 top-1 rounded p-0.5 text-ink-2 hover:text-ink-0">
+                  <Lucide name="x" size={12} />
+                </button>
+              )}
               {g.status === 'uploading' && <span className="absolute inset-x-0 bottom-0 h-[2px] animate-pulse bg-neon shadow-[0_0_10px_var(--neon)]" />}
             </div>
           ))}
@@ -176,6 +182,11 @@ export function FolderView(p: Props) {
                   {g.status === 'error' ? <span className="px-3 text-center text-oxblood">{g.error}</span> : 'uploading…'}
                 </div>
                 <div className="px-3 py-2.5 text-12 text-ink-1">{g.name}</div>
+                {g.status === 'error' && p.onDismissUpload && (
+                <button type="button" aria-label={`dismiss ${g.name}`} onClick={() => p.onDismissUpload?.(g.id)} className="absolute right-1 top-1 rounded p-0.5 text-ink-2 hover:text-ink-0">
+                  <Lucide name="x" size={12} />
+                </button>
+              )}
                 {g.status === 'uploading' && <span className="absolute inset-x-0 bottom-0 h-[3px] animate-pulse bg-neon shadow-[0_0_10px_var(--neon)]" />}
               </div>
             ))}

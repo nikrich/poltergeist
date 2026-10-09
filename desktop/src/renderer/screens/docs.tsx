@@ -27,6 +27,7 @@ import { useDocs } from '../stores/docs';
 import { useSettings } from '../stores/settings';
 import { toast } from '../stores/toast';
 
+const UPLOAD_CONCURRENCY = 2;
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export function DocsScreen() {
@@ -60,6 +61,13 @@ export function DocsScreen() {
           ? { context: firstProject.context, project: firstProject.project, path: '' }
           : null;
 
+  // A folder delete/move (or doc delete) can leave the selection dangling; fall back to the default view.
+  useEffect(() => {
+    if (!data || !selection) return;
+    if (selection.type === 'folder' && !findFolder(data, selection.ref)) select(null);
+    else if (selection.type === 'doc' && !findDoc(data, selection.docId)) select(null);
+  }, [data, selection, select]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'p') {
@@ -74,10 +82,12 @@ export function DocsScreen() {
   const uploadFiles = useCallback(
     async (files: File[], to: FolderRef) => {
       const key = folderKey(to);
-      await Promise.all(
-        files.map(async (file) => {
-          const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-          addUpload({ id, name: file.name, size: file.size, key });
+      const jobs = files.map((file) => {
+        const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        addUpload({ id, name: file.name, size: file.size, key });
+        return { file, id };
+      });
+      const one = async ({ file, id }: { file: File; id: string }) => {
           if (file.size > CLIENT_MAX_BYTES) {
             failUpload(id, 'too large (max 20 MB)');
             toast.error(`${file.name} is larger than 20 MB`);
@@ -94,8 +104,13 @@ export function DocsScreen() {
             failUpload(id, errMsg(e));
             toast.error(`upload failed: ${file.name}: ${errMsg(e)}`);
           }
-        }),
-      );
+      };
+      // Small worker pool: ghosts appear immediately, uploads run UPLOAD_CONCURRENCY at a time.
+      let next = 0;
+      const worker = async () => {
+        while (next < jobs.length) await one(jobs[next++]);
+      };
+      await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, jobs.length) }, worker));
     },
     [addUpload, failUpload, removeUpload, upload],
   );
@@ -165,7 +180,13 @@ export function DocsScreen() {
           onOpenDoc={(id) => select({ type: 'doc', docId: id })}
           onOpenFolder={(ref) => select({ type: 'folder', ref })}
           onUploadFiles={uploadFiles}
-          onNewFolder={(ref) => run(createFolder.mutateAsync({ ...ref, path: ref.path ? `${ref.path}/new folder` : 'new folder' }))}
+          onDismissUpload={removeUpload}
+          onNewFolder={(ref) => {
+            const taken = new Set(node.folders.map((f) => f.name));
+            let name = 'new folder';
+            for (let i = 2; taken.has(name); i++) name = `new folder ${i}`;
+            void run(createFolder.mutateAsync({ ...ref, path: ref.path ? `${ref.path}/${name}` : name }));
+          }}
         />
       </>
     );
