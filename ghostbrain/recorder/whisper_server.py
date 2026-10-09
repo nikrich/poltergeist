@@ -5,6 +5,11 @@ Live transcription posts a short chunk every few seconds; reloading a
 spike memory each time. Instead one server is started per recording, keeps
 the model resident, and is stopped after the final pass.
 
+Every route sits behind a random secret path prefix (``--request-path``):
+the server sends ``Access-Control-Allow-Origin: *`` and has a ``/load``
+endpoint that swaps the model, so a bare loopback port would let any local
+process — or a web page that guessed the port — use or disrupt it.
+
 The pid is written to ``PID_FILE`` so a sidecar that crashed mid-meeting can
 reap the leftover server on its next start (:func:`kill_orphan`).
 """
@@ -13,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import secrets
 import shutil
 import signal
 import socket
@@ -72,6 +78,7 @@ class WhisperServer:
         self._threads = threads
         self._proc: subprocess.Popen | None = None
         self._port: int | None = None
+        self._prefix = "/" + secrets.token_urlsafe(24)
 
     def __enter__(self) -> Self:
         return self
@@ -98,6 +105,7 @@ class WhisperServer:
             "-m", str(self.model),
             "--host", "127.0.0.1",
             "--port", str(self._port),
+            "--request-path", self._prefix,
             "-l", "auto",
             # Same reason as transcribe.py: carried-over context causes
             # "Okay. Okay. Okay." loops.
@@ -174,7 +182,7 @@ class WhisperServer:
         _clear_pid()
 
     def _url(self, path: str) -> str:
-        return f"http://127.0.0.1:{self._port}{path}"
+        return f"http://127.0.0.1:{self._port}{self._prefix}{path}"
 
 
 def _pid_file() -> Path:

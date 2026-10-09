@@ -21,6 +21,7 @@ FAKE_SERVER = textwrap.dedent(
     from http.server import BaseHTTPRequestHandler, HTTPServer
     args = sys.argv[1:]
     port = int(args[args.index("--port") + 1])
+    prefix = args[args.index("--request-path") + 1]
     mode = os.environ.get("FAKE_MODE", "ok")
     if mode == "exit":
         sys.exit(3)
@@ -29,14 +30,18 @@ FAKE_SERVER = textwrap.dedent(
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a): pass
         def do_GET(self):
-            if self.path == "/health":
+            if self.path == prefix + "/health":
                 if mode == "never_healthy":
                     self.send_response(503); self.end_headers(); return
                 self.send_response(200); self.end_headers()
                 self.wfile.write(b'{{"status":"ok"}}')
+            else:
+                self.send_response(404); self.end_headers()
         def do_POST(self):
             n = int(self.headers["Content-Length"])
             body = self.rfile.read(n)
+            if self.path != prefix + "/inference":
+                self.send_response(404); self.end_headers(); return
             calls["n"] += 1
             lang = "afrikaans" if b"name=\\"language\\"\\r\\n\\r\\nauto" in body and calls["n"] % 2 == 0 else "english"
             out = {{
@@ -155,3 +160,18 @@ def test_kill_orphan_ignores_a_recycled_pid(pid_file: Path) -> None:
     pid_file.write_text(json.dumps({"pid": os.getpid()}))
     assert ws.kill_orphan() is False
     assert not pid_file.exists()
+
+
+def test_routes_sit_behind_a_random_secret_prefix(fake_binary: Path, model: Path, pid_file: Path) -> None:
+    import requests
+
+    with ws.WhisperServer(model, binary=str(fake_binary)) as server:
+        server.start(timeout_s=10)
+        other = ws.WhisperServer(model, binary=str(fake_binary))
+        assert server._prefix != other._prefix
+        assert len(server._prefix) > 16
+        # Another local process that found the port still gets nothing.
+        bare = f"http://127.0.0.1:{server._port}"
+        assert requests.get(bare + "/health", timeout=5).status_code == 404
+        assert requests.post(bare + "/inference", data=b"x", timeout=5).status_code == 404
+        assert server.transcribe(b"\x00\x00" * 1600)
