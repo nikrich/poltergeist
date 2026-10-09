@@ -9,6 +9,7 @@ import {
   type CalloutAttrs,
   type MdLike,
 } from './callout-format';
+import { createCalloutView } from './callout-view';
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -118,6 +119,11 @@ export const Callout = Node.create({
     return title
       ? ['blockquote', attrs, ['p', { class: 'gb-callout-title-html' }, title], ['div', { class: 'gb-callout-body' }, 0]]
       : ['blockquote', attrs, ['div', { class: 'gb-callout-body' }, 0]];
+  },
+
+  addNodeView() {
+    return ({ node, editor, getPos }) =>
+      createCalloutView(node, editor, () => (typeof getPos === 'function' ? getPos() : undefined));
   },
 
   addCommands() {
