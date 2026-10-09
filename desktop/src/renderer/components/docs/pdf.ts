@@ -10,16 +10,26 @@ export interface PdfHandle {
 }
 
 const inflight = new WeakMap<HTMLCanvasElement, RenderTask>();
+const generations = new WeakMap<HTMLCanvasElement, number>();
 
+const currentGen = (canvas: HTMLCanvasElement): number => generations.get(canvas) ?? 0;
+
+// Invalidates every pending or running render on the canvas: stale calls that
+// are still awaiting pdf.js bail out, and a running task is cancelled.
 export function cancelRender(canvas: HTMLCanvasElement): void {
+  generations.set(canvas, currentGen(canvas) + 1);
   inflight.get(canvas)?.cancel();
   inflight.delete(canvas);
 }
 
-// Starts a render on the canvas, cancelling any task already running on it.
-// A cancelled render resolves quietly; real failures still reject.
-async function runRender(canvas: HTMLCanvasElement, run: () => RenderTask): Promise<void> {
+function bump(canvas: HTMLCanvasElement): number {
   cancelRender(canvas);
+  return currentGen(canvas);
+}
+
+// Runs a render task on the canvas. A cancelled render resolves quietly;
+// real failures still reject.
+async function runRender(canvas: HTMLCanvasElement, run: () => RenderTask): Promise<void> {
   const task = run();
   inflight.set(canvas, task);
   try {
@@ -49,7 +59,9 @@ export async function loadPdf(url: string): Promise<PdfHandle> {
   return {
     numPages: pdf.numPages,
     async renderPage(canvas, pageNo, scale) {
+      const gen = bump(canvas);
       const page = await pdf.getPage(pageNo);
+      if (currentGen(canvas) !== gen) return;
       const ratio = window.devicePixelRatio || 1;
       const viewport = page.getViewport({ scale: scale * ratio });
       canvas.width = viewport.width;
@@ -62,8 +74,11 @@ export async function loadPdf(url: string): Promise<PdfHandle> {
 }
 
 export async function renderThumb(canvas: HTMLCanvasElement, url: string, width: number): Promise<void> {
+  const gen = bump(canvas);
   const pdf = await open(url);
+  if (currentGen(canvas) !== gen) return;
   const page = await pdf.getPage(1);
+  if (currentGen(canvas) !== gen) return;
   const base = page.getViewport({ scale: 1 });
   const viewport = page.getViewport({ scale: width / base.width });
   canvas.width = viewport.width;
