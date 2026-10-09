@@ -58,6 +58,15 @@ class Message:
     media_path: Path | None  # absolute; None when WhatsApp never downloaded it
 
 
+SQLITE_AUTH = 23
+
+
+def is_access_denied(e: sqlite3.DatabaseError) -> bool:
+    """SQLITE_AUTH (macOS privacy/TCC refusal), as opposed to a corrupt store."""
+    return (getattr(e, "sqlite_errorcode", None) == SQLITE_AUTH
+            or "authoriz" in str(e).lower())
+
+
 def default_store_path() -> Path:
     raw = os.environ.get("GHOSTBRAIN_WHATSAPP_STORE")
     if raw:

@@ -87,3 +87,18 @@ def test_corrupt_store(client, monkeypatch, tmp_path):
     r = client.get("/v1/connectors")
     assert r.status_code == 200
     assert "whatsapp" in [c["id"] for c in r.json()]
+
+
+def test_sqlite_auth_is_access_hint(client, monkeypatch):
+    import sqlite3
+
+    from ghostbrain.api.routes.whatsapp import ACCESS_HINT
+    from ghostbrain.connectors.whatsapp import store
+
+    def deny(path):
+        raise sqlite3.DatabaseError("authorization denied")
+
+    monkeypatch.setattr(store, "open_store", deny)
+    r = client.get("/v1/connectors/whatsapp/chats")
+    assert r.status_code == 409
+    assert r.json()["detail"] == ACCESS_HINT

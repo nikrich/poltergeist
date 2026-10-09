@@ -138,6 +138,8 @@ def _whatsapp_store_status() -> tuple[str, str | None]:
     except (PermissionError, sqlite3.OperationalError) as e:
         return "denied", str(e)
     except sqlite3.DatabaseError as e:
+        if store.is_access_denied(e):
+            return "denied", str(e)
         return "schema", f"WhatsApp store is unreadable: {e}"
     return "ok", None
 

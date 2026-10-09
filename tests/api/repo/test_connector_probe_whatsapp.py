@@ -70,3 +70,35 @@ def test_off_with_empty_allowlist_never_opens_store(monkeypatch, tmp_path):
 
     monkeypatch.setattr(cp, "_whatsapp_store_status", must_not_run)
     assert cp.probe("whatsapp").state == "off"
+
+
+def _auth_denied(code: bool):
+    import sqlite3
+
+    def raise_auth(path):
+        if code:
+            e = sqlite3.DatabaseError("not permitted")
+            e.sqlite_errorcode = 23  # SQLITE_AUTH
+            raise e
+        raise sqlite3.DatabaseError("authorization denied")
+
+    return raise_auth
+
+
+@pytest.mark.parametrize("code", [False, True])
+def test_sqlite_auth_is_denied_not_schema(monkeypatch, tmp_path, opted_in, code):
+    from ghostbrain.connectors.whatsapp import store
+    monkeypatch.setenv("GHOSTBRAIN_WHATSAPP_STORE", str(tmp_path))  # exists
+    monkeypatch.setattr(cp, "_platform", lambda: "darwin")
+    monkeypatch.setattr(store, "open_store", _auth_denied(code))
+    assert cp._whatsapp_store_status()[0] == "denied"
+    r = cp.probe("whatsapp")
+    assert r.state == "err" and "Full Disk Access" in r.error
+
+
+def test_provider_sqlite_auth_asks_for_full_disk_access(monkeypatch, tmp_path):
+    from ghostbrain.api.auth.providers.local_grant import WhatsAppStoreProvider
+    from ghostbrain.connectors.whatsapp import store
+    monkeypatch.setattr(store, "open_store", _auth_denied(False))
+    nxt = WhatsAppStoreProvider().start("whatsapp", {})
+    assert nxt.kind == "need_grant" and "Full Disk Access" in nxt.message

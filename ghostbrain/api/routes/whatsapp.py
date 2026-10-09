@@ -42,6 +42,8 @@ def _chats() -> list[store.Chat]:
     except (PermissionError, sqlite3.OperationalError) as e:
         raise HTTPException(status_code=409, detail=ACCESS_HINT) from e
     except sqlite3.DatabaseError as e:
+        if store.is_access_denied(e):
+            raise HTTPException(status_code=409, detail=ACCESS_HINT) from e
         raise HTTPException(status_code=409,
                             detail=f"WhatsApp store is unreadable: {e}") from e
 
