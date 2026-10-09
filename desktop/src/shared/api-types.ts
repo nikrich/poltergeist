@@ -630,3 +630,21 @@ export interface LlmProvidersResponse {
   active: SidecarProviderId;
   providers: Record<SidecarProviderId, LlmProviderDiagnostics>;
 }
+
+// ── Docs library ─────────────────────────────────────────────────────────────
+
+export type DocKind = 'pdf' | 'image' | 'docx' | 'xlsx' | 'text' | 'opaque';
+export interface DocSummary {
+  doc_id: string; title: string; kind: DocKind; mime: string; size: number; created: string;
+  context: string; project: string | null; folder: string; original: string;
+  original_path: string; note_path: string; index_status: 'ok' | 'failed' | 'pending';
+  pages: number | null; excerpt: string;
+}
+export interface UploadDocResponse extends DocSummary { duplicate: boolean }
+export interface DocDetail extends DocSummary { body: string }
+export interface DocFolderNode { name: string; path: string; folders: DocFolderNode[]; docs: DocSummary[] }
+export interface DocScope { context: string; project: string | null; name: string; archived: boolean; folders: DocFolderNode[]; docs: DocSummary[] }
+export interface AttentionItem { kind: 'orphan_note' | 'unclaimed_original' | 'index_failed'; context: string; project: string | null; folder: string; name: string; doc_id: string | null }
+export interface LibraryTree { scopes: DocScope[]; attention: AttentionItem[] }
+export interface FolderRef { context: string; project: string | null; path: string }
+export interface UploadDocRequest { context: string; project: string | null; folder: string; name: string; mime: string; content_b64: string }
