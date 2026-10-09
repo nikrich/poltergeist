@@ -25,6 +25,20 @@ export type ApiResult<T = unknown> =
   | { ok: true; data: T }
   | { ok: false; error: string; status?: number };
 
+const ETAG_RE = /^[0-9a-f]{16}$/;
+
+/** Headers the renderer may ask the forwarder to set. B1: only If-Match
+ * (spec B §7), and only a well-formed 16-hex etag. B2 adds the actor
+ * header here. Anything else is dropped. */
+export function requestHeadersFrom(opts: unknown): Record<string, string> {
+  if (!opts || typeof opts !== 'object') return {};
+  const ifMatch = (opts as { ifMatch?: unknown }).ifMatch;
+  if (typeof ifMatch === 'string' && ETAG_RE.test(ifMatch)) {
+    return { 'If-Match': `"${ifMatch}"` };
+  }
+  return {};
+}
+
 // node:http, not fetch: undici (behind Node's fetch) enforces a hidden 300s
 // headersTimeout that fires regardless of any AbortSignal. Non-streaming LLM
 // endpoints (/v1/llm/run, /v1/answer) send no bytes until synthesis finishes,
@@ -36,6 +50,7 @@ export async function forward<T = unknown>(
   path: string,
   body?: unknown,
   timeoutMs = 300_000,
+  extraHeaders: Record<string, string> = {},
 ): Promise<ApiResult<T>> {
   const info = sidecar.getInfo();
   if (!info) return { ok: false, error: 'Sidecar not ready' };
@@ -49,6 +64,7 @@ export async function forward<T = unknown>(
         path,
         method,
         headers: {
+          ...extraHeaders,
           ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
           Authorization: `Bearer ${info.token}`,
         },

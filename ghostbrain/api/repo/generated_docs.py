@@ -9,7 +9,8 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 
-from ghostbrain.paths import vault_path
+from ghostbrain import vault_write
+from ghostbrain.vault_write import MCP
 
 GENERATED_DOCS_DIR_REL = "20-contexts/generated-docs"
 MAX_HTML_BYTES = 2_000_000
@@ -29,11 +30,11 @@ def write_doc(title: str, html: str) -> dict:
     if len(html.encode("utf-8")) > MAX_HTML_BYTES:
         raise ValueError(f"html exceeds {MAX_HTML_BYTES} bytes")
 
-    target_dir = vault_path() / GENERATED_DOCS_DIR_REL
-    target_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-    path = target_dir / f"{stamp}-{_slug(title)}.html"
-    path.write_text(html, encoding="utf-8")
-
-    rel = path.resolve().relative_to(vault_path().resolve())
-    return {"path": str(rel), "title": title}
+    res = vault_write.write_new(
+        f"{GENERATED_DOCS_DIR_REL}/{stamp}-{_slug(title)}.html",
+        html,
+        actor=MCP,
+        reason=f"generated doc: {title}",
+    )
+    return {"path": res.path, "title": title}

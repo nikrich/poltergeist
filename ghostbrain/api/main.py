@@ -31,6 +31,7 @@ from ghostbrain.api.routes import settings as settings_routes
 from ghostbrain.api.routes import suggestions as suggestions_routes
 from ghostbrain.api.routes import vault as vault_routes
 from ghostbrain.api.routes import whatsapp as whatsapp_routes
+from ghostbrain.api.vault_http import install_vault_write_errors
 
 API_VERSION = "1.0.0"
 
@@ -83,6 +84,7 @@ def create_app(token: str) -> FastAPI:
     # unauthenticated request, JSON 500 for the boom route once authed).
     app.middleware("http")(make_auth_middleware(token))
     install_error_handling(app)
+    install_vault_write_errors(app)
     app.include_router(health_routes.router)
     app.include_router(vault_routes.router)
     app.include_router(connectors_routes.router)

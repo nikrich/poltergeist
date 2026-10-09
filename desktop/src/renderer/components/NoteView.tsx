@@ -1,16 +1,20 @@
 import { useEffect, useRef } from 'react';
 import type { Editor } from '@tiptap/core';
 
+import { get } from '../lib/api/client';
 import { useNote, useUpdateNoteByPath } from '../lib/api/hooks';
+import type { Note } from '../../shared/api-types';
 import { useNoteView } from '../stores/note-view';
 import { useSettings } from '../stores/settings';
 import { toast } from '../stores/toast';
 import { Lucide } from './Lucide';
 import { Btn } from './Btn';
 import { Pill } from './Pill';
-import { RichMarkdownEditor } from './RichMarkdownEditor';
+import { GuardedNoteEditor, confirmLeave, type GuardHandle } from './GuardedNoteEditor';
 import { SkeletonRows } from './SkeletonRows';
 import { PanelError } from './PanelError';
+import { notePathFromTarget } from '../lib/editor/link-suggest';
+import { BacklinksPanel } from './BacklinksPanel';
 
 interface Props {
   /** Test hook: receives the TipTap Editor instance once created. */
@@ -19,8 +23,18 @@ interface Props {
 
 export function NoteView({ onEditorReady }: Props = {}) {
   const path = useNoteView((s) => s.path);
-  const close = useNoteView((s) => s.close);
-  const openNote = useNoteView((s) => s.open);
+  const closeView = useNoteView((s) => s.close);
+  const openView = useNoteView((s) => s.open);
+  // Leaving under the conflict banner would drop the unsaved text: ask first.
+  const guardRef = useRef<GuardHandle | null>(null);
+  const close = () => {
+    if (confirmLeave(guardRef)) closeView();
+  };
+  const openNote = (target: string) => {
+    if (confirmLeave(guardRef)) openView(target);
+  };
+  const closeRef = useRef(close);
+  closeRef.current = close;
   const note = useNote(path);
   const vaultPath = useSettings((s) => s.vaultPath);
   const updateNote = useUpdateNoteByPath();
@@ -28,29 +42,28 @@ export function NoteView({ onEditorReady }: Props = {}) {
   useEffect(() => {
     if (path === null) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close();
+      if (e.key === 'Escape') closeRef.current();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [path, close]);
+  }, [path]);
 
-  // Freeze the FIRST fetched body per path (same pattern as JotsScreen):
+  // Freeze the FIRST fetched body + etag per path (same pattern as JotsScreen):
   // useUpdateNoteByPath invalidates ['note'] after every autosave, and a
-  // refetched body flowing back into the editor as a prop change would reset
-  // it mid-typing. key={path} below remounts the editor on note switch.
-  const initialBodyRef = useRef<{ path: string; body: string } | null>(null);
+  // refetched body flowing back into the editor would reset it mid-typing.
+  // The etag is frozen with it: GuardedNoteEditor chains etags itself.
+  const initialBodyRef = useRef<{ path: string; body: string; etag: string | null } | null>(null);
   if (
     note.data &&
     path &&
     (initialBodyRef.current === null || initialBodyRef.current.path !== path)
   ) {
-    initialBodyRef.current = { path, body: note.data.body };
+    initialBodyRef.current = { path, body: note.data.body, etag: note.data.etag ?? null };
   }
   if (path === null && initialBodyRef.current !== null) {
     initialBodyRef.current = null;
   }
-  const editorBody =
-    initialBodyRef.current?.path === path ? initialBodyRef.current.body : undefined;
+  const initial = initialBodyRef.current?.path === path ? initialBodyRef.current : undefined;
 
   if (path === null) return null;
 
@@ -66,14 +79,8 @@ export function NoteView({ onEditorReady }: Props = {}) {
   };
 
   // Closing the dialog mid-debounce cancels the pending save (editor unmount
-  // clears its timer) — deliberate: same JotEditor trade-off, a flush-on-close
-  // could write a half-edited doc. Edits within the last ~1s of closing are lost.
-  const handleSaveBody = (next: string) => {
-    updateNote.mutate(
-      { path, body: next },
-      { onError: (err) => toast.error(`save failed: ${err.message}`) },
-    );
-  };
+  // clears its timer) — deliberate: a flush-on-close could write a half-edited
+  // doc. Edits within the last ~1s of closing are lost.
 
   return (
     <div
@@ -132,15 +139,26 @@ export function NoteView({ onEditorReady }: Props = {}) {
               />
             </div>
           )}
-          {editorBody !== undefined && (
-            <RichMarkdownEditor
-              key={path}
-              markdown={editorBody}
-              onSave={handleSaveBody}
-              jotId={path}
-              onEditorReady={onEditorReady}
-              onWikilinkClick={openNote}
-            />
+          {initial !== undefined && (
+            <>
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <GuardedNoteEditor
+                  key={path}
+                  initialBody={initial.body}
+                  initialEtag={initial.etag}
+                  send={(body, ifMatch) => updateNote.mutateAsync({ path, body, ifMatch })}
+                  fetchLatest={() => get<Note>(`/v1/notes?path=${encodeURIComponent(path)}`)}
+                  onSaveError={(err) => toast.error(`save failed: ${err.message}`)}
+                  guardRef={guardRef}
+                  editorProps={{
+                    jotId: path,
+                    onEditorReady,
+                    onWikilinkClick: (target) => openNote(notePathFromTarget(target)),
+                  }}
+                />
+              </div>
+              <BacklinksPanel path={path} onOpen={openNote} />
+            </>
           )}
         </div>
       </div>

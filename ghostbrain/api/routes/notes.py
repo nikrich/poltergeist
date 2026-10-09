@@ -1,7 +1,7 @@
 """Notes endpoints — read by path (legacy), and the manual-jot family."""
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi import Path as PathParam
 from fastapi.responses import Response
 
@@ -32,6 +32,13 @@ from ghostbrain.api.repo.notes_manual import (
     update_jot_body,
     write_inbox_jot,
 )
+from ghostbrain.api.vault_http import if_match
+from ghostbrain.vault_write import USER, plugin_actor
+
+# PUT /v1/notes is the plugin write-back route. B2 replaces this with the id
+# the main process stamps on the request; until then plugin writes are
+# attributed generically.
+_PLUGIN_WRITER = plugin_actor("unattributed")
 
 
 def _known_contexts() -> set[str]:
@@ -79,12 +86,12 @@ def get_notes(
 
 
 @router.put("", status_code=status.HTTP_200_OK)
-def upsert_note(req: UpsertNoteRequest) -> dict:
+def upsert_note(req: UpsertNoteRequest, base_etag: str | None = Depends(if_match)) -> dict:
     """Create or replace a vault note at an explicit path (plugin write-back)."""
     if not req.content.strip():
         raise HTTPException(status_code=422, detail="content must not be empty")
     try:
-        return save_note_at_path(req.path, req.content)
+        return save_note_at_path(req.path, req.content, actor=_PLUGIN_WRITER, base_etag=base_etag)
     except NoteInvalidPath as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -129,16 +136,16 @@ def create_note(req: CreateNoteRequest) -> dict:
 # instead of falling through to this handler. Pinned by
 # test_patch_body_not_shadowed_by_jot_route.
 @router.patch("/body")
-def patch_note_body(req: UpdateNoteBodyRequest) -> dict:
+def patch_note_body(req: UpdateNoteBodyRequest, base_etag: str | None = Depends(if_match)) -> dict:
     """Rewrite the markdown body of any vault note by path.
 
-    Frontmatter is preserved; `updated` bumped when the key exists. Unlike the
-    jot PATCH, this does NOT re-derive tags — connector files own their schema.
+    Frontmatter bytes are preserved; `updated` bumped when the key exists.
+    `If-Match` (from the GET's etag) → 409 when the file changed since.
     """
     if not req.body.strip():
         raise HTTPException(status_code=422, detail="body must not be empty")
     try:
-        return save_note_body(req.path, req.body)
+        return save_note_body(req.path, req.body, actor=USER, base_etag=base_etag)
     except NoteInvalidPath as e:
         raise HTTPException(status_code=400, detail=str(e))
     except NoteNotFound:
@@ -149,13 +156,15 @@ def patch_note_body(req: UpdateNoteBodyRequest) -> dict:
 def patch_note(
     req: UpdateNoteRequest,
     jot_id: str = PathParam(..., min_length=8, max_length=128),
+    base_etag: str | None = Depends(if_match),
 ) -> dict:
-    """Update the body (and re-derive tags) of an existing jot."""
+    """Update the body (and re-derive tags) of an existing jot. `If-Match` →
+    409 when the jot changed since the editor read it."""
     body = req.body
     if not body.strip():
         raise HTTPException(status_code=422, detail="body must not be empty")
     try:
-        return update_jot_body(jot_id, body)
+        return update_jot_body(jot_id, body, actor=USER, base_etag=base_etag)
     except JotNotFound:
         raise HTTPException(status_code=404, detail=f"Jot not found: {jot_id}")
 
@@ -216,6 +225,7 @@ def route_note(
             confidence=1.0,
             method="user",
             reasoning="manual re-route by user",
+            actor=USER,
         )
     except JotNotFound:
         raise HTTPException(status_code=404, detail=f"Jot not found: {jot_id}")
@@ -227,7 +237,7 @@ def delete_note(
 ) -> Response:
     """Delete a jot permanently."""
     try:
-        delete_jot(jot_id)
+        delete_jot(jot_id, actor=USER)
     except JotNotFound:
         raise HTTPException(status_code=404, detail=f"Jot not found: {jot_id}")
     return Response(status_code=204)

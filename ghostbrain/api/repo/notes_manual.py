@@ -73,6 +73,12 @@ import frontmatter  # noqa: E402 — placed after pure helpers deliberately
 from ghostbrain.paths import vault_path  # noqa: E402
 from ghostbrain.llm.client import run as llm_run  # noqa: E402
 from ghostbrain.llm.client import LLMError  # noqa: E402
+from ghostbrain import vault_write  # noqa: E402
+from ghostbrain.vault_write import ASSISTANT, DELETE_FIELD, USER, Actor, worker_actor  # noqa: E402
+
+# LLM auto-routing files jots on the user's behalf. B2 decides whether this
+# actor is listed on the Changes screen.
+ROUTER_ACTOR: Actor = worker_actor("jot-router")
 
 log = logging.getLogger("ghostbrain.api.repo.notes_manual")
 
@@ -182,7 +188,10 @@ def _jsonable(value: Any) -> Any:
     return str(value)
 
 
-def write_inbox_jot(body: str, *, captured_at: "datetime | None" = None, extra: dict | None = None) -> dict:
+def write_inbox_jot(
+    body: str, *, captured_at: "datetime | None" = None, extra: dict | None = None,
+    actor: Actor = USER,
+) -> dict:
     """Write a new jot to the inbox folder. Returns {id, path}."""
     captured_at = captured_at or datetime.now(timezone.utc)
     first_line = title_from_body(body)
@@ -211,31 +220,44 @@ def write_inbox_jot(body: str, *, captured_at: "datetime | None" = None, extra: 
     if extra:
         for k, v in extra.items():
             post[k] = v
-    target.write_text(frontmatter.dumps(post) + "\n", encoding="utf-8")
+    try:
+        vault_write.write(
+            _vault_rel(target), content=frontmatter.dumps(post) + "\n", op="create",
+            actor=actor, reason="new jot",
+        )
+    except vault_write.WriteConflict:
+        raise JotIdConflict(jot_id) from None
     log.info("wrote inbox jot id=%s", jot_id)
     return {"id": jot_id, "path": _vault_rel(target)}
 
 
 def read_jot(jot_id: str) -> dict:
     path = _find_file(jot_id)
-    post = frontmatter.load(path)
-    fm = {str(k): _jsonable(v) for k, v in post.metadata.items()}
+    snap = vault_write.read(_vault_rel(path), suffixes=(".md",))
+    fm = {str(k): _jsonable(v) for k, v in snap.metadata().items()}
     return {
         "path": _vault_rel(path),
-        "title": title_from_body(post.content or fm.get("id") or ""),
-        "body": post.content or "",
+        "title": title_from_body(snap.body or fm.get("id") or ""),
+        "body": snap.body,
         "frontmatter": fm,
+        "etag": snap.etag,
     }
 
 
-def update_jot_body(jot_id: str, new_body: str) -> dict:
+def update_jot_body(
+    jot_id: str, new_body: str, *, actor: Actor = USER, base_etag: str | None = None
+) -> dict:
     path = _find_file(jot_id)
-    post = frontmatter.load(path)
-    post.content = new_body
-    post["updated"] = _now_iso()
-    post["tags"] = extract_tags(new_body)
-    path.write_text(frontmatter.dumps(post) + "\n", encoding="utf-8")
-    return {"id": jot_id, "path": _vault_rel(path), "updated": post["updated"]}
+    now = _now_iso()
+    res = vault_write.write(
+        _vault_rel(path),
+        body=new_body,
+        fields={"updated": now, "tags": extract_tags(new_body)},
+        actor=actor,
+        base_etag=base_etag,
+        reason="edited jot",
+    )
+    return {"id": jot_id, "path": res.path, "updated": now, "etag": res.etag}
 
 
 def move_jot(
@@ -246,6 +268,7 @@ def move_jot(
     confidence: float,
     method: str,
     reasoning: str,
+    actor: Actor = USER,
 ) -> dict:
     src = _find_file(jot_id)
     if to_project:
@@ -260,51 +283,52 @@ def move_jot(
         dst = _guard_inside_vault(_context_dir(to_context) / f"{jot_id}.md")
     if src.resolve() == dst:
         return {"id": jot_id, "path": _vault_rel(dst), "context": to_context, "project": to_project}
-    post = frontmatter.load(src)
-    post["context"] = to_context
-    post["routingStatus"] = "routed"
-    post["routingConfidence"] = confidence
-    post["routingMethod"] = method
-    post["routingReasoning"] = reasoning
-    post["updated"] = _now_iso()
-    if to_project:
-        post["project"] = to_project
-    elif "project" in post.metadata:
-        del post.metadata["project"]
-    dst.write_text(frontmatter.dumps(post) + "\n", encoding="utf-8")
-    # Logged before unlink so a crash between dst write and src unlink
-    # leaves a trace of the duplicate pair.
-    log.info("moving jot id=%s: wrote %s, removing %s", jot_id, dst, src)
-    src.unlink()
+    fields: dict[str, Any] = {
+        "context": to_context,
+        "routingStatus": "routed",
+        "routingConfidence": confidence,
+        "routingMethod": method,
+        "routingReasoning": reasoning,
+        "updated": _now_iso(),
+        "project": to_project if to_project else DELETE_FIELD,
+    }
+    log.info("moving jot id=%s: %s -> %s", jot_id, src, dst)
+    res = vault_write.write(
+        _vault_rel(src), op="move", dest=_vault_rel(dst), fields=fields,
+        actor=actor, reason=f"filed to {to_context}",
+    )
     log.info("moved jot id=%s -> %s (project=%s)", jot_id, to_context, to_project)
-    return {"id": jot_id, "path": _vault_rel(dst), "context": to_context, "project": to_project}
+    return {
+        "id": jot_id, "path": res.path, "context": to_context, "project": to_project,
+        "etag": res.etag,
+    }
 
 
-def mark_manual_review(jot_id: str, reasoning: str) -> dict:
+def mark_manual_review(jot_id: str, reasoning: str, *, actor: Actor = ROUTER_ACTOR) -> dict:
     """Keep the file at inbox path; set routingStatus=manual_review."""
     path = _find_file(jot_id)
-    post = frontmatter.load(path)
-    post["routingStatus"] = "manual_review"
-    post["routingReasoning"] = reasoning
-    post["updated"] = _now_iso()
-    path.write_text(frontmatter.dumps(post) + "\n", encoding="utf-8")
-    return {"id": jot_id, "path": _vault_rel(path), "routingStatus": "manual_review"}
+    res = vault_write.write(
+        _vault_rel(path),
+        fields={"routingStatus": "manual_review", "routingReasoning": reasoning, "updated": _now_iso()},
+        actor=actor,
+        reason="kept for manual review",
+    )
+    return {"id": jot_id, "path": res.path, "routingStatus": "manual_review"}
 
 
-def set_frontmatter_fields(jot_id: str, fields: dict[str, Any]) -> dict:
-    """Stamp arbitrary frontmatter fields without touching the body."""
+def set_frontmatter_fields(jot_id: str, fields: dict[str, Any], *, actor: Actor = USER) -> dict:
+    """Stamp frontmatter fields without touching the body (line-level edits)."""
     path = _find_file(jot_id)
-    post = frontmatter.load(path)
-    for key, value in fields.items():
-        post[key] = value
-    post["updated"] = _now_iso()
-    path.write_text(frontmatter.dumps(post) + "\n", encoding="utf-8")
-    return {"id": jot_id, "path": _vault_rel(path)}
+    res = vault_write.write(
+        _vault_rel(path), fields={**fields, "updated": _now_iso()}, actor=actor,
+        reason="updated jot fields",
+    )
+    return {"id": jot_id, "path": res.path, "etag": res.etag}
 
 
-def delete_jot(jot_id: str) -> None:
+def delete_jot(jot_id: str, *, actor: Actor = USER) -> None:
     path = _find_file(jot_id)
-    path.unlink()
+    vault_write.write(_vault_rel(path), op="delete", actor=actor, reason="deleted jot")
 
 
 # ---------------------------------------------------------------------------
@@ -366,8 +390,8 @@ def extract_photo_into_jot(jot_id: str, asset_rel_path: str) -> dict:
             "reason": "no readable content in photo",
         }
     new_body = record["body"].rstrip() + "\n\n" + _callout(text) + "\n"
-    saved = update_jot_body(jot_id, new_body)
-    return {"id": jot_id, "path": saved["path"], "body": new_body, "extracted": True}
+    saved = update_jot_body(jot_id, new_body, actor=ASSISTANT)
+    return {"id": jot_id, "path": saved["path"], "body": new_body, "extracted": True, "etag": saved["etag"]}
 
 
 def list_jots(
@@ -490,6 +514,7 @@ def _route_jot_core(jot_id: str, body: str, *, path_hint: str) -> dict:
             confidence=decision.confidence,
             method=decision.method,
             reasoning=decision.reasoning,
+            actor=ROUTER_ACTOR,
         )
     except Exception as exc:
         log.exception("move_jot failed context=%r id=%s", decision.context, jot_id)

@@ -8,7 +8,7 @@ import type { Settings } from '../shared/types';
 import { loadInitialState, attachStatePersistence } from './window-state';
 import { buildAppMenu } from './menu';
 import { Sidecar } from './sidecar';
-import { forward, isAllowedMethod } from './api-forwarder';
+import { forward, isAllowedMethod, requestHeadersFrom } from './api-forwarder';
 import { startChatStream, stopChatStream } from './chat-stream';
 import type { ChatStreamEvent } from '../shared/api-types';
 import { startDocsStream, stopDocsStream } from './docs-stream';
@@ -25,6 +25,7 @@ import { installUpdater } from './updater';
 import { installClipboardBridge } from './clipboard';
 import { installCliShim } from './cli-shim';
 import { isAllowedExternalUrl } from './external-url';
+import { installNavigationGuard } from './navigation-guard';
 import {
   registerGbAssetScheme,
   registerAssetProtocol,
@@ -160,6 +161,17 @@ function createWindow() {
     win.loadFile(join(__dirname, '../renderer/index.html'));
   }
 }
+
+// Every webContents (main window, jot overlay, pdf-export, anything added
+// later) gets the navigation guard: foreign navigations are cancelled and
+// window.open is always denied so no external page inherits the preload
+// bridge. Registered at module load, before any window exists.
+app.on('web-contents-created', (_event, contents) => {
+  installNavigationGuard(contents, {
+    devServerUrl: process.env.ELECTRON_RENDERER_URL,
+    rendererRoot: join(__dirname, '../renderer'),
+  });
+});
 
 ipcMain.handle('gb:settings:getAll', () =>
   DEMO ? DEMO_SETTINGS : settings.getAll(),
@@ -355,7 +367,7 @@ app.on('activate', () => {
 
 ipcMain.handle(
   'gb:api:request',
-  async (_e, method: unknown, path: unknown, body: unknown) => {
+  async (_e, method: unknown, path: unknown, body: unknown, opts: unknown) => {
     if (typeof method !== 'string' || typeof path !== 'string') {
       return { ok: false, error: 'Invalid request shape' };
     }
@@ -367,7 +379,7 @@ ipcMain.handle(
       return { ok: false, error: 'Path not allowed (must start with /v1/)' };
     }
     if (DEMO) return handleDemoApi(m, path, body);
-    return forward(sidecar, m, path, body);
+    return forward(sidecar, m, path, body, undefined, requestHeadersFrom(opts));
   },
 );
 

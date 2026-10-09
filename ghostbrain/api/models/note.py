@@ -9,6 +9,7 @@ class Note(BaseModel):
     title: str
     body: str
     frontmatter: dict[str, Any]
+    etag: str | None = None  # sha256(file bytes)[:16]; send back as If-Match
 
 
 RoutingStatus = Literal["pending", "routed", "manual_review"]
