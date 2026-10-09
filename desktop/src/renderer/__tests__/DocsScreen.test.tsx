@@ -190,6 +190,10 @@ describe('DocsScreen', () => {
       fireEvent.keyDown(window, { key: '\\', ctrlKey: true });
       expect(useDocs.getState().treeCollapsed).toBe(false);
       fireEvent.keyDown(window, { key: '«', code: 'Backslash', metaKey: true, altKey: true });
+      expect(useDocs.getState().inspectorCollapsed).toBe(false); // no doc selected: no-op
+      fireEvent.click(await screen.findByText('Payments API v2'));
+      await screen.findByText(/\/ 1/);
+      fireEvent.keyDown(window, { key: '«', code: 'Backslash', metaKey: true, altKey: true });
       expect(useDocs.getState().inspectorCollapsed).toBe(true);
       expect(useDocs.getState().treeCollapsed).toBe(false);
       const input = document.createElement('input');

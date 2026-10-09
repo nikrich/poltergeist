@@ -3,16 +3,28 @@ import { Lucide } from '../Lucide';
 import { cancelRender, loadPdf, type PdfHandle } from './pdf';
 
 const ZOOMS = [0.5, 0.75, 1, 1.25, 1.5, 2];
-const PAD_X = 48; // scroller p-6, both sides
-const PAD_Y = 48;
+const DEFAULT_PAD = 24; // scroller p-6
+const MIN_FIT = 0.25;
+const MAX_FIT = 3;
+const REFIT_DEBOUNCE_MS = 120;
+
+function padding(el: HTMLElement): { x: number; y: number } {
+  const cs = typeof getComputedStyle === 'function' ? getComputedStyle(el) : null;
+  const n = (v: string | undefined) => {
+    const f = parseFloat(v ?? '');
+    return Number.isFinite(f) ? f : DEFAULT_PAD;
+  };
+  return { x: n(cs?.paddingLeft) + n(cs?.paddingRight), y: n(cs?.paddingTop) + n(cs?.paddingBottom) };
+}
 
 type ZoomMode = 'fit-width' | 'fit-page' | 'manual';
 
 function fitScaleFor(el: HTMLElement, mode: ZoomMode, base: { width: number; height: number }): number | null {
   if (mode === 'manual' || !el.clientWidth || !base.width || !base.height) return null;
-  const byWidth = (el.clientWidth - PAD_X) / base.width;
-  const v = mode === 'fit-width' || !el.clientHeight ? byWidth : Math.min(byWidth, (el.clientHeight - PAD_Y) / base.height);
-  return v > 0 ? Math.round(v * 1000) / 1000 : null;
+  const pad = padding(el);
+  const byWidth = (el.clientWidth - pad.x) / base.width;
+  const v = mode === 'fit-width' || !el.clientHeight ? byWidth : Math.min(byWidth, (el.clientHeight - pad.y) / base.height);
+  return v > 0 ? Math.round(Math.min(Math.max(v, MIN_FIT), MAX_FIT) * 1000) / 1000 : null;
 }
 const GAP = 16;
 const NO_IO_RENDER = 3; // pages rendered when IntersectionObserver is unavailable (jsdom)
@@ -56,6 +68,7 @@ export function PdfViewer({ url }: { url: string }) {
   const requested = useRef(new Set<number>());
   const prevScale = useRef<number | null>(null);
   const fitInit = useRef(false);
+  const keepRatio = useRef<number | null>(null); // in-document scroll position to keep across a refit
   const [jump, setJump] = useState<string | null>(null);
   const onError = useCallback((e: string) => setError(e), []);
 
@@ -186,7 +199,10 @@ export function PdfViewer({ url }: { url: string }) {
   useLayoutEffect(() => {
     if (scale === prevScale.current) return;
     prevScale.current = scale;
-    pageEls.current.get(page)?.scrollIntoView({ block: 'start' });
+    const el = scroller.current;
+    if (keepRatio.current !== null && el) el.scrollTop = keepRatio.current * el.scrollHeight;
+    else pageEls.current.get(page)?.scrollIntoView({ block: 'start' });
+    keepRatio.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only on scale changes
   }, [scale]);
 
@@ -215,7 +231,7 @@ export function PdfViewer({ url }: { url: string }) {
   useLayoutEffect(() => {
     const el = scroller.current;
     if (!doc || !el || mode === 'manual') return;
-    const apply = () => {
+    const apply = (refit: boolean) => {
       const v = fitScaleFor(el, mode, doc.base);
       if (v === null) return;
       if (!fitInit.current) {
@@ -223,25 +239,37 @@ export function PdfViewer({ url }: { url: string }) {
         prevScale.current = v;
       }
       if (v !== scaleRef.current) {
+        // Observer-driven refits keep the in-document position instead of jumping to a page top.
+        keepRatio.current = refit && el.scrollHeight > 0 ? el.scrollTop / el.scrollHeight : null;
         scaleRef.current = v;
         setFitScale(v);
         shrinkWindow();
       }
     };
-    apply();
+    apply(false);
     if (typeof ResizeObserver === 'undefined') return;
     let pending: number | null = null;
+    let queued = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const ro = new ResizeObserver(() => {
-      if (pending !== null) return;
+      if (queued) return;
+      queued = true;
       pending = requestAnimationFrame(() => {
+        queued = false;
         pending = null;
-        apply();
+        // Trailing debounce: commit one scale once the resizing settles.
+        if (timer !== null) clearTimeout(timer);
+        timer = setTimeout(() => {
+          timer = null;
+          apply(true);
+        }, REFIT_DEBOUNCE_MS);
       });
     });
     ro.observe(el);
     return () => {
       ro.disconnect();
-      if (pending !== null) cancelAnimationFrame(pending);
+      if (queued && pending !== null) cancelAnimationFrame(pending);
+      if (timer !== null) clearTimeout(timer);
     };
   }, [doc, mode]);
 
@@ -273,7 +301,7 @@ export function PdfViewer({ url }: { url: string }) {
       tabIndex={0}
       onKeyDown={onKeyDown}
       onScroll={onScroll}
-      className="relative min-h-0 flex-1 overflow-auto bg-[radial-gradient(1200px_400px_at_50%_-10%,rgba(197,255,61,.05),transparent_60%)] p-6 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hairline-2"
+      className="relative min-h-0 flex-1 overflow-auto [scrollbar-gutter:stable] bg-[radial-gradient(1200px_400px_at_50%_-10%,rgba(197,255,61,.05),transparent_60%)] p-6 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hairline-2"
     >
       {doc && (
         <div className="mx-auto flex w-fit flex-col items-center pb-16" style={{ gap: GAP }}>

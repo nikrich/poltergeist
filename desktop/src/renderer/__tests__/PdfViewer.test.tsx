@@ -202,6 +202,12 @@ describe('PdfViewer fit modes', () => {
   });
   const sc = () => document.querySelector('[tabindex="0"]')!;
   const key = (k: string) => fireEvent.keyDown(sc(), { key: k });
+  const resize = async () => {
+    await act(async () => {
+      roCbs.forEach((cb) => cb());
+      await new Promise((r) => setTimeout(r, 160));
+    });
+  };
 
   it('opens in fit-width: (clientWidth - padding) / page-1 width', async () => {
     await open();
@@ -214,7 +220,7 @@ describe('PdfViewer fit modes', () => {
     await open();
     scrollIntoView.mockClear();
     dims.w = 148;
-    act(() => roCbs.forEach((cb) => cb()));
+    await resize();
     expect(screen.getByText('100%')).toBeTruthy();
     expect(scrollIntoView).toHaveBeenCalledWith(pageEl(1));
   });
@@ -224,7 +230,7 @@ describe('PdfViewer fit modes', () => {
     key('0');
     expect(screen.getByText('100%')).toBeTruthy();
     dims.w = 448;
-    act(() => roCbs.forEach((cb) => cb()));
+    await resize();
     expect(screen.getByText('100%')).toBeTruthy();
   });
 
@@ -235,7 +241,7 @@ describe('PdfViewer fit modes', () => {
     fire(margin(), [entry(2, 0), entry(3, 0)]);
     renderPage.mockClear();
     dims.w = 148;
-    act(() => roCbs.forEach((cb) => cb()));
+    await resize();
     await waitFor(() => expect(renderPage).toHaveBeenCalledWith(expect.anything(), 1, 1));
     expect(renderPage.mock.calls.map((c) => c[1])).toEqual([1]);
   });
@@ -247,7 +253,7 @@ describe('PdfViewer fit modes', () => {
     expect(screen.getByText('100%')).toBeTruthy();
     expect(screen.getByLabelText('fit page').getAttribute('aria-pressed')).toBe('true');
     dims.h = 1000;
-    act(() => roCbs.forEach((cb) => cb()));
+    await resize();
     expect(screen.getByText('200%')).toBeTruthy(); // width is now the limit
   });
 
@@ -267,6 +273,49 @@ describe('PdfViewer fit modes', () => {
     expect(screen.getByText('125%')).toBeTruthy();
     fireEvent.click(screen.getByLabelText('fit width'));
     expect(screen.getByText('200%')).toBeTruthy();
+  });
+
+  it('a refit keeps the in-document scroll ratio instead of jumping to the page top', async () => {
+    await open();
+    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
+      configurable: true,
+      get() { return parseFloat((pageEl(1) as HTMLElement).style.width) * 10; }, // 2000 at 200%
+    });
+    const el = sc() as HTMLElement;
+    el.scrollTop = 500;
+    scrollIntoView.mockClear();
+    dims.w = 148; // 100%
+    await resize();
+    expect(screen.getByText('100%')).toBeTruthy();
+    expect(el.scrollTop).toBe(250);
+    expect(scrollIntoView).not.toHaveBeenCalled();
+    delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollHeight;
+  });
+
+  it('debounces refits: several resizes within 120ms commit one scale', async () => {
+    await open();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      dims.w = 148;
+      act(() => roCbs.forEach((cb) => cb()));
+      dims.w = 98;
+      act(() => { vi.advanceTimersByTime(60); roCbs.forEach((cb) => cb()); });
+      act(() => { vi.advanceTimersByTime(100); });
+      expect(screen.getByText('200%')).toBeTruthy(); // still settling
+      act(() => { vi.advanceTimersByTime(30); });
+      expect(screen.getByText('50%')).toBeTruthy(); // one commit, final width only
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('clamps the fit scale to [0.25, 3]', async () => {
+    dims.w = 2048;
+    await open();
+    expect(screen.getByText('300%')).toBeTruthy();
+    dims.w = 60;
+    await resize();
+    expect(screen.getByText('25%')).toBeTruthy();
   });
 
   it('w / f are ignored with modifiers', async () => {

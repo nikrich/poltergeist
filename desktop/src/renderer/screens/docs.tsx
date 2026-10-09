@@ -80,6 +80,9 @@ export function DocsScreen() {
     return () => window.removeEventListener('keydown', onKey);
   }, [setQuickOpen]);
 
+  const hasDocRef = useRef(false);
+  hasDocRef.current = !!selectedDoc;
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || (e.key !== '\\' && e.code !== 'Backslash')) return;
@@ -87,7 +90,9 @@ export function DocsScreen() {
       if (t && (['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName) || t.isContentEditable)) return;
       if (!(e.metaKey || e.ctrlKey) || e.shiftKey) return;
       e.preventDefault();
-      if (e.altKey) toggleInspector();
+      if (e.altKey) {
+        if (hasDocRef.current) toggleInspector();
+      }
       else toggleTree();
     };
     window.addEventListener('keydown', onKey);
