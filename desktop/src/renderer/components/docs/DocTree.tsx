@@ -1,5 +1,5 @@
 // desktop/src/renderer/components/docs/DocTree.tsx
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { DocFolderNode, DocScope, DocSummary, FolderRef, LibraryTree } from '../../../shared/api-types';
 import type { DocSelection } from '../../stores/docs';
 import { Lucide } from '../Lucide';
@@ -21,6 +21,11 @@ interface Props {
 
 const PROJECT_DOTS = ['var(--neon)', 'var(--pill-water-fg)', '#F2C14E', 'var(--pill-oxblood-fg)', '#A9B6FF', 'var(--pill-moss-fg)'];
 
+function validName(v: string | null): string | null {
+  if (!v || /[/\\]/.test(v) || v.startsWith('.')) return null;
+  return v;
+}
+
 function joinPath(parent: string, name: string): string {
   return parent ? `${parent}/${name}` : name;
 }
@@ -34,7 +39,7 @@ function FolderInput({ initial, onDone }: { initial: string; onDone: (v: string 
       placeholder="folder name"
       className="ml-6 w-[calc(100%-1.5rem)] rounded border border-hairline-2 bg-vellum px-2 py-1 text-12 text-ink-0 outline-none focus:border-neon"
       onKeyDown={(e) => {
-        if (e.key === 'Enter') onDone((e.target as HTMLInputElement).value.trim() || null);
+        if (e.key === 'Enter') onDone(validName((e.target as HTMLInputElement).value.trim() || null));
         if (e.key === 'Escape') onDone(null);
       }}
       onBlur={() => onDone(null)}
@@ -48,6 +53,11 @@ export function DocTree(props: Props) {
   const [dropKey, setDropKey] = useState<string | null>(null);
   const [creatingIn, setCreatingIn] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const projectIndexes = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const s of tree.scopes) if (s.project) m.set(`${s.context}/${s.project}`, m.size);
+    return m;
+  }, [tree.scopes]);
 
   const toggle = (k: string) => setCollapsed((c) => ({ ...c, [k]: !c[k] }));
 
@@ -79,19 +89,21 @@ export function DocTree(props: Props) {
       active ? 'bg-neon-mist text-neon' : 'text-ink-1 hover:bg-vellum'
     } ${dropKey === key ? 'outline-dashed outline-1 -outline-offset-1 outline-neon bg-neon-mist/40 text-ink-0' : ''}`;
 
-  const docRow = (d: DocSummary, depth: number) => {
+  const docRow = (d: DocSummary, depth: number, archived: boolean) => {
     const active = selection?.type === 'doc' && selection.docId === d.doc_id;
     return (
       <button
         key={d.doc_id}
         type="button"
-        draggable
+        draggable={!archived}
+        {...dropHandlers({ context: d.context, project: d.project, path: d.folder }, archived)}
         onDragStart={(e) => {
+          if (archived) return e.preventDefault();
           e.dataTransfer.setData(DRAG_MIME, encodeDrag({ type: 'doc', docId: d.doc_id }));
           e.dataTransfer.effectAllowed = 'move';
         }}
         onClick={() => onSelect({ type: 'doc', docId: d.doc_id })}
-        className={rowCls(active, '')}
+        className={rowCls(active, folderKey({ context: d.context, project: d.project, path: d.folder }))}
         style={{ paddingLeft: 6 + depth * 18 }}
       >
         <KindChip doc={d} />
@@ -136,13 +148,13 @@ export function DocTree(props: Props) {
               <span className="truncate">{node.name}</span>
             </button>
             {!scope.archived && (
-              <span className="hidden items-center gap-1 group-hover:flex">
+              <span className="hidden items-center gap-1 group-hover:flex group-focus-within:flex">
                 <button type="button" aria-label={`new folder in ${key}`} onClick={() => setCreatingIn(key)} className="text-ink-3 hover:text-neon"><Lucide name="folder-plus" size={12} /></button>
                 <button type="button" aria-label={`rename ${key}`} onClick={() => setRenaming(key)} className="text-ink-3 hover:text-neon"><Lucide name="pencil" size={12} /></button>
                 <button type="button" aria-label={`delete ${key}`} onClick={() => props.onDeleteFolder(ref)} className="text-ink-3 hover:text-oxblood"><Lucide name="trash-2" size={12} /></button>
               </span>
             )}
-            <span className="ml-auto font-mono text-10 text-ink-3 group-hover:hidden">{countDocs(node)}</span>
+            <span className="ml-auto font-mono text-10 text-ink-3 group-hover:hidden group-focus-within:hidden">{countDocs(node)}</span>
           </div>
         )}
         {creatingIn === key && (
@@ -157,7 +169,7 @@ export function DocTree(props: Props) {
         {open && (
           <>
             {node.folders.map((f) => folderRows(scope, f, depth + 1))}
-            {node.docs.map((d) => docRow(d, depth + 1))}
+            {node.docs.map((d) => docRow(d, depth + 1, scope.archived))}
           </>
         )}
       </div>
@@ -185,11 +197,11 @@ export function DocTree(props: Props) {
             <span className="truncate">{scope.name}</span>
           </button>
           {!scope.archived && (
-            <button type="button" aria-label={`new folder in ${key}`} onClick={() => setCreatingIn(key)} className="hidden text-ink-3 hover:text-neon group-hover:block">
+            <button type="button" aria-label={`new folder in ${key}`} onClick={() => setCreatingIn(key)} className="hidden text-ink-3 hover:text-neon group-hover:block group-focus-within:block">
               <Lucide name="folder-plus" size={12} />
             </button>
           )}
-          <span data-testid={`count-${scope.context}/${scope.project ?? '_'}/`} className="ml-auto font-mono text-10 text-ink-3 group-hover:hidden">
+          <span data-testid={`count-${scope.context}/${scope.project ?? '_'}/`} className="ml-auto font-mono text-10 text-ink-3 group-hover:hidden group-focus-within:hidden">
             {countDocs(root)}
           </span>
         </div>
@@ -199,16 +211,20 @@ export function DocTree(props: Props) {
         {open && (
           <>
             {scope.folders.map((f) => folderRows(scope, f, 1))}
-            {scope.docs.map((d) => docRow(d, 1))}
+            {scope.docs.map((d) => docRow(d, 1, scope.archived))}
           </>
         )}
       </div>
     );
   };
 
-  let projectIndex = 0;
   return (
-    <nav className="flex-1 overflow-y-auto px-2 pb-3" aria-label="docs tree">
+    <nav
+      className="flex-1 overflow-y-auto px-2 pb-3"
+      aria-label="docs tree"
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => e.preventDefault()}
+    >
       {tree.attention.length > 0 && (
         <button
           type="button"
@@ -229,7 +245,7 @@ export function DocTree(props: Props) {
               <span className="w-2.5 text-[9px] text-ink-3">{open ? '▾' : '▸'}</span>
               <span>{g.context}</span>
             </button>
-            {open && g.scopes.map((s) => scopeRows(s, s.project ? projectIndex++ : 0))}
+            {open && g.scopes.map((s) => scopeRows(s, projectIndexes.get(`${s.context}/${s.project}`) ?? 0))}
           </div>
         );
       })}

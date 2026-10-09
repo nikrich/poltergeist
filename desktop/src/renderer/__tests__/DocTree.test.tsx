@@ -3,7 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { DocTree } from '../components/docs/DocTree';
 import { DRAG_MIME, encodeDrag } from '../components/docs/tree-model';
-import { libraryFixture } from './fixtures/library';
+import { doc, libraryFixture } from './fixtures/library';
 
 function dt(data: Record<string, string>, files: File[] = []) {
   return { getData: (k: string) => data[k] ?? '', setData: vi.fn(), types: Object.keys(data).concat(files.length ? ['Files'] : []), files, dropEffect: 'move', effectAllowed: 'all' };
@@ -77,5 +77,40 @@ describe('DocTree', () => {
     const p = setup({ tree });
     fireEvent.click(screen.getByText('needs attention'));
     expect(p.onSelect).toHaveBeenCalledWith({ type: 'attention' });
+  });
+
+  it('drops on a doc row resolve to its containing folder', () => {
+    const p = setup();
+    const row = screen.getByText('Payments API v2').closest('button')!;
+    fireEvent.drop(row, { dataTransfer: dt({ [DRAG_MIME]: encodeDrag({ type: 'doc', docId: 'bbbbbbbbbbbb' }) }) });
+    expect(p.onMoveDoc).toHaveBeenCalledWith('bbbbbbbbbbbb', { context: 'work', project: 'payments', path: 'specs' });
+    const f = new File(['x'], 'a.pdf');
+    fireEvent.drop(row, { dataTransfer: dt({}, [f]) });
+    expect(p.onUploadFiles).toHaveBeenCalledWith([f], { context: 'work', project: 'payments', path: 'specs' });
+  });
+
+  it('treats archived scopes as read-only', () => {
+    const tree = libraryFixture();
+    tree.scopes.push({
+      context: 'work', project: 'old', name: 'Old', archived: true,
+      docs: [doc({ doc_id: 'eeeeeeeeeeee', title: 'Old doc', project: 'old', folder: '' })],
+      folders: [{ name: 'arch', path: 'arch', folders: [], docs: [] }],
+    });
+    const p = setup({ tree });
+    fireEvent.drop(screen.getByTestId('folder-work/old/'), { dataTransfer: dt({ [DRAG_MIME]: encodeDrag({ type: 'doc', docId: 'aaaaaaaaaaaa' }) }) });
+    expect(p.onMoveDoc).not.toHaveBeenCalled();
+    expect(screen.getByTestId('folder-work/old/arch').getAttribute('draggable')).toBe('false');
+    expect(screen.getByText('Old doc').closest('button')!.getAttribute('draggable')).toBe('false');
+    expect(screen.queryByLabelText('new folder in work/old/')).toBeNull();
+    expect(screen.queryByLabelText('new folder in work/old/arch')).toBeNull();
+  });
+
+  it('rejects folder names with slashes or leading dots', () => {
+    const p = setup();
+    fireEvent.click(screen.getByLabelText('new folder in work/payments/specs'));
+    const input = screen.getByPlaceholderText('folder name');
+    fireEvent.change(input, { target: { value: 'a/b' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(p.onCreateFolder).not.toHaveBeenCalled();
   });
 });
