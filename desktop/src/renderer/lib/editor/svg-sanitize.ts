@@ -6,7 +6,15 @@
  */
 
 const XLINK_NS = 'http://www.w3.org/1999/xlink';
-const FORBIDDEN_TAGS = 'script, iframe, object, embed, form, input';
+// Matched on lower-cased localName: CSS type selectors are case-sensitive for
+// SVG elements (animateMotion etc.), so a selector list could silently miss.
+// SMIL elements can animate href back onto an <a>; meta/base/link can navigate
+// or load on insertion without any click.
+const FORBIDDEN_TAGS = new Set([
+  'script', 'iframe', 'object', 'embed', 'form', 'input',
+  'set', 'animate', 'animatemotion', 'animatetransform', 'discard',
+  'meta', 'base', 'link',
+]);
 
 function isLinkAttr(name: string): boolean {
   return name === 'href' || name === 'xlink:href';
@@ -32,7 +40,9 @@ function sanitizeElement(el: Element): void {
 }
 
 function sanitizeSubtree(root: Element | DocumentFragment): void {
-  for (const el of Array.from(root.querySelectorAll(FORBIDDEN_TAGS))) el.remove();
+  for (const el of Array.from(root.querySelectorAll('*'))) {
+    if (FORBIDDEN_TAGS.has(el.localName.toLowerCase())) el.remove();
+  }
   for (const el of Array.from(root.querySelectorAll('*'))) sanitizeElement(el);
 }
 

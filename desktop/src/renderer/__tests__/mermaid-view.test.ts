@@ -92,7 +92,8 @@ describe('mermaid code block view', () => {
     );
     await act(async () => { await vi.runAllTimersAsync(); });
     const preview = editor.view.dom.querySelector('.gb-mermaid-preview')!;
-    expect(preview.querySelector('[data-testid="evil-svg"]')).not.toBeNull();
+    expect(preview.querySelector('[data-testid="evil-svg"]')?.namespaceURI).toBe('http://www.w3.org/2000/svg');
+    expect(preview.querySelector('foreignObject')?.namespaceURI).toBe('http://www.w3.org/2000/svg');
     expect(preview.querySelector('script')).toBeNull();
     expect(preview.textContent).toContain('link in label');
     expectNoLinksOrHandlers(preview);
