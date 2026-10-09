@@ -1,11 +1,18 @@
 """In-memory link index over the vault, refreshed incrementally per file.
 
-A refresh stats every indexed file (~90 ms for 30k notes) and re-parses only
-files whose (st_mtime_ns, st_size) signature changed — size catches two saves
-inside one coarse mtime tick. On the request path refreshes are throttled to
-one per ``refresh_interval`` seconds. The first build of a large vault (~8 s
-for 30k notes) runs on a background thread: ``ensure_fresh()`` returns False
-until it is done and callers answer "indexing" rather than block.
+A refresh stats every indexed file and re-parses only files whose
+(st_mtime_ns, st_size) signature changed — size catches two saves inside one
+coarse mtime tick. Even with nothing changed, the stat walk of a 30k-note
+vault costs a few hundred ms, so it never runs on the request path:
+
+- The first build of a large vault (~8 s for 30k notes) runs on a background
+  thread; ``ensure_fresh()`` returns False until it is done and callers answer
+  "indexing" rather than block.
+- Once ready, ``ensure_fresh()`` returns True at once and serves the current
+  data. At most once per ``refresh_interval`` seconds it also starts an
+  incremental refresh on a background thread (single-flight: nothing starts
+  while a refresh is running), so edits show up on a later request.
+- ``refresh()`` is the synchronous, unthrottled variant.
 
 Consumers: GET /v1/vault/suggest + /backlinks and build_graph (A2), the
 ego-graph route (A6), live queries (C2). Not persisted — memory only.
@@ -73,6 +80,7 @@ class LinkIndex:
         self._refresh_lock = threading.Lock()
         self._build_guard = threading.Lock()
         self._build_thread: threading.Thread | None = None
+        self._refresh_thread: threading.Thread | None = None
         self._last_refresh: float | None = None
         self._generation = 0
         self._ready = False
@@ -189,6 +197,37 @@ class LinkIndex:
             thread.join(timeout=timeout)
         return self._ready
 
+    def _refresh_in_background(self) -> None:
+        if not self._refresh_lock.acquire(blocking=False):  # a refresh is already running
+            return
+        try:
+            self._refresh_locked()
+        except Exception:  # noqa: BLE001 — logged; a later ensure_fresh retries
+            log.exception("link index refresh failed for %s", self.root)
+        finally:
+            self._refresh_lock.release()
+
+    def _start_refresh(self) -> None:
+        """Start one background incremental refresh unless one is in flight."""
+        with self._build_guard:
+            if self._refresh_lock.locked():
+                return
+            if self._refresh_thread is not None and self._refresh_thread.is_alive():
+                return
+            thread = threading.Thread(
+                target=self._refresh_in_background, name="link-index-refresh", daemon=True
+            )
+            self._refresh_thread = thread
+            thread.start()
+
+    def _join_refresh(self, timeout: float) -> bool:
+        """Wait for the in-flight background refresh (tests). True = none running."""
+        thread = self._refresh_thread
+        if thread is not None:
+            thread.join(timeout=timeout)
+            return not thread.is_alive()
+        return True
+
     def ensure_fresh(self, wait: float = 0.25) -> bool:
         """Request-path freshness check. False = cold build still running."""
         if not self._ready:
@@ -197,11 +236,7 @@ class LinkIndex:
         last = self._last_refresh
         if last is not None and self._clock() - last < self.refresh_interval:
             return True
-        if self._refresh_lock.acquire(blocking=False):  # someone else refreshing: serve current data
-            try:
-                self._refresh_locked()
-            finally:
-                self._refresh_lock.release()
+        self._start_refresh()  # off the request path; serve current data now
         return True
 
     # ── queries ──────────────────────────────────────────────────────────
@@ -236,7 +271,9 @@ class LinkIndex:
         if self._under_indexed_root(path):
             return False
         pure = PurePosixPath(path)
-        if pure.is_absolute() or ".." in pure.parts:
+        # A part with ":" is a drive letter ("C:/x.md") or an NTFS stream; on
+        # Windows ``root / pure`` would swap the drive and stat outside the vault.
+        if pure.is_absolute() or ".." in pure.parts or any(":" in part for part in pure.parts):
             return False
         return (self.root / pure).is_file()
 

@@ -146,6 +146,8 @@ def test_ghosts_report_unwritten_targets(tmp_path: Path):
         "90-meta/routing.md": True,
     }
     assert idx.exists("../outside.md") is False
+    assert idx.exists("C:/x.md") is False  # drive letter: would escape the vault on Windows
+    assert idx.exists("a/b:c.md") is False
 
 
 def test_malformed_and_binary_files_do_not_abort_build(tmp_path: Path):
@@ -171,7 +173,35 @@ def test_ensure_fresh_throttles_incremental_refresh(tmp_path: Path):
     assert idx.ensure_fresh() is True
     assert idx.get("20-contexts/work/b.md") is None  # throttled
     now[0] = 102.5
+    assert idx.ensure_fresh() is True  # returns at once; refresh runs in the background
+    assert idx._join_refresh(5.0) is True
+    assert idx.get("20-contexts/work/b.md") is not None
+
+
+def test_ensure_fresh_does_not_block_on_a_slow_refresh(tmp_path: Path):
+    _write(tmp_path, "20-contexts/work/a.md", "a")
+    idx = _idx(tmp_path)
+    idx.refresh()
+    _write(tmp_path, "20-contexts/work/b.md", "b")
+    gate = threading.Event()
+    scans: list[int] = []
+    real_scan = idx._scan
+
+    def slow_scan():
+        scans.append(1)
+        gate.wait(5)
+        return real_scan()
+
+    idx._scan = slow_scan  # type: ignore[method-assign]
     assert idx.ensure_fresh() is True
+    # Had ensure_fresh refreshed synchronously it would have waited out the
+    # gate and already indexed b.md.
+    assert idx.get("20-contexts/work/b.md") is None
+    assert idx.ensure_fresh() is True
+    assert idx.get("20-contexts/work/a.md") is not None  # current data still served
+    gate.set()
+    assert idx._join_refresh(5.0) is True
+    assert len(scans) == 1  # single-flight: the second call started nothing
     assert idx.get("20-contexts/work/b.md") is not None
 
 
