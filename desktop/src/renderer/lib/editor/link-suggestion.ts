@@ -172,10 +172,14 @@ export function createLinkSuggestExtension(
             session.indexing = result.indexing;
             return result.items;
           },
-          command: ({ editor, range, props }) => {
+          command: ({ editor, props }) => {
+            // The popup's props (and their range) can lag the document while a newer
+            // query's fetch is pending: always replace the plugin's live range.
+            const live = pluginKey.getState(editor.state);
+            if (!live?.active) return;
             const text = `${linkTextFor(props, { inTable: isInTable(editor) })} `;
             // A text node, not a string: tiptap-markdown would parse a string as markdown.
-            editor.chain().focus().deleteRange(range).insertContent({ type: 'text', text }).run();
+            editor.chain().focus().deleteRange(live.range).insertContent({ type: 'text', text }).run();
           },
           render: () => {
             const popup = renderSuggestPopup(() =>

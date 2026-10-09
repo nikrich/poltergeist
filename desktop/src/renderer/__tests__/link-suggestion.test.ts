@@ -241,4 +241,25 @@ describe('late results after the session ended', () => {
     expect(e.state.doc.textContent).toBe('[[foo]');
     expect(getMarkdown(e)).not.toContain('alpha-plan');
   });
+
+  it('Enter while a newer query is pending replaces the live range', async () => {
+    const pending = new Map<string, (r: SuggestResponse) => void>();
+    getMock.mockImplementation(((path: string) => {
+      const q = new URL(path, 'http://x').searchParams.get('q') ?? '';
+      return new Promise<SuggestResponse>((r) => pending.set(q, r));
+    }) as unknown as typeof client.get);
+    const e = mount();
+    type(e, 'see [[al');
+    await tick();
+    pending.get('al')!({ items: [ALPHA], indexing: false });
+    expect(await screen.findByText('Alpha plan')).toBeInTheDocument();
+    type(e, 'p'); // separate transaction: the `alp` fetch is now in flight
+    await tick();
+    expect(pending.has('alp')).toBe(true);
+    expect(press(e, 'Enter')).toBe(true);
+    expect(getMarkdown(e).trimEnd()).toBe('see [[20-contexts/work/alpha-plan|Alpha plan]]');
+    expect(e.state.doc.textContent).not.toMatch(/\]\]\s*p/);
+    pending.get('alp')!({ items: [ALPHA], indexing: false });
+    await settle();
+  });
 });
