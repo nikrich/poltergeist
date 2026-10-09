@@ -12,7 +12,7 @@ import { forward, isAllowedMethod } from './api-forwarder';
 import { startChatStream, stopChatStream } from './chat-stream';
 import type { ChatStreamEvent } from '../shared/api-types';
 import { startDocsStream, stopDocsStream } from './docs-stream';
-import { startRecorderLive, stopRecorderLive } from './recorder-live-stream';
+import { startRecorderStream, stopRecorderStream } from './recorder-stream';
 import { exportPdf, renderVaultHtmlToPdf } from './pdf-export';
 import { installTray, type TrayController } from './tray';
 import {
@@ -421,25 +421,29 @@ ipcMain.handle('gb:chat:stop', (_e, convId: unknown) => {
   return { ok: true };
 });
 
-ipcMain.handle('gb:recorder:live:subscribe', async (e) => {
-  if (DEMO) return { ok: false, error: 'Live transcript is not available in demo mode' };
-  const wc = e.sender;
-  const key = wc.id;
-  const onDestroyed = () => stopRecorderLive(key);
-  wc.once('destroyed', onDestroyed);
-  try {
-    return await startRecorderLive(sidecar, key, (event) => {
-      if (!wc.isDestroyed()) wc.send('gb:recorder:live:event', event);
-    });
-  } finally {
-    wc.removeListener('destroyed', onDestroyed);
-  }
-});
-
-ipcMain.handle('gb:recorder:live:unsubscribe', (e) => {
-  stopRecorderLive(e.sender.id);
-  return { ok: true };
-});
+// Recorder SSE routes the renderer follows: the live transcript and the
+// waveform levels. Each is forwarded to `gb:recorder:<name>:event`.
+for (const name of ['live', 'levels'] as const) {
+  const path = `/v1/recorder/${name}`;
+  ipcMain.handle(`gb:recorder:${name}:subscribe`, async (e) => {
+    if (DEMO) return { ok: false, error: 'Not available in demo mode' };
+    const wc = e.sender;
+    const key = wc.id;
+    const onDestroyed = () => stopRecorderStream(path, key);
+    wc.once('destroyed', onDestroyed);
+    try {
+      return await startRecorderStream(sidecar, path, key, (event: unknown) => {
+        if (!wc.isDestroyed()) wc.send(`gb:recorder:${name}:event`, event);
+      });
+    } finally {
+      wc.removeListener('destroyed', onDestroyed);
+    }
+  });
+  ipcMain.handle(`gb:recorder:${name}:unsubscribe`, (e) => {
+    stopRecorderStream(path, e.sender.id);
+    return { ok: true };
+  });
+}
 
 const stopDocsTurn = (jotId: string) => {
   stopDocsStream(jotId);

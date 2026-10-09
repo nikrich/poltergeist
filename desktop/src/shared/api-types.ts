@@ -302,6 +302,9 @@ export interface LiveTranscriptSegment {
   lang: string;
 }
 
+/** GET /v1/recorder/levels: 0..1 per 100 ms of the recording, oldest first. */
+export type RecorderLevelsEvent = { type: 'levels'; levels: number[] } | { type: 'end' };
+
 export type LiveTranscriptEvent =
   | LiveTranscriptSegment
   | { type: 'status'; state: LiveTranscriptState; reason: string | null; lag_s: number }

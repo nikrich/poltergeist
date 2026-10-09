@@ -28,6 +28,8 @@ const bridge: GbBridge = {
     notifyTargetChoice: () => ipcRenderer.invoke('gb:recorder:notifyTargetChoice'),
     liveSubscribe: () => ipcRenderer.invoke('gb:recorder:live:subscribe'),
     liveUnsubscribe: () => ipcRenderer.invoke('gb:recorder:live:unsubscribe'),
+    levelsSubscribe: () => ipcRenderer.invoke('gb:recorder:levels:subscribe'),
+    levelsUnsubscribe: () => ipcRenderer.invoke('gb:recorder:levels:unsubscribe'),
   },
   chat: {
     send: (convId, text, attachmentPaths) =>

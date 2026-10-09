@@ -38,3 +38,38 @@ def test_live_streams_the_follow_generator(client: TestClient, auth_headers: dic
 
 def test_live_requires_auth(client: TestClient):
     assert client.get("/v1/recorder/live").status_code == 401
+
+
+def test_levels_with_no_recording_ends_immediately(client: TestClient, auth_headers: dict[str, str], monkeypatch):
+    from ghostbrain.api.routes import recorder as routes
+
+    monkeypatch.setattr(routes, "status", lambda: {"phase": "idle", "wavPath": None})
+    res = client.get("/v1/recorder/levels", headers=auth_headers)
+    assert res.headers["content-type"].startswith("text/event-stream")
+    assert _events(res.text) == [{"type": "end"}]
+
+
+def test_levels_streams_for_the_active_recording(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch, tmp_path,
+):
+    from ghostbrain.api.routes import recorder as routes
+    from ghostbrain.recorder import levels
+
+    wav = tmp_path / "rec.wav"
+    monkeypatch.setattr(routes, "status", lambda: {"phase": "recording", "wavPath": str(wav)})
+    seen = {}
+
+    def fake_follow(path, **_kw):
+        seen["path"] = path
+        yield [0.1, 0.5]
+        yield None
+        yield [0.9]
+
+    monkeypatch.setattr(levels, "follow_levels", fake_follow)
+    res = client.get("/v1/recorder/levels", headers=auth_headers)
+    assert seen["path"] == wav
+    assert _events(res.text) == [
+        {"type": "levels", "levels": [0.1, 0.5]},
+        {"type": "levels", "levels": [0.9]},
+        {"type": "end"},
+    ]

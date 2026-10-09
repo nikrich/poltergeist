@@ -8,6 +8,7 @@ import { Panel } from '../components/Panel';
 import { Ghost } from '../components/Ghost';
 import { UpcomingMeetings } from '../components/UpcomingMeetings';
 import { LiveTranscriptPanel } from '../components/LiveTranscriptPanel';
+import { Waveform } from '../components/Waveform';
 import { useMeeting } from '../stores/meeting';
 import { useLiveTranscriptStream } from '../stores/live-transcript';
 import { useNavigation } from '../stores/navigation';
@@ -436,30 +437,6 @@ function AudioSource({ icon, label, sub, active }: AudioSourceProps) {
         <div className="font-mono text-9 text-ink-2">{sub}</div>
       </div>
       {active && <Lucide name="check" size={12} color="var(--neon)" />}
-    </div>
-  );
-}
-
-interface WaveformProps {
-  live?: boolean;
-}
-
-function Waveform({ live = false }: WaveformProps) {
-  const bars = 48;
-  const heights = useMemo(() => Array.from({ length: bars }, () => 0.2 + Math.random() * 0.8), []);
-  return (
-    <div className="flex h-9 items-center gap-[2px] rounded-r6 border border-hairline bg-paper px-3">
-      {heights.map((h, i) => (
-        <div
-          key={i}
-          className={`flex-1 rounded-[1px] ${live ? 'bg-neon' : 'bg-ink-3'}`}
-          style={{
-            height: `${h * 100}%`,
-            opacity: live ? 0.5 + h * 0.5 : 0.4 + h * 0.4,
-            animation: live ? `gb-wave 1.${i % 9}s ease-in-out infinite alternate` : 'none',
-          }}
-        />
-      ))}
     </div>
   );
 }

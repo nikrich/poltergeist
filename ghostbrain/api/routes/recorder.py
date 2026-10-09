@@ -63,6 +63,36 @@ def get_live() -> StreamingResponse:
     )
 
 
+@router.get("/levels")
+def get_levels() -> StreamingResponse:
+    """Audio levels (0..1 per 100 ms) of the recording in progress, for the
+    waveform; ends when the recording does."""
+    from pathlib import Path
+
+    from ghostbrain.recorder import levels
+
+    try:
+        st = status()
+    except RecorderUnsupportedError as e:
+        raise HTTPException(status_code=501, detail=str(e))
+    wav = st.get("wavPath") if st.get("phase") == "recording" else None
+
+    def gen():
+        if wav:
+            for chunk in levels.follow_levels(Path(wav)):
+                if chunk is None:
+                    yield ": keepalive\n\n"
+                else:
+                    yield f"data: {json.dumps({'type': 'levels', 'levels': chunk})}\n\n"
+        yield f"data: {json.dumps({'type': 'end'})}\n\n"
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @router.post("/start", response_model=RecorderStatus)
 def post_start(payload: StartRequest) -> dict:
     try:

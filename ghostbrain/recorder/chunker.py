@@ -73,7 +73,7 @@ def read_pcm(wav_path: Path, *, start_sample: int, max_samples: int | None = Non
     return data[: len(data) - len(data) % BYTES_PER_SAMPLE]
 
 
-def _block_rms(pcm: bytes) -> list[float]:
+def block_rms(pcm: bytes) -> list[float]:
     samples = array("h")
     samples.frombytes(pcm[: len(pcm) - len(pcm) % BYTES_PER_SAMPLE])
     out: list[float] = []
@@ -86,7 +86,7 @@ def _block_rms(pcm: bytes) -> list[float]:
 def is_silent(pcm: bytes) -> bool:
     """True when no 100 ms block rises above the silence floor — nothing for
     whisper to hear (it would hallucinate "Thank you." on it)."""
-    return all(level < _SILENT_RMS for level in _block_rms(pcm))
+    return all(level < _SILENT_RMS for level in block_rms(pcm))
 
 
 def find_cut(pcm: bytes, profile: Profile, *, flush: bool = False) -> int | None:
@@ -100,7 +100,7 @@ def find_cut(pcm: bytes, profile: Profile, *, flush: bool = False) -> int | None
     if n < min_blocks * _BLOCK:
         return None
 
-    rms = _block_rms(pcm[: max_blocks * _BLOCK * BYTES_PER_SAMPLE])
+    rms = block_rms(pcm[: max_blocks * _BLOCK * BYTES_PER_SAMPLE])
     if len(rms) < _PAUSE_BLOCKS:
         return None
     median = sorted(rms)[len(rms) // 2]

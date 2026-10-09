@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { startRecorderLive, stopRecorderLive } from '../recorder-live-stream';
+import { startRecorderStream, stopRecorderStream } from '../recorder-stream';
 import type { Sidecar } from '../sidecar';
 import type { LiveTranscriptEvent } from '../../shared/api-types';
 
@@ -25,9 +25,9 @@ function stream(text: string): ReadableStream<Uint8Array> {
   });
 }
 
-describe('startRecorderLive', () => {
+describe('startRecorderStream', () => {
   it('fails fast when the sidecar is not ready', async () => {
-    expect(await startRecorderLive(notReady, 1, vi.fn())).toEqual({
+    expect(await startRecorderStream(notReady, '/v1/recorder/live', 1, vi.fn())).toEqual({
       ok: false,
       error: 'Sidecar not ready',
     });
@@ -44,7 +44,9 @@ describe('startRecorderLive', () => {
       ),
     });
     const events: LiveTranscriptEvent[] = [];
-    const res = await startRecorderLive(sidecar, 1, (e) => events.push(e));
+    const res = await startRecorderStream<LiveTranscriptEvent>(sidecar, '/v1/recorder/live', 1, (e) =>
+      events.push(e),
+    );
     expect(res).toEqual({ ok: true });
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('http://127.0.0.1:4242/v1/recorder/live');
@@ -57,7 +59,7 @@ describe('startRecorderLive', () => {
 
   it('surfaces an HTTP error', async () => {
     fetchMock.mockResolvedValueOnce({ ok: false, status: 501, body: null, text: async () => '{"detail":"nope"}' });
-    expect(await startRecorderLive(sidecar, 1, vi.fn())).toEqual({ ok: false, error: 'nope' });
+    expect(await startRecorderStream(sidecar, '/v1/recorder/live', 1, vi.fn())).toEqual({ ok: false, error: 'nope' });
   });
 
   it('stop aborts quietly', async () => {
@@ -67,8 +69,27 @@ describe('startRecorderLive', () => {
           init.signal?.addEventListener('abort', () => reject(new Error('aborted')));
         }),
     );
-    const p = startRecorderLive(sidecar, 7, vi.fn());
-    stopRecorderLive(7);
+    const p = startRecorderStream(sidecar, '/v1/recorder/live', 7, vi.fn());
+    stopRecorderStream('/v1/recorder/live', 7);
     expect(await p).toEqual({ ok: true });
+  });
+});
+
+describe('two streams for one window', () => {
+  it('live and levels run side by side; stopping one leaves the other', async () => {
+    const pending = (_url: string, init: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+      });
+    fetchMock.mockImplementation(pending);
+    const live = startRecorderStream(sidecar, '/v1/recorder/live', 3, vi.fn());
+    const levels = startRecorderStream(sidecar, '/v1/recorder/levels', 3, vi.fn());
+    expect((fetchMock.mock.calls[1] as [string])[0]).toBe('http://127.0.0.1:4242/v1/recorder/levels');
+    stopRecorderStream('/v1/recorder/levels', 3);
+    expect(await levels).toEqual({ ok: true });
+    const liveSignal = (fetchMock.mock.calls[0] as [string, RequestInit])[1].signal!;
+    expect(liveSignal.aborted).toBe(false);
+    stopRecorderStream('/v1/recorder/live', 3);
+    expect(await live).toEqual({ ok: true });
   });
 });

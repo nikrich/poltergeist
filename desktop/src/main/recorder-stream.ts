@@ -1,26 +1,29 @@
 import type { Sidecar } from './sidecar';
-import type { LiveTranscriptEvent } from '../shared/api-types';
 import { createSseParser } from './chat-stream';
 
-// One live-transcript stream per renderer (webContents id); subscribing
-// again aborts the previous one.
-const active = new Map<number, AbortController>();
+// One stream per (sidecar path, renderer webContents id); subscribing again
+// aborts the previous one. A window follows both /v1/recorder/live and
+// /v1/recorder/levels at once.
+const active = new Map<string, AbortController>();
+const slot = (path: string, key: number) => `${path}#${key}`;
 
-/** Follow GET /v1/recorder/live until the sidecar sends `end` (recording
- *  finalised), the stream is stopped, or it errors. The sidecar sends a
- *  keepalive comment every 15s, which also keeps undici's body timeout away. */
-export async function startRecorderLive(
+/** Follow a recorder SSE route (`/v1/recorder/live`, `/v1/recorder/levels`)
+ *  until the sidecar sends `end`, the stream is stopped, or it errors. The
+ *  sidecar sends keepalive comments, which also keep undici's body timeout away. */
+export async function startRecorderStream<E>(
   sidecar: Sidecar,
+  path: string,
   key: number,
-  send: (event: LiveTranscriptEvent) => void,
+  send: (event: E) => void,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const info = sidecar.getInfo();
   if (!info) return { ok: false, error: 'Sidecar not ready' };
-  active.get(key)?.abort();
+  const id = slot(path, key);
+  active.get(id)?.abort();
   const ac = new AbortController();
-  active.set(key, ac);
+  active.set(id, ac);
   try {
-    const res = await fetch(`http://127.0.0.1:${info.port}/v1/recorder/live`, {
+    const res = await fetch(`http://127.0.0.1:${info.port}${path}`, {
       method: 'GET',
       headers: { Authorization: `Bearer ${info.token}` },
       signal: ac.signal,
@@ -51,7 +54,7 @@ export async function startRecorderLive(
       if (done) break;
       for (const payload of parse(decoder.decode(value, { stream: true }))) {
         try {
-          send(JSON.parse(payload) as LiveTranscriptEvent);
+          send(JSON.parse(payload) as E);
         } catch {
           // skip a malformed event; the stream itself is still healthy
         }
@@ -62,11 +65,12 @@ export async function startRecorderLive(
     if (ac.signal.aborted) return { ok: true };
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   } finally {
-    if (active.get(key) === ac) active.delete(key);
+    if (active.get(id) === ac) active.delete(id);
   }
 }
 
-export function stopRecorderLive(key: number): void {
-  active.get(key)?.abort();
-  active.delete(key);
+export function stopRecorderStream(path: string, key: number): void {
+  const id = slot(path, key);
+  active.get(id)?.abort();
+  active.delete(id);
 }

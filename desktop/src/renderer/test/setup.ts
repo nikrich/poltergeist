@@ -65,6 +65,8 @@ const stubBridge: GbBridge = {
     // An open stream that never sends anything; tests drive events themselves.
     liveSubscribe: () => new Promise(() => {}),
     liveUnsubscribe: async () => ({ ok: true }),
+    levelsSubscribe: () => new Promise(() => {}),
+    levelsUnsubscribe: async () => ({ ok: true }),
   },
   chat: {
     send: async () => ({ ok: true }),
