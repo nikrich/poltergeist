@@ -591,6 +591,42 @@ export interface VaultGraph {
   regions: VaultGraphRegion[];
 }
 
+// ── Linking (suggest + backlinks) ─────────────────────────────────────────────
+
+export type SuggestKind = 'page' | 'tag' | 'person';
+
+export interface SuggestItem {
+  kind: SuggestKind;
+  /** Page title, tag name (no `#`), or person name. */
+  label: string;
+  /** Vault-relative `.md` path; null for tags. */
+  path: string | null;
+  context: string;
+  /** Muted second line: path without `.md`, or "N notes" for tags. */
+  detail: string;
+  /** Number of notes carrying the tag; null for pages and people. */
+  count: number | null;
+}
+
+export interface SuggestResponse {
+  items: SuggestItem[];
+  /** True while the sidecar's link index is still on its first build. */
+  indexing: boolean;
+}
+
+export interface Backlink {
+  path: string;
+  title: string;
+  context: string;
+  /** The source line containing the link; '' for frontmatter links. */
+  snippet: string;
+}
+
+export interface BacklinksResponse {
+  items: Backlink[];
+  indexing: boolean;
+}
+
 // ── Auth Session ──────────────────────────────────────────────────────────
 
 export type AuthStatus = 'pending' | 'waiting_input' | 'success' | 'error';

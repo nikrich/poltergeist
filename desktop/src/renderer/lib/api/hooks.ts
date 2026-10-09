@@ -12,6 +12,7 @@ import type {
   ConfluenceExportRequest,
   ConfluenceExportResponse,
   BackfillState,
+  BacklinksResponse,
   Connector,
   ConnectorDetail,
   Conversation,
@@ -95,6 +96,18 @@ export function useVaultGraph() {
     queryKey: ['vault', 'graph'],
     queryFn: () => get<VaultGraph>('/v1/vault/graph'),
     staleTime: 60_000,
+  });
+}
+
+export function useBacklinks(path: string | null) {
+  return useQuery({
+    queryKey: ['vault', 'backlinks', path],
+    queryFn: () =>
+      get<BacklinksResponse>(`/v1/vault/backlinks?path=${encodeURIComponent(path!)}`),
+    enabled: path !== null,
+    staleTime: 30_000,
+    // Cold link index on the sidecar: poll until it's built.
+    refetchInterval: (query) => (query.state.data?.indexing ? 3_000 : false),
   });
 }
 
