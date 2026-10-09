@@ -14,8 +14,10 @@ from pathlib import Path
 
 import yaml
 
+from ghostbrain import vault_write
 from ghostbrain.api.repo import attachment_caption, attachment_extract
 from ghostbrain.paths import vault_path
+from ghostbrain.vault_write import USER
 
 ATTACHMENTS_DIR_REL = "20-contexts/chat-attachments"
 MAX_TEXT_BYTES = 1_000_000
@@ -115,8 +117,13 @@ def save_attachment(conv_id: str, filename: str, mime: str, content: bytes) -> d
         "kind": kind,
     }
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-    note_path = target_dir / f"{stamp}-{_slug(filename)}.md"
-    note_path.write_text(_render(front, body), encoding="utf-8")
+    res = vault_write.write_new(
+        f"{ATTACHMENTS_DIR_REL}/{stamp}-{_slug(filename)}.md",
+        _render(front, body),
+        actor=USER,
+        reason=f"chat attachment: {filename}",
+    )
+    note_path = vault_path() / res.path
     return _result(note_path, title=filename, kind=kind)
 
 
