@@ -37,7 +37,6 @@ import { fromSidecarProvider } from '../../shared/llm-provider';
 import type {
   FolderStructure,
   AudioRetention,
-  TranscriptModel,
   Settings,
 } from '../../shared/types';
 import type {
@@ -47,6 +46,7 @@ import type {
   LlmModelTier,
   Project,
   SlideFallback,
+  TranscriptionLanguage,
   UpdateProjectRequest,
 } from '../../shared/api-types';
 
@@ -435,7 +435,6 @@ async function openPrivacyPane(pane: 'Privacy_ScreenCapture' | 'Privacy_Micropho
 
 export function MeetingSettings() {
   const retention = useSettings((s) => s.audioRetention);
-  const model = useSettings((s) => s.transcriptModel);
   const setSetting = useSettings((s) => s.set);
   const recorderQuery = useRecorderSettings();
   const updateRecorder = useUpdateRecorderSettings();
@@ -508,6 +507,47 @@ export function MeetingSettings() {
           </select>
         }
       />
+      {recorder && (
+        <>
+          <SettingRow
+            label="transcription language"
+            sub={
+              recorder.multilingual_model
+                ? 'auto detects every few seconds of speech · handles meetings that mix English and Afrikaans'
+                : 'the installed model only knows English · run `poltergeist setup fetch-model` for Afrikaans'
+            }
+            control={
+              <select
+                aria-label="transcription language"
+                className={selectClass}
+                value={recorder.multilingual_model ? recorder.transcription_language : 'en'}
+                disabled={!recorder.multilingual_model}
+                onChange={(e) =>
+                  updateRecorderField(
+                    { transcription_language: e.target.value as TranscriptionLanguage },
+                    'transcription language',
+                  )
+                }
+              >
+                <option value="auto">auto-detect</option>
+                <option value="en">English</option>
+                <option value="af">Afrikaans</option>
+              </select>
+            }
+          />
+          <SettingRow
+            label="live transcript"
+            sub="show the transcript on the meetings screen while you record · the saved note is re-transcribed in full after you stop"
+            control={
+              <Toggle
+                ariaLabel="live transcript"
+                on={recorder.live_transcription}
+                onChange={(v) => updateRecorderField({ live_transcription: v }, 'live transcript')}
+              />
+            }
+          />
+        </>
+      )}
       {isMac && recorder && (
         <>
           <SettingRow
@@ -609,16 +649,11 @@ export function MeetingSettings() {
       />
       <SettingRow
         label="transcript model"
-        sub="whisper · runs locally · UI only for now"
+        sub="whisper.cpp · runs locally · no audio leaves your machine"
         control={
-          <select
-            className={selectClass}
-            value={model}
-            onChange={(e) => void trySet(setSetting, 'transcriptModel', e.target.value as TranscriptModel)}
-          >
-            <option value="whisper-large-v3">whisper-large-v3</option>
-            <option value="whisper-medium">whisper-medium</option>
-          </select>
+          <span className="font-mono text-11 text-ink-2">
+            {recorder ? recorder.transcription_model ?? 'none installed' : '…'}
+          </span>
         }
       />
       {isMac && (

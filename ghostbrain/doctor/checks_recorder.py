@@ -200,14 +200,19 @@ def check_whisper_cli() -> CheckResult:
 def check_whisper_model() -> CheckResult:
     if (s := _mac_or_windows("whisper-model")) is not None:
         return s
-    from ghostbrain.recorder.transcribe import DEFAULT_MODEL_DIR, TranscribeError, _resolve_model
+    from ghostbrain.recorder.transcribe import (
+        DEFAULT_MODEL_DIR,
+        TranscribeError,
+        _resolve_model,
+        is_multilingual,
+    )
 
     try:
         model = _resolve_model(None)
     except TranscribeError as e:
         fix = (
             Fix(kind="automated", command="setup fetch-model",
-                note="downloads ggml-medium.en.bin (~1.5 GB); pass base.en or small.en for a smaller model")
+                note="downloads ggml-large-v3-turbo-q5_0.bin (~550 MB, English + Afrikaans); pass small.en for an English-only model")
             if _platform() == "darwin"
             else Fix(kind="manual", command="download a ggml-*.bin into ~/ghostbrain/recorder/models/ by hand — see docs/install/windows.md")
         )
@@ -216,6 +221,19 @@ def check_whisper_model() -> CheckResult:
             summary=f"no ggml-*.bin in {DEFAULT_MODEL_DIR}",
             detail=str(e),
             fix=fix,
+        )
+    if not is_multilingual(model):
+        return CheckResult(
+            id="whisper-model", status="warn",
+            summary=f"{model.name} is English-only",
+            detail="Afrikaans and mixed-language meetings need a multilingual model.",
+            data={"model": str(model)},
+            fix=(
+                Fix(kind="automated", command="setup fetch-model",
+                    note="downloads ggml-large-v3-turbo-q5_0.bin (~550 MB)")
+                if _platform() == "darwin"
+                else Fix(kind="manual", command="download ggml-large-v3-turbo-q5_0.bin into ~/ghostbrain/recorder/models/ — see docs/install/windows.md")
+            ),
         )
     return CheckResult(id="whisper-model", status="ok", summary=model.name, data={"model": str(model)})
 

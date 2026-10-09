@@ -224,3 +224,43 @@ def test_diagnostics_off_darwin_have_null_helper(client: TestClient, auth_header
     body = res.json()
     assert body["capture_helper"] is None
     assert body["effective_backend"] == "unsupported"
+
+
+def test_transcription_settings_roundtrip(client: TestClient, auth_headers: dict[str, str], tmp_vault: Path):
+    res = client.get("/v1/settings/recorder", headers=auth_headers)
+    body = res.json()
+    assert body["transcription_language"] == "auto"
+    assert body["live_transcription"] is True
+
+    res = client.post("/v1/settings/recorder", headers=auth_headers, json={
+        "transcription_language": "af", "live_transcription": False,
+    })
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["transcription_language"] == "af"
+    assert body["live_transcription"] is False
+
+    import yaml
+    on_disk = yaml.safe_load((tmp_vault / "90-meta" / "config.yaml").read_text())["recorder"]
+    assert on_disk["transcription_language"] == "af"
+    assert on_disk["live_transcription"] is False
+
+
+def test_transcription_language_validation(client: TestClient, auth_headers: dict[str, str]):
+    assert client.post("/v1/settings/recorder", headers=auth_headers,
+                       json={"transcription_language": "zu"}).status_code == 422
+
+
+def test_settings_report_whether_the_model_is_multilingual(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch,
+):
+    from ghostbrain.recorder import transcribe as tmod
+
+    monkeypatch.setattr(tmod, "_resolve_model", lambda _p: Path("/m/ggml-small.en.bin"))
+    body = client.get("/v1/settings/recorder", headers=auth_headers).json()
+    assert body["transcription_model"] == "ggml-small.en.bin"
+    assert body["multilingual_model"] is False
+
+    monkeypatch.setattr(tmod, "_resolve_model", lambda _p: Path("/m/ggml-large-v3-turbo-q5_0.bin"))
+    body = client.get("/v1/settings/recorder", headers=auth_headers).json()
+    assert body["multilingual_model"] is True

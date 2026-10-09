@@ -1,4 +1,4 @@
-import type { ChatStreamEvent, DocsAssistEvent, DocsAssistRequest } from './api-types';
+import type { ChatStreamEvent, DocsAssistEvent, DocsAssistRequest, LiveTranscriptEvent, RecorderLevelsEvent } from './api-types';
 import type { ActivePluginInfo, MarketplaceListing, PluginRecord } from './plugin-types';
 
 export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE' | 'PUT';
@@ -75,6 +75,13 @@ export interface GbBridge {
   recorder: {
     /** Raise an OS notification that native capture is waiting for a target choice. */
     notifyTargetChoice(): Promise<{ ok: true }>;
+    /** Follow the live transcript; events arrive on `recorder:live:event`.
+     *  Resolves when the stream ends (recording finalised) or fails. */
+    liveSubscribe(): Promise<{ ok: true } | { ok: false; error: string }>;
+    liveUnsubscribe(): Promise<{ ok: true }>;
+    /** Follow the recording's audio levels; events on `recorder:levels:event`. */
+    levelsSubscribe(): Promise<{ ok: true } | { ok: false; error: string }>;
+    levelsUnsubscribe(): Promise<{ ok: true }>;
   };
   chat: {
     send(
@@ -168,6 +175,14 @@ export interface GbBridge {
   on(
     channel: 'chat:event',
     listener: (payload: { convId: string; event: ChatStreamEvent }) => void,
+  ): () => void;
+  on(
+    channel: 'recorder:levels:event',
+    listener: (event: RecorderLevelsEvent) => void,
+  ): () => void;
+  on(
+    channel: 'recorder:live:event',
+    listener: (event: LiveTranscriptEvent) => void,
   ): () => void;
   on(
     channel: 'docs:event',

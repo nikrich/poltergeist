@@ -276,7 +276,46 @@ export interface RecorderSettings {
   slide_fallback: SlideFallback;
   /** Read-only. */
   capture_backend_effective: CaptureBackendEffective;
+  /** `auto` detects per chunk — needed for mixed English/Afrikaans meetings. */
+  transcription_language: TranscriptionLanguage;
+  /** Show the transcript while recording. */
+  live_transcription: boolean;
+  /** Read-only: whisper model file in use, or null when none is installed. */
+  transcription_model: string | null;
+  /** Read-only: false for English-only `.en` models. */
+  multilingual_model: boolean;
 }
+
+export type TranscriptionLanguage = 'auto' | 'en' | 'af';
+
+/** Live transcript state, as reported by GET /v1/recorder/live. */
+export type LiveTranscriptState =
+  | 'starting'
+  | 'live'
+  | 'unavailable'
+  | 'finalizing'
+  | 'ended'
+  /** Switched off in settings. */
+  | 'off';
+
+export interface LiveTranscriptSegment {
+  type: 'segment';
+  seq: number;
+  /** Seconds from the start of the recording. */
+  t0: number;
+  t1: number;
+  text: string;
+  /** Detected language code, e.g. "en" / "af". */
+  lang: string;
+}
+
+/** GET /v1/recorder/levels: 0..1 per 100 ms of the recording, oldest first. */
+export type RecorderLevelsEvent = { type: 'levels'; levels: number[] } | { type: 'end' };
+
+export type LiveTranscriptEvent =
+  | LiveTranscriptSegment
+  | { type: 'status'; state: LiveTranscriptState; reason: string | null; lag_s: number }
+  | { type: 'end' };
 
 export interface UpdateRecorderSettings {
   enabled?: boolean;
@@ -286,6 +325,8 @@ export interface UpdateRecorderSettings {
   capture_slides?: boolean;
   slide_fps?: number;
   slide_fallback?: SlideFallback;
+  transcription_language?: TranscriptionLanguage;
+  live_transcription?: boolean;
 }
 
 export type CapturePermission = 'granted' | 'denied' | 'not_determined' | 'unknown';
