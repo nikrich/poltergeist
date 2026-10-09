@@ -40,3 +40,15 @@ def _no_real_msal_cache(monkeypatch: pytest.MonkeyPatch) -> None:
         raise RuntimeError("real MSAL token cache is disabled in tests")
 
     monkeypatch.setattr(ms_auth, "_build_token_cache", _refuse)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_whisper_server(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Recording-start code paths spin up live transcription; never launch a
+    real whisper-server (and load a real model) from a test. Tests that need a
+    server pass ``binary=`` or inject a ``server_factory``."""
+    from ghostbrain.recorder import live, whisper_server
+
+    monkeypatch.setattr(whisper_server, "BINARY", "ghostbrain-test-no-whisper-server")
+    yield
+    live.stop_all()

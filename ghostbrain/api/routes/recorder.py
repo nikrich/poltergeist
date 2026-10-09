@@ -1,8 +1,11 @@
 """Recorder control endpoints — POST /v1/recorder/{start,stop,clear},
-GET /v1/recorder/status, plus the native-capture helpers under
-/v1/recorder/capture/*."""
+GET /v1/recorder/status, GET /v1/recorder/live (SSE live transcript), plus
+the native-capture helpers under /v1/recorder/capture/*."""
+import json
 import logging
+
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 
 from ghostbrain.api.models.recorder import (
     CaptureHelperProbe,
@@ -36,6 +39,28 @@ def get_status() -> dict:
         return status()
     except RecorderUnsupportedError as e:
         raise HTTPException(status_code=501, detail=str(e))
+
+
+@router.get("/live")
+def get_live() -> StreamingResponse:
+    """The current recording's live transcript: already-transcribed segments
+    first, then new ones as they land, until an ``end`` event."""
+    from ghostbrain.recorder import live
+
+    def gen():
+        # Sync generator: starlette threadpools it and closes it on client
+        # disconnect, which unsubscribes from the session.
+        for event in live.follow():
+            if event is None:
+                yield ": keepalive\n\n"
+            else:
+                yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/start", response_model=RecorderStatus)

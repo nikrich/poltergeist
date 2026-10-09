@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, field_validator
 CaptureBackend = Literal["auto", "native", "blackhole"]
 EffectiveCaptureBackend = Literal["native", "blackhole", "wasapi", "unsupported"]
 SlideFallback = Literal["ask", "display", "audio"]
+TranscriptionLanguage = Literal["auto", "en", "af"]
 
 LlmProviderId = Literal["claude", "codex", "gemini", "openai_http"]
 _LLM_TIERS = {"fast", "balanced", "quality"}
@@ -58,6 +59,14 @@ class RecorderSettings(BaseModel):
     slide_fallback: SlideFallback = "ask"
     # Read-only: what `capture_backend` resolves to on this machine right now.
     capture_backend_effective: EffectiveCaptureBackend = "unsupported"
+    # `auto` detects the language per chunk (mixed English/Afrikaans meetings).
+    transcription_language: TranscriptionLanguage = "auto"
+    # Show the transcript while recording.
+    live_transcription: bool = True
+    # Read-only: the whisper model file in use (None = none installed) and
+    # whether it can do anything but English.
+    transcription_model: str | None = None
+    multilingual_model: bool = False
 
 
 class UpdateRecorderSettings(BaseModel):
@@ -70,3 +79,5 @@ class UpdateRecorderSettings(BaseModel):
     capture_slides: bool | None = None
     slide_fps: int | None = Field(default=None, ge=1, le=5)
     slide_fallback: SlideFallback | None = None
+    transcription_language: TranscriptionLanguage | None = None
+    live_transcription: bool | None = None

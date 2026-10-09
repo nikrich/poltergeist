@@ -1,0 +1,157 @@
+"""WhisperServer: a warm whisper.cpp server for chunked transcription."""
+from __future__ import annotations
+
+import json
+import os
+import signal
+import sys
+import textwrap
+from pathlib import Path
+
+import pytest
+
+from ghostbrain.recorder import whisper_server as ws
+
+# A stand-in for `whisper-server`: same flags, same /health and /inference
+# contract, deterministic output. FAKE_MODE in the env switches failure modes.
+FAKE_SERVER = textwrap.dedent(
+    """
+    #!{python}
+    import json, os, sys
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    args = sys.argv[1:]
+    port = int(args[args.index("--port") + 1])
+    mode = os.environ.get("FAKE_MODE", "ok")
+    if mode == "exit":
+        sys.exit(3)
+    calls = {{"n": 0}}
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a): pass
+        def do_GET(self):
+            if self.path == "/health":
+                if mode == "never_healthy":
+                    self.send_response(503); self.end_headers(); return
+                self.send_response(200); self.end_headers()
+                self.wfile.write(b'{{"status":"ok"}}')
+        def do_POST(self):
+            n = int(self.headers["Content-Length"])
+            body = self.rfile.read(n)
+            calls["n"] += 1
+            lang = "afrikaans" if b"name=\\"language\\"\\r\\n\\r\\nauto" in body and calls["n"] % 2 == 0 else "english"
+            out = {{
+                "language": lang,
+                "segments": [
+                    {{"start": 0.0, "end": 1.5, "text": " hello there"}},
+                    {{"start": 1.5, "end": 2.0, "text": " [BLANK_AUDIO]"}},
+                    {{"start": 2.0, "end": 2.1, "text": " ."}},
+                ],
+            }}
+            data = json.dumps(out).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+    HTTPServer(("127.0.0.1", port), H).serve_forever()
+    """
+).lstrip()
+
+
+@pytest.fixture
+def fake_binary(tmp_path: Path) -> Path:
+    path = tmp_path / "whisper-server"
+    path.write_text(FAKE_SERVER.format(python=sys.executable))
+    path.chmod(0o755)
+    return path
+
+
+@pytest.fixture
+def model(tmp_path: Path) -> Path:
+    path = tmp_path / "ggml-large-v3-turbo-q5_0.bin"
+    path.write_bytes(b"x")
+    return path
+
+
+@pytest.fixture
+def pid_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    path = tmp_path / "state" / "whisper-server.pid"
+    monkeypatch.setattr(ws, "PID_FILE", path)
+    return path
+
+
+def test_start_transcribe_stop(fake_binary: Path, model: Path, pid_file: Path) -> None:
+    server = ws.WhisperServer(model, binary=str(fake_binary))
+    server.start(timeout_s=10)
+    try:
+        assert pid_file.exists()
+        segments = server.transcribe(b"\x00\x00" * 1600, language="auto", offset_s=10.0)
+    finally:
+        server.stop()
+    # Noise markers are dropped; times are shifted onto the recording timeline.
+    assert segments == [ws.Segment(t0=10.0, t1=11.5, text="hello there", lang="en")]
+    assert not pid_file.exists()
+
+
+def test_language_names_map_to_codes(fake_binary: Path, model: Path, pid_file: Path) -> None:
+    with ws.WhisperServer(model, binary=str(fake_binary)) as server:
+        server.start(timeout_s=10)
+        langs = [server.transcribe(b"\x00\x00" * 1600)[0].lang for _ in range(2)]
+    assert langs == ["en", "af"]
+
+
+def test_start_fails_cleanly_when_the_process_exits(
+    fake_binary: Path, model: Path, pid_file: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FAKE_MODE", "exit")
+    server = ws.WhisperServer(model, binary=str(fake_binary))
+    with pytest.raises(ws.WhisperServerError, match="exited"):
+        server.start(timeout_s=5)
+    assert not pid_file.exists()
+
+
+def test_start_times_out_when_never_healthy(
+    fake_binary: Path, model: Path, pid_file: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FAKE_MODE", "never_healthy")
+    server = ws.WhisperServer(model, binary=str(fake_binary))
+    with pytest.raises(ws.WhisperServerError, match="not ready"):
+        server.start(timeout_s=1.5)
+    assert not server.alive()
+    assert not pid_file.exists()
+
+
+def test_missing_binary(model: Path, pid_file: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ws.shutil, "which", lambda _name: None)
+    with pytest.raises(ws.WhisperServerError, match="whisper-server"):
+        ws.WhisperServer(model).start()
+
+
+def test_transcribe_after_crash_raises(fake_binary: Path, model: Path, pid_file: Path) -> None:
+    server = ws.WhisperServer(model, binary=str(fake_binary))
+    server.start(timeout_s=10)
+    assert server.pid is not None
+    os.kill(server.pid, signal.SIGKILL)
+    server._proc.wait(timeout=5)
+    with pytest.raises(ws.WhisperServerError):
+        server.transcribe(b"\x00\x00" * 1600)
+    server.stop()
+
+
+def test_kill_orphan_reaps_a_leftover_server(fake_binary: Path, model: Path, pid_file: Path) -> None:
+    server = ws.WhisperServer(model, binary=str(fake_binary))
+    server.start(timeout_s=10)
+    proc = server._proc
+    # Simulate a sidecar crash: the object is gone but the pid file remains.
+    assert ws.kill_orphan() is True
+    proc.wait(timeout=5)
+    assert not pid_file.exists()
+
+
+def test_kill_orphan_ignores_a_recycled_pid(pid_file: Path) -> None:
+    pid_file.parent.mkdir(parents=True, exist_ok=True)
+    # Our own pid is alive but is not a whisper-server.
+    pid_file.write_text(json.dumps({"pid": os.getpid()}))
+    assert ws.kill_orphan() is False
+    assert not pid_file.exists()

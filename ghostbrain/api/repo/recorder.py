@@ -316,6 +316,9 @@ def start(title: str | None, context: str | None) -> dict:
             "error": None,
         }
         _write_state(state)
+        from ghostbrain.recorder import live
+
+        live.begin_from_config(handle.wav_path)
         log.info(
             "manual recording started pid=%d wav=%s ctx=%s parent=%s",
             handle.pid, handle.wav_path.name, chosen_context, parent_path or "-",

@@ -12,7 +12,9 @@ from pathlib import Path
 log = logging.getLogger("ghostbrain.recorder.transcribe")
 
 DEFAULT_MODEL_DIR = Path.home() / "ghostbrain" / "recorder" / "models"
-DEFAULT_MODEL = "ggml-medium.en.bin"
+# Multilingual (English + Afrikaans) and fast enough on Apple Silicon to keep
+# up with a live meeting. English-only `.en` models still work as a fallback.
+DEFAULT_MODEL = "ggml-large-v3-turbo-q5_0.bin"
 DEFAULT_TIMEOUT_S = 30 * 60  # 30 min for a long meeting; whisper is fast on Apple Silicon
 
 # whisper.cpp emits these tokens whenever a segment has no detectable speech.
@@ -81,6 +83,7 @@ def _whisper_cmd(
     output_base: Path,
     *,
     threads: int | None = None,
+    language: str = "en",
 ) -> list[str]:
     """Build the whisper-cli command line.
 
@@ -101,7 +104,7 @@ def _whisper_cmd(
         "-f", str(wav_path),
         "-otxt",
         "-of", str(output_base),
-        "-l", "en",
+        "-l", language,
         "-mc", "0",
     ]
     if threads:
@@ -113,30 +116,87 @@ class TranscribeError(RuntimeError):
     pass
 
 
+def is_multilingual(model: Path) -> bool:
+    """`.en` models only know English; everything else is multilingual."""
+    return ".en." not in model.name and not model.name.endswith(".en.bin")
+
+
+def _configured_language() -> str:
+    """``recorder.transcription_language`` from the vault config."""
+    from ghostbrain.recorder import config as rcfg
+
+    try:
+        return rcfg.transcription_language_from(rcfg.load_recorder_block())
+    except Exception:  # noqa: BLE001 — a bad config must never cost a transcript
+        return "auto"
+
+
 def transcribe(
     wav_path: Path,
     *,
     model_path: Path | None = None,
     threads: int | None = None,
     timeout_s: int = DEFAULT_TIMEOUT_S,
+    language: str | None = None,
+    server_factory=None,
 ) -> Path:
-    """Run whisper-cli on a WAV file and return the path to the .txt output.
+    """Transcribe a WAV and return the path to the .txt next to it.
 
-    The .txt lands next to the .wav (whisper-cli's default output naming).
+    Preferred path: the warm whisper-server (taken over from the live session,
+    or started for this pass) transcribes pause-aligned chunks, each with its
+    own language detection, so mixed English/Afrikaans meetings come out
+    right. Falls back to one whole-file whisper-cli run when no server can be
+    had or it dies mid-pass.
     """
-    binary = shutil.which("whisper-cli")
-    if binary is None:
-        raise TranscribeError(
-            "`whisper-cli` not found on PATH. Install via `brew install whisper-cpp`."
-        )
+    from ghostbrain.recorder import live
+    from ghostbrain.recorder.whisper_server import WhisperServer, WhisperServerError
 
     if not wav_path.exists():
         raise TranscribeError(f"WAV not found: {wav_path}")
 
     model = _resolve_model(model_path)
-    output_base = wav_path.with_suffix("")  # whisper-cli appends .txt itself
+    lang = language or _configured_language()
+    if not is_multilingual(model):
+        lang = "en"
+    txt_path = wav_path.with_suffix(".txt")
 
-    cmd = _whisper_cmd(binary, model, wav_path, output_base, threads=threads)
+    factory = server_factory or (lambda: WhisperServer(model, threads=threads))
+    with live.final_pass_server(wav_path, server_factory=factory) as server:
+        if server is not None:
+            try:
+                _transcribe_chunked(server, wav_path, txt_path, lang)
+            except WhisperServerError as e:
+                log.warning("chunked transcription failed (%s); falling back to whisper-cli", e)
+            else:
+                _scrub_noise_tokens(txt_path)
+                return txt_path
+
+    _transcribe_cli(wav_path, model, lang, threads=threads, timeout_s=timeout_s)
+    _scrub_noise_tokens(txt_path)
+    return txt_path
+
+
+def _transcribe_chunked(server, wav_path: Path, txt_path: Path, language: str) -> None:
+    from ghostbrain.recorder import chunker
+
+    log.info("transcribing %s in chunks (language=%s)", wav_path.name, language)
+    lines: list[str] = []
+    for chunk in chunker.iter_chunks(wav_path, chunker.FINAL):
+        for seg in server.transcribe(chunk.pcm, language=language, offset_s=chunk.start_s):
+            lines.append(seg.text)
+    txt_path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+
+
+def _transcribe_cli(
+    wav_path: Path, model: Path, language: str, *, threads: int | None, timeout_s: int,
+) -> None:
+    binary = shutil.which("whisper-cli")
+    if binary is None:
+        raise TranscribeError(
+            "`whisper-cli` not found on PATH. Install via `brew install whisper-cpp`."
+        )
+    output_base = wav_path.with_suffix("")  # whisper-cli appends .txt itself
+    cmd = _whisper_cmd(binary, model, wav_path, output_base, threads=threads, language=language)
 
     log.info("transcribing %s with %s", wav_path.name, model.name)
     try:
@@ -150,12 +210,9 @@ def transcribe(
             f"whisper-cli exited {proc.returncode}: "
             f"{(proc.stderr or '').strip()[:300]}"
         )
-
     txt_path = output_base.with_suffix(".txt")
     if not txt_path.exists():
         raise TranscribeError(f"whisper-cli ran but no .txt at {txt_path}")
-    _scrub_noise_tokens(txt_path)
-    return txt_path
 
 
 def _scrub_noise_tokens(txt_path: Path) -> None:

@@ -43,10 +43,10 @@ def test_size_mismatch_is_failure_and_leaves_no_part(served, tmp_path: Path, mon
     assert not list((tmp_path / "models").glob("*"))
 
 
-def test_main_default_is_medium_and_skips_when_present(tmp_path: Path, monkeypatch, capsys):
+def test_main_default_is_turbo_and_skips_when_present(tmp_path: Path, monkeypatch, capsys):
     monkeypatch.delenv("GHOSTBRAIN_WHISPER_MODEL", raising=False)
     monkeypatch.setattr(models, "DEFAULT_MODEL_DIR", tmp_path)
-    (tmp_path / "ggml-medium.en.bin").write_bytes(b"x")
+    (tmp_path / "ggml-large-v3-turbo-q5_0.bin").write_bytes(b"x")
     assert models.main([]) == 0
     assert "already present" in capsys.readouterr().out
 
@@ -76,3 +76,10 @@ def test_http_404_is_failure_without_leftovers(served, tmp_path: Path):
     with pytest.raises(models.FetchError, match="HTTP 404"):
         models.download("base.en", tmp_path / "models", base_url=base, progress=lambda d, t: None)
     assert not list((tmp_path / "models").glob("*"))
+
+
+def test_multilingual_turbo_is_the_default_and_allowed():
+    assert models.DEFAULT_NAME == "large-v3-turbo-q5_0"
+    assert "large-v3-turbo-q5_0" in models.MODELS
+    # English-only models stay fetchable for small machines.
+    assert "small.en" in models.MODELS

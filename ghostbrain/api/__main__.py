@@ -301,6 +301,11 @@ def _run_api_server() -> int:
 
         @app.on_event("startup")
         async def _start_scheduler() -> None:
+            # A sidecar that crashed mid-meeting can leave its warm
+            # whisper-server behind; only the scheduler owner reaps it.
+            from ghostbrain.recorder.whisper_server import kill_orphan
+
+            kill_orphan()
             await scheduler.start()
 
         @app.on_event("shutdown")
@@ -318,6 +323,10 @@ def _run_api_server() -> int:
         reaped = _agent.kill_all_running()
         if reaped:
             log.warning("shutdown: reaped %d in-flight chat turn(s)", reaped)
+
+        from ghostbrain.recorder import live
+
+        live.stop_all()
 
     # Print the READY banner BEFORE uvicorn takes over output. Parent process
     # parses this single line to capture port + token. Suffix with a hint about
