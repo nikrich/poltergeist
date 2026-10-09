@@ -46,6 +46,11 @@ app's local database.
   - `7` link: text plus URL.
   - `5` location: placeholder.
   - `14` deleted, `15` sticker, `6` and `10` group/system events, and everything else: dropped.
+- **Type codes to confirm first:** `0`, `1`, `2`, `3` and `7` are confirmed by media paths and
+  counts. `5` (location) and `8` (document) are from memory. `59` (625 rows), `66` (205), `42`
+  and `46` are unknown. The first implementation task samples `ZMEDIAITEM` and `ZTEXT` presence for
+  each unknown type, aggregate shape only, and settles each code as keep, placeholder or drop
+  before the renderer is written. The fixture encodes the confirmed mapping.
 - Voice files: `ZWAMEDIAITEM.ZMEDIALOCALPATH`, e.g. `Media/…/x.opus`, relative to
   `<container>/Message/`. A NULL path means the note was never downloaded. 307 of 331 voice notes
   from the last 90 days are on disk.
