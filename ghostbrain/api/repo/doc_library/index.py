@@ -52,6 +52,24 @@ def _signature() -> tuple:
     return tuple(sig)
 
 
+def _is_bare_name(name: str) -> bool:
+    """A companion note's `original` must be a plain filename inside its own folder."""
+    return (
+        bool(name)
+        and not name.startswith(".")
+        and "/" not in name
+        and "\\" not in name
+        and name == Path(name).name
+    )
+
+
+def _as_int(v) -> int | None:
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
 def _scan() -> tuple[dict[str, DocEntry], dict[str, Path], list[dict]]:
     docs: dict[str, DocEntry] = {}
     orphans: dict[str, Path] = {}
@@ -73,12 +91,15 @@ def _scan() -> tuple[dict[str, DocEntry], dict[str, Path], list[dict]]:
                 doc_id = str(front.get("doc_id") or "")
                 if not doc_id:
                     continue
-                original = d / str(front.get("original") or "")
                 item = {"context": ctx, "project": proj, "folder": folder, "doc_id": doc_id}
-                if not front.get("original") or not original.is_file():
+                name_ = str(front.get("original") or "")
+                if not _is_bare_name(name_) or not (d / name_).is_file() or doc_id in docs:
+                    # Unusable original, or a duplicate doc_id (first-seen wins):
+                    # this note is an orphan and its original is NOT claimed.
                     orphans[doc_id] = p
                     attention.append({"kind": "orphan_note", "name": p.name, **item})
                     continue
+                original = d / name_
                 claimed.add(original)
                 docs[doc_id] = DocEntry(doc_id, p, original, front, body, ctx, proj, folder)
                 if front.get("index_status") == "failed":
@@ -132,7 +153,7 @@ def summary(e: DocEntry) -> dict:
         "title": str(f.get("title") or e.original.stem),
         "kind": str(f.get("kind") or "opaque"),
         "mime": str(f.get("mime") or ""),
-        "size": int(f.get("size") or 0),
+        "size": _as_int(f.get("size")) or 0,
         "created": created.isoformat() if hasattr(created, "isoformat") else str(created),
         "context": e.context,
         "project": e.project,
@@ -141,7 +162,7 @@ def summary(e: DocEntry) -> dict:
         "original_path": _vault_rel(e.original),
         "note_path": _vault_rel(e.note),
         "index_status": str(f.get("index_status") or "ok"),
-        "pages": f.get("pages"),
+        "pages": _as_int(f.get("pages")),
         "excerpt": re.sub(r"\s+", " ", e.body).strip()[:_EXCERPT_CHARS],
     }
 

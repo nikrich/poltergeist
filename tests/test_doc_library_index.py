@@ -86,3 +86,57 @@ def test_index_rebuilds_when_dirs_change(lib_vault: Path):
     assert index.all_docs() == {}
     _seed(root, "late.pdf", "dddddddddddd")  # no explicit invalidate()
     assert "dddddddddddd" in index.all_docs()
+
+
+def _note_with(folder: Path, name: str, front: dict, body: str = "x") -> Path:
+    folder.mkdir(parents=True, exist_ok=True)
+    p = folder / name
+    notes.write_atomic(p, notes.render({"source": notes.SOURCE, **front}, body))
+    return p
+
+
+@pytest.mark.parametrize("bad_original", ["../../secret.pdf", "/etc/hosts"])
+def test_original_must_be_bare_filename_inside_folder(lib_vault: Path, bad_original: str):
+    proot = lib_vault / "20-contexts/work/projects/payments/docs"
+    proot.mkdir(parents=True)
+    (proot.parent.parent / "secret.pdf").write_bytes(b"x")  # outside the docs root
+    note = _note_with(proot, "evil-aaaaaa.md", {
+        "doc_id": "aaaaaaaaaaaa", "original": bad_original, "title": "evil",
+        "kind": "pdf", "index_status": "ok",
+    })
+    index.invalidate()
+    assert "aaaaaaaaaaaa" not in index.all_docs()
+    assert index.orphans() == {"aaaaaaaaaaaa": note}
+    assert {"kind": "orphan_note", "context": "work", "project": "payments",
+            "folder": "", "name": note.name, "doc_id": "aaaaaaaaaaaa"} in index.attention()
+
+
+def test_malformed_fields_do_not_break_tree(lib_vault: Path):
+    proot = lib_vault / "20-contexts/work/projects/payments/docs"
+    proot.mkdir(parents=True)
+    (proot / "weird.pdf").write_bytes(b"x")
+    _note_with(proot, "weird-bbbbbb.md", {
+        "doc_id": "bbbbbbbbbbbb", "original": "weird.pdf", "title": ["odd"],
+        "size": "abc", "pages": [1], "kind": {"a": 1}, "index_status": "ok",
+    })
+    index.invalidate()
+    t = index.tree("work", "payments")
+    (doc,) = t["scopes"][0]["docs"]
+    assert doc["doc_id"] == "bbbbbbbbbbbb"
+    assert doc["size"] == 0
+    assert doc["pages"] is None
+
+
+def test_duplicate_doc_id_second_note_becomes_orphan(lib_vault: Path):
+    proot = lib_vault / "20-contexts/work/projects/payments/docs"
+    _seed(proot / "a", "one.pdf", "eeeeeeeeeeee", project="payments")
+    second = _seed(proot / "b", "two.pdf", "eeeeeeeeeeee", project="payments")
+    index.invalidate()
+    docs = index.all_docs()
+    assert list(docs) == ["eeeeeeeeeeee"]
+    assert docs["eeeeeeeeeeee"].folder == "a"
+    assert index.orphans() == {"eeeeeeeeeeee": second}
+    attn = index.attention()
+    assert [a["kind"] for a in attn if a["name"] == second.name] == ["orphan_note"]
+    assert {"kind": "unclaimed_original", "context": "work", "project": "payments",
+            "folder": "b", "name": "two.pdf", "doc_id": None} in attn
