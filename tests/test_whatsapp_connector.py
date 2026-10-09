@@ -153,6 +153,7 @@ def test_health_check(env, tmp_path):
 def test_runner_build_skips_off_macos_or_without_store(env, monkeypatch, tmp_path):
     from ghostbrain.connectors.whatsapp import runner
     db, q, s = env
+    allowlist.save(s, {A: {"name": "Alex", "context": None}})
     monkeypatch.setenv("GHOSTBRAIN_WHATSAPP_STORE", str(db))
     monkeypatch.setattr(runner.sys, "platform", "linux")
     assert runner._build({}, q, s) is None
@@ -208,3 +209,35 @@ def test_zero_lookback_emits_only_today(env):
                           now=lambda: NOW, voice=NoVoice())
     assert c.run() == 1
     assert [e["metadata"]["day"] for e in queued(q)] == [NOW.date().isoformat()]
+
+
+def test_runner_build_skips_with_empty_allowlist(env, monkeypatch):
+    from ghostbrain.connectors.whatsapp import runner
+    db, q, s = env
+    monkeypatch.setenv("GHOSTBRAIN_WHATSAPP_STORE", str(db))
+    monkeypatch.setattr(runner.sys, "platform", "darwin")
+    assert runner._build({}, q, s) is None
+
+
+@pytest.mark.parametrize("failure", ["denied", "unreadable"])
+def test_runner_does_not_touch_store_before_opt_in(env, monkeypatch, tmp_path, failure):
+    import sqlite3
+
+    from ghostbrain.connectors.whatsapp import runner, store
+    db, _q, _s = env
+    monkeypatch.setenv("VAULT_PATH", str(tmp_path / "vault"))
+    monkeypatch.setattr(runner.sys, "platform", "darwin")
+    if failure == "denied":
+        monkeypatch.setenv("GHOSTBRAIN_WHATSAPP_STORE", str(db))
+
+        def deny(path):
+            raise sqlite3.OperationalError("authorization denied")
+
+        monkeypatch.setattr(store, "open_store", deny)
+    else:
+        bad = tmp_path / "garbage.sqlite"
+        bad.write_bytes(b"this is not a sqlite database" * 100)
+        monkeypatch.setenv("GHOSTBRAIN_WHATSAPP_STORE", str(bad))
+    result = runner.run()
+    assert result.ok is True
+    assert result.skipped_reason == "not configured"

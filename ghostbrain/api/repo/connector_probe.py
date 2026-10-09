@@ -145,6 +145,12 @@ def _whatsapp_store_status() -> tuple[str, str | None]:
 def _whatsapp_probe() -> ProbeResult:
     if _platform() != "darwin":
         return ProbeResult("off")
+    from ghostbrain.connectors.whatsapp import allowlist
+
+    # Opt-in first: no chats picked means off, without touching the store.
+    n = len(allowlist.load(state_dir()))
+    if n == 0:
+        return ProbeResult("off")
     status, detail = _whatsapp_store_status()
     if status == "missing":
         return ProbeResult("off")
@@ -152,11 +158,6 @@ def _whatsapp_probe() -> ProbeResult:
         return ProbeResult("err", error="Grant Poltergeist Full Disk Access to read WhatsApp")
     if status == "schema":
         return ProbeResult("err", error=detail)
-    from ghostbrain.connectors.whatsapp import allowlist
-
-    n = len(allowlist.load(state_dir()))
-    if n == 0:
-        return ProbeResult("off")
     return ProbeResult("on", account=f"{n} chat" + ("" if n == 1 else "s"))
 
 
