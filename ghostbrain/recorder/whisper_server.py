@@ -32,7 +32,7 @@ from typing import Self
 import requests
 
 from ghostbrain.paths import state_dir
-from ghostbrain.recorder.chunker import pcm_to_wav
+from ghostbrain.recorder.chunker import is_silent, pcm_to_wav
 from ghostbrain.recorder.transcribe import _NOISE_TOKEN_RE
 
 log = logging.getLogger("ghostbrain.recorder.whisper_server")
@@ -46,6 +46,9 @@ _PROCESS_MARKER = "whisper-server"
 
 # whisper.cpp reports the detected language by name.
 _LANG_CODES = {"english": "en", "afrikaans": "af", "dutch": "nl"}
+# A detection outside the allowed set is re-decoded as its closest allowed
+# language: Afrikaans is regularly mistaken for Dutch.
+_CLOSEST = {"nl": "af"}
 
 
 class WhisperServerError(RuntimeError):
@@ -137,9 +140,14 @@ class WhisperServer:
 
     def transcribe(
         self, pcm: bytes, *, language: str = "auto", offset_s: float = 0.0,
-        timeout_s: float = 120.0,
+        allowed: tuple[str, ...] | None = None, timeout_s: float = 120.0,
     ) -> list[Segment]:
-        """Transcribe one chunk; segment times are shifted by ``offset_s``."""
+        """Transcribe one chunk; segment times are shifted by ``offset_s``.
+
+        With ``language="auto"`` and ``allowed``, a detection outside the set
+        is re-decoded once with the closest allowed language."""
+        if is_silent(pcm):
+            return []
         if not self.alive():
             raise WhisperServerError("whisper-server is not running")
         try:
@@ -156,6 +164,13 @@ class WhisperServer:
 
         lang_name = str(body.get("language") or language).lower()
         lang = _LANG_CODES.get(lang_name, lang_name)
+        if language == "auto" and allowed and lang not in allowed:
+            fallback = _CLOSEST.get(lang)
+            retry = fallback if fallback in allowed else allowed[0]
+            log.info("detected %s outside %s; re-decoding as %s", lang, allowed, retry)
+            return self.transcribe(
+                pcm, language=retry, offset_s=offset_s, timeout_s=timeout_s,
+            )
         out: list[Segment] = []
         for seg in body.get("segments") or []:
             text = str(seg.get("text") or "").strip()

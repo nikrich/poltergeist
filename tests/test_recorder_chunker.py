@@ -108,3 +108,21 @@ def test_pcm_to_wav_round_trips_through_the_wave_module(tmp_path: Path) -> None:
         assert w.getnchannels() == 1
         assert w.getsampwidth() == 2
         assert w.readframes(w.getnframes()) == pcm
+
+
+def test_iter_chunks_respects_start_and_end_bounds(tmp_path: Path) -> None:
+    wav = tmp_path / "m.wav"
+    pcm = (_tone(5.0) + _silence(0.5)) * 6  # 33s
+    _write_growing_wav(wav, pcm)
+    start, end = 10 * SR, 20 * SR
+    chunks = list(chunker.iter_chunks(wav, chunker.LIVE, start_sample=start, end_sample=end))
+    assert chunks[0].start_sample == start
+    last = chunks[-1]
+    assert last.start_sample + len(last.pcm) // 2 == end
+    assert sum(len(c.pcm) for c in chunks) == (end - start) * 2
+
+
+
+def test_is_silent() -> None:
+    assert chunker.is_silent(_silence(1.0))
+    assert not chunker.is_silent(_silence(0.5) + _tone(0.2))

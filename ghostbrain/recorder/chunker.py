@@ -30,6 +30,8 @@ _PAUSE_BLOCKS = 3
 # threshold — or under the absolute floor (true digital silence).
 _PAUSE_RELATIVE = 0.15
 _PAUSE_FLOOR = 150.0
+# Below this in every block, a chunk is treated as silence and not sent.
+_SILENT_RMS = 2 * _PAUSE_FLOOR
 
 
 @dataclass(frozen=True)
@@ -81,6 +83,12 @@ def _block_rms(pcm: bytes) -> list[float]:
     return out
 
 
+def is_silent(pcm: bytes) -> bool:
+    """True when no 100 ms block rises above the silence floor — nothing for
+    whisper to hear (it would hallucinate "Thank you." on it)."""
+    return all(level < _SILENT_RMS for level in _block_rms(pcm))
+
+
 def find_cut(pcm: bytes, profile: Profile, *, flush: bool = False) -> int | None:
     """How many samples of ``pcm`` to take as the next chunk, or None to
     wait for more audio. ``flush`` takes whatever is left (end of recording)."""
@@ -126,19 +134,27 @@ def next_chunk(
     return Chunk(start_sample=start_sample, pcm=pcm[: cut * BYTES_PER_SAMPLE])
 
 
-def iter_chunks(wav_path: Path, profile: Profile) -> Iterator[Chunk]:
-    """Chunk a finished WAV end to end."""
-    pos = 0
-    while True:
-        # find_cut always cuts a full max_s window, so None means this is the
-        # tail of the file: take it whole.
-        chunk = next_chunk(wav_path, pos, profile) or next_chunk(
-            wav_path, pos, profile, flush=True,
-        )
-        if chunk is None:
+def iter_chunks(
+    wav_path: Path,
+    profile: Profile,
+    *,
+    start_sample: int = 0,
+    end_sample: int | None = None,
+) -> Iterator[Chunk]:
+    """Chunk a finished WAV from ``start_sample`` to ``end_sample`` (or EOF).
+    No chunk crosses ``end_sample``."""
+    window = int(profile.max_s * SAMPLE_RATE)
+    pos = start_sample
+    while end_sample is None or pos < end_sample:
+        limit = window if end_sample is None else min(window, end_sample - pos)
+        pcm = read_pcm(wav_path, start_sample=pos, max_samples=limit)
+        if not pcm:
             return
-        yield chunk
-        pos += len(chunk.pcm) // BYTES_PER_SAMPLE
+        # find_cut always cuts a full window, so None means this is the tail
+        # of the range: take it whole.
+        cut = find_cut(pcm, profile) or len(pcm) // BYTES_PER_SAMPLE
+        yield Chunk(start_sample=pos, pcm=pcm[: cut * BYTES_PER_SAMPLE])
+        pos += cut
 
 
 def pcm_to_wav(pcm: bytes) -> bytes:

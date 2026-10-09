@@ -10,7 +10,11 @@ from pathlib import Path
 
 import pytest
 
+from ghostbrain.recorder import chunker
 from ghostbrain.recorder import whisper_server as ws
+
+# 0.5 s of a loud square wave — anything but silence.
+SPEECH = (b"\x00\x20" * 40 + b"\x00\xe0" * 40) * 100
 
 # A stand-in for `whisper-server`: same flags, same /health and /inference
 # contract, deterministic output. FAKE_MODE in the env switches failure modes.
@@ -43,7 +47,18 @@ FAKE_SERVER = textwrap.dedent(
             if self.path != prefix + "/inference":
                 self.send_response(404); self.end_headers(); return
             calls["n"] += 1
-            lang = "afrikaans" if b"name=\\"language\\"\\r\\n\\r\\nauto" in body and calls["n"] % 2 == 0 else "english"
+            auto = b"name=\\"language\\"\\r\\n\\r\\nauto" in body
+            forced = None
+            for code, name in (("af", "afrikaans"), ("en", "english")):
+                if b"name=\\"language\\"\\r\\n\\r\\n" + code.encode() in body:
+                    forced = name
+            detect = os.environ.get("FAKE_DETECT")
+            if forced:
+                lang = forced
+            elif detect:
+                lang = detect
+            else:
+                lang = "afrikaans" if auto and calls["n"] % 2 == 0 else "english"
             out = {{
                 "language": lang,
                 "segments": [
@@ -91,7 +106,7 @@ def test_start_transcribe_stop(fake_binary: Path, model: Path, pid_file: Path) -
     server.start(timeout_s=10)
     try:
         assert pid_file.exists()
-        segments = server.transcribe(b"\x00\x00" * 1600, language="auto", offset_s=10.0)
+        segments = server.transcribe(SPEECH, language="auto", offset_s=10.0)
     finally:
         server.stop()
     # Noise markers are dropped; times are shifted onto the recording timeline.
@@ -102,7 +117,7 @@ def test_start_transcribe_stop(fake_binary: Path, model: Path, pid_file: Path) -
 def test_language_names_map_to_codes(fake_binary: Path, model: Path, pid_file: Path) -> None:
     with ws.WhisperServer(model, binary=str(fake_binary)) as server:
         server.start(timeout_s=10)
-        langs = [server.transcribe(b"\x00\x00" * 1600)[0].lang for _ in range(2)]
+        langs = [server.transcribe(SPEECH)[0].lang for _ in range(2)]
     assert langs == ["en", "af"]
 
 
@@ -140,7 +155,7 @@ def test_transcribe_after_crash_raises(fake_binary: Path, model: Path, pid_file:
     os.kill(server.pid, signal.SIGKILL)
     server._proc.wait(timeout=5)
     with pytest.raises(ws.WhisperServerError):
-        server.transcribe(b"\x00\x00" * 1600)
+        server.transcribe(SPEECH)
     server.stop()
 
 
@@ -148,10 +163,13 @@ def test_kill_orphan_reaps_a_leftover_server(fake_binary: Path, model: Path, pid
     server = ws.WhisperServer(model, binary=str(fake_binary))
     server.start(timeout_s=10)
     proc = server._proc
-    # Simulate a sidecar crash: the object is gone but the pid file remains.
-    assert ws.kill_orphan() is True
-    proc.wait(timeout=5)
-    assert not pid_file.exists()
+    try:
+        # Simulate a sidecar crash: the object is gone but the pid file remains.
+        assert ws.kill_orphan() is True
+        proc.wait(timeout=5)
+        assert not pid_file.exists()
+    finally:
+        server.stop()  # never leak the fake server if an assert fails
 
 
 def test_kill_orphan_ignores_a_recycled_pid(pid_file: Path) -> None:
@@ -174,4 +192,26 @@ def test_routes_sit_behind_a_random_secret_prefix(fake_binary: Path, model: Path
         bare = f"http://127.0.0.1:{server._port}"
         assert requests.get(bare + "/health", timeout=5).status_code == 404
         assert requests.post(bare + "/inference", data=b"x", timeout=5).status_code == 404
-        assert server.transcribe(b"\x00\x00" * 1600)
+        assert server.transcribe(SPEECH)
+
+
+def test_auto_outside_allowed_languages_is_retried(
+    fake_binary: Path, model: Path, pid_file: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Whisper often hears Afrikaans as Dutch: with en/af allowed, a "dutch"
+    # detection is re-decoded as Afrikaans.
+    monkeypatch.setenv("FAKE_DETECT", "dutch")
+    with ws.WhisperServer(model, binary=str(fake_binary)) as server:
+        server.start(timeout_s=10)
+        segs = server.transcribe(SPEECH, allowed=("en", "af"))
+        assert [s.lang for s in segs] == ["af"]
+        # Without a restriction the detection stands.
+        assert server.transcribe(SPEECH)[0].lang == "nl"
+
+
+def test_silence_is_never_sent_to_the_server(fake_binary: Path, model: Path, pid_file: Path) -> None:
+    # Whisper hallucinates "Thank you." on silence; skip it entirely.
+    with ws.WhisperServer(model, binary=str(fake_binary)) as server:
+        server.start(timeout_s=10)
+        server._port = 9  # any request would now fail loudly
+        assert server.transcribe(b"\x00\x00" * chunker.SAMPLE_RATE) == []

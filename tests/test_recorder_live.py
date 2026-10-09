@@ -35,6 +35,7 @@ class FakeServer:
         self.fail_start = fail_start
         self.calls = 0
         self.languages: list[str] = []
+        self.allowed: list[tuple[str, ...] | None] = []
         self.running = False
         self.starts = 0
 
@@ -50,9 +51,13 @@ class FakeServer:
     def stop(self) -> None:
         self.running = False
 
-    def transcribe(self, pcm: bytes, *, language: str = "auto", offset_s: float = 0.0) -> list[Segment]:
+    def transcribe(
+        self, pcm: bytes, *, language: str = "auto", offset_s: float = 0.0,
+        allowed: tuple[str, ...] | None = None,
+    ) -> list[Segment]:
         self.calls += 1
         self.languages.append(language)
+        self.allowed.append(allowed)
         if self.calls in self.fail_on:
             self.running = False
             raise WhisperServerError("crashed")
@@ -101,7 +106,8 @@ def _segments(wav: Path) -> list[dict]:
     p = live.live_path(wav)
     if not p.exists():
         return []
-    return [json.loads(line) for line in p.read_text().splitlines() if line.strip()]
+    records = [json.loads(line) for line in p.read_text().splitlines() if line.strip()]
+    return [r for r in records if r["type"] == "segment"]
 
 
 def test_transcribes_chunks_as_the_wav_grows(wav: Path) -> None:
@@ -240,3 +246,45 @@ def test_begin_from_config_forces_english_for_en_models(wav: Path, tmp_path: Pat
     session = live.begin_from_config(wav, server_factory=lambda _m: FakeServer())
     assert session is not None
     assert session._language == "en"
+
+
+def test_records_each_chunks_language_without_streaming_it(wav: Path) -> None:
+    server = FakeServer()
+    live.begin(wav, server_factory=lambda: server, poll_s=0.01)
+    _grow(wav, SPEECH)
+    _wait(lambda: len(live.read_chunks(wav)) == 1)
+    chunks = live.read_chunks(wav)
+    assert chunks[0]["start"] == 0
+    assert chunks[0]["end"] > 0
+    assert chunks[0]["lang"] == "en"
+    # Chunk records are for the final pass, not the panel.
+    events: list[dict] = []
+    for ev in live.follow(wav, keepalive_s=0.01):
+        if ev is None:
+            break
+        events.append(ev)
+    assert all(e["type"] in ("segment", "status") for e in events)
+
+
+def test_live_passes_the_allowed_languages_in_auto_mode(wav: Path) -> None:
+    server = FakeServer()
+    live.begin(wav, server_factory=lambda: server, poll_s=0.01)
+    _grow(wav, SPEECH)
+    _wait(lambda: server.calls >= 1)
+    assert server.allowed[0] == ("en", "af")
+
+
+
+def _c(start: int, end: int, lang: str | None) -> dict:
+    return {"type": "chunk", "start": start, "end": end, "lang": lang}
+
+
+def test_language_runs_merge_and_absorb_silence() -> None:
+    chunks = [_c(0, 5, None), _c(5, 9, "en"), _c(9, 12, "en"), _c(12, 14, None),
+              _c(14, 20, "af"), _c(20, 25, "en")]
+    assert live.language_runs(chunks) == [(0, 14, "en"), (14, 20, "af"), (20, 25, "en")]
+
+
+def test_language_runs_empty_without_any_language() -> None:
+    assert live.language_runs([_c(0, 5, None)]) == []
+    assert live.language_runs([]) == []

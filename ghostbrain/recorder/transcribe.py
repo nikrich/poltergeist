@@ -177,13 +177,35 @@ def transcribe(
 
 
 def _transcribe_chunked(server, wav_path: Path, txt_path: Path, language: str) -> None:
-    from ghostbrain.recorder import chunker
+    """Long chunks for context, but never across a language switch.
 
-    log.info("transcribing %s in chunks (language=%s)", wav_path.name, language)
+    With ``auto``, live transcription already found which language each
+    stretch is in; long chunks stay inside those runs and are decoded with the
+    known language (a long chunk spanning English and Afrikaans gets one
+    language for all of it — whisper then translates the rest). Audio live
+    never covered gets short, individually auto-detected chunks."""
+    from ghostbrain.recorder import chunker, live
+    from ghostbrain.recorder.config import AUTO_LANGUAGES
+
+    if language == "auto":
+        runs = live.language_runs(live.read_chunks(wav_path))
+        spans = [(s, e, lang, chunker.FINAL) for s, e, lang in runs]
+        spans.append((runs[-1][1] if runs else 0, None, "auto", chunker.LIVE))
+    else:
+        spans = [(0, None, language, chunker.FINAL)]
+
+    log.info("transcribing %s in chunks (language=%s, %d span(s))",
+             wav_path.name, language, len(spans))
     lines: list[str] = []
-    for chunk in chunker.iter_chunks(wav_path, chunker.FINAL):
-        for seg in server.transcribe(chunk.pcm, language=language, offset_s=chunk.start_s):
-            lines.append(seg.text)
+    for start, end, lang, profile in spans:
+        for chunk in chunker.iter_chunks(
+            wav_path, profile, start_sample=start, end_sample=end,
+        ):
+            for seg in server.transcribe(
+                chunk.pcm, language=lang, offset_s=chunk.start_s,
+                allowed=AUTO_LANGUAGES if lang == "auto" else None,
+            ):
+                lines.append(seg.text)
     txt_path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
 
 

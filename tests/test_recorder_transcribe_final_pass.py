@@ -21,6 +21,7 @@ class FakeServer:
         self.fail_start = fail_start
         self.calls = 0
         self.languages: list[str] = []
+        self.spans: list[tuple[float, float]] = []
         self.running = False
 
     def start(self, timeout_s: float = 60.0) -> None:
@@ -34,9 +35,13 @@ class FakeServer:
     def stop(self) -> None:
         self.running = False
 
-    def transcribe(self, pcm: bytes, *, language: str = "auto", offset_s: float = 0.0):
+    def transcribe(
+        self, pcm: bytes, *, language: str = "auto", offset_s: float = 0.0,
+        allowed: tuple[str, ...] | None = None,
+    ):
         self.calls += 1
         self.languages.append(language)
+        self.spans.append((round(offset_s, 2), round(offset_s + len(pcm) / 2 / SR, 2)))
         if self.calls == self.fail_on:
             raise WhisperServerError("crashed")
         lang = "af" if self.calls % 2 == 0 else "en"
@@ -144,3 +149,54 @@ def test_whisper_cmd_takes_the_language() -> None:
 )
 def test_is_multilingual(name: str, expected: bool) -> None:
     assert tmod.is_multilingual(Path(name)) is expected
+
+
+def _seed_live_chunks(wav: Path, chunks: list[tuple[float, float, str | None]]) -> None:
+    import json
+
+    with live.live_path(wav).open("w") as f:
+        for start, end, lang in chunks:
+            f.write(json.dumps({
+                "type": "chunk", "start": int(start * SR), "end": int(end * SR), "lang": lang,
+            }) + "\n")
+
+
+def test_final_pass_follows_live_language_runs(tmp_path: Path, model_dir: Path) -> None:
+    (model_dir / tmod.DEFAULT_MODEL).write_bytes(b"x")
+    wav = _wav(tmp_path, seconds=40)
+    # Live heard English, then Afrikaans; a silent chunk inherits its run.
+    _seed_live_chunks(wav, [(0, 6, "en"), (6, 10, None), (10, 16, "af"), (16, 20, "af")])
+    server = FakeServer()
+    tmod.transcribe(wav, server_factory=lambda: server)
+
+    for (t0, t1), lang in zip(server.spans, server.languages, strict=True):
+        if t1 <= 10:
+            assert lang == "en"
+        elif t0 >= 10 and t1 <= 20:
+            assert lang == "af"
+        else:
+            # Audio live never covered: short chunks, auto-detected.
+            assert t0 >= 20
+            assert lang == "auto"
+            assert t1 - t0 <= chunker.LIVE.max_s
+    # Chunks never straddle a language switch.
+    assert all(not (t0 < 10 < t1) and not (t0 < 20 < t1) for t0, t1 in server.spans)
+    assert server.spans[-1][1] == 40
+
+
+def test_without_live_data_the_final_pass_uses_short_auto_chunks(tmp_path: Path, model_dir: Path) -> None:
+    (model_dir / tmod.DEFAULT_MODEL).write_bytes(b"x")
+    server = FakeServer()
+    tmod.transcribe(_wav(tmp_path, seconds=30), server_factory=lambda: server)
+    assert set(server.languages) == {"auto"}
+    assert all(t1 - t0 <= chunker.LIVE.max_s for t0, t1 in server.spans)
+
+
+def test_a_fixed_language_ignores_live_runs(tmp_path: Path, model_dir: Path) -> None:
+    (model_dir / tmod.DEFAULT_MODEL).write_bytes(b"x")
+    wav = _wav(tmp_path, seconds=40)
+    _seed_live_chunks(wav, [(0, 10, "en"), (10, 20, "af")])
+    server = FakeServer()
+    tmod.transcribe(wav, language="en", server_factory=lambda: server)
+    assert set(server.languages) == {"en"}
+    assert max(t1 - t0 for t0, t1 in server.spans) > chunker.LIVE.max_s  # long chunks

@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from ghostbrain.recorder import chunker
+from ghostbrain.recorder.config import AUTO_LANGUAGES
 from ghostbrain.recorder.whisper_server import WhisperServer, WhisperServerError
 
 log = logging.getLogger("ghostbrain.recorder.live")
@@ -43,6 +44,44 @@ _sessions: dict[str, LiveSession] = {}
 
 def live_path(wav: Path) -> Path:
     return wav.with_suffix(".live.jsonl")
+
+
+def read_chunks(wav: Path) -> list[dict]:
+    """The per-chunk language records live transcription wrote, in order."""
+    path = live_path(wav)
+    if not path.exists():
+        return []
+    out: list[dict] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        if record.get("type") == "chunk":
+            out.append(record)
+    return out
+
+
+def language_runs(chunks: list[dict]) -> list[tuple[int, int, str]]:
+    """Merge consecutive chunks into (start, end, lang) runs of one language.
+    Silent chunks (lang None) join the run before them — or the first run,
+    when they lead. No language anywhere means no runs."""
+    runs: list[list] = []
+    lead: int | None = None  # start of silence before the first language
+    for c in chunks:
+        lang = c.get("lang")
+        if lang is None:
+            if runs:
+                runs[-1][1] = c["end"]
+            elif lead is None:
+                lead = c["start"]
+        elif runs and runs[-1][2] == lang:
+            runs[-1][1] = c["end"]
+        elif runs:
+            runs.append([runs[-1][1], c["end"], lang])
+        else:
+            runs.append([c["start"] if lead is None else lead, c["end"], lang])
+    return [(int(start), int(end), str(lang)) for start, end, lang in runs]
 
 
 def default_server_factory() -> WhisperServer:
@@ -137,9 +176,17 @@ class LiveSession:
             self._server = None
         self._set("unavailable", reason)
 
-    def _emit(self, segments: list) -> None:
+    def _emit(self, chunk: chunker.Chunk, segments: list) -> None:
         path = live_path(self.wav)
+        end = chunk.start_sample + len(chunk.pcm) // chunker.BYTES_PER_SAMPLE
+        # What language this stretch of audio is in (None = no speech) — the
+        # final pass uses it to keep its longer chunks inside one language.
+        record = {
+            "type": "chunk", "start": chunk.start_sample, "end": end,
+            "lang": segments[0].lang if segments else None,
+        }
         with self._lock, path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(record) + "\n")
             for seg in segments:
                 self._seq += 1
                 event = {"type": "segment", "seq": self._seq, **seg.to_dict()}
@@ -166,6 +213,7 @@ class LiveSession:
             try:
                 segments = self._server.transcribe(
                     chunk.pcm, language=self._language, offset_s=chunk.start_s,
+                    allowed=AUTO_LANGUAGES if self._language == "auto" else None,
                 )
             except Exception as e:  # noqa: BLE001
                 if restarted:
@@ -180,7 +228,7 @@ class LiveSession:
                     self._fail(str(e2))
                     return
                 continue  # retry the same chunk
-            self._emit(segments)
+            self._emit(chunk, segments)
             pos += len(chunk.pcm) // chunker.BYTES_PER_SAMPLE
             self._update_lag(pos)
 
@@ -273,7 +321,7 @@ def follow(wav: Path | None = None, *, keepalive_s: float = 15.0) -> Iterator[di
                     event = json.loads(line)
                 except ValueError:
                     continue
-                if event.get("seq", 0) <= last_seq:
+                if event.get("type") == "segment" and event.get("seq", 0) <= last_seq:
                     yield event
         status = session.status()
         yield status

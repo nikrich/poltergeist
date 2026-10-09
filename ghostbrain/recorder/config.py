@@ -31,6 +31,9 @@ SLIDE_FALLBACKS = ("ask", "display", "audio")
 # Spoken language for transcription. `auto` detects per chunk, which is what
 # mixed English/Afrikaans meetings need; a fixed code skips detection.
 TRANSCRIPTION_LANGUAGES = ("auto", "en", "af")
+# What `auto` may detect. Whisper often hears Afrikaans as Dutch; anything
+# outside this set is re-decoded (see WhisperServer.transcribe).
+AUTO_LANGUAGES = ("en", "af")
 
 RECORDER_DEFAULTS: dict[str, Any] = {
     "enabled": True,

@@ -43,6 +43,26 @@ def _no_real_msal_cache(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _isolate_recorder_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The recorder snapshots ``Path.home()`` into module constants at import —
+    before ``_isolate_user_state`` swaps HOME — so without this, tests read
+    and rewrite the REAL ``~/ghostbrain/recorder/manual.state`` and can
+    SIGINT a live meeting's capture process (happened 2026-10-09). Point every
+    one of them into the per-test sandbox. tests/test_recorder_sandbox.py
+    fails if a new home-derived recorder path is added without being listed."""
+    from ghostbrain.api.repo import recorder as repo
+    from ghostbrain.recorder import config, daemon, manual, transcribe
+
+    root = tmp_path / "home" / "ghostbrain" / "recorder"
+    recordings = root / "recordings"
+    for mod in (config, daemon, manual):
+        monkeypatch.setattr(mod, "DEFAULT_RECORDINGS_DIR", recordings)
+    monkeypatch.setattr(repo, "RECORDINGS_DIR", recordings)
+    monkeypatch.setattr(repo, "STATE_FILE", root / "manual.state")
+    monkeypatch.setattr(transcribe, "DEFAULT_MODEL_DIR", root / "models")
+
+
+@pytest.fixture(autouse=True)
 def _no_real_whisper_server(monkeypatch: pytest.MonkeyPatch) -> None:
     """Recording-start code paths spin up live transcription; never launch a
     real whisper-server (and load a real model) from a test. Tests that need a
