@@ -25,6 +25,7 @@ import { installUpdater } from './updater';
 import { installClipboardBridge } from './clipboard';
 import { installCliShim } from './cli-shim';
 import { isAllowedExternalUrl } from './external-url';
+import { installNavigationGuard } from './navigation-guard';
 import {
   registerGbAssetScheme,
   registerAssetProtocol,
@@ -160,6 +161,17 @@ function createWindow() {
     win.loadFile(join(__dirname, '../renderer/index.html'));
   }
 }
+
+// Every webContents (main window, jot overlay, pdf-export, anything added
+// later) gets the navigation guard: foreign navigations are cancelled and
+// window.open is always denied so no external page inherits the preload
+// bridge. Registered at module load, before any window exists.
+app.on('web-contents-created', (_event, contents) => {
+  installNavigationGuard(contents, {
+    devServerUrl: process.env.ELECTRON_RENDERER_URL,
+    rendererRoot: join(__dirname, '../renderer'),
+  });
+});
 
 ipcMain.handle('gb:settings:getAll', () =>
   DEMO ? DEMO_SETTINGS : settings.getAll(),
