@@ -40,18 +40,22 @@ export async function fetchSuggestions(
 }
 
 /** Out-of-order responses would show results for an older query; every
- * superseded call answers with the newest request's result instead. */
+ * superseded call answers with the newest request's result instead. A newer
+ * request can arrive while a superseded call waits, so re-check after each await. */
 export function createLatestFetcher(
   fetcher: (kind: SuggestKind, query: string) => Promise<SuggestResult> = fetchSuggestions,
 ): (kind: SuggestKind, query: string) => Promise<SuggestResult> {
   let seq = 0;
   let latest: Promise<SuggestResult> = Promise.resolve(EMPTY);
   return async (kind, query) => {
-    const mine = ++seq;
-    const pending = fetcher(kind, query);
-    latest = pending;
-    const result = await pending;
-    return mine === seq ? result : latest;
+    let mine = ++seq;
+    latest = fetcher(kind, query);
+    let result = await latest;
+    while (mine !== seq) {
+      mine = seq;
+      result = await latest;
+    }
+    return result;
   };
 }
 

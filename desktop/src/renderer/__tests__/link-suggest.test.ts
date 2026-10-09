@@ -77,6 +77,29 @@ describe('createLatestFetcher', () => {
     await expect(first).resolves.toEqual({ items: [PAGE], indexing: false });
     await expect(second).resolves.toEqual({ items: [PAGE], indexing: false });
   });
+
+  it('re-checks for a newer request after awaiting a superseding one', async () => {
+    const resolvers: Array<(r: SuggestResult) => void> = [];
+    const fetcher = vi.fn(() => new Promise<SuggestResult>((res) => resolvers.push(res)));
+    const latest = createLatestFetcher(fetcher);
+    const resultA: SuggestResult = { items: [], indexing: false };
+    const resultB: SuggestResult = { items: [TAG], indexing: false };
+    const resultC: SuggestResult = { items: [PERSON], indexing: false };
+    const applied: string[] = [];
+    const label = (r: SuggestResult) => (r === resultA ? 'A' : r === resultB ? 'B' : r === resultC ? 'C' : '?');
+    const a = latest('page', 'a').then((r) => (applied.push(`a:${label(r)}`), r));
+    const b = latest('page', 'al').then((r) => (applied.push(`b:${label(r)}`), r));
+    resolvers[0]!(resultA);
+    await Promise.resolve();
+    await Promise.resolve();
+    const c = latest('page', 'alp').then((r) => (applied.push(`c:${label(r)}`), r));
+    resolvers[2]!(resultC);
+    resolvers[1]!(resultB);
+    await expect(a).resolves.toBe(resultC);
+    await expect(b).resolves.toBe(resultC);
+    await expect(c).resolves.toBe(resultC);
+    expect(applied.every((s) => s.endsWith(':C'))).toBe(true);
+  });
 });
 
 describe('insertion text', () => {
