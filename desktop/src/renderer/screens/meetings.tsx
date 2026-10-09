@@ -7,7 +7,9 @@ import { Eyebrow } from '../components/Eyebrow';
 import { Panel } from '../components/Panel';
 import { Ghost } from '../components/Ghost';
 import { UpcomingMeetings } from '../components/UpcomingMeetings';
+import { LiveTranscriptPanel } from '../components/LiveTranscriptPanel';
 import { useMeeting } from '../stores/meeting';
+import { useLiveTranscriptStream } from '../stores/live-transcript';
 import { useNavigation } from '../stores/navigation';
 import { useNoteView } from '../stores/note-view';
 import { stub, toast } from '../stores/toast';
@@ -74,6 +76,8 @@ export function MeetingsScreen() {
     stop,
     reset,
   } = useMeeting();
+  // Live text keeps streaming through "transcribing" (the finalising state).
+  useLiveTranscriptStream(phase === 'recording' || phase === 'transcribing');
   const agenda = useAgenda();
   const meetings = useMeetings({ limit: 1 });
 
@@ -625,15 +629,7 @@ export function ActiveRecording({
       {awaitingTargetChoice && <TargetChoiceCard windows={captureWindows} />}
 
       <div className="grid grid-cols-[1.4fr_1fr] gap-4">
-        <div className="rounded-lg border border-hairline bg-vellum p-6">
-          <Eyebrow className="mb-2">capturing</Eyebrow>
-          <p className="m-0 max-w-[60ch] text-14 leading-[1.55] text-ink-1">
-            poltergeist is recording your mic + system audio. transcription runs
-            locally with whisper.cpp after you hit stop — no audio leaves your
-            machine. the transcript will land under{' '}
-            <span className="font-mono text-12">20-contexts/&lt;ctx&gt;/calendar/transcripts/</span>.
-          </p>
-        </div>
+        <LiveTranscriptPanel />
         <div className="rounded-lg border border-hairline bg-vellum p-4">
           <Eyebrow className="mb-2">sources</Eyebrow>
           <CaptureSources statusBackend={captureBackend} />
@@ -670,6 +666,9 @@ function Transcribing({ title, startedAt }: TranscribingProps) {
             {recordedSeconds !== null ? ` · ${mmss(recordedSeconds)} of audio` : ''}
           </div>
         </div>
+      </div>
+      <div className="mt-4">
+        <LiveTranscriptPanel />
       </div>
     </div>
   );

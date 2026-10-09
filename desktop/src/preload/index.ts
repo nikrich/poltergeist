@@ -26,6 +26,8 @@ const bridge: GbBridge = {
   },
   recorder: {
     notifyTargetChoice: () => ipcRenderer.invoke('gb:recorder:notifyTargetChoice'),
+    liveSubscribe: () => ipcRenderer.invoke('gb:recorder:live:subscribe'),
+    liveUnsubscribe: () => ipcRenderer.invoke('gb:recorder:live:unsubscribe'),
   },
   chat: {
     send: (convId, text, attachmentPaths) =>

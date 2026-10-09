@@ -12,6 +12,7 @@ import { forward, isAllowedMethod } from './api-forwarder';
 import { startChatStream, stopChatStream } from './chat-stream';
 import type { ChatStreamEvent } from '../shared/api-types';
 import { startDocsStream, stopDocsStream } from './docs-stream';
+import { startRecorderLive, stopRecorderLive } from './recorder-live-stream';
 import { exportPdf, renderVaultHtmlToPdf } from './pdf-export';
 import { installTray, type TrayController } from './tray';
 import {
@@ -417,6 +418,26 @@ ipcMain.handle('gb:chat:stop', (_e, convId: unknown) => {
   }
   if (DEMO) stopDemoChat(convId);
   else stopTurn(convId);
+  return { ok: true };
+});
+
+ipcMain.handle('gb:recorder:live:subscribe', async (e) => {
+  if (DEMO) return { ok: false, error: 'Live transcript is not available in demo mode' };
+  const wc = e.sender;
+  const key = wc.id;
+  const onDestroyed = () => stopRecorderLive(key);
+  wc.once('destroyed', onDestroyed);
+  try {
+    return await startRecorderLive(sidecar, key, (event) => {
+      if (!wc.isDestroyed()) wc.send('gb:recorder:live:event', event);
+    });
+  } finally {
+    wc.removeListener('destroyed', onDestroyed);
+  }
+});
+
+ipcMain.handle('gb:recorder:live:unsubscribe', (e) => {
+  stopRecorderLive(e.sender.id);
   return { ok: true };
 });
 

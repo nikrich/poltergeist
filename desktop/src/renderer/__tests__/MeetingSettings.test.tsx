@@ -43,6 +43,10 @@ const RECORDER: RecorderSettings = {
   slide_fps: 1,
   slide_fallback: 'ask',
   capture_backend_effective: 'native',
+  transcription_language: 'auto',
+  live_transcription: true,
+  transcription_model: 'ggml-large-v3-turbo-q5_0.bin',
+  multilingual_model: true,
 };
 
 function renderSection(opts?: {
@@ -230,5 +234,45 @@ describe('MeetingSettings (win32)', () => {
     expect(screen.queryByText('slide capture')).not.toBeInTheDocument();
     expect(screen.queryByText('native capture')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /grant access/i })).not.toBeInTheDocument();
+  });
+});
+
+
+describe('MeetingSettings · transcription', () => {
+  it('posts transcription_language when the language changes', async () => {
+    renderSection();
+    const select = (await screen.findByLabelText('transcription language')) as HTMLSelectElement;
+    expect(select.value).toBe('auto');
+    fireEvent.change(select, { target: { value: 'af' } });
+    await waitFor(() =>
+      expect(vi.mocked(client.post)).toHaveBeenCalledWith('/v1/settings/recorder', {
+        transcription_language: 'af',
+      }),
+    );
+  });
+
+  it('posts live_transcription when the toggle flips', async () => {
+    renderSection();
+    const toggle = await screen.findByRole('button', { name: 'live transcript' });
+    fireEvent.click(toggle);
+    await waitFor(() =>
+      expect(vi.mocked(client.post)).toHaveBeenCalledWith('/v1/settings/recorder', {
+        live_transcription: false,
+      }),
+    );
+  });
+
+  it('shows the model in use', async () => {
+    renderSection();
+    expect(await screen.findByText('ggml-large-v3-turbo-q5_0.bin')).toBeInTheDocument();
+  });
+
+  it('locks the language to English with an English-only model and says how to fix it', async () => {
+    renderSection({
+      recorder: { transcription_model: 'ggml-small.en.bin', multilingual_model: false },
+    });
+    const select = (await screen.findByLabelText('transcription language')) as HTMLSelectElement;
+    expect(select.disabled).toBe(true);
+    expect(screen.getByText(/poltergeist setup fetch-model/)).toBeInTheDocument();
   });
 });
