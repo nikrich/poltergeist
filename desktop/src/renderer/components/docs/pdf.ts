@@ -1,5 +1,5 @@
 // The only module that touches pdfjs-dist, so tests can mock it wholesale.
-import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy } from 'pdfjs-dist';
+import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy, type RenderTask } from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
 GlobalWorkerOptions.workerSrc = workerUrl;
@@ -7,6 +7,29 @@ GlobalWorkerOptions.workerSrc = workerUrl;
 export interface PdfHandle {
   numPages: number;
   renderPage(canvas: HTMLCanvasElement, page: number, scale: number): Promise<void>;
+}
+
+const inflight = new WeakMap<HTMLCanvasElement, RenderTask>();
+
+export function cancelRender(canvas: HTMLCanvasElement): void {
+  inflight.get(canvas)?.cancel();
+  inflight.delete(canvas);
+}
+
+// Starts a render on the canvas, cancelling any task already running on it.
+// A cancelled render resolves quietly; real failures still reject.
+async function runRender(canvas: HTMLCanvasElement, run: () => RenderTask): Promise<void> {
+  cancelRender(canvas);
+  const task = run();
+  inflight.set(canvas, task);
+  try {
+    await task.promise;
+  } catch (err) {
+    if ((err as { name?: string } | null)?.name === 'RenderingCancelledException') return;
+    throw err;
+  } finally {
+    if (inflight.get(canvas) === task) inflight.delete(canvas);
+  }
 }
 
 const cache = new Map<string, Promise<PDFDocumentProxy>>();
@@ -33,7 +56,7 @@ export async function loadPdf(url: string): Promise<PdfHandle> {
       canvas.height = viewport.height;
       canvas.style.width = `${viewport.width / ratio}px`;
       canvas.style.height = `${viewport.height / ratio}px`;
-      await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
+      await runRender(canvas, () => page.render({ canvasContext: canvas.getContext('2d')!, viewport }));
     },
   };
 }
@@ -45,5 +68,5 @@ export async function renderThumb(canvas: HTMLCanvasElement, url: string, width:
   const viewport = page.getViewport({ scale: width / base.width });
   canvas.width = viewport.width;
   canvas.height = viewport.height;
-  await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
+  await runRender(canvas, () => page.render({ canvasContext: canvas.getContext('2d')!, viewport }));
 }

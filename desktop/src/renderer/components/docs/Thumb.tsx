@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { DocSummary } from '../../../shared/api-types';
 import { docUrl, KIND_META, kindLabel } from './kinds';
-import { renderThumb } from './pdf';
+import { cancelRender, renderThumb } from './pdf';
 
 const TINT: Record<string, string> = {
   pdf: 'linear-gradient(160deg,#2a1714,var(--bg-vellum))',
@@ -16,7 +16,17 @@ function PdfThumb({ doc }: { doc: DocSummary }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
-    if (ref.current) renderThumb(ref.current, docUrl(doc.original_path), 160).catch(() => setFailed(true));
+    setFailed(false);
+    const canvas = ref.current;
+    if (!canvas) return;
+    let cancelled = false;
+    renderThumb(canvas, docUrl(doc.original_path), 160).catch(() => {
+      if (!cancelled) setFailed(true);
+    });
+    return () => {
+      cancelled = true;
+      cancelRender(canvas);
+    };
   }, [doc.original_path]);
   if (failed) return <TextThumb doc={doc} />;
   return <canvas ref={ref} className="mt-3 w-[62%] self-end rounded-t-[3px] bg-white shadow-[0_-4px_20px_rgba(0,0,0,.3)]" />;

@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../components/docs/pdf', () => ({ renderThumb: vi.fn(async () => {}), loadPdf: vi.fn() }));
+vi.mock('../components/docs/pdf', () => ({ renderThumb: vi.fn(async () => {}), cancelRender: vi.fn(), loadPdf: vi.fn() }));
 
 import { FolderView } from '../components/docs/FolderView';
 import { findFolder } from '../components/docs/tree-model';
@@ -65,5 +65,29 @@ describe('FolderView', () => {
     const f = new File(['x'], 'a.pdf');
     fireEvent.drop(screen.getByTestId('folder-view'), { dataTransfer: { files: [f], getData: () => '', types: ['Files'] } });
     expect(p.onUploadFiles).toHaveBeenCalledWith([f], ref);
+  });
+
+  it('ignores OS file drops on an archived folder', () => {
+    const props = {
+      refKey: 'work/payments/', folderRef: ref, node: findFolder(libraryFixture(), ref)!, archived: true, uploads: [],
+      selectedDocId: null, onSelectDoc: vi.fn(), onOpenDoc: vi.fn(), onOpenFolder: vi.fn(), onUploadFiles: vi.fn(), onNewFolder: vi.fn(),
+    };
+    render(<FolderView {...props} />);
+    const f = new File(['x'], 'a.pdf');
+    fireEvent.drop(screen.getByTestId('folder-view'), { dataTransfer: { files: [f], getData: () => '', types: ['Files'] } });
+    expect(props.onUploadFiles).not.toHaveBeenCalled();
+  });
+
+  it('ignores internal doc drags that carry no files', () => {
+    const p = setup();
+    fireEvent.drop(screen.getByTestId('folder-view'), { dataTransfer: { files: [], getData: () => '', types: ['application/x-gb-library'] } });
+    expect(p.onUploadFiles).not.toHaveBeenCalled();
+  });
+
+  it('keeps view mode per folder', () => {
+    setup();
+    fireEvent.click(screen.getByRole('button', { name: /grid/ }));
+    expect(useDocs.getState().viewMode('work/payments/')).toBe('grid');
+    expect(useDocs.getState().viewMode('work/_/specs')).toBe('list');
   });
 });
