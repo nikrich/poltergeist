@@ -17,13 +17,13 @@ interface Props {
 
 function StatusPill({ status }: { status: DocSummary['index_status'] }) {
   if (status === 'pending') {
-    return <span className="inline-flex items-center gap-1.5 rounded-full bg-hairline px-2.5 py-[3px] font-mono text-[10.5px] text-ink-3">indexing…</span>;
+    return <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-hairline px-2.5 py-[3px] font-mono text-[10.5px] text-ink-3">indexing…</span>;
   }
   if (status === 'failed') {
-    return <span className="inline-flex items-center gap-1.5 rounded-full bg-[rgba(242,193,78,.12)] px-2.5 py-[3px] font-mono text-[10.5px] text-[#F2C14E]">index failed</span>;
+    return <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-[rgba(242,193,78,.12)] px-2.5 py-[3px] font-mono text-[10.5px] text-[#F2C14E]">index failed</span>;
   }
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-neon-mist px-2.5 py-[3px] font-mono text-[10.5px] text-neon-ink">
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-neon-mist px-2.5 py-[3px] font-mono text-[10.5px] text-neon-ink">
       <span className="h-1.5 w-1.5 rounded-full bg-neon shadow-[0_0_8px_var(--neon)]" />
       indexed
     </span>
@@ -72,14 +72,18 @@ export function DocReader({ doc, body, crumb, onClose, onOpenExternal, onReveal,
     <div className="flex min-h-0 flex-1 flex-col bg-[#0A0B0D]">
       <div className="flex h-[52px] shrink-0 items-center gap-3 border-b border-hairline bg-paper px-[18px]">
         <button type="button" aria-label="back to folder" onClick={onClose} className="text-ink-3 hover:text-ink-0"><Lucide name="arrow-left" size={14} /></button>
-        <span className="truncate font-mono text-[11.5px] text-ink-2">
+        <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-ink-2">
           {crumb} / <em className="not-italic text-ink-0">{doc.original}</em>
         </span>
-        <span className="flex-1" />
-        <StatusPill status={doc.index_status} />
-        <button type="button" onClick={onOpenExternal} className="rounded-[7px] border border-hairline-2 px-2.5 py-1 font-mono text-11 text-ink-1 hover:text-ink-0">open in ↗</button>
-        <button type="button" aria-label="reveal in folder" onClick={onReveal} className="rounded-[7px] border border-hairline-2 p-1.5 text-ink-1 hover:text-ink-0"><Lucide name="folder-open" size={13} /></button>
-        <button type="button" aria-label="move to trash" onClick={onDelete} className="rounded-[7px] border border-hairline-2 p-1.5 text-ink-1 hover:text-oxblood"><Lucide name="trash-2" size={13} /></button>
+        <div className="flex shrink-0 items-center gap-2">
+          <StatusPill status={doc.index_status} />
+          <button type="button" onClick={onOpenExternal} title="open in default app" className="inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-[7px] border border-hairline-2 px-2.5 font-mono text-11 text-ink-1 hover:text-ink-0">
+            <Lucide name="external-link" size={12} />
+            open in
+          </button>
+          <button type="button" aria-label="reveal in folder" title="reveal in folder" onClick={onReveal} className="inline-flex h-7 w-7 items-center justify-center rounded-[7px] border border-hairline-2 text-ink-1 hover:text-ink-0"><Lucide name="folder-open" size={13} /></button>
+          <button type="button" aria-label="move to trash" title="move to trash" onClick={onDelete} className="inline-flex h-7 w-7 items-center justify-center rounded-[7px] border border-hairline-2 text-ink-1 hover:text-oxblood"><Lucide name="trash-2" size={13} /></button>
+        </div>
       </div>
       <Viewer doc={doc} body={body} onOpenExternal={onOpenExternal} />
     </div>
