@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../components/docs/pdf', () => ({
   renderThumb: vi.fn(async () => {}),
   cancelRender: vi.fn(),
-  loadPdf: vi.fn(async () => ({ numPages: 1, renderPage: vi.fn(async () => {}) })),
+  loadPdf: vi.fn(async () => ({ numPages: 1, renderPage: vi.fn(async () => {}), pageSize: vi.fn(async () => ({ width: 100, height: 140 })) })),
 }));
 vi.mock('../lib/api/client', () => ({
   ApiError: class extends Error { status?: number },

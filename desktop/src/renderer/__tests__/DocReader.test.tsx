@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest';
 
 const renderPage = vi.fn(async () => {});
-const loadPdfMock = vi.fn(async (_url: string) => ({ numPages: 24, renderPage }));
+const loadPdfMock = vi.fn(async (_url: string) => ({ numPages: 24, renderPage, pageSize: async () => ({ width: 100, height: 140 }) }));
 vi.mock('../components/docs/pdf', () => ({
   loadPdf: (url: string) => loadPdfMock(url),
   renderThumb: vi.fn(async () => {}),
@@ -20,12 +20,10 @@ function setup(d = doc({}), body?: string) {
 }
 
 describe('DocReader', () => {
-  it('renders pdfs page by page with a pager', async () => {
+  it('renders pdfs as a continuous column with a pager', async () => {
     setup();
     await waitFor(() => expect(screen.getByText('/ 24')).toBeTruthy());
-    expect(renderPage).toHaveBeenLastCalledWith(expect.any(HTMLCanvasElement), 1, 1);
-    fireEvent.click(screen.getByLabelText('next page'));
-    await waitFor(() => expect(renderPage).toHaveBeenLastCalledWith(expect.any(HTMLCanvasElement), 2, 1));
+    expect(renderPage).toHaveBeenCalledWith(expect.any(HTMLCanvasElement), 1, 1);
   });
 
   it('renders images from gbdoc://', () => {

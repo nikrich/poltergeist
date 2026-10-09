@@ -7,6 +7,8 @@ GlobalWorkerOptions.workerSrc = workerUrl;
 export interface PdfHandle {
   numPages: number;
   renderPage(canvas: HTMLCanvasElement, page: number, scale: number): Promise<void>;
+  /** CSS-pixel size of a page at `scale` (no rendering) — sizes scroll placeholders. */
+  pageSize(page: number, scale: number): Promise<{ width: number; height: number }>;
 }
 
 const inflight = new WeakMap<HTMLCanvasElement, RenderTask>();
@@ -92,6 +94,12 @@ export async function loadPdf(url: string): Promise<PdfHandle> {
   const numPages = await withDoc(url, async (pdf) => pdf.numPages);
   return {
     numPages,
+    pageSize(pageNo, scale) {
+      return withDoc(url, async (pdf) => {
+        const v = (await pdf.getPage(pageNo)).getViewport({ scale });
+        return { width: v.width, height: v.height };
+      });
+    },
     // Re-acquires the document per render, so an evicted (destroyed) one is reopened.
     renderPage(canvas, pageNo, scale) {
       const gen = bump(canvas);

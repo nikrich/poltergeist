@@ -45,7 +45,7 @@ vi.mock('pdfjs-dist', () => ({
   },
 }));
 
-import { cancelRender, MAX_OPEN_DOCS, openDocUrls, renderThumb } from '../components/docs/pdf';
+import { cancelRender, loadPdf, MAX_OPEN_DOCS, openDocUrls, renderThumb } from '../components/docs/pdf';
 
 function makeCanvas(): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
@@ -157,5 +157,14 @@ describe('pdf document cache', () => {
     expect(openDocUrls()).toHaveLength(8);
     expect(openDocUrls()).not.toContain(`${base}held.pdf`);
     await vi.waitFor(() => expect(held.destroy).toHaveBeenCalledTimes(1));
+  });
+});
+
+describe('pdf pageSize', () => {
+  it('reports the css-pixel page size at a scale without rendering', async () => {
+    const before = tasks.length;
+    const h = await loadPdf('gbdoc://doc/size.pdf');
+    expect(await h.pageSize(1, 2)).toEqual({ width: 200, height: 280 });
+    expect(tasks.length).toBe(before);
   });
 });
