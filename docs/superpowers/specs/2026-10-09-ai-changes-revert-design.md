@@ -176,8 +176,8 @@ Changes screen → Revert #42 → current etag == b2 ✓ → write(content=b1, a
 3. **B3 Risk policy + approvals:** `risk.py`, the pending flow, approve or reject, nav badge.
 4. **B4 Worker modifications:** move `reversal.py` and `profile/apply.py` onto the write path as `worker:<job>`.
 
-## Open questions for the user
+## Decisions (approved by the user 2026-10-09)
 
-1. **Connector ingest on the Changes screen?** Recommended: **no**. New ingested notes stay audit-only. Option: one collapsed "Ingested 37 notes from gmail" row per scheduler run, with no per-note revert.
+1. **Connector ingest on the Changes screen?** → **No.** New ingested notes stay audit-only.
 2. **Should assistant-created *new* notes need approval?** → **No:** apply immediately, revert in one click (Brainstead's model). Only the risk rules hold changes.
 3. **Should plugins be allowed to edit `90-meta`?** → **Allowed but always pending.** That's the risk path rule; there's no hard block.

@@ -172,7 +172,7 @@ Accept → editor transaction → autosave PATCH (header X-Poltergeist-Actor: as
 
 A1, A2 and A4 can ship in any order. A5 needs B; A6 needs A2's index.
 
-## Open questions for the user
+## Decisions (approved by the user 2026-10-09)
 
 1. **Columns.** Skip them, as recommended, or accept a custom ` ```columns ` fence whose cells aren't rich-editable inside Poltergeist? → **Skip.** Callouts and tables cover most Confluence column use.
 2. **History location.** App state (`~/.ghostbrain/history`, recommended: lightweight, invisible to other tools, but not synced between machines) or inside the vault (synced, but clutters it)? → **App state.**

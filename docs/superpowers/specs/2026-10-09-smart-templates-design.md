@@ -183,7 +183,7 @@ Split button → pick "1-1" → TemplatePromptDialog (person = Thando via sugges
 3. **C3 Template editor:** completions, hover docs, lint, Test run.
 4. **C4 AI-generated templates:** the generate route, pending approval. *(Needs B3.)*
 
-## Open questions for the user
+## Decisions (approved by the user 2026-10-09)
 
 1. **Template folder.** `90-meta/templates/` (recommended: system area, covered by the risk policy) or a visible top-level `70-templates/`? → **`90-meta/templates/`.**
 2. **Live query results inside other tools.** Keep queries live only (recommended), or also write a static snapshot under each block on save so Obsidian and exports show results? → **Live only, plus the manual Freeze action.**
