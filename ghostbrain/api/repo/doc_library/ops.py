@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
-from send2trash import send2trash  # noqa: F401  (used by delete/remove_orphan, Task 6)
+from send2trash import send2trash
 
 from ghostbrain.api.repo import attachment_caption, attachment_extract, file_kinds
 from ghostbrain.api.repo.doc_library import index, notes, scope
-from ghostbrain.api.repo.doc_library.errors import TooLarge
+from ghostbrain.api.repo.doc_library.errors import Conflict, InvalidRequest, TooLarge
 
 log = logging.getLogger("ghostbrain.doc_library")
 
@@ -113,3 +114,82 @@ def upload(
         index.invalidate()
         raise
     return {**s, "duplicate": False}
+
+
+def _with_scope(front: dict, context: str, project: str | None) -> dict:
+    out = {k: v for k, v in front.items() if k != "project"}
+    out["context"] = context
+    if project:
+        out["project"] = project
+    return out
+
+
+def move(doc_id: str, context: str, project: str | None, folder: str) -> dict:
+    e = index.get(doc_id)
+    root = scope.scope_root(context, project, for_write=True)
+    dest = scope.resolve_in(root, folder)
+    if dest.resolve() == e.note.parent.resolve():
+        return index.summary(e)
+    dest.mkdir(parents=True, exist_ok=True)
+    new_note = dest / e.note.name
+    if new_note.exists():
+        raise Conflict(f"a note named {e.note.name} already exists there")
+    new_orig = notes.unique_child(dest, e.original.name)
+    # Original first, then the note; undo the original move if the note step fails.
+    shutil.move(str(e.original), str(new_orig))
+    try:
+        front = _with_scope({**e.front, "original": new_orig.name}, context, project or None)
+        notes.write_atomic(new_note, notes.render(front, e.body))
+        e.note.unlink()
+    except Exception:
+        if new_note.exists() and e.note.exists():
+            new_note.unlink()
+        shutil.move(str(new_orig), str(e.original))
+        raise
+    finally:
+        index.invalidate()
+    return index.summary(index.get(doc_id))
+
+
+def rename(doc_id: str, title: str) -> dict:
+    title = title.strip()
+    if not title or "/" in title or "\\" in title:
+        raise InvalidRequest("title must be non-empty and contain no path separators")
+    e = index.get(doc_id)
+    ext = e.original.suffix
+    if ext and title.lower().endswith(ext.lower()):
+        title = title[: -len(ext)].strip() or title
+    want = notes.safe_filename(f"{title}{ext}")
+    new_orig = e.original
+    if want != e.original.name:
+        new_orig = notes.unique_child(e.original.parent, want)
+        e.original.rename(new_orig)
+    try:
+        front = {**e.front, "title": title, "original": new_orig.name}
+        notes.write_atomic(e.note, notes.render(front, e.body))
+    except Exception:
+        if new_orig != e.original:
+            new_orig.rename(e.original)
+        raise
+    finally:
+        index.invalidate()
+    return index.summary(index.get(doc_id))
+
+
+def delete(doc_id: str) -> None:
+    e = index.get(doc_id)
+    send2trash(str(e.original))
+    send2trash(str(e.note))
+    index.invalidate()
+
+
+def reindex(doc_id: str) -> dict:
+    e = index.get(doc_id)
+    kind = str(e.front.get("kind") or "opaque")
+    body, status, pages = _extract(kind, e.original.name, str(e.front.get("mime") or ""), e.original)
+    front = {**e.front, "index_status": status}
+    if pages:
+        front["pages"] = pages
+    notes.write_atomic(e.note, notes.render(front, body))
+    index.invalidate()
+    return index.summary(index.get(doc_id))
