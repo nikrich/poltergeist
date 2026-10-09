@@ -13,6 +13,8 @@ export interface Conflict {
   mine: string;
   theirs: string;
   theirsEtag: string | null;
+  /** theirs could not be re-read; keep theirs / view changes unavailable. */
+  unread?: boolean;
 }
 
 export interface GuardedSave {
@@ -24,10 +26,12 @@ export interface GuardedSave {
   adopt: (etag: string | null, body: string) => void;
 }
 
-/** GET bodies come back trimmed by the server; editor output may carry a
- * trailing newline. Compare without trailing whitespace. */
+/** GET bodies come back trimmed (both ends) by the server and keep the file's
+ * CRLFs; editor output is LF and may carry a trailing newline. Compare
+ * EOL-normalised and trimmed. */
+const normBody = (s: string): string => s.replace(/\r\n/g, '\n').trim();
 export function sameBody(a: string, b: string): boolean {
-  return a.replace(/\s+$/, '') === b.replace(/\s+$/, '');
+  return normBody(a) === normBody(b);
 }
 
 const isConflict = (err: unknown): boolean => err instanceof ApiError && err.status === 409;
@@ -73,7 +77,8 @@ export function useGuardedSave(
       latest = await targetRef.current.fetchLatest();
     } catch (err) {
       onErrorRef.current?.(asError(err));
-      setConflict({ mine, theirs: '', theirsEtag: null });
+      // Keystrokes may have landed in the conflict while we awaited.
+      setConflict({ mine: conflictRef.current?.mine ?? mine, theirs: '', theirsEtag: null, unread: true });
       return;
     }
     if (allowAutoResolve && sameBody(latest.body, baseBodyRef.current)) {
@@ -86,7 +91,11 @@ export function useGuardedSave(
       }
       return;
     }
-    setConflict({ mine, theirs: latest.body, theirsEtag: latest.etag ?? null });
+    setConflict({
+      mine: conflictRef.current?.mine ?? mine,
+      theirs: latest.body,
+      theirsEtag: latest.etag ?? null,
+    });
   };
 
   const run = async (body: string): Promise<void> => {
@@ -145,7 +154,7 @@ export function useGuardedSave(
 
   const keepTheirs = (): Conflict | null => {
     const c = conflictRef.current;
-    if (!c) return null;
+    if (!c || c.unread) return null;
     markSaved(c.theirs, c.theirsEtag);
     setConflict(null);
     return c;

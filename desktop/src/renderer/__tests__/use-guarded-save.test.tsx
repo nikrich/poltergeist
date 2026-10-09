@@ -68,6 +68,18 @@ describe('useGuardedSave', () => {
     expect(result.current.conflict).toBeNull();
   });
 
+  it('auto-resolves a frontmatter-only change on a CRLF note', async () => {
+    const send = vi.fn().mockRejectedValueOnce(conflict()).mockResolvedValueOnce({ etag: 'e6' });
+    const fetchLatest = vi.fn().mockResolvedValue({ body: 'a\r\nb', etag: 'e5' });
+    const { result } = renderHook(() =>
+      useGuardedSave({ body: '\na\nb\n', etag: 'e1' }, { send, fetchLatest }),
+    );
+    act(() => result.current.save('c'));
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+    expect(send.mock.calls).toEqual([['c', 'e1'], ['c', 'e5']]);
+    expect(result.current.conflict).toBeNull();
+  });
+
   it('keep mine saves the latest text typed during the conflict', async () => {
     const send = vi
       .fn()
@@ -126,5 +138,55 @@ describe('useGuardedSave', () => {
     act(() => result.current.adopt('e2', 'a + photo text'));
     act(() => result.current.save('a + photo text'));
     await waitFor(() => expect(send).toHaveBeenCalledWith('a + photo text', 'e2'));
+  });
+  it('keep mine hitting a 409 keeps text typed during the re-read', async () => {
+    const reread = deferred<{ body: string; etag: string }>();
+    const send = vi.fn().mockRejectedValueOnce(conflict()).mockRejectedValueOnce(conflict());
+    const fetchLatest = vi
+      .fn()
+      .mockResolvedValueOnce({ body: 'theirs', etag: 'e9' })
+      .mockResolvedValueOnce({ body: 'theirs', etag: 'e10' })
+      .mockReturnValueOnce(reread.promise);
+    const { result } = renderHook(() =>
+      useGuardedSave({ body: 'a', etag: 'e1' }, { send, fetchLatest }),
+    );
+    act(() => result.current.save('b'));
+    await waitFor(() => expect(result.current.conflict).not.toBeNull());
+    let resolved!: Promise<void>;
+    act(() => {
+      resolved = result.current.keepMine();
+    });
+    await waitFor(() => expect(fetchLatest).toHaveBeenCalledTimes(3));
+    act(() => result.current.save('newest'));
+    await act(async () => {
+      reread.resolve({ body: 'theirs 2', etag: 'e11' });
+      await resolved;
+    });
+    expect(result.current.conflict).toEqual({ mine: 'newest', theirs: 'theirs 2', theirsEtag: 'e11' });
+  });
+
+  it('an unreadable theirs marks the conflict unread; keep theirs is refused, keep mine resolves', async () => {
+    const onError = vi.fn();
+    const send = vi.fn().mockRejectedValueOnce(conflict()).mockResolvedValueOnce({ etag: 'e12' });
+    const fetchLatest = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce({ body: 'theirs', etag: 'e9' });
+    const { result } = renderHook(() =>
+      useGuardedSave({ body: 'a', etag: 'e1' }, { send, fetchLatest }, onError),
+    );
+    act(() => result.current.save('b'));
+    await waitFor(() => expect(result.current.conflict).not.toBeNull());
+    expect(result.current.conflict?.unread).toBe(true);
+    expect((onError.mock.calls[0]![0] as Error).message).toBe('offline');
+    let kept: ReturnType<typeof result.current.keepTheirs> = null;
+    act(() => {
+      kept = result.current.keepTheirs();
+    });
+    expect(kept).toBeNull();
+    expect(result.current.conflict?.unread).toBe(true);
+    await act(async () => result.current.keepMine());
+    expect(send).toHaveBeenLastCalledWith('b', 'e9');
+    expect(result.current.conflict).toBeNull();
   });
 });
