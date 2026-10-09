@@ -11,6 +11,7 @@ export type ScreenId =
   | 'daily'
   | 'settings'
   | 'jots'
+  | 'docs'
   | 'plugins'
   | 'onboarding'
   | `plugin:${string}`;
