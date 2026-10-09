@@ -34,6 +34,12 @@ export interface Settings {
 
   schedulerEnabled: boolean;
   onboardingComplete: boolean;
+  /** Focus mode (⌘. / Ctrl+.): hide everything but the page being edited. */
+  focusMode: boolean;
+  /** voiceURI of the read-aloud voice; '' = auto (match the note's language). */
+  readAloudVoice: string;
+  /** Read-aloud speaking rate, 0.5–2 (1 = normal). */
+  readAloudRate: number;
 
   hotkeys: {
     jotOverlay: string;

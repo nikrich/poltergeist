@@ -420,6 +420,9 @@ export const DEMO_SETTINGS = {
   transcriptModel: 'whisper-large-v3' as const,
   folderStructure: 'by-source' as const,
   schedulerEnabled: true,
+  focusMode: false,
+  readAloudVoice: '',
+  readAloudRate: 1,
   hotkeys: { jotOverlay: 'Alt+J' },
 };
 

@@ -35,6 +35,9 @@ export const useSettings = create<SettingsState>((set) => ({
 
   schedulerEnabled: true,
   onboardingComplete: false,
+  focusMode: false,
+  readAloudVoice: '',
+  readAloudRate: 1,
 
   hotkeys: {
     jotOverlay: 'Alt+J',

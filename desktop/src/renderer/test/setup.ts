@@ -38,6 +38,9 @@ const defaultSettings: Settings = {
 
   schedulerEnabled: false,
   onboardingComplete: false,
+  focusMode: false,
+  readAloudVoice: '',
+  readAloudRate: 1,
 
   hotkeys: {
     jotOverlay: 'Alt+J',
