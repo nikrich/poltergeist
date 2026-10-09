@@ -136,7 +136,9 @@ export const Toc = Node.create({
     return {
       markdown: {
         serialize(state: MarkdownSerializerState, node: PMNode) {
-          state.write('```toc\n```');
+          state.write('```toc');
+          state.ensureNewLine();
+          state.write('```');
           state.closeBlock(node);
         },
         parse: {},
