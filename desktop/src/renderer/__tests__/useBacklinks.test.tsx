@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { useBacklinks } from '../lib/api/hooks';
+import { useBacklinks, useCreateJot, useUpdateJot, useUpdateNoteByPath } from '../lib/api/hooks';
 
 const request = vi.fn();
 beforeEach(() => {
@@ -26,5 +26,38 @@ describe('useBacklinks', () => {
   it('stays idle without a path', () => {
     renderHook(() => useBacklinks(null), { wrapper });
     expect(request).not.toHaveBeenCalled();
+  });
+});
+
+describe('saves invalidate backlinks', () => {
+  function spyClient() {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const spy = vi.spyOn(qc, 'invalidateQueries');
+    const w = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    );
+    return { spy, w };
+  }
+  const backlinksInvalidated = (spy: ReturnType<typeof spyClient>['spy']) =>
+    spy.mock.calls.some(([f]) => JSON.stringify(f?.queryKey) === '["vault","backlinks"]');
+
+  it('after a note-body save', async () => {
+    request.mockResolvedValue({ ok: true, data: { path: 'a.md', updated: null } });
+    const { spy, w } = spyClient();
+    const { result } = renderHook(() => useUpdateNoteByPath(), { wrapper: w });
+    await result.current.mutateAsync({ path: '20-contexts/work/a.md', body: 'x' });
+    expect(backlinksInvalidated(spy)).toBe(true);
+  });
+
+  it('after a jot create and a jot update', async () => {
+    request.mockResolvedValue({ ok: true, data: { id: 'manual-1', path: 'a.md', routingStatus: 'pending', updated: '' } });
+    const create = spyClient();
+    const c = renderHook(() => useCreateJot(), { wrapper: create.w });
+    await c.result.current.mutateAsync({ body: 'x', route: false });
+    expect(backlinksInvalidated(create.spy)).toBe(true);
+    const update = spyClient();
+    const u = renderHook(() => useUpdateJot(), { wrapper: update.w });
+    await u.result.current.mutateAsync({ id: 'manual-1', body: 'y' });
+    expect(backlinksInvalidated(update.spy)).toBe(true);
   });
 });

@@ -243,3 +243,95 @@ def test_warm_link_index_never_raises(monkeypatch):
 
     monkeypatch.setattr(links_mod, "get_link_index", boom)
     warm_link_index()  # must not raise
+
+
+# ── note_changed: read-your-writes for the API's own saves ──────────────────
+def _slow_idx(root: Path) -> LinkIndex:
+    """Throttle so long that only note_changed can make a change visible."""
+    return LinkIndex(root, refresh_interval=3600)
+
+
+def test_note_changed_makes_a_new_backlink_visible_without_refresh(tmp_path: Path):
+    _write(tmp_path, "20-contexts/work/b.md", "b")
+    a = _write(tmp_path, "20-contexts/work/a.md", "nothing yet")
+    idx = _slow_idx(tmp_path)
+    idx.refresh()
+    gen = idx.generation
+    a.write_text("now see [[20-contexts/work/b]]", encoding="utf-8")
+    idx.note_changed("20-contexts/work/a.md")
+    assert [e.source for e in idx.backlinks("20-contexts/work/b.md")] == ["20-contexts/work/a.md"]
+    assert idx.generation == gen + 1
+    idx.note_changed("20-contexts/work/a.md")  # unchanged: no bump
+    assert idx.generation == gen + 1
+
+
+def test_note_changed_indexes_a_new_file(tmp_path: Path):
+    _write(tmp_path, "20-contexts/work/b.md", "b")
+    idx = _slow_idx(tmp_path)
+    idx.refresh()
+    _write(tmp_path, "00-inbox/raw/manual/j.md", "jot about [[20-contexts/work/b]]")
+    idx.note_changed("00-inbox/raw/manual/j.md")
+    assert [e.source for e in idx.backlinks("20-contexts/work/b.md")] == ["00-inbox/raw/manual/j.md"]
+
+
+def test_note_changed_drops_a_deleted_file(tmp_path: Path):
+    a = _write(tmp_path, "20-contexts/work/a.md", "see [[20-contexts/work/b]]")
+    _write(tmp_path, "20-contexts/work/b.md", "b")
+    idx = _slow_idx(tmp_path)
+    idx.refresh()
+    gen = idx.generation
+    a.unlink()
+    idx.note_changed("20-contexts/work/a.md")
+    assert idx.get("20-contexts/work/a.md") is None
+    assert idx.backlinks("20-contexts/work/b.md") == []
+    assert idx.generation == gen + 1
+
+
+def test_note_changed_ignores_unindexed_paths_and_cold_index(tmp_path: Path):
+    _write(tmp_path, "90-meta/x.md", "see [[20-contexts/work/b]]")
+    _write(tmp_path, "20-contexts/work/.hidden/h.md", "see [[20-contexts/work/b]]")
+    _write(tmp_path, "20-contexts/work/a.md", "see [[20-contexts/work/b]]")
+    idx = _slow_idx(tmp_path)
+    idx.note_changed("20-contexts/work/a.md")  # not ready: the cold build will see it
+    assert idx.entries() == []
+    idx.refresh()
+    gen = idx.generation
+    for rel in ("90-meta/x.md", "20-contexts/work/.hidden/h.md", "../outside.md", "/abs.md",
+                "C:/x.md", "20-contexts/work/readme.txt", ""):
+        idx.note_changed(rel)
+    assert idx.generation == gen
+    assert {e.path for e in idx.entries()} == {"20-contexts/work/a.md"}
+
+
+def test_note_changed_never_raises(tmp_path: Path, monkeypatch):
+    _write(tmp_path, "20-contexts/work/a.md", "a")
+    idx = _slow_idx(tmp_path)
+    idx.refresh()
+    monkeypatch.setattr(idx, "_read", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    _write(tmp_path, "20-contexts/work/a.md", "changed")
+    idx.note_changed("20-contexts/work/a.md")  # logged, not raised
+
+
+def test_in_flight_refresh_does_not_clobber_note_changed(tmp_path: Path):
+    """A refresh that parsed an older version must not overwrite a newer note_changed."""
+    from ghostbrain.vault_index.parse import parse_note
+
+    a = _write(tmp_path, "20-contexts/work/a.md", "v1", mtime_ns=1_000_000_000)
+    _write(tmp_path, "20-contexts/work/b.md", "b")
+    idx = _slow_idx(tmp_path)
+    idx.refresh()
+    _write(tmp_path, "20-contexts/work/a.md", "v2 old", mtime_ns=2_000_000_000)
+    real_read = idx._read
+    raced = {"done": False}
+
+    def racing_read(rel, sig):
+        if rel == "20-contexts/work/a.md" and not raced["done"]:
+            raced["done"] = True
+            a.write_text("v3 see [[20-contexts/work/b]] now", encoding="utf-8")
+            idx.note_changed(rel)  # the app's own save lands mid-refresh
+            return parse_note(rel, "v2 old", mtime_ns=sig[0], size=sig[1])
+        return real_read(rel, sig)
+
+    idx._read = racing_read  # type: ignore[method-assign]
+    idx.refresh()
+    assert [e.source for e in idx.backlinks("20-contexts/work/b.md")] == ["20-contexts/work/a.md"]

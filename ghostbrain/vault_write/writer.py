@@ -211,6 +211,38 @@ def write(
     reason: str = "",
     base_etag: str | None = None,
 ) -> WriteResult:
+    result = _write(
+        rel_path, actor=actor, content=content, body=body, fields=fields,
+        op=op, dest=dest, reason=reason, base_etag=base_etag,
+    )
+    _reindex(result.path, *([rel_path] if dest is not None else []))
+    return result
+
+
+def _reindex(*rel_paths: str) -> None:
+    """Tell the in-memory link index (A2) about a finished write, outside the
+    file lock. Only touches an index this process already built; never raises."""
+    try:
+        from ghostbrain.vault_index.links import note_written
+
+        for rel in rel_paths:
+            note_written(rel)
+    except Exception:  # noqa: BLE001 — indexing must never fail a write
+        log.exception("link index update failed after write")
+
+
+def _write(
+    rel_path: str,
+    *,
+    actor: Actor,
+    content: str | None = None,
+    body: str | None = None,
+    fields: Mapping[str, Any] | None = None,
+    op: Op = "modify",
+    dest: str | None = None,
+    reason: str = "",
+    base_etag: str | None = None,
+) -> WriteResult:
     actor = parse_actor(actor)
     _check_args(op, content, body, fields, dest)
     src = resolve_safe(rel_path)

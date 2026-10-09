@@ -13,6 +13,8 @@ vault costs a few hundred ms, so it never runs on the request path:
   incremental refresh on a background thread (single-flight: nothing starts
   while a refresh is running), so edits show up on a later request.
 - ``refresh()`` is the synchronous, unthrottled variant.
+- ``note_changed(rel)`` re-indexes one file at once; the API's own note and
+  jot writes call it so their links are visible on the next request.
 
 Consumers: GET /v1/vault/suggest + /backlinks and build_graph (A2), the
 ego-graph route (A6), live queries (C2). Not persisted — memory only.
@@ -21,6 +23,7 @@ from __future__ import annotations
 
 import logging
 import os
+import stat
 import threading
 import time
 from dataclasses import dataclass
@@ -161,14 +164,71 @@ class LinkIndex:
         parsed = [e for e in (self._read(p, stats[p]) for p in changed) if e is not None]
         if parsed or removed:
             with self._data_lock:
+                # note_changed() may have re-indexed a path since the snapshot;
+                # only apply changes to entries still as this scan saw them.
                 for rel in removed:
-                    self._drop(rel)
+                    if self._sig(rel) == known.get(rel):
+                        self._drop(rel)
                 for entry in parsed:
-                    self._drop(entry.path)
-                    self._add(entry)
+                    if self._sig(entry.path) == known.get(entry.path):
+                        self._drop(entry.path)
+                        self._add(entry)
                 self._generation += 1
         self._last_refresh = self._clock()
         self._ready = True
+
+    def _sig(self, rel: str) -> tuple[int, int] | None:
+        entry = self._entries.get(rel)
+        return None if entry is None else (entry.mtime_ns, entry.size)
+
+    def _indexable_rel(self, rel: str) -> str | None:
+        """Vault-relative posix key for ``rel`` if _scan() would index it, else None."""
+        pure = PurePosixPath(rel.strip().replace("\\", "/"))
+        if (
+            pure.is_absolute()
+            or not pure.parts
+            or any(part in ("..", "") or ":" in part or part.startswith(".") for part in pure.parts)
+            or not pure.name.endswith(".md")
+        ):
+            return None
+        key = pure.as_posix()
+        return key if self._under_indexed_root(key) else None
+
+    def note_changed(self, rel: str) -> None:
+        """Re-index one note right after the app wrote (or removed) it.
+
+        The read-your-writes path for the API's own saves, so a backlink shows
+        up on the next request instead of after a background refresh. Re-stats
+        and re-parses only ``rel``; drops it if the file is gone or not under an
+        indexed root. No-op until the cold build is done (it will see the file).
+        Never raises.
+        """
+        try:
+            if not self._ready:
+                return
+            key = self._indexable_rel(rel)
+            if key is None:  # never indexed (outside the roots, hidden, not .md)
+                return
+            try:
+                st = os.stat(self.root / key)
+                sig: tuple[int, int] | None = (st.st_mtime_ns, st.st_size) if stat.S_ISREG(st.st_mode) else None
+            except OSError:
+                sig = None
+            entry = self._read(key, sig) if sig is not None else None
+            with self._data_lock:
+                current = self._sig(key)
+                if sig is None:
+                    if current is None:
+                        return
+                    self._drop(key)
+                elif entry is None or current == sig:
+                    return  # unreadable now (keep the last good parse) or unchanged
+                else:
+                    self._drop(key)
+                    self._add(entry)
+                self._generation += 1
+        except Exception:  # noqa: BLE001 — a save must never fail on the index
+            log.exception("link index: note_changed failed for %s", rel)
 
     def refresh(self) -> None:
         """Synchronous incremental refresh, ignoring the throttle."""
@@ -329,6 +389,20 @@ def get_link_index(root: Path | None = None) -> LinkIndex:
             index = LinkIndex(key)
             _INDEXES[key] = index
         return index
+
+
+def note_written(rel: str, root: Path | None = None) -> None:
+    """Re-index ``rel`` in the index for ``root`` (default vault_path()) if this
+    process has one; never creates an index. Called by vault_write after every
+    write. Never raises."""
+    try:
+        key = Path(root if root is not None else vault_path()).resolve()
+        with _INDEXES_LOCK:
+            index = _INDEXES.get(key)
+        if index is not None:
+            index.note_changed(rel)
+    except Exception:  # noqa: BLE001
+        log.exception("link index: note_written failed for %s", rel)
 
 
 def warm_link_index() -> None:

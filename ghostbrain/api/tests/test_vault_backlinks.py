@@ -77,3 +77,71 @@ def test_backlinks_reports_indexing_while_cold(client, auth_headers, monkeypatch
     monkeypatch.setattr(LinkIndex, "ensure_fresh", lambda self, wait=0.25: False)
     resp = client.get("/v1/vault/backlinks", params={"path": "20-contexts/work/b.md"}, headers=auth_headers)
     assert resp.json() == {"items": [], "indexing": True}
+
+
+def test_patch_note_body_is_visible_to_backlinks_at_once(client, auth_headers, tmp_vault):
+    """Read-your-writes: no refresh between the save and the backlinks query."""
+    _write(tmp_vault, "20-contexts/work/beta.md", "---\ntitle: Beta\n---\nbeta\n", 10)
+    _write(tmp_vault, "20-contexts/work/alpha.md", "---\ntitle: Alpha\n---\nnothing yet\n", 10)
+    get_link_index().refresh()  # warm: later ensure_fresh calls serve current data
+    get_link_index().refresh_interval = 3600  # no background refresh can help
+    resp = client.patch("/v1/notes/body", headers=auth_headers, json={
+        "path": "20-contexts/work/alpha.md", "body": "links to [[20-contexts/work/beta]]\n",
+    })
+    assert resp.status_code == 200
+    resp = client.get("/v1/vault/backlinks", params={"path": "20-contexts/work/beta.md"},
+                      headers=auth_headers)
+    assert resp.status_code == 200
+    assert [i["path"] for i in resp.json()["items"]] == ["20-contexts/work/alpha.md"]
+
+
+def test_new_jot_is_visible_to_backlinks_at_once(client, auth_headers, tmp_vault):
+    _write(tmp_vault, "20-contexts/work/beta.md", "---\ntitle: Beta\n---\nbeta\n", 10)
+    get_link_index().refresh()
+    get_link_index().refresh_interval = 3600
+    resp = client.post("/v1/notes", headers=auth_headers, json={
+        "body": "Jot about [[20-contexts/work/beta]]", "route": False,
+    })
+    assert resp.status_code == 200
+    jot_path = resp.json()["path"]
+    resp = client.patch(f"/v1/notes/{resp.json()['id']}", headers=auth_headers,
+                        json={"body": "Jot about [[20-contexts/work/beta]] and more"})
+    assert resp.status_code == 200
+    resp = client.get("/v1/vault/backlinks", params={"path": "20-contexts/work/beta.md"},
+                      headers=auth_headers)
+    items = resp.json()["items"]
+    assert [i["path"] for i in items] == [jot_path]
+    assert "and more" in items[0]["snippet"]
+
+
+def test_every_vault_write_reindexes_including_moves_and_deletes(tmp_vault):
+    """The hook lives in vault_write.write, so every writer (jot route, delete,
+    PUT /v1/notes, extract-photo …) is covered without per-route calls."""
+    from ghostbrain import vault_write
+
+    _write(tmp_vault, "20-contexts/work/beta.md", "beta\n", 10)
+    index = get_link_index()
+    index.refresh()
+    index.refresh_interval = 3600
+
+    def sources() -> list[str]:
+        return [e.source for e in index.backlinks("20-contexts/work/beta.md")]
+
+    vault_write.write("00-inbox/raw/manual/j.md", content="see [[20-contexts/work/beta]]\n",
+                      op="create", actor=vault_write.USER)
+    assert sources() == ["00-inbox/raw/manual/j.md"]
+    vault_write.write("00-inbox/raw/manual/j.md", op="move", dest="20-contexts/work/j.md",
+                      actor=vault_write.USER)
+    assert sources() == ["20-contexts/work/j.md"]
+    vault_write.write("20-contexts/work/j.md", op="delete", actor=vault_write.USER)
+    assert sources() == []
+
+
+def test_vault_write_never_creates_an_index(tmp_vault):
+    from ghostbrain import vault_write
+    from ghostbrain.vault_index import links as links_mod
+
+    key = tmp_vault.resolve()
+    links_mod._INDEXES.pop(key, None)
+    vault_write.write("20-contexts/work/a.md", content="x\n", op="create", actor=vault_write.USER)
+    assert key not in links_mod._INDEXES
