@@ -11,7 +11,7 @@ from typing import Any
 
 import frontmatter
 
-from ghostbrain.paths import vault_path
+from ghostbrain import vault_write
 
 
 class NoteNotFound(Exception):
@@ -23,20 +23,10 @@ class NoteInvalidPath(Exception):
 
 
 def _resolve_safe(rel: str) -> Path:
-    if not rel or rel.startswith("/") or "\x00" in rel:
-        raise NoteInvalidPath("path must be vault-relative")
-    candidate = Path(rel)
-    if candidate.is_absolute() or any(part == ".." for part in candidate.parts):
-        raise NoteInvalidPath("path must not contain '..' or be absolute")
-    root = vault_path().resolve()
-    target = (root / candidate).resolve()
     try:
-        target.relative_to(root)
-    except ValueError:
-        raise NoteInvalidPath("path escapes the vault root")
-    if target.suffix.lower() != ".md":
-        raise NoteInvalidPath("only .md files can be read")
-    return target
+        return vault_write.resolve_safe(rel, suffixes=(".md",))
+    except vault_write.InvalidPath as e:
+        raise NoteInvalidPath(str(e)) from None
 
 
 def _jsonable(value: Any) -> Any:
@@ -50,20 +40,25 @@ def _jsonable(value: Any) -> Any:
 
 
 def get_note(rel_path: str) -> dict:
+    """Read a note. The body comes from the same parser the write path splices
+    with, so a save can never duplicate frontmatter into the body (BOM files,
+    leading blank lines)."""
     target = _resolve_safe(rel_path)
     if not target.exists() or not target.is_file():
         raise NoteNotFound(rel_path)
     try:
-        post = frontmatter.load(target)
-    except Exception as e:
+        snap = vault_write.read(rel_path, suffixes=(".md",))
+        meta = snap.metadata()
+    except (vault_write.MalformedNote, vault_write.FileMissing) as e:
         raise NoteNotFound(f"could not parse: {e}")
-    fm = _jsonable(dict(post.metadata))
+    fm = _jsonable(dict(meta))
     title = str(fm.get("title") or target.stem)
     return {
         "path": rel_path,
         "title": title,
-        "body": post.content or "",
+        "body": snap.body,
         "frontmatter": fm,
+        "etag": snap.etag,
     }
 
 
