@@ -171,6 +171,7 @@ def move(doc_id: str, context: str, project: str | None, folder: str) -> dict:
         front = _with_scope({**e.front, "original": new_orig.name}, context, project or None)
         notes.write_atomic(new_note, notes.render(front, e.body))
         e.note.unlink()
+        notes.notify_index(e.note)
     except Exception:
         if new_note.exists() and e.note.exists():
             new_note.unlink()
@@ -212,6 +213,7 @@ def delete(doc_id: str) -> None:
     # unclaimed (surfaced in attention) rather than the note dangling without a file.
     try:
         send2trash(str(e.note))
+        notes.notify_index(e.note)
         send2trash(str(e.original))
     finally:
         index.invalidate()
@@ -262,5 +264,6 @@ def remove_orphan(doc_id: str) -> None:
         raise NotFound(f"no orphan note for {doc_id}")
     try:
         send2trash(str(note))
+        notes.notify_index(note)
     finally:
         index.invalidate()

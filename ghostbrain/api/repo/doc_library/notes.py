@@ -52,6 +52,26 @@ def write_atomic(path: Path, text: str) -> None:
     tmp = path.with_name(f".{path.name}.tmp")
     tmp.write_text(text, encoding="utf-8")
     tmp.replace(path)
+    if path.suffix == ".md":
+        notify_index(path)
+
+
+def notify_index(*paths: Path) -> None:
+    """Tell the A2 link index about companion-note changes (written, moved or removed
+    paths). Absolute paths outside the vault are skipped; never raises."""
+    try:
+        from ghostbrain.paths import vault_path
+        from ghostbrain.vault_index.links import note_written
+
+        root = Path(vault_path()).resolve()
+        for p in paths:
+            try:
+                rel = Path(p).resolve().relative_to(root).as_posix()
+            except (ValueError, OSError):
+                continue
+            note_written(rel)
+    except Exception:  # noqa: BLE001 — indexing must never fail a library write
+        pass
 
 
 def unique_child(folder: Path, name: str) -> Path:

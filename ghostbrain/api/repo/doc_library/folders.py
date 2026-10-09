@@ -65,6 +65,8 @@ def move(src: tuple[str, str | None, str], dst: tuple[str, str | None, str]) -> 
     if (s_ctx, s_proj or None) != (d_ctx, d_proj or None):
         _restamp(d_dir, d_ctx, d_proj or None)
     index.invalidate()
+    moved = [p for p in d_dir.rglob("*.md") if p.is_file()]
+    notes.notify_index(*moved, *(s_dir / p.relative_to(d_dir) for p in moved))
     return _ref(d_ctx, d_proj, d_clean)
 
 
