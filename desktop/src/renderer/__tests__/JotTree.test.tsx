@@ -101,7 +101,7 @@ describe('JotTree project grouping', () => {
 // ── Thumbnail rendering ───────────────────────────────────────────────────────
 
 describe('JotTree thumbnail', () => {
-  it('renders an img for a jot with a thumbnail', () => {
+  it('never renders an image in the sidebar, even for a jot with one', () => {
     const thumbItems = [
       makeItem({
         id: 'thumb-jot',
@@ -111,10 +111,10 @@ describe('JotTree thumbnail', () => {
       }),
     ];
     const { container } = render(<JotTree items={thumbItems} selectedId={null} onSelect={() => {}} />);
-    // alt="" makes the role "presentation"; query the element directly
-    const img = container.querySelector('img');
-    expect(img).toBeTruthy();
-    expect(img!.getAttribute('src')).toContain('90-meta/assets/jots/2026/06/a-1.jpg');
+    // Thumbnails broke in the tree (gbasset:// failed to load) and crowded
+    // the titles; the sidebar is text only.
+    expect(container.querySelector('img')).toBeNull();
+    expect(screen.getByText('photo jot')).toBeTruthy();
   });
 
   it('renders no img for a jot without a thumbnail', () => {

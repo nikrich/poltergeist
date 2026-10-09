@@ -69,8 +69,14 @@ def test_whisper_model_missing_and_present(darwin, monkeypatch, tmp_path: Path):
     assert r.fix.command == "setup fetch-model"
     (tmp_path / "ggml-small.en.bin").write_bytes(b"x" * 10)
     r = cr.check_whisper_model()
-    assert r.status == "ok"
+    # English-only works, but can't do Afrikaans or live mixed-language.
+    assert r.status == "warn"
     assert r.data["model"].endswith("ggml-small.en.bin")
+    assert r.fix.command == "setup fetch-model"
+    (tmp_path / "ggml-large-v3-turbo-q5_0.bin").write_bytes(b"x")
+    r = cr.check_whisper_model()
+    assert r.status == "ok"
+    assert r.data["model"].endswith("ggml-large-v3-turbo-q5_0.bin")
 
 
 def test_blackhole_and_audio_device(darwin, monkeypatch):

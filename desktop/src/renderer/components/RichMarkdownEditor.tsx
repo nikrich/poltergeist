@@ -43,7 +43,7 @@ function wikilinkAtOffset(text: string, offset: number): string | null {
   return null;
 }
 
-interface Props {
+export interface RichMarkdownEditorProps {
   markdown: string;
   onSave: (markdown: string) => void;
   readOnly?: boolean;
@@ -90,7 +90,7 @@ export function RichMarkdownEditor({
   jotId,
   onPhotoInserted,
   openCameraSignal,
-}: Props) {
+}: RichMarkdownEditorProps) {
   // Evaluated once per mount; parents remount per note via key={...}.
   const [parseFailed] = useState(() => !parsesAsRich(markdown));
   const [mode, setMode] = useState<Mode>(parseFailed ? 'source' : 'rich');

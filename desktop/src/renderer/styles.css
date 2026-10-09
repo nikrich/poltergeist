@@ -135,14 +135,6 @@ body[data-theme='light'] {
     box-shadow: 0 0 0 0 rgba(255, 107, 90, 0);
   }
 }
-@keyframes gb-wave {
-  from {
-    transform: scaleY(0.4);
-  }
-  to {
-    transform: scaleY(1);
-  }
-}
 @keyframes gb-blink {
   0%,
   100% {

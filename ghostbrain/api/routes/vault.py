@@ -1,11 +1,15 @@
-"""GET /v1/vault/stats, /v1/vault/graph and /v1/vault/contexts."""
-from fastapi import APIRouter, HTTPException
+"""GET /v1/vault/stats, /graph, /contexts, /suggest and /backlinks."""
+from typing import Literal
+
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from ghostbrain import routing_config
 from ghostbrain.api.models.graph import GraphResponse
+from ghostbrain.api.models.linking import BacklinksResponse, SuggestResponse
 from ghostbrain.api.models.vault import VaultStats
 from ghostbrain.api.repo.graph import build_graph
+from ghostbrain.api.repo.linking import InvalidLinkPath, backlinks, suggest
 from ghostbrain.api.repo.vault import get_vault_stats
 
 router = APIRouter(prefix="/v1/vault", tags=["vault"])
@@ -54,3 +58,25 @@ def vault_stats() -> dict:
 @router.get("/graph", response_model=GraphResponse)
 def vault_graph() -> dict:
     return build_graph()
+
+
+@router.get("/suggest", response_model=SuggestResponse)
+def vault_suggest(
+    kind: Literal["page", "tag", "person"] = Query(...),
+    q: str = Query("", max_length=200),
+    limit: int = Query(20, ge=1, le=50),
+) -> dict:
+    """Editor autocomplete for `[[`, `#` and `@`. `indexing: true` = cold index, retry soon."""
+    return suggest(kind, q, limit)
+
+
+@router.get("/backlinks", response_model=BacklinksResponse)
+def vault_backlinks(
+    path: str = Query(..., min_length=1, max_length=500),
+    limit: int = Query(100, ge=1, le=500),
+) -> dict:
+    """Notes linking to `path` (with or without `.md`), newest first."""
+    try:
+        return backlinks(path, limit)
+    except InvalidLinkPath as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e

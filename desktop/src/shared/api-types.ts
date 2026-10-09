@@ -210,6 +210,8 @@ export interface Note {
   title: string;
   body: string;
   frontmatter: Record<string, unknown>;
+  /** sha256(file bytes)[:16] — send back as If-Match on the next save. */
+  etag?: string | null;
 }
 
 export interface UpdateNoteBodyRequest {
@@ -220,6 +222,14 @@ export interface UpdateNoteBodyRequest {
 export interface UpdateNoteBodyResponse {
   path: string;
   updated: string | null;
+  etag: string;
+}
+
+export interface UpdateJotResponse {
+  id: string;
+  path: string;
+  updated: string;
+  etag: string;
 }
 
 export type RecorderPhase = 'idle' | 'recording' | 'transcribing' | 'done';
@@ -276,7 +286,46 @@ export interface RecorderSettings {
   slide_fallback: SlideFallback;
   /** Read-only. */
   capture_backend_effective: CaptureBackendEffective;
+  /** `auto` detects per chunk — needed for mixed English/Afrikaans meetings. */
+  transcription_language: TranscriptionLanguage;
+  /** Show the transcript while recording. */
+  live_transcription: boolean;
+  /** Read-only: whisper model file in use, or null when none is installed. */
+  transcription_model: string | null;
+  /** Read-only: false for English-only `.en` models. */
+  multilingual_model: boolean;
 }
+
+export type TranscriptionLanguage = 'auto' | 'en' | 'af';
+
+/** Live transcript state, as reported by GET /v1/recorder/live. */
+export type LiveTranscriptState =
+  | 'starting'
+  | 'live'
+  | 'unavailable'
+  | 'finalizing'
+  | 'ended'
+  /** Switched off in settings. */
+  | 'off';
+
+export interface LiveTranscriptSegment {
+  type: 'segment';
+  seq: number;
+  /** Seconds from the start of the recording. */
+  t0: number;
+  t1: number;
+  text: string;
+  /** Detected language code, e.g. "en" / "af". */
+  lang: string;
+}
+
+/** GET /v1/recorder/levels: 0..1 per 100 ms of the recording, oldest first. */
+export type RecorderLevelsEvent = { type: 'levels'; levels: number[] } | { type: 'end' };
+
+export type LiveTranscriptEvent =
+  | LiveTranscriptSegment
+  | { type: 'status'; state: LiveTranscriptState; reason: string | null; lag_s: number }
+  | { type: 'end' };
 
 export interface UpdateRecorderSettings {
   enabled?: boolean;
@@ -286,6 +335,8 @@ export interface UpdateRecorderSettings {
   capture_slides?: boolean;
   slide_fps?: number;
   slide_fallback?: SlideFallback;
+  transcription_language?: TranscriptionLanguage;
+  live_transcription?: boolean;
 }
 
 export type CapturePermission = 'granted' | 'denied' | 'not_determined' | 'unknown';
@@ -461,6 +512,7 @@ export interface ExtractPhotoResponse {
   body: string;
   extracted: boolean;
   reason?: string;
+  etag?: string;
 }
 
 // ── Confluence space list (shared with the Confluence export dialog) ──
@@ -537,6 +589,42 @@ export interface VaultGraph {
   nodes: VaultGraphNode[];
   edges: VaultGraphEdge[];
   regions: VaultGraphRegion[];
+}
+
+// ── Linking (suggest + backlinks) ─────────────────────────────────────────────
+
+export type SuggestKind = 'page' | 'tag' | 'person';
+
+export interface SuggestItem {
+  kind: SuggestKind;
+  /** Page title, tag name (no `#`), or person name. */
+  label: string;
+  /** Vault-relative `.md` path; null for tags. */
+  path: string | null;
+  context: string;
+  /** Muted second line: path without `.md`, or "N notes" for tags. */
+  detail: string;
+  /** Number of notes carrying the tag; null for pages and people. */
+  count: number | null;
+}
+
+export interface SuggestResponse {
+  items: SuggestItem[];
+  /** True while the sidecar's link index is still on its first build. */
+  indexing: boolean;
+}
+
+export interface Backlink {
+  path: string;
+  title: string;
+  context: string;
+  /** The source line containing the link; '' for frontmatter links. */
+  snippet: string;
+}
+
+export interface BacklinksResponse {
+  items: Backlink[];
+  indexing: boolean;
 }
 
 // ── Auth Session ──────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
-import { forward, isAllowedMethod, isSafeApiPath } from '../api-forwarder';
+import { forward, isAllowedMethod, isSafeApiPath, requestHeadersFrom } from '../api-forwarder';
 import type { Sidecar } from '../sidecar';
 
 // forward() must not ride on global fetch: undici's dispatcher enforces a
@@ -127,5 +127,33 @@ describe('isSafeApiPath', () => {
 describe('isAllowedMethod', () => {
   it('includes PUT', () => {
     expect(isAllowedMethod('PUT')).toBe(true);
+  });
+});
+
+describe('If-Match passthrough', () => {
+  it('sends extra headers', async () => {
+    await forward(sidecar(), 'PATCH', '/v1/notes/body', { path: 'a.md', body: 'x' }, undefined, {
+      'If-Match': '"0123456789abcdef"',
+    });
+    expect(lastReq.headers['if-match']).toBe('"0123456789abcdef"');
+  });
+
+  it('extra headers can never override Authorization', async () => {
+    await forward(sidecar(), 'GET', '/v1/echo', undefined, undefined, { Authorization: 'Bearer evil' });
+    expect(lastReq.headers.authorization).toBe('Bearer test-token');
+  });
+
+  it('requestHeadersFrom maps a 16-hex etag to a quoted If-Match', () => {
+    expect(requestHeadersFrom({ ifMatch: '0123456789abcdef' })).toEqual({
+      'If-Match': '"0123456789abcdef"',
+    });
+  });
+
+  it('requestHeadersFrom drops everything else', () => {
+    expect(requestHeadersFrom(undefined)).toEqual({});
+    expect(requestHeadersFrom(null)).toEqual({});
+    expect(requestHeadersFrom({ ifMatch: 'x\r\nX-Evil: 1' })).toEqual({});
+    expect(requestHeadersFrom({ ifMatch: 'ABCDEF0123456789' })).toEqual({});
+    expect(requestHeadersFrom({ authorization: 'Bearer x' })).toEqual({});
   });
 });

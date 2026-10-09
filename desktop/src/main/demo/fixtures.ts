@@ -269,6 +269,10 @@ const RECORDER_SETTINGS: RecorderSettings = {
   slide_fps: 1,
   slide_fallback: 'ask',
   capture_backend_effective: 'native',
+  transcription_language: 'auto',
+  live_transcription: true,
+  transcription_model: 'ggml-large-v3-turbo-q5_0.bin',
+  multilingual_model: true,
 };
 
 const RECORDER_STATUS: RecorderStatus = {

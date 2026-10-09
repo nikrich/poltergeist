@@ -11,6 +11,9 @@ import TaskItem from '@tiptap/extension-task-item';
 import { Markdown } from 'tiptap-markdown';
 import { JotImage } from './image';
 import { SlashExtension } from './slash';
+import { WikilinkSuggest } from './wikilink-suggest';
+import { TagSuggest } from './tag-suggest';
+import { PersonSuggest } from './person-suggest';
 import { ExtractCallout } from './extract-callout';
 
 /**
@@ -61,6 +64,9 @@ export function buildEditorExtensions(): Extensions {
     TaskItem.configure({ nested: true }),
     TaskListTight,
     SlashExtension,
+    WikilinkSuggest,
+    TagSuggest,
+    PersonSuggest,
     Markdown.configure({
       html: false, // vault files are plain markdown; raw HTML is dropped
       tightLists: true,
