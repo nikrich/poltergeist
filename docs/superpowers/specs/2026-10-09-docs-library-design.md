@@ -146,7 +146,7 @@ POST   /v1/library/docs/{doc_id}/reindex           retry extraction + summary
 GET    /v1/library/docs/{doc_id}/backlinks
 POST   /v1/library/folders                         {context, project?, path}
 PATCH  /v1/library/folders                         {from:{context,project?,path}, to:{…}}
-DELETE /v1/library/folders                         {context, project?, path}  (empty only)
+DELETE /v1/library/folders?context=&project=&path=   (empty only)
 POST   /v1/library/attention/adopt                 {context, project?, folder, name}
 POST   /v1/library/attention/remove-orphan         {doc_id}
 GET    /v1/library/search?q=&project=

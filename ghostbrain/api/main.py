@@ -18,6 +18,7 @@ from ghostbrain.api.routes import docs as docs_routes
 from ghostbrain.api.routes import doctor as doctor_routes
 from ghostbrain.api.routes import health as health_routes
 from ghostbrain.api.routes import import_atlassian as import_routes
+from ghostbrain.api.routes import library as library_routes
 from ghostbrain.api.routes import llm as llm_routes
 from ghostbrain.api.routes import llm_providers as llm_providers_routes
 from ghostbrain.api.routes import mcp_servers as mcp_servers_routes
@@ -105,6 +106,7 @@ def create_app(token: str) -> FastAPI:
     app.include_router(llm_providers_routes.router)
     app.include_router(suggestions_routes.router)
     app.include_router(projects_routes.router)
+    app.include_router(library_routes.router)
     app.include_router(connector_auth_routes.router)
     import ghostbrain.api.auth.providers.register_all  # noqa: F401  (registers providers, Task D6)
     return app
