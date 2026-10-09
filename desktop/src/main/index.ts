@@ -31,6 +31,8 @@ import {
   registerAssetProtocol,
   installAssetBridge,
 } from './assets';
+import { isInsideVault } from './vault-paths';
+import { registerDocProtocol } from './doc-protocol';
 import { handleDemoApi, DEMO_SETTINGS } from './demo/fixtures';
 import { runDemoChatStream, stopDemoChat } from './demo/chat';
 import { createLoader, type PluginLoader } from './plugins/loader';
@@ -212,6 +214,18 @@ installClipboardBridge();
 // Privileged scheme must be registered before the app is ready.
 registerGbAssetScheme();
 
+ipcMain.handle('gb:shell:showItemInFolder', (_e, p: unknown) => {
+  if (typeof p !== 'string' || p === '') {
+    return { ok: false, error: 'showItemInFolder: path must be a non-empty string' };
+  }
+  const vaultPath = settings.getAll().vaultPath;
+  if (!vaultPath || !isInsideVault(vaultPath, p, { allowRoot: false })) {
+    return { ok: false, error: 'showItemInFolder: only paths inside the vault are allowed' };
+  }
+  shell.showItemInFolder(p);
+  return { ok: true };
+});
+
 ipcMain.handle('gb:shell:openPath', async (_e, p: unknown) => {
   if (typeof p !== 'string' || p === '') {
     return { ok: false, error: 'openPath: path must be a non-empty string' };
@@ -266,6 +280,7 @@ ipcMain.handle('gb:cli:install', () => {
 
 app.whenReady().then(async () => {
   registerAssetProtocol(vaultRoot);
+  registerDocProtocol(vaultRoot);
   installAssetBridge(vaultRoot);
   buildAppMenu();
   installPlugins();

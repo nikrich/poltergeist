@@ -29,6 +29,10 @@ export function registerGbAssetScheme(): void {
       scheme: 'gbasset',
       privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
     },
+    {
+      scheme: 'gbdoc',
+      privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true },
+    },
   ]);
 }
 

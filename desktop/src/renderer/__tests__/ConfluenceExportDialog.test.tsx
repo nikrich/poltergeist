@@ -26,7 +26,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   window.gb = {
     ...window.gb,
-    shell: { openExternal: vi.fn().mockResolvedValue({ ok: true }), openPath: vi.fn() },
+    shell: { openExternal: vi.fn().mockResolvedValue({ ok: true }), openPath: vi.fn(), showItemInFolder: vi.fn() },
   } as typeof window.gb;
 });
 
