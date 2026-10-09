@@ -116,6 +116,7 @@ def test_in_flight_upload_is_pending_doc_not_unclaimed(lib_vault: Path, monkeypa
     assert seen == {"attention": [], "status": ["pending"]}
     assert s["index_status"] == "ok"
     assert notes.read_note(lib_vault / s["note_path"])[1].strip() == "text"
+    assert not index._active
 
 
 def test_unexpected_finish_error_leaves_failed_not_pending(lib_vault: Path, fake_extract, monkeypatch):

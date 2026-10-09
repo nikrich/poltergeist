@@ -37,6 +37,29 @@ def invalidate() -> None:
         _cache["sig"] = None
 
 
+# doc_ids whose extraction is running in THIS process. A `pending` note not in this
+# set was orphaned by a dead sidecar and is reported as `failed` (retry via reindex).
+_active: set[str] = set()
+_active_lock = threading.Lock()
+
+
+def mark_active(doc_id: str) -> None:
+    with _active_lock:
+        _active.add(doc_id)
+    invalidate()
+
+
+def unmark_active(doc_id: str) -> None:
+    with _active_lock:
+        _active.discard(doc_id)
+    invalidate()
+
+
+def _is_active(doc_id: str) -> bool:
+    with _active_lock:
+        return doc_id in _active
+
+
 def _walk_dirs(root: Path):
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
@@ -131,11 +154,17 @@ def _scan() -> tuple[dict[str, DocEntry], dict[str, Path], list[dict], frozenset
                     attention.append({"kind": "orphan_note", "name": p.name, **item})
                     continue
                 claimed.add(original)
+                if front.get("index_status") == "pending" and not _is_active(doc_id):
+                    front = {**front, "index_status": "failed"}  # stale: nothing is finishing it
                 docs[doc_id] = DocEntry(doc_id, p, original, front, body, ctx, proj, folder)
                 if front.get("index_status") == "failed":
                     attention.append({"kind": "index_failed", "name": original.name, **item})
         for p, folder in others:
-            if p not in claimed:
+            try:
+                taken = p.resolve() in claims
+            except (OSError, RuntimeError):
+                taken = False
+            if p not in claimed and not taken:
                 attention.append({
                     "kind": "unclaimed_original", "context": ctx, "project": proj,
                     "folder": folder, "name": p.name, "doc_id": None,

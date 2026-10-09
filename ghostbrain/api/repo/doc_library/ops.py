@@ -89,6 +89,7 @@ def _finish_index(doc_id: str) -> dict:
     """Extract the pending doc's text and rewrite its note with body + final status.
     Re-reads the doc each step so a rename/move made meanwhile is kept. Any
     unexpected error leaves the note "failed", never "pending"."""
+    index.mark_active(doc_id)
     try:
         e = index.get(doc_id)
         kind = str(e.front.get("kind") or "opaque")
@@ -108,7 +109,7 @@ def _finish_index(doc_id: str) -> dict:
         e = index.get(doc_id)
         notes.write_atomic(e.note, notes.render({**e.front, "index_status": "failed"}, e.body))
     finally:
-        index.invalidate()
+        index.unmark_active(doc_id)
     return index.summary(index.get(doc_id))
 
 
@@ -131,6 +132,7 @@ def upload(
     # Pick the id before the original exists so no index scan sees it unclaimed.
     doc_id = _fresh_id(target, title)
     orig = notes.create_exclusive(target, name, content)
+    index.mark_active(doc_id)  # until _finish_index takes over, the note is in flight
     try:
         _write_pending_note(
             orig, doc_id, context=context, project=project or None, title=title,
@@ -139,7 +141,7 @@ def upload(
     except Exception:
         # No companion note: remove the original so it is not left as an unclaimed file.
         orig.unlink(missing_ok=True)
-        index.invalidate()
+        index.unmark_active(doc_id)
         raise
     return {**_finish_index(doc_id), "duplicate": False}
 
@@ -242,10 +244,15 @@ def adopt(context: str, project: str | None, folder: str, name: str) -> dict:
     if len(content) > cap:
         raise TooLarge(f"{p.name} is larger than {cap // 1_000_000} MB")
     doc_id = _fresh_id(p.parent, p.stem)
-    _write_pending_note(
-        p, doc_id, context=context, project=project or None, title=p.stem, mime=mime,
-        kind=kind, digest=hashlib.sha256(content).hexdigest(),
-    )
+    index.mark_active(doc_id)
+    try:
+        _write_pending_note(
+            p, doc_id, context=context, project=project or None, title=p.stem, mime=mime,
+            kind=kind, digest=hashlib.sha256(content).hexdigest(),
+        )
+    except Exception:
+        index.unmark_active(doc_id)
+        raise
     return _finish_index(doc_id)
 
 

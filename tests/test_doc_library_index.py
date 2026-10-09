@@ -138,8 +138,8 @@ def test_duplicate_doc_id_second_note_becomes_orphan(lib_vault: Path):
     assert index.orphans() == {"eeeeeeeeeeee": second}
     attn = index.attention()
     assert [a["kind"] for a in attn if a["name"] == second.name] == ["orphan_note"]
-    assert {"kind": "unclaimed_original", "context": "work", "project": "payments",
-            "folder": "b", "name": "two.pdf", "doc_id": None} in attn
+    # The orphan note still claims two.pdf, so it is not listed as unclaimed.
+    assert not [a for a in attn if a["kind"] == "unclaimed_original"]
 
 
 def test_two_notes_claiming_one_original_second_is_orphan(lib_vault: Path):
@@ -211,3 +211,34 @@ def test_symlinked_docs_root_outside_vault_is_skipped(lib_vault: Path, tmp_path:
 
 def test_vault_rel_never_raises(lib_vault: Path, tmp_path: Path):
     assert index._vault_rel(tmp_path / "nowhere" / "x.pdf") == "x.pdf"
+
+
+def test_stale_pending_note_is_reported_failed(lib_vault: Path):
+    proot = lib_vault / "20-contexts/work/projects/payments/docs"
+    _seed(proot, "a.pdf", "aaaaaaaaaaaa", project="payments", status="pending")
+    index.invalidate()
+    assert index.summary(index.get("aaaaaaaaaaaa"))["index_status"] == "failed"
+    assert [(a["kind"], a["doc_id"]) for a in index.attention()] == [("index_failed", "aaaaaaaaaaaa")]
+
+
+def test_active_pending_note_stays_pending(lib_vault: Path):
+    proot = lib_vault / "20-contexts/work/projects/payments/docs"
+    _seed(proot, "a.pdf", "aaaaaaaaaaaa", project="payments", status="pending")
+    index.mark_active("aaaaaaaaaaaa")
+    try:
+        assert index.summary(index.get("aaaaaaaaaaaa"))["index_status"] == "pending"
+        assert index.attention() == []
+    finally:
+        index.unmark_active("aaaaaaaaaaaa")
+    assert index.summary(index.get("aaaaaaaaaaaa"))["index_status"] == "failed"
+
+
+def test_reindex_recovers_stale_pending(lib_vault: Path, monkeypatch):
+    from ghostbrain.api.repo.doc_library import ops
+
+    proot = lib_vault / "20-contexts/work/projects/payments/docs"
+    _seed(proot, "a.pdf", "aaaaaaaaaaaa", project="payments", status="pending")
+    monkeypatch.setattr(ops.attachment_extract, "extract_text", lambda *a: "recovered")
+    index.invalidate()
+    assert ops.reindex("aaaaaaaaaaaa")["index_status"] == "ok"
+    assert index.attention() == []
