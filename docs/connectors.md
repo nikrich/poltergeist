@@ -406,6 +406,7 @@ Imports chats you choose from the WhatsApp for Mac desktop app, read-only, strai
 
 - **Hourly sync:** the first run for a newly ticked chat pulls the last 90 days (`initial_lookback_days`); later runs pick up new days and rewrite a day's note when it changes. Un-ticked chats are left alone.
 - **Voice notes:** transcribed locally, which needs `ffmpeg` and a whisper model. At most 40 per run (`voice_max_per_run` under `whatsapp:` in `<vault>/90-meta/routing.yaml`); the rest show as pending and are picked up on later runs. Transcription is skipped while a recording is live.
+- **Routing:** a chat's notes go to its per-chat context; if none is set, to `whatsapp.default_context` in `<vault>/90-meta/routing.yaml`; otherwise to `personal`.
 - **Health:** the connector is "on" when the WhatsApp store is readable and its schema is recognised.
 
 ## Adding a new connector
