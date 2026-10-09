@@ -12,6 +12,7 @@ Every Poltergeist connector follows the same shape: **create a credential → au
 - [Gmail](#gmail)
 - [Google Drive](#google-drive)
 - [Slack](#slack)
+- [WhatsApp](#whatsapp-macos-only)
 
 ## Multiple accounts and contexts
 
@@ -390,6 +391,22 @@ Slack workspaces with **Information Barriers** (common on enterprise plans) can 
 This is a tenant-side policy and there's no way around it from the API. Options: file an admin ticket, use a different workspace, or accept that the connector will produce nothing useful for that workspace.
 
 The connector code itself is correct — it'll work the day it's pointed at a workspace where API access isn't policy-restricted.
+
+## WhatsApp (macOS only)
+
+Imports chats you choose from the WhatsApp for Mac desktop app, read-only, straight from its local store. Nothing is imported until you tick a chat. Each ticked chat becomes one note per day, `<vault>/00-inbox/raw/whatsapp/` and, once routed, `<vault>/20-contexts/<ctx>/whatsapp/`, holding that whole day's messages.
+
+### One-time setup
+
+1. Install WhatsApp for Mac from the App Store and sign in (link it to your phone).
+2. In the app: Connectors → WhatsApp → **Connect**. If it asks for access, open System Settings → Privacy & Security → Full Disk Access, enable Poltergeist, then **Re-check**.
+3. In the WhatsApp detail pane, tick the chats to import, optionally choose a context per chat (default: personal), and **Save**.
+
+### Run
+
+- **Hourly sync:** the first run for a newly ticked chat pulls the last 90 days (`initial_lookback_days`); later runs pick up new days and rewrite a day's note when it changes. Un-ticked chats are left alone.
+- **Voice notes:** transcribed locally, which needs `ffmpeg` and a whisper model. At most 40 per run (`voice_max_per_run` under `whatsapp:` in `<vault>/90-meta/routing.yaml`); the rest show as pending and are picked up on later runs. Transcription is skipped while a recording is live.
+- **Health:** the connector is "on" when the WhatsApp store is readable and its schema is recognised.
 
 ## Adding a new connector
 
