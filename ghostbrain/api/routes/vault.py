@@ -6,10 +6,10 @@ from pydantic import BaseModel
 
 from ghostbrain import routing_config
 from ghostbrain.api.models.graph import GraphResponse
-from ghostbrain.api.models.linking import SuggestResponse
+from ghostbrain.api.models.linking import BacklinksResponse, SuggestResponse
 from ghostbrain.api.models.vault import VaultStats
 from ghostbrain.api.repo.graph import build_graph
-from ghostbrain.api.repo.linking import suggest
+from ghostbrain.api.repo.linking import InvalidLinkPath, backlinks, suggest
 from ghostbrain.api.repo.vault import get_vault_stats
 
 router = APIRouter(prefix="/v1/vault", tags=["vault"])
@@ -68,3 +68,15 @@ def vault_suggest(
 ) -> dict:
     """Editor autocomplete for `[[`, `#` and `@`. `indexing: true` = cold index, retry soon."""
     return suggest(kind, q, limit)
+
+
+@router.get("/backlinks", response_model=BacklinksResponse)
+def vault_backlinks(
+    path: str = Query(..., min_length=1, max_length=500),
+    limit: int = Query(100, ge=1, le=500),
+) -> dict:
+    """Notes linking to `path` (with or without `.md`), newest first."""
+    try:
+        return backlinks(path, limit)
+    except InvalidLinkPath as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e

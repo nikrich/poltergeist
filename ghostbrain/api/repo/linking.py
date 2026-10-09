@@ -96,3 +96,41 @@ def suggest(kind: str, q: str, limit: int, *, index: LinkIndex | None = None) ->
     else:
         rows = [(e.title, e.mtime_ns, _page_item(e, "page", e.title)) for e in index.entries()]
     return {"items": _rank(rows, query)[:limit], "indexing": False}
+
+
+class InvalidLinkPath(ValueError):
+    pass
+
+
+def normalize_note_path(raw: str) -> str:
+    """Vault-relative note path with `.md`; rejects absolute / `..` / NUL."""
+    p = raw.strip().replace("\\", "/")
+    if not p or p.startswith("/") or "\x00" in p:
+        raise InvalidLinkPath("path must be vault-relative")
+    if ".." in PurePosixPath(p).parts:
+        raise InvalidLinkPath("path must not contain '..'")
+    return p if p.lower().endswith(".md") else f"{p}.md"
+
+
+def backlinks(path: str, limit: int = 100, *, index: LinkIndex | None = None) -> dict:
+    target = normalize_note_path(path)
+    index = index or get_link_index()
+    if not index.ensure_fresh():
+        return {"items": [], "indexing": True}
+    best: dict[str, str] = {}  # source -> snippet (body line preferred over frontmatter "")
+    for edge in index.backlinks(target):
+        if edge.source not in best or (not best[edge.source] and edge.snippet):
+            best[edge.source] = edge.snippet
+    rows: list[tuple[int, dict]] = []
+    for source, snippet in best.items():
+        entry = index.get(source)
+        if entry is None:
+            continue
+        rows.append((entry.mtime_ns, {
+            "path": source,
+            "title": entry.title,
+            "context": entry.context,
+            "snippet": snippet,
+        }))
+    rows.sort(key=lambda r: (-r[0], r[1]["path"]))
+    return {"items": [row for _, row in rows[:limit]], "indexing": False}
