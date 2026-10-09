@@ -23,6 +23,13 @@ export interface LinkSuggestConfig {
 
 type Props = SuggestionProps<SuggestItem, SuggestItem>;
 
+/** The subset of @tiptap/suggestion's plugin state this module reads. */
+interface SuggestState {
+  active: boolean;
+  query: string | null;
+  range: { from: number; to: number };
+}
+
 /** Popup lifecycle for one suggestion session (mirrors renderSlashPopup). */
 export function renderSuggestPopup(emptyText: () => string | null): {
   onStart: (props: Props) => void;
@@ -74,12 +81,16 @@ export function renderSuggestPopup(emptyText: () => string | null): {
 
   return {
     onStart(props) {
+      // @tiptap/suggestion awaits items() and then calls onStart/onUpdate unchecked:
+      // never paint for an editor that was destroyed meanwhile (the popup would leak).
+      if (props.editor.isDestroyed) return;
       current = props;
       highlighted = 0;
       dismissed = false;
       paint();
     },
     onUpdate(props) {
+      if (props.editor.isDestroyed) return;
       current = props;
       highlighted = 0;
       paint();
@@ -126,22 +137,37 @@ export function createLinkSuggestExtension(
     name: cfg.name,
     addProseMirrorPlugins() {
       // Per-editor session state shared between items() and the popup.
-      const session = { show: false, indexing: false };
+      // `seq` lets only the newest items() call write show/indexing.
+      const session = { show: false, indexing: false, seq: 0 };
+      const pluginKey = new PluginKey<SuggestState>(cfg.name);
+      const editor = this.editor;
+      // items() is async and the plugin calls onStart/onUpdate after it resolves
+      // without re-checking: props for a query the plugin no longer holds (the
+      // session ended or moved on meanwhile) are stale and must not paint.
+      const isCurrent = (props: Props): boolean => {
+        if (editor.isDestroyed) return false;
+        const state = pluginKey.getState(editor.state);
+        return Boolean(
+          state?.active && state.query === props.query && state.range.from === props.range.from,
+        );
+      };
       return [
         Suggestion<SuggestItem, SuggestItem>({
-          editor: this.editor,
-          pluginKey: new PluginKey(cfg.name),
+          editor,
+          pluginKey,
           char: cfg.char,
           allowSpaces: cfg.allowSpaces,
           allowedPrefixes: cfg.allowedPrefixes,
           startOfLine: false,
           items: async ({ query }) => {
+            const mine = ++session.seq;
             if (query.length < cfg.minQueryLength || cfg.rejectQuery?.test(query)) {
               session.show = false;
               session.indexing = false;
               return [];
             }
             const result = await fetcher(cfg.kind, query);
+            if (mine !== session.seq) return []; // superseded (e.g. by a rejected `]` query)
             session.show = true;
             session.indexing = result.indexing;
             return result.items;
@@ -151,10 +177,20 @@ export function createLinkSuggestExtension(
             // A text node, not a string: tiptap-markdown would parse a string as markdown.
             editor.chain().focus().deleteRange(range).insertContent({ type: 'text', text }).run();
           },
-          render: () =>
-            renderSuggestPopup(() =>
+          render: () => {
+            const popup = renderSuggestPopup(() =>
               !session.show ? null : session.indexing ? 'indexing vault…' : 'no suggestions',
-            ),
+            );
+            return {
+              ...popup,
+              onStart: (props: Props) => {
+                if (isCurrent(props)) popup.onStart(props);
+              },
+              onUpdate: (props: Props) => {
+                if (isCurrent(props)) popup.onUpdate(props);
+              },
+            };
+          },
         }),
       ];
     },

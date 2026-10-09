@@ -192,3 +192,53 @@ describe('# tag suggestions', () => {
     expect(screen.queryByText('no suggestions')).toBeNull();
   });
 });
+
+describe('late results after the session ended', () => {
+  function deferGet(): (r: SuggestResponse) => void {
+    let release: (r: SuggestResponse) => void = () => undefined;
+    const pending = new Promise<SuggestResponse>((r) => {
+      release = r;
+    });
+    getMock.mockImplementation((() => pending) as unknown as typeof client.get);
+    return release;
+  }
+  const settle = () => new Promise((r) => setTimeout(r, 30));
+
+  it('does not paint a popup after the editor is destroyed', async () => {
+    const release = deferGet();
+    const e = mount();
+    type(e, '[[alp');
+    await tick();
+    e.destroy();
+    editor = null;
+    release({ items: [ALPHA], indexing: false });
+    await settle();
+    expect(document.querySelector('[role=listbox]')).toBeNull();
+  });
+
+  it('does not revive the # menu after a space ended the session', async () => {
+    const release = deferGet();
+    const e = mount();
+    type(e, 'plan #ro');
+    await tick();
+    type(e, ' ');
+    release({ items: [ROADMAP], indexing: false });
+    await settle();
+    expect(document.querySelector('[role=listbox]')).toBeNull();
+  });
+
+  it('a hand-closed ] wins over an older pending fetch', async () => {
+    const release = deferGet();
+    const e = mount();
+    type(e, '[[foo');
+    await tick();
+    type(e, ']');
+    release({ items: [ALPHA], indexing: false });
+    await settle();
+    expect(document.querySelector('[role=listbox]')).toBeNull();
+    press(e, 'Enter'); // must reach the editor, not pick the stale "foo" result
+    expect(e.state.doc.childCount).toBe(2);
+    expect(e.state.doc.textContent).toBe('[[foo]');
+    expect(getMarkdown(e)).not.toContain('alpha-plan');
+  });
+});
