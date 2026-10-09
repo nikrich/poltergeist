@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { renderMermaid, type MermaidResult } from '../lib/editor/mermaid-render';
+import { sanitizedDiagramFragment } from '../lib/editor/svg-sanitize';
 import { Lucide } from './Lucide';
 
 interface Props {
@@ -20,6 +21,13 @@ export function DiagramModal({ source, onClose }: Props) {
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const drag = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
+  const svgHost = useRef<HTMLDivElement>(null);
+
+  // Insert via a ref (not dangerouslySetInnerHTML) so the SVG is sanitised in an
+  // inert template before it ever reaches the live DOM.
+  useLayoutEffect(() => {
+    if (result?.ok === true) svgHost.current?.replaceChildren(sanitizedDiagramFragment(result.svg));
+  }, [result]);
 
   useEffect(() => {
     let live = true;
@@ -99,7 +107,7 @@ export function DiagramModal({ source, onClose }: Props) {
             transformOrigin: 'center',
           }}
         >
-          {result?.ok === true && <div dangerouslySetInnerHTML={{ __html: result.svg }} />}
+          {result?.ok === true && <div ref={svgHost} />}
           {result?.ok === false && (
             <div className="max-w-xl rounded border border-hairline bg-vellum p-4 text-12">
               <div className="text-oxblood">diagram error: {result.error}</div>

@@ -6,6 +6,7 @@ vi.mock('../lib/editor/mermaid-render', () => ({ renderMermaid }));
 
 import { onGb } from '../lib/editor/events';
 import { makeEditor, markdownOf } from './helpers/editor';
+import { MALICIOUS_SVG, expectNoLinksOrHandlers } from './helpers/malicious-svg';
 
 const SRC = '```mermaid\nflowchart TD\n  A --> B\n```';
 
@@ -81,6 +82,20 @@ describe('mermaid code block view', () => {
     expect(editor.view.dom.querySelector('.gb-mermaid')).toBeNull();
     expect(editor.view.dom.querySelector('pre > code.language-python')?.textContent).toBe('x = 1');
     expect(renderMermaid).not.toHaveBeenCalled();
+    editor.destroy();
+  });
+
+  it('strips links and handlers from the rendered SVG preview', async () => {
+    renderMermaid.mockResolvedValue({ ok: true, svg: MALICIOUS_SVG });
+    const editor = makeEditor(
+      '```mermaid\nflowchart TD\n  A["[docs](https://evil.example/md)"] --> B\n  click A "https://evil.example/click" _blank\n```',
+    );
+    await act(async () => { await vi.runAllTimersAsync(); });
+    const preview = editor.view.dom.querySelector('.gb-mermaid-preview')!;
+    expect(preview.querySelector('[data-testid="evil-svg"]')).not.toBeNull();
+    expect(preview.querySelector('script')).toBeNull();
+    expect(preview.textContent).toContain('link in label');
+    expectNoLinksOrHandlers(preview);
     editor.destroy();
   });
 });

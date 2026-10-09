@@ -4,6 +4,7 @@ import type { Node as PMNode } from 'prosemirror-model';
 import type { NodeView } from '@tiptap/pm/view';
 import { emitGb } from './events';
 import { renderMermaid } from './mermaid-render';
+import { sanitizedDiagramFragment } from './svg-sanitize';
 
 export const MERMAID_TEMPLATE = 'flowchart TD\n  A[Start] --> B[End]';
 const RERENDER_DEBOUNCE_MS = 300;
@@ -77,7 +78,9 @@ function createMermaidView(initial: PMNode, editor: Editor): NodeView {
     const result = await renderMermaid(source);
     if (mine !== seq) return; // a newer render (or destroy) superseded this one
     if (result.ok) {
-      preview.innerHTML = result.svg; // mermaid securityLevel 'strict' sanitises
+      // Defence in depth on top of mermaid's securityLevel 'strict': strip links,
+      // targets and on* handlers in an inert template before the SVG goes live.
+      preview.replaceChildren(sanitizedDiagramFragment(result.svg));
     } else {
       preview.replaceChildren(errorBox(result.error, source));
     }

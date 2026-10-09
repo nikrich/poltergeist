@@ -8,6 +8,7 @@ vi.mock('../lib/editor/mermaid-render', () => ({ renderMermaid }));
 import { DiagramModal, clampScale } from '../components/DiagramModal';
 import { RichMarkdownEditor } from '../components/RichMarkdownEditor';
 import { emitGb } from '../lib/editor/events';
+import { MALICIOUS_SVG, expectNoLinksOrHandlers } from './helpers/malicious-svg';
 
 describe('DiagramModal', () => {
   beforeEach(() => {
@@ -90,5 +91,18 @@ describe('RichMarkdownEditor ↔ DiagramModal', () => {
     expect(await screen.findByRole('dialog', { name: 'diagram' })).toBeInTheDocument();
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.queryByRole('dialog', { name: 'diagram' })).toBeNull();
+  });
+});
+
+describe('DiagramModal sanitising', () => {
+  it('strips links and handlers from the full-screen SVG', async () => {
+    renderMermaid.mockReset();
+    renderMermaid.mockResolvedValue({ ok: true, svg: MALICIOUS_SVG });
+    render(<DiagramModal source={'flowchart TD\n  A --> B\n  click A "https://evil.example/click" _blank'} onClose={() => {}} />);
+    expect(await screen.findByTestId('evil-svg')).toBeInTheDocument();
+    const canvas = screen.getByTestId('diagram-canvas');
+    expect(canvas.querySelector('script')).toBeNull();
+    expect(canvas.textContent).toContain('link in label');
+    expectNoLinksOrHandlers(canvas);
   });
 });
