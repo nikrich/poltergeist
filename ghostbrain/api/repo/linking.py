@@ -1,9 +1,10 @@
 """Suggest + backlinks over the shared link index (ghostbrain.vault_index)."""
 from __future__ import annotations
 
+import heapq
 import re
 from pathlib import PurePosixPath
-from typing import Iterable, TypeVar
+from typing import Iterable, Iterator, TypeVar
 
 from ghostbrain.vault_index.links import PEOPLE_DIR, LinkIndex, get_link_index
 from ghostbrain.vault_index.parse import NoteEntry
@@ -15,21 +16,27 @@ _HASHTAG_SAFE = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
 _TAG_CACHE: dict[int, tuple[int, list[tuple[str, int, int]]]] = {}
 
 
-def _rank(rows: Iterable[tuple[str, int, T]], q: str) -> list[T]:
-    """Prefix matches before substring matches; newest first within a tier."""
+def _rank(rows: Iterable[tuple[str, int, T]], q: str, limit: int) -> list[T]:
+    """Top ``limit`` matches: prefix before substring, newest first, then label.
+
+    Rows carry a lightweight payload; only winners are turned into response
+    items. ``nsmallest`` with an insertion counter as the last key is
+    equivalent to a stable sort truncated to ``limit``, without sorting (or
+    building items for) every match of a 30k-note vault.
+    """
+    if limit <= 0:
+        return []
     ql = q.lower()
-    scored: list[tuple[int, int, str, T]] = []
-    for text, recency, item in rows:
-        low = text.lower()
-        if not ql or low.startswith(ql):
-            tier = 0
-        elif ql in low:
-            tier = 1
-        else:
-            continue
-        scored.append((tier, -recency, low, item))
-    scored.sort(key=lambda s: (s[0], s[1], s[2]))
-    return [s[3] for s in scored]
+
+    def scored() -> Iterator[tuple[int, int, str, int, T]]:
+        for seq, (text, recency, item) in enumerate(rows):
+            low = text.lower()
+            if not ql or low.startswith(ql):
+                yield (0, -recency, low, seq, item)
+            elif ql in low:
+                yield (1, -recency, low, seq, item)
+
+    return [s[4] for s in heapq.nsmallest(limit, scored())]
 
 
 def _humanize(stem: str) -> str:
@@ -68,34 +75,39 @@ def _tag_table(index: LinkIndex) -> list[tuple[str, int, int]]:
 
 def suggest(kind: str, q: str, limit: int, *, index: LinkIndex | None = None) -> dict:
     index = index or get_link_index()
-    if not index.ensure_fresh():
+    if not index.ensure_fresh(wait=0.1):
         return {"items": [], "indexing": True}
     query = q.strip()
     if kind == "tag":
         query = query.lstrip("#")
-        rows = [
-            (tag, newest, {
+        top = _rank(((tag, newest, (tag, count)) for tag, count, newest in _tag_table(index)), query, limit)
+        items = [
+            {
                 "kind": "tag",
                 "label": tag,
                 "path": None,
                 "context": "",
                 "detail": f"{count} note" + ("" if count == 1 else "s"),
                 "count": count,
-            })
-            for tag, count, newest in _tag_table(index)
+            }
+            for tag, count in top
         ]
     elif kind == "person":
         query = query.lstrip("@")
-        rows = []
-        for e in index.entries():
-            if not e.path.startswith(PEOPLE_DIR + "/"):
-                continue
-            stem = PurePosixPath(e.path).stem
-            label = _humanize(stem) if e.title == stem else e.title
-            rows.append((label, e.mtime_ns, _page_item(e, "person", label)))
+
+        def people() -> Iterator[tuple[str, int, tuple[str, NoteEntry]]]:
+            for e in index.entries():
+                if not e.path.startswith(PEOPLE_DIR + "/"):
+                    continue
+                stem = PurePosixPath(e.path).stem
+                label = _humanize(stem) if e.title == stem else e.title
+                yield (label, e.mtime_ns, (label, e))
+
+        items = [_page_item(e, "person", label) for label, e in _rank(people(), query, limit)]
     else:
-        rows = [(e.title, e.mtime_ns, _page_item(e, "page", e.title)) for e in index.entries()]
-    return {"items": _rank(rows, query)[:limit], "indexing": False}
+        top = _rank(((e.title, e.mtime_ns, e) for e in index.entries()), query, limit)
+        items = [_page_item(e, "page", e.title) for e in top]
+    return {"items": items, "indexing": False}
 
 
 class InvalidLinkPath(ValueError):
@@ -115,7 +127,7 @@ def normalize_note_path(raw: str) -> str:
 def backlinks(path: str, limit: int = 100, *, index: LinkIndex | None = None) -> dict:
     target = normalize_note_path(path)
     index = index or get_link_index()
-    if not index.ensure_fresh():
+    if not index.ensure_fresh(wait=0.1):
         return {"items": [], "indexing": True}
     best: dict[str, str] = {}  # source -> snippet (body line preferred over frontmatter "")
     for edge in index.backlinks(target):
