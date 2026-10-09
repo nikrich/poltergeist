@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Editor } from '@tiptap/core';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { buildEditorExtensions } from '../lib/editor/extensions';
+import { onGb } from '../lib/editor/events';
 import { clipboardPayload, getMarkdown, restoreWikilinks } from '../lib/editor/markdown';
 import { insertImageFile } from '../lib/editor/insert-image';
 import { toast } from '../stores/toast';
@@ -10,6 +11,7 @@ import { EditorToolbar } from './EditorToolbar';
 import { JotEditor } from './JotEditor';
 import { Lucide } from './Lucide';
 import { ReadAloudControls } from './ReadAloudControls';
+import { StatusPopover } from './StatusPopover';
 import { WebcamCaptureModal } from './WebcamCaptureModal';
 import { TemplateInsertDialog } from './TemplatePicker';
 
@@ -101,6 +103,8 @@ export function RichMarkdownEditor({
   const [mode, setMode] = useState<Mode>(parseFailed ? 'source' : 'rich');
   const [camOpen, setCamOpen] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
+  const [statusPos, setStatusPos] = useState<number | null>(null);
+  const closeStatus = useCallback(() => setStatusPos(null), []);
   // Track previous openCameraSignal to skip the initial mount value.
   const prevCameraSignalRef = useRef(openCameraSignal);
 
@@ -249,6 +253,11 @@ export function RichMarkdownEditor({
     return () => {
       editor.off('gb:slash:template' as Parameters<typeof editor.off>[0], handler);
     };
+  }, [editor]);
+
+  useEffect(() => {
+    if (!editor) return;
+    return onGb(editor, 'gb:status:edit', ({ pos }) => setStatusPos(pos));
   }, [editor]);
 
   // Open the camera whenever openCameraSignal is incremented (skip initial mount).
@@ -458,6 +467,9 @@ export function RichMarkdownEditor({
           </button>
         </div>
       </div>
+      {mode === 'rich' && editor && statusPos !== null && (
+        <StatusPopover key={statusPos} editor={editor} pos={statusPos} onClose={closeStatus} />
+      )}
       <WebcamCaptureModal
         open={camOpen}
         onClose={() => setCamOpen(false)}
