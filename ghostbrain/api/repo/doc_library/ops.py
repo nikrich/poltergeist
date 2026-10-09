@@ -178,9 +178,13 @@ def rename(doc_id: str, title: str) -> dict:
 
 def delete(doc_id: str) -> None:
     e = index.get(doc_id)
-    send2trash(str(e.original))
-    send2trash(str(e.note))
-    index.invalidate()
+    # Note first: if the original's trash step then fails, the original is left
+    # unclaimed (surfaced in attention) rather than the note dangling without a file.
+    try:
+        send2trash(str(e.note))
+        send2trash(str(e.original))
+    finally:
+        index.invalidate()
 
 
 def reindex(doc_id: str) -> dict:

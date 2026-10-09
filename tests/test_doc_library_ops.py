@@ -83,3 +83,69 @@ def test_reindex_recovers_failed(lib_vault: Path, monkeypatch):
     r = ops.reindex(s["doc_id"])
     assert r["index_status"] == "ok" and r["pages"] == 3
     assert notes.read_note(lib_vault / r["note_path"])[1].strip() == "fixed"
+
+
+def test_delete_partial_failure_leaves_original_unclaimed(lib_vault: Path, monkeypatch):
+    calls = []
+
+    def fake_trash(p):
+        calls.append(Path(p).name)
+        if len(calls) == 2:
+            raise OSError("trash failed")
+        Path(p).unlink()
+
+    monkeypatch.setattr(ops, "send2trash", fake_trash)
+    s = ops.upload("work", None, "", "a.pdf", "", b"one")
+    with pytest.raises(OSError):
+        ops.delete(s["doc_id"])
+    assert calls == [Path(s["note_path"]).name, "a.pdf"]
+    assert (lib_vault / s["original_path"]).exists()
+    assert s["doc_id"] not in index.all_docs()
+    assert any(
+        a["kind"] == "unclaimed_original" and a["name"] == "a.pdf" for a in index.attention()
+    )
+
+
+def test_move_unlink_failure_restores_everything(lib_vault: Path, monkeypatch):
+    s = ops.upload("work", None, "", "a.pdf", "", b"one")
+    old_note = lib_vault / s["note_path"]
+    real_unlink = Path.unlink
+
+    def flaky_unlink(self, *args, **kwargs):
+        if self == old_note:
+            raise OSError("cannot unlink old note")
+        return real_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", flaky_unlink)
+    with pytest.raises(OSError):
+        ops.move(s["doc_id"], "work", "payments", "")
+    monkeypatch.setattr(Path, "unlink", real_unlink)
+    assert (lib_vault / s["original_path"]).read_bytes() == b"one"
+    assert old_note.exists()
+    assert not (lib_vault / "20-contexts/work/projects/payments/docs/a.pdf").exists()
+    assert not (lib_vault / "20-contexts/work/projects/payments/docs"
+                / Path(s["note_path"]).name).exists()
+    assert index.get(s["doc_id"]).original == lib_vault / s["original_path"]
+
+
+def test_rename_rollback_keeps_original_name_and_note(lib_vault: Path, monkeypatch):
+    s = ops.upload("work", None, "", "a.pdf", "", b"one")
+    note_before = (lib_vault / s["note_path"]).read_text(encoding="utf-8")
+
+    def boom(path, text):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(ops.notes, "write_atomic", boom)
+    with pytest.raises(OSError):
+        ops.rename(s["doc_id"], "Payments API v3")
+    assert (lib_vault / s["original_path"]).read_bytes() == b"one"
+    assert not (lib_vault / "Payments API v3.pdf").exists()
+    assert (lib_vault / s["note_path"]).read_text(encoding="utf-8") == note_before
+
+
+def test_rename_clash_suffixes_original(lib_vault: Path):
+    ops.upload("work", None, "", "Target.pdf", "", b"other")
+    s = ops.upload("work", None, "", "a.pdf", "", b"one")
+    r = ops.rename(s["doc_id"], "Target")
+    assert r["original"] == "Target (2).pdf"
+    assert (lib_vault / r["original_path"]).read_bytes() == b"one"
