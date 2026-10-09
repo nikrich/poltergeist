@@ -108,7 +108,7 @@ export function DocsScreen() {
       // Small worker pool: ghosts appear immediately, uploads run UPLOAD_CONCURRENCY at a time.
       let next = 0;
       const worker = async () => {
-        while (next < jobs.length) await one(jobs[next++]);
+        for (let job = jobs[next++]; job; job = jobs[next++]) await one(job);
       };
       await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, jobs.length) }, worker));
     },
