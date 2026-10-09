@@ -112,3 +112,20 @@ def test_live_says_off_when_disabled(
         {"type": "status", "state": "off", "reason": None, "lag_s": 0.0},
         {"type": "end"},
     ]
+
+
+def test_streams_just_end_on_a_platform_without_a_recorder(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch,
+):
+    """CI runs on Linux: no audio backend means no recording, not a 501."""
+    from ghostbrain.api.repo.recorder import RecorderUnsupportedError
+    from ghostbrain.api.routes import recorder as routes
+
+    def unsupported():
+        raise RecorderUnsupportedError("no audio backend on linux")
+
+    monkeypatch.setattr(routes, "status", unsupported)
+    for path in ("/v1/recorder/live", "/v1/recorder/levels"):
+        res = client.get(path, headers=auth_headers)
+        assert res.status_code == 200, path
+        assert _events(res.text)[-1] == {"type": "end"}

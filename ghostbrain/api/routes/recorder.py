@@ -1,8 +1,10 @@
 """Recorder control endpoints — POST /v1/recorder/{start,stop,clear},
-GET /v1/recorder/status, GET /v1/recorder/live (SSE live transcript), plus
-the native-capture helpers under /v1/recorder/capture/*."""
+GET /v1/recorder/status, the SSE streams GET /v1/recorder/live (live
+transcript) and GET /v1/recorder/levels (waveform), plus the native-capture
+helpers under /v1/recorder/capture/*."""
 import json
 import logging
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -41,20 +43,26 @@ def get_status() -> dict:
         raise HTTPException(status_code=501, detail=str(e))
 
 
+def _recording_wav():
+    """The WAV of the recording in progress, or None — including on a
+    platform with no audio backend, where the streams simply end."""
+    try:
+        st = status()
+    except RecorderUnsupportedError:
+        return None
+    if st.get("phase") == "recording" and st.get("wavPath"):
+        return Path(st["wavPath"])
+    return None
+
+
 @router.get("/live")
 def get_live() -> StreamingResponse:
     """The current recording's live transcript: already-transcribed segments
     first, then new ones as they land, until an ``end`` event."""
-    from pathlib import Path
-
     from ghostbrain.recorder import config as rcfg
     from ghostbrain.recorder import live
 
-    try:
-        st = status()
-    except RecorderUnsupportedError as e:
-        raise HTTPException(status_code=501, detail=str(e))
-    wav = Path(st["wavPath"]) if st.get("phase") == "recording" and st.get("wavPath") else None
+    wav = _recording_wav()
     try:
         enabled = rcfg.live_transcription_from(rcfg.load_recorder_block())
     except Exception:  # noqa: BLE001 — a bad config must not break the panel
@@ -84,19 +92,13 @@ def get_live() -> StreamingResponse:
 def get_levels() -> StreamingResponse:
     """Audio levels (0..1 per 100 ms) of the recording in progress, for the
     waveform; ends when the recording does."""
-    from pathlib import Path
-
     from ghostbrain.recorder import levels
 
-    try:
-        st = status()
-    except RecorderUnsupportedError as e:
-        raise HTTPException(status_code=501, detail=str(e))
-    wav = st.get("wavPath") if st.get("phase") == "recording" else None
+    wav = _recording_wav()
 
     def gen():
         if wav:
-            for chunk in levels.follow_levels(Path(wav)):
+            for chunk in levels.follow_levels(wav):
                 if chunk is None:
                     yield ": keepalive\n\n"
                 else:
