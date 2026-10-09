@@ -30,6 +30,7 @@ from ghostbrain.api.routes import search as search_routes
 from ghostbrain.api.routes import settings as settings_routes
 from ghostbrain.api.routes import suggestions as suggestions_routes
 from ghostbrain.api.routes import vault as vault_routes
+from ghostbrain.api.routes import whatsapp as whatsapp_routes
 
 API_VERSION = "1.0.0"
 
@@ -85,6 +86,7 @@ def create_app(token: str) -> FastAPI:
     app.include_router(health_routes.router)
     app.include_router(vault_routes.router)
     app.include_router(connectors_routes.router)
+    app.include_router(whatsapp_routes.router)
     app.include_router(captures_routes.router)
     app.include_router(meetings_routes.router)
     app.include_router(agenda_routes.router)

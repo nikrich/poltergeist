@@ -25,7 +25,7 @@ router = APIRouter(prefix="/v1/connectors", tags=["connectors"])
 # 404 unknown connector ids without touching the (maybe-not-running) scheduler.
 SYNCABLE = {
     "github", "gmail", "slack", "calendar", "jira", "confluence",
-    "outlook_mail", "teams_chat", "teams_meetings", "gdrive",
+    "outlook_mail", "teams_chat", "teams_meetings", "gdrive", "whatsapp",
 }
 
 

@@ -129,3 +129,49 @@ class MacosCalendarProvider:
     def account_label(self, session):
         """Return account label."""
         return "macOS Calendar"
+
+
+class WhatsAppStoreProvider:
+    """Checks Poltergeist can read WhatsApp for Mac's local store (Full Disk Access)."""
+
+    pattern = "local_grant"
+
+    def _check(self) -> NextAction:
+        from ghostbrain.api.repo.connector_probe import _whatsapp_store_status
+
+        status, detail = _whatsapp_store_status()
+        if status == "ok":
+            return NextAction(kind="done")
+        if status == "missing":
+            return NextAction(kind="need_grant",
+                              message="Install WhatsApp for Mac and sign in, then press Re-check.")
+        if status == "schema":
+            return NextAction(kind="need_grant",
+                              message=f"This WhatsApp version isn't supported yet: {detail}")
+        return NextAction(
+            kind="need_grant",
+            message=("Grant Poltergeist Full Disk Access: System Settings → Privacy & "
+                     "Security → Full Disk Access, enable Poltergeist, then press Re-check."),
+        )
+
+    def start(self, connector_id, params):
+        """Report whether the store is readable; done immediately when it is."""
+        return self._check()
+
+    def submit(self, connector_id, session, data):
+        """No form input for this flow."""
+        return session.next
+
+    def poll(self, connector_id, session):
+        """Re-check access after the user changed System Settings."""
+        nxt = self._check()
+        session.next = nxt
+        if nxt.kind == "done":
+            session.status = "success"
+        else:
+            session.status = "error"
+            session.error = nxt.message
+
+    def account_label(self, session):
+        """Return account label."""
+        return "WhatsApp for Mac"

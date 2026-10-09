@@ -19,7 +19,7 @@ router = APIRouter(prefix="/v1/scheduler", tags=["scheduler"])
 # without reaching into the scheduler instance.
 KNOWN_CONNECTORS = (
     "github", "gmail", "slack", "calendar", "jira", "confluence",
-    "outlook_mail", "teams_chat", "teams_meetings",
+    "outlook_mail", "teams_chat", "teams_meetings", "whatsapp",
 )
 
 
