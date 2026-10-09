@@ -98,7 +98,7 @@ describe('NoteView', () => {
       );
     });
     // The store should now point to the linked note
-    expect(useNoteView.getState().path).toBe('20-contexts/personal/_profile');
+    expect(useNoteView.getState().path).toBe('20-contexts/personal/_profile.md');
   });
 
   it('saves edits through PATCH /v1/notes/body', async () => {
@@ -192,5 +192,35 @@ describe('NoteView', () => {
     confirm.mockReturnValue(true);
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(useNoteView.getState().path).toBeNull();
+  });
+
+  it('shows backlinks for the open note and opens one on click', async () => {
+    apiRequest.mockImplementation(async (_method: string, path: string) => {
+      if (path.startsWith('/v1/vault/backlinks')) {
+        return {
+          ok: true,
+          data: {
+            items: [
+              {
+                path: '20-contexts/work/notes/standup.md',
+                title: 'Standup',
+                context: 'work',
+                snippet: 'see [[20-contexts/work/notes/manual-20260609T090000-x|manual note]]',
+              },
+            ],
+            indexing: false,
+          },
+        };
+      }
+      return { ok: true, data: manualNote };
+    });
+    render(withQuery(<NoteView />));
+    act(() => useNoteView.getState().open(manualNote.path));
+    expect(await screen.findByText('Standup')).toBeInTheDocument();
+    expect(screen.getByText('see manual note')).toBeInTheDocument();
+    act(() => {
+      screen.getByText('Standup').click();
+    });
+    expect(useNoteView.getState().path).toBe('20-contexts/work/notes/standup.md');
   });
 });
