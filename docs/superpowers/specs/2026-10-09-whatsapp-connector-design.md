@@ -21,6 +21,7 @@ app's local database.
 ## Non-goals
 
 - Windows or Linux. A chat-export (`.txt`/zip) import is a separate follow-up.
+- Quoted-reply context (it's in the encoded `ZMETADATA` blob).
 - Sending messages, reactions, read receipts or anything that writes to WhatsApp.
 - Images, video or documents beyond a one-line placeholder (no OCR or captioning in v1).
 - Downloading media WhatsApp hasn't already stored locally. Missing voice notes get a placeholder.
@@ -37,20 +38,28 @@ app's local database.
 - `ZWACHATSESSION.ZSESSIONTYPE`: `0` one-to-one, `1` group, others (broadcast, status, community)
   are ignored. `ZCONTACTJID` is the stable chat key; `ZPARTNERNAME` is the display name.
 - `ZWAMESSAGE` fields used: `Z_PK` (increases monotonically), `ZCHATSESSION`, `ZMESSAGEDATE`,
-  `ZISFROMME`, `ZTEXT`, `ZMESSAGETYPE`, `ZFROMJID`, `ZPUSHNAME`, `ZGROUPMEMBER`, `ZPARENTMESSAGE`,
-  `ZMEDIAITEM`, `ZSTANZAID`.
-- `ZMESSAGETYPE` handling in v1:
-  - `0` text: rendered.
-  - `1` image, `2` video, `8` document: placeholder line, plus the caption if `ZTEXT` is set.
-  - `3` voice/audio: transcribed.
-  - `7` link: text plus URL.
-  - `5` location: placeholder.
-  - `14` deleted, `15` sticker, `6` and `10` group/system events, and everything else: dropped.
-- **Type codes to confirm first:** `0`, `1`, `2`, `3` and `7` are confirmed by media paths and
-  counts. `5` (location) and `8` (document) are from memory. `59` (625 rows), `66` (205), `42`
-  and `46` are unknown. The first implementation task samples `ZMEDIAITEM` and `ZTEXT` presence for
-  each unknown type, aggregate shape only, and settles each code as keep, placeholder or drop
-  before the renderer is written. The fixture encodes the confirmed mapping.
+  `ZISFROMME`, `ZTEXT`, `ZMESSAGETYPE`, `ZFROMJID`, `ZPUSHNAME`, `ZGROUPMEMBER`, `ZMEDIAITEM`,
+  `ZSTANZAID`. `ZWAMEDIAITEM` fields used: `ZMEDIALOCALPATH`, `ZTITLE` (the media caption).
+- `ZMESSAGETYPE` mapping, settled 2026-10-09 from per-type counts (which columns are filled,
+  file extensions):
+
+  | Code | What it is | Rendered as |
+  |---|---|---|
+  | `0` | text | `ZTEXT` |
+  | `1` | image (`.jpg`) | `[image]`, or `[image: <ZTITLE>]` when there's a caption |
+  | `2` | video (`.mp4`) | `[video]`, or `[video: <ZTITLE>]` |
+  | `3` | voice note (`.opus`) | transcript, or a placeholder (§3) |
+  | `4` | contact card (has `ZVCARDNAME`) | `[contact card]` |
+  | `5` | location (has coordinates) | `[location]` |
+  | `7` | link (`ZTEXT` holds the message and URL) | `ZTEXT` |
+  | `8` | document (`.pdf`, `.xlsx` …, filename in `ZTEXT`) | `[document: <ZTEXT>]` |
+  | `11` | GIF (`.mp4` with dimensions) | `[gif]` |
+  | everything else | e.g. `10` system events, `14` deleted, `15` sticker, `59`/`66`/`42` (no text, no file, likely calls, polls, business messages) | dropped |
+
+- **Replies:** `ZPARENTMESSAGE` is never set. Quoted replies live in the encoded
+  `ZWAMEDIAITEM.ZMETADATA` blob, so v1 renders replies as plain messages (a non-goal for now).
+- `ZGROUPEVENTTYPE` is filled on almost every row and is **not** a usable group-event flag; use
+  `ZMESSAGETYPE` only.
 - Voice files: `ZWAMEDIAITEM.ZMEDIALOCALPATH`, e.g. `Media/…/x.opus`, relative to
   `<container>/Message/`. A NULL path means the note was never downloaded. 307 of 331 voice notes
   from the last 90 days are on disk.
@@ -77,8 +86,8 @@ All WhatsApp-specific SQL lives here. No other module touches the schema.
 - `dirty_days(conn, jids, after_pk, since_ts) -> set[tuple[jid, date]]` returns the chat/local-day
   pairs that have messages with `Z_PK > after_pk` and `ZMESSAGEDATE >= since_ts`.
 - `messages_for_day(conn, jid, day, tz) -> list[Message]` returns
-  `Message(pk, stanza_id, at, sender, is_from_me, kind, text, reply_to_text, media_path)`, ordered
-  by date. `reply_to_text` is the parent message's text truncated to 80 characters.
+  `Message(pk, stanza_id, at, sender, is_from_me, type_code, text, caption, media_path)`, ordered
+  by date, with every message type included. The connector's renderer decides keep, placeholder or drop.
 - Local days use the system timezone (`tzlocal`, as calendar notes already do).
 
 ### 2. Connector — `ghostbrain/connectors/whatsapp/connector.py`
@@ -116,10 +125,8 @@ All WhatsApp-specific SQL lives here. No other module touches the schema.
   }
   ```
 
-- **Body rendering:** one line per message, `**HH:MM Sender:** text`.
-  - A reply is prefixed with a `> ↪ <reply_to_text>` line.
-  - Placeholders look like `[image]`, `[image: caption]`, `[video 0:42]`, `[document: name.pdf]`,
-    `[location]`.
+- **Body rendering:** one line per kept message, `**HH:MM Sender:** text`, using the type table
+  above. Newlines inside a message are kept, with continuation lines indented by two spaces.
   - A voice note becomes `🎙 <transcript>`, `[voice note — not downloaded]`, or
     `[voice note — transcription pending]`.
 - **`normalize`** passes events through unchanged. **`health_check`** checks that the store opens
@@ -224,7 +231,7 @@ All WhatsApp-specific SQL lives here. No other module touches the schema.
 - **Fixture store:** `tests/connectors/whatsapp/fixtures/make_store.py` builds a temporary
   SQLite database with the real `CREATE TABLE` statements for the tables used, copied from
   `.schema` with no real data. It fills it with synthetic chats and messages: a direct chat, a
-  group with members and push names, a reply, an image with a caption, a deleted message, a
+  group with members and push names, an image with a caption (`ZTITLE`), a document, a link, a deleted message, a
   sticker, voice notes with and without a local path, and messages around local midnight.
 - **Store tests:**
   - date conversion and local-day bucketing;
