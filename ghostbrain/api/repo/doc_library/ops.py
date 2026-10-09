@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import mimetypes
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
@@ -12,7 +13,7 @@ from send2trash import send2trash
 
 from ghostbrain.api.repo import attachment_caption, attachment_extract, file_kinds
 from ghostbrain.api.repo.doc_library import index, notes, scope
-from ghostbrain.api.repo.doc_library.errors import Conflict, InvalidRequest, TooLarge
+from ghostbrain.api.repo.doc_library.errors import Conflict, InvalidRequest, NotFound, TooLarge
 
 log = logging.getLogger("ghostbrain.doc_library")
 
@@ -197,3 +198,33 @@ def reindex(doc_id: str) -> dict:
     notes.write_atomic(e.note, notes.render(front, body))
     index.invalidate()
     return index.summary(index.get(doc_id))
+
+
+def adopt(context: str, project: str | None, folder: str, name: str) -> dict:
+    root = scope.scope_root(context, project, for_write=True)
+    d = scope.resolve_in(root, folder)
+    p = d / notes.safe_filename(name)
+    if not p.is_file() or (p.name.endswith(".md") and notes.read_note(p) is not None):
+        raise NotFound(f"file not found: {name}")
+    if any(e.original.resolve() == p.resolve() for e in index.all_docs().values()):
+        raise Conflict(f"already in the library: {name}")
+    mime = mimetypes.guess_type(p.name)[0] or ""
+    kind = file_kinds.classify(p.name, mime) or "opaque"
+    content = p.read_bytes()
+    cap = file_kinds.cap_for(kind)
+    if len(content) > cap:
+        raise TooLarge(f"{p.name} is larger than {cap // 1_000_000} MB")
+    return _index_original(
+        p, context=context, project=project or None, title=p.stem, mime=mime, kind=kind,
+        digest=hashlib.sha256(content).hexdigest(),
+    )
+
+
+def remove_orphan(doc_id: str) -> None:
+    note = index.orphans().get(doc_id)
+    if note is None:
+        raise NotFound(f"no orphan note for {doc_id}")
+    try:
+        send2trash(str(note))
+    finally:
+        index.invalidate()
