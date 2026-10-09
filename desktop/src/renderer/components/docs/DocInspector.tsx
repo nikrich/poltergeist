@@ -37,8 +37,10 @@ export function DocInspector({ doc, scopeName, onRename, onReindex }: Props) {
             onBlur={() => setEditing(false)}
           />
         ) : (
-          <h4 className="mt-1.5 cursor-text text-16 font-medium leading-tight text-ink-0" title="click to rename" onClick={() => setEditing(true)}>
-            {doc.title}
+          <h4 className="mt-1.5 text-16 font-medium leading-tight text-ink-0">
+            <button type="button" className="cursor-text text-left" title="click to rename" onClick={() => setEditing(true)}>
+              {doc.title}
+            </button>
           </h4>
         )}
       </div>

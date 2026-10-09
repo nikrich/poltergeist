@@ -2,21 +2,29 @@ import { useEffect, useRef, useState } from 'react';
 import { cancelRender, loadPdf, type PdfHandle } from './pdf';
 
 const ZOOMS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+const DEFAULT_ZOOM = 2; // index into ZOOMS → 1.0
 
 export function PdfViewer({ url }: { url: string }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [pdf, setPdf] = useState<PdfHandle | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
-  const [zoom, setZoom] = useState(2); // index into ZOOMS → 1.0
+  const [zoom, setZoom] = useState(DEFAULT_ZOOM);
 
   useEffect(() => {
     let live = true;
+    const el = canvas.current;
     setPdf(null);
     setPage(1);
+    setZoom(DEFAULT_ZOOM);
+    setError(null);
     loadPdf(url).then((h) => live && setPdf(h)).catch((e: unknown) => live && setError(String(e)));
     return () => {
       live = false;
+      if (el) {
+        cancelRender(el);
+        el.width = 0;
+      }
     };
   }, [url]);
 

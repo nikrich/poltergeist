@@ -16,6 +16,9 @@ interface Props {
 }
 
 function StatusPill({ status }: { status: DocSummary['index_status'] }) {
+  if (status === 'pending') {
+    return <span className="inline-flex items-center gap-1.5 rounded-full bg-hairline px-2.5 py-[3px] font-mono text-[10.5px] text-ink-3">indexing…</span>;
+  }
   if (status === 'failed') {
     return <span className="inline-flex items-center gap-1.5 rounded-full bg-[rgba(242,193,78,.12)] px-2.5 py-[3px] font-mono text-[10.5px] text-[#F2C14E]">index failed</span>;
   }
@@ -56,7 +59,10 @@ function Viewer({ doc, body, onOpenExternal }: Pick<Props, 'doc' | 'body' | 'onO
 export function DocReader({ doc, body, crumb, onClose, onOpenExternal, onReveal, onDelete }: Props) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !(e.target instanceof HTMLInputElement)) onClose();
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      const t = e.target;
+      if (t instanceof HTMLElement && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))) return;
+      onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
