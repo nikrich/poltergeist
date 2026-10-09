@@ -173,9 +173,15 @@ def test_ppid_change_fires_callback_once(monkeypatch: pytest.MonkeyPatch) -> Non
         assert calls == [1]
     finally:
         os.close(w)
+    # Closing the pipe lets the stdin reader hit EOF and finish too.
+    readers = [t for t in threading.enumerate() if t.name == "parent-watch-stdin"]
+    for t in readers:
+        t.join(5)
+    assert not any(t.is_alive() for t in readers)
+    assert calls == [1]
 
 
-def test_parent_gone_handler_requests_graceful_exit_then_arms_hard_exit() -> None:
+def test_parent_gone_handler_stops_recording_then_exits_gracefully() -> None:
     from ghostbrain.api import __main__ as sidecar_main
 
     class FakeServer:
@@ -184,16 +190,25 @@ def test_parent_gone_handler_requests_graceful_exit_then_arms_hard_exit() -> Non
     server = FakeServer()
     exits: list[int] = []
     exited = threading.Event()
+    should_exit_when_stopping: list[bool] = []
 
     def fake_exit(code: int) -> None:
         exits.append(code)
         exited.set()
 
+    def fake_stop_recording() -> bool:
+        should_exit_when_stopping.append(server.should_exit)
+        return True
+
     handler = sidecar_main._parent_gone_handler(
         server, hard_exit_after_s=0.3, hard_exit=fake_exit,
+        stop_recording=fake_stop_recording,
     )
     handler()
-    # Graceful first: uvicorn's main loop sees should_exit and runs the
+    # The recording is stopped while the server is still up, before uvicorn
+    # is asked to exit.
+    assert should_exit_when_stopping == [False]
+    # Graceful next: uvicorn's main loop sees should_exit and runs the
     # shutdown hooks (scheduler stop, chat reaping, live.stop_all).
     assert server.should_exit is True
     assert exits == []
@@ -202,15 +217,39 @@ def test_parent_gone_handler_requests_graceful_exit_then_arms_hard_exit() -> Non
     assert exits == [1]
 
 
+def test_parent_gone_handler_still_exits_if_stopping_the_recording_raises() -> None:
+    from ghostbrain.api import __main__ as sidecar_main
+
+    class FakeServer:
+        should_exit = False
+
+    server = FakeServer()
+
+    def boom() -> bool:
+        raise RuntimeError("backend exploded")
+
+    handler = sidecar_main._parent_gone_handler(
+        server, hard_exit_after_s=60, hard_exit=lambda code: None, stop_recording=boom,
+    )
+    with pytest.raises(RuntimeError):
+        handler()
+    assert server.should_exit is True
+
+
 def test_hard_exit_outlasts_capture_stop_and_graceful_budget() -> None:
     from ghostbrain.api import __main__ as sidecar_main
     from ghostbrain.recorder.audio import darwin_native
 
-    # stop_capture: SIGINT, wait STOP_GRACE_S, then SIGTERM + 1s.
+    # stop_capture: SIGINT, wait STOP_GRACE_S, then SIGTERM + 1s. The parent-
+    # gone path may wait out one in-flight /stop on the lock, then run its
+    # own, after a capture probe; then the graceful shutdown, scheduler.stop
+    # (10 s) and WhisperServer.stop (5 s + 5 s).
     capture_stop_s = darwin_native.STOP_GRACE_S + 1.0
-    assert sidecar_main.PARENT_GONE_HARD_EXIT_S > (
-        sidecar_main.GRACEFUL_SHUTDOWN_TIMEOUT_S + capture_stop_s
+    budget = (
+        2 * capture_stop_s + darwin_native.PROBE_TIMEOUT_S
+        + sidecar_main.GRACEFUL_SHUTDOWN_TIMEOUT_S + 10 + 10
     )
+    assert sidecar_main.PARENT_GONE_HARD_EXIT_S > budget
     assert sidecar_main._uvicorn_kwargs(object(), 1)["timeout_graceful_shutdown"] == (
         sidecar_main.GRACEFUL_SHUTDOWN_TIMEOUT_S
     )
@@ -346,12 +385,93 @@ def test_sigterm_exits_despite_open_recording_stream(tmp_path: Path) -> None:
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=20)  # TimeoutExpired == the original bug
         assert "Application shutdown complete." in stderr_log.read_text(encoding="utf-8")
-        # Shutdown never touches the capture process: the recording survives
-        # for next-start recovery, exactly as on a normal app quit.
+        # A plain SIGTERM is a normal app quit: the app is still alive and
+        # the recording keeps going for next-start recovery. Only the
+        # parent-gone path stops capture (see the test below).
         assert capture.poll() is None
     finally:
         if proc is not None and proc.poll() is None:
             proc.kill()
             proc.wait()
         capture.kill()
+        capture.wait()
+
+
+# Fake capture that records how it was stopped: SIGINT (the clean stop that
+# lets the real helper finalize its WAV) writes a marker and exits.
+_SIGINT_CAPTURE = """
+import signal, struct, sys, time
+marker = sys.argv[2]
+
+def on_sigint(signum, frame):
+    open(marker, "w").write("SIGINT")
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, on_sigint)
+f = open(sys.argv[1], "wb")
+f.write(b"RIFF" + struct.pack("<I", 0xFFFFFFFF) + b"WAVEfmt "
+        + struct.pack("<IHHIIHH", 16, 1, 1, 16000, 32000, 2, 16)
+        + b"data" + struct.pack("<I", 0xFFFFFFFF))
+while True:
+    f.write(b"\\0" * 3200)
+    f.flush()
+    time.sleep(0.1)
+"""
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="needs a supported POSIX audio backend")
+def test_parent_death_mid_recording_sigints_capture_and_leaves_it_recoverable(
+    tmp_path: Path,
+) -> None:
+    recordings = tmp_path / "home" / "ghostbrain" / "recorder" / "recordings"
+    recordings.mkdir(parents=True)
+    wav = recordings / "meeting-20261009-100000-manual.wav"
+    marker = tmp_path / "capture-stopped-by"
+    state_file = recordings.parent / "manual.state"
+    capture = subprocess.Popen(
+        [sys.executable, "-c", _SIGINT_CAPTURE, str(wav), str(marker)],
+        start_new_session=True,
+    )
+    stderr_log = tmp_path / "sidecar.stderr"
+    parent: subprocess.Popen | None = None
+    child_pid: int | None = None
+    try:
+        state_file.write_text(json.dumps({
+            "phase": "recording", "pid": capture.pid, "wavPath": str(wav),
+            "startedAt": "2026-10-09T10:00:00Z",
+        }))
+        parent = subprocess.Popen(
+            [sys.executable, "-c", _PARENT, str(stderr_log)],
+            cwd=REPO_ROOT,
+            env=_sandbox_env(tmp_path, GHOSTBRAIN_PARENT_WATCH="1"),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+        line = _readline(parent.stdout, 90)
+        assert line.startswith("PID "), line
+        _, pid_s, banner = line.strip().split(" ", 2)
+        child_pid = int(pid_s)
+        _wait_listening(int(_parse_banner(banner)["port"]))
+
+        parent.kill()
+        parent.wait(10)
+
+        assert _wait_dead(child_pid, 30), "sidecar outlived its parent"
+        capture.wait(timeout=5)
+        assert marker.read_text() == "SIGINT"
+        state = json.loads(state_file.read_text())
+        assert state["phase"] == "transcribing"
+        assert state["wavPath"] == str(wav)
+        log = stderr_log.read_text(encoding="utf-8")
+        assert "stopped the recording in progress" in log
+        assert "Application shutdown complete." in log
+        assert "last-resort" not in log
+    finally:
+        _kill(child_pid)
+        if parent is not None and parent.poll() is None:
+            parent.kill()
+            parent.wait()
+        if capture.poll() is None:
+            capture.kill()
         capture.wait()

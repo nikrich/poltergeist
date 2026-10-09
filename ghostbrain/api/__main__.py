@@ -195,14 +195,19 @@ SUBCOMMANDS: dict[str, str] = {
 # reopened by the next sidecar.
 GRACEFUL_SHUTDOWN_TIMEOUT_S = 3
 
-# Last-resort os._exit once the parent is gone, for when the graceful path
-# itself wedges. Must outlast everything that path legitimately waits on:
-# GRACEFUL_SHUTDOWN_TIMEOUT_S, scheduler.stop()'s 10 s task timeout, the
-# recorder's capture-stop budget (darwin_native.STOP_GRACE_S = 10 s SIGINT
-# grace + 1 s after the SIGTERM fallback in audio_capture.stop_capture — an
-# in-flight /v1/recorder/stop or daemon _finalize may be mid-way through it)
-# and WhisperServer.stop()'s 5 s + 5 s terminate/kill waits.
-PARENT_GONE_HARD_EXIT_S = 45.0
+# Last-resort os._exit once the parent is gone, for when the shutdown itself
+# wedges. Armed BEFORE the recording is stopped, so it must outlast
+# everything that path legitimately waits on, in sequence:
+#   - recorder_repo.stop_for_shutdown(): up to 11 s waiting on _lock behind an
+#     in-flight /v1/recorder/stop, then its own capture stop — 11 s each, the
+#     recorder's capture-stop budget (darwin_native.STOP_GRACE_S = 10 s SIGINT
+#     grace + 1 s after the SIGTERM fallback in audio_capture.stop_capture) —
+#     plus up to 10 s for get_backend()'s capture probe (PROBE_TIMEOUT_S);
+#   - GRACEFUL_SHUTDOWN_TIMEOUT_S;
+#   - scheduler.stop()'s 10 s task timeout;
+#   - WhisperServer.stop()'s 5 s + 5 s terminate/kill waits.
+# 11 + 11 + 10 + 3 + 10 + 10 = 55 s.
+PARENT_GONE_HARD_EXIT_S = 60.0
 
 
 def _uvicorn_kwargs(app, port: int) -> dict:
@@ -221,14 +226,25 @@ def _uvicorn_kwargs(app, port: int) -> dict:
 
 
 def _parent_gone_handler(
-    server, *, hard_exit_after_s: float = PARENT_GONE_HARD_EXIT_S, hard_exit=os._exit,
+    server,
+    *,
+    hard_exit_after_s: float = PARENT_GONE_HARD_EXIT_S,
+    hard_exit=os._exit,
+    stop_recording=None,
 ):
-    """Callback for parent_watch: ask uvicorn to exit the same way SIGTERM
-    does, so the shutdown hooks run (scheduler stop, chat reaping,
-    live.stop_all), and arm a daemon timer that hard-exits if that never
-    completes. A manual recording's capture runs in its own session and is
-    left alone, exactly as on a normal quit: manual.state keeps it
-    recoverable by the next sidecar."""
+    """Callback for parent_watch. Stops a recording in progress (SIGINT to
+    capture; manual.state left at ``transcribing`` with its wavPath so the
+    next start transcribes it), then asks uvicorn to exit the same way
+    SIGTERM does, so the shutdown hooks run (scheduler stop, chat reaping,
+    live.stop_all). A daemon timer hard-exits if all that never completes.
+
+    Only here, not on a plain SIGTERM: a normal quit leaves capture running
+    for next-start recovery, but nobody is left to stop a recording whose
+    app has died."""
+    if stop_recording is None:
+        from ghostbrain.api.repo import recorder as recorder_repo
+
+        stop_recording = recorder_repo.stop_for_shutdown
 
     def _hard_exit() -> None:
         log.error(
@@ -239,10 +255,14 @@ def _parent_gone_handler(
 
     def _on_parent_gone() -> None:
         log.warning("parent process gone; shutting down gracefully")
-        server.should_exit = True
         timer = threading.Timer(hard_exit_after_s, _hard_exit)
         timer.daemon = True
         timer.start()
+        try:
+            if stop_recording():
+                log.warning("parent gone: stopped the recording in progress")
+        finally:
+            server.should_exit = True
 
     return _on_parent_gone
 
