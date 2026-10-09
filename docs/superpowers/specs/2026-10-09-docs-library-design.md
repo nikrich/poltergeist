@@ -75,8 +75,10 @@ index_status: ok                # ok | failed | pending
 summary: "…"                    # §5, absent until generated
 ```
 
-- Note body: the extracted text (via `attachment_extract`), the image caption plus an embed (via
-  `attachment_caption`), or the text/markdown content for text kinds. **Opaque** files (any other
+- Note body: the extracted text (via `attachment_extract`), the image caption (via
+  `attachment_caption`; no embed, because an embed path would break when the doc moves and the
+  viewer shows the original anyway), or the text/markdown content for text kinds (code fenced
+  with its language). **Opaque** files (any other
   type) are accepted and stored with metadata only and an empty body.
 - Folders are plain directories. An empty folder holds a `.keep` file so sync tools keep it.
 
@@ -121,7 +123,7 @@ out of `chat_attachments` into a small helper both modules import.
   - notes with `index_status: failed`
 
   Each one has a repair action: adopt the unclaimed original (runs the upload pipeline in place),
-  re-link or remove an orphan note, or retry indexing.
+  remove an orphan note (to the trash; re-uploading the file recreates it), or retry indexing.
 - **Backlinks** `(doc_id)`: scan vault `*.md` for `[[<note-basename>` (with or without an alias),
   excluding docs roots, and return title + path + date for each. The result is cached per
   doc_id and invalidated by the same mtime check as the index plus the jot-save signal.
@@ -145,7 +147,8 @@ GET    /v1/library/docs/{doc_id}/backlinks
 POST   /v1/library/folders                         {context, project?, path}
 PATCH  /v1/library/folders                         {from:{context,project?,path}, to:{…}}
 DELETE /v1/library/folders                         {context, project?, path}  (empty only)
-POST   /v1/library/attention/{action}              adopt | relink | remove-orphan
+POST   /v1/library/attention/adopt                 {context, project?, folder, name}
+POST   /v1/library/attention/remove-orphan         {doc_id}
 GET    /v1/library/search?q=&project=
 ```
 
@@ -192,7 +195,8 @@ New `docs` screen in the left rail (book icon), between jots and vault.
     - PDF → **pdf.js** (`pdfjs-dist`) canvas pages, with a floating pager (page n / N, zoom)
     - image → fit/zoom `<img>`
     - markdown → existing `MarkdownBody`
-    - text/code → existing CodeMirror, read-only
+    - text/code → existing `MarkdownBody` over the note body (code is already fenced with its
+      language)
     - docx/xlsx → the extracted text, rendered via `MarkdownBody` (tables keep their markdown
       tables)
     - opaque → a placeholder card with "open in…"
