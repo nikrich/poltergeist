@@ -273,3 +273,80 @@ def test_valid_pending_days_survive_alongside_bad_ones(env):
         p.unlink()
     assert make(db, q, s).run() == 1
     assert queued(q)[0]["metadata"]["day"] == at(5).date().isoformat()
+
+
+def _sql(db, stmt: str, *args) -> None:
+    import sqlite3
+    c = sqlite3.connect(db)
+    c.execute(stmt, args)
+    c.commit()
+    c.close()
+
+
+def _clear(q: Path) -> None:
+    for p in (q / "pending").glob("*.json"):
+        p.unlink()
+
+
+class Downloaded:
+    """Voice stub that, like VoiceTranscriber, depends on whether media exists."""
+
+    def line_for(self, m):
+        if m.media_path is None:
+            return "[voice note — not downloaded]", False
+        return "🎙 got it", False
+
+
+def test_voice_note_downloaded_later_re_emits_the_day(env, tmp_path):
+    db, q, s = env
+    _sql(db, "INSERT INTO ZWAMESSAGE (Z_PK, ZCHATSESSION, ZMESSAGEDATE, ZMESSAGETYPE,"
+             " ZISFROMME, ZSTANZAID) VALUES (16, 1, ?, 3, 0, 'S16')",
+         at(0, 11).timestamp() - 978307200)
+    allowlist.save(s, {A: {"name": "Alex", "context": None}})
+    make(db, q, s, voice=Downloaded()).run()
+    _clear(q)
+    # WhatsApp downloads the note: a media row appears, no new message PK.
+    _sql(db, "INSERT INTO ZWAMEDIAITEM (Z_PK, ZMEDIALOCALPATH) VALUES (1, 'Media/v.opus')")
+    _sql(db, "UPDATE ZWAMESSAGE SET ZMEDIAITEM = 1 WHERE Z_PK = 16")
+    assert make(db, q, s, voice=Downloaded()).run() == 1
+    (ev,) = queued(q)
+    assert ev["metadata"]["day"] == NOW.date().isoformat()
+    assert "🎙 got it" in ev["body"]
+
+
+def test_unchanged_recent_days_are_not_re_enqueued(env):
+    db, q, s = env
+    _sql(db, "INSERT INTO ZWAMESSAGE (Z_PK, ZCHATSESSION, ZMESSAGEDATE, ZTEXT, ZMESSAGETYPE,"
+             " ZISFROMME, ZSTANZAID) VALUES (17, 1, ?, 'yesterday', 0, 0, 'S17')",
+         at(1).timestamp() - 978307200)
+    allowlist.save(s, {A: {"name": "Alex", "context": None}})
+    assert make(db, q, s).run() == 3
+    _clear(q)
+    assert make(db, q, s).run() == 0
+    cur = json.loads((s / "whatsapp.cursor.json").read_text())
+    assert sorted(cur["day_hashes"]) == [f"{A}|{at(1).date().isoformat()}",
+                                         f"{A}|{NOW.date().isoformat()}"]
+
+
+def test_text_edited_in_place_today_is_re_emitted(env):
+    db, q, s = env
+    allowlist.save(s, {A: {"name": "Alex", "context": None}})
+    make(db, q, s).run()
+    _clear(q)
+    _sql(db, "UPDATE ZWAMESSAGE SET ZTEXT = 'today one (edited)' WHERE Z_PK = 12")
+    assert make(db, q, s).run() == 1
+    (ev,) = queued(q)
+    assert ev["body"] == "**08:00 Alex:** today one (edited)"
+
+
+def test_day_hashes_are_pruned_to_today_and_yesterday(env):
+    db, q, s = env
+    allowlist.save(s, {A: {"name": "Alex", "context": None}})
+    make(db, q, s).run()
+    later = NOW + timedelta(days=3)
+    make(db, q, s, now=later).run()
+    cur = json.loads((s / "whatsapp.cursor.json").read_text())
+    assert all(k.split("|")[1] in {later.date().isoformat(),
+                                   (later - timedelta(days=1)).date().isoformat()}
+               for k in cur["day_hashes"])
+    assert f"{A}|{NOW.date().isoformat()}" not in cur["day_hashes"]
