@@ -210,6 +210,8 @@ export interface Note {
   title: string;
   body: string;
   frontmatter: Record<string, unknown>;
+  /** sha256(file bytes)[:16] — send back as If-Match on the next save. */
+  etag?: string | null;
 }
 
 export interface UpdateNoteBodyRequest {
@@ -220,6 +222,14 @@ export interface UpdateNoteBodyRequest {
 export interface UpdateNoteBodyResponse {
   path: string;
   updated: string | null;
+  etag: string;
+}
+
+export interface UpdateJotResponse {
+  id: string;
+  path: string;
+  updated: string;
+  etag: string;
 }
 
 export type RecorderPhase = 'idle' | 'recording' | 'transcribing' | 'done';
@@ -502,6 +512,7 @@ export interface ExtractPhotoResponse {
   body: string;
   extracted: boolean;
   reason?: string;
+  etag?: string;
 }
 
 // ── Confluence space list (shared with the Confluence export dialog) ──

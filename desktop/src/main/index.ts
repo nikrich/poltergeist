@@ -8,7 +8,7 @@ import type { Settings } from '../shared/types';
 import { loadInitialState, attachStatePersistence } from './window-state';
 import { buildAppMenu } from './menu';
 import { Sidecar } from './sidecar';
-import { forward, isAllowedMethod } from './api-forwarder';
+import { forward, isAllowedMethod, requestHeadersFrom } from './api-forwarder';
 import { startChatStream, stopChatStream } from './chat-stream';
 import type { ChatStreamEvent } from '../shared/api-types';
 import { startDocsStream, stopDocsStream } from './docs-stream';
@@ -355,7 +355,7 @@ app.on('activate', () => {
 
 ipcMain.handle(
   'gb:api:request',
-  async (_e, method: unknown, path: unknown, body: unknown) => {
+  async (_e, method: unknown, path: unknown, body: unknown, opts: unknown) => {
     if (typeof method !== 'string' || typeof path !== 'string') {
       return { ok: false, error: 'Invalid request shape' };
     }
@@ -367,7 +367,7 @@ ipcMain.handle(
       return { ok: false, error: 'Path not allowed (must start with /v1/)' };
     }
     if (DEMO) return handleDemoApi(m, path, body);
-    return forward(sidecar, m, path, body);
+    return forward(sidecar, m, path, body, undefined, requestHeadersFrom(opts));
   },
 );
 

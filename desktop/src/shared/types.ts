@@ -64,6 +64,7 @@ export interface GbBridge {
       method: HttpMethod,
       path: string,
       body?: unknown,
+      opts?: { ifMatch?: string },
     ): Promise<
       | { ok: true; data: T }
       | { ok: false; error: string; status?: number }

@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Editor } from '@tiptap/core';
 import type { EditorView } from '@tiptap/pm/view';
@@ -36,6 +36,10 @@ const manualNote: Note = {
   body: 'hand-written',
   frontmatter: { source: 'manual', context: 'work' },
 };
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe('NoteView', () => {
   it('renders the note in the rich editor with the synced-note warning chip', async () => {
@@ -123,5 +127,70 @@ describe('NoteView', () => {
         }),
       { timeout: 3000 },
     );
+  });
+
+  it('sends the note etag as If-Match on autosave', async () => {
+    apiRequest.mockResolvedValue({ ok: true, data: { ...syncedNote, etag: '0123456789abcdef' } });
+    let editor: Editor | undefined;
+    render(
+      withQuery(
+        <NoteView
+          onEditorReady={(e) => {
+            editor = e;
+          }}
+        />,
+      ),
+    );
+    act(() => useNoteView.getState().open(syncedNote.path));
+    await waitFor(() => expect(editor).toBeDefined());
+    act(() => {
+      editor!.commands.insertContentAt(editor!.state.doc.content.size, 'edited tail');
+    });
+    await waitFor(
+      () =>
+        expect(apiRequest).toHaveBeenCalledWith(
+          'PATCH',
+          '/v1/notes/body',
+          { path: syncedNote.path, body: expect.stringContaining('edited tail') },
+          { ifMatch: '0123456789abcdef' },
+        ),
+      { timeout: 3000 },
+    );
+  });
+
+  it('closing under the conflict banner asks first and keeps the editor when declined', async () => {
+    apiRequest.mockImplementation(async (method: string) => {
+      if (method === 'PATCH') return { ok: false, status: 409, error: 'note changed' };
+      return { ok: true, data: { ...manualNote, body: 'their edit', etag: 'bbbbbbbbbbbbbbbb' } };
+    });
+    apiRequest.mockResolvedValueOnce({ ok: true, data: { ...manualNote, etag: 'aaaaaaaaaaaaaaaa' } });
+    let editor: Editor | undefined;
+    render(
+      withQuery(
+        <NoteView
+          onEditorReady={(e) => {
+            editor = e;
+          }}
+        />,
+      ),
+    );
+    act(() => useNoteView.getState().open(manualNote.path));
+    await waitFor(() => expect(editor).toBeDefined());
+    act(() => {
+      editor!.commands.insertContentAt(editor!.state.doc.content.size, 'my tail');
+    });
+    await screen.findByRole('alert', {}, { timeout: 3000 });
+
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'close' }));
+    fireEvent.click(screen.getByRole('dialog', { name: 'note viewer' }));
+    expect(confirm).toHaveBeenCalledTimes(3);
+    expect(useNoteView.getState().path).toBe(manualNote.path);
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+
+    confirm.mockReturnValue(true);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(useNoteView.getState().path).toBeNull();
   });
 });
