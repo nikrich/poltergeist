@@ -53,6 +53,7 @@ import logging
 import secrets
 import socket
 import sys
+import threading
 from datetime import datetime  # noqa: E402
 from typing import IO  # noqa: E402
 
@@ -184,6 +185,26 @@ SUBCOMMANDS: dict[str, str] = {
 }
 
 
+# Bound on uvicorn's "wait for open connections" phase at shutdown. During a
+# recording the app holds /v1/recorder/live and /levels SSE streams open, and
+# they only end with the recording — without this bound SIGTERM set
+# should_exit and then waited on them forever (a second SIGTERM doesn't force,
+# only SIGINT does, and that skips the shutdown hooks). After the timeout the
+# streaming tasks are cancelled and the lifespan shutdown hooks still run.
+# Short: nothing the app sends is worth delaying quit for, and a cut stream is
+# reopened by the next sidecar.
+GRACEFUL_SHUTDOWN_TIMEOUT_S = 3
+
+# Last-resort os._exit once the parent is gone, for when the graceful path
+# itself wedges. Must outlast everything that path legitimately waits on:
+# GRACEFUL_SHUTDOWN_TIMEOUT_S, scheduler.stop()'s 10 s task timeout, the
+# recorder's capture-stop budget (darwin_native.STOP_GRACE_S = 10 s SIGINT
+# grace + 1 s after the SIGTERM fallback in audio_capture.stop_capture — an
+# in-flight /v1/recorder/stop or daemon _finalize may be mid-way through it)
+# and WhisperServer.stop()'s 5 s + 5 s terminate/kill waits.
+PARENT_GONE_HARD_EXIT_S = 45.0
+
+
 def _uvicorn_kwargs(app, port: int) -> dict:
     return {
         "app": app,
@@ -195,7 +216,35 @@ def _uvicorn_kwargs(app, port: int) -> dict:
         "log_config": None,
         "log_level": "info",
         "access_log": False,
+        "timeout_graceful_shutdown": GRACEFUL_SHUTDOWN_TIMEOUT_S,
     }
+
+
+def _parent_gone_handler(
+    server, *, hard_exit_after_s: float = PARENT_GONE_HARD_EXIT_S, hard_exit=os._exit,
+):
+    """Callback for parent_watch: ask uvicorn to exit the same way SIGTERM
+    does, so the shutdown hooks run (scheduler stop, chat reaping,
+    live.stop_all), and arm a daemon timer that hard-exits if that never
+    completes. A manual recording's capture runs in its own session and is
+    left alone, exactly as on a normal quit: manual.state keeps it
+    recoverable by the next sidecar."""
+
+    def _hard_exit() -> None:
+        log.error(
+            "parent gone %.0fs ago and graceful shutdown has not finished; "
+            "last-resort exit", hard_exit_after_s,
+        )
+        hard_exit(1)
+
+    def _on_parent_gone() -> None:
+        log.warning("parent process gone; shutting down gracefully")
+        server.should_exit = True
+        timer = threading.Timer(hard_exit_after_s, _hard_exit)
+        timer.daemon = True
+        timer.start()
+
+    return _on_parent_gone
 
 
 def _dispatch(name: str, rest: list[str]) -> int:
@@ -333,6 +382,13 @@ def _run_api_server() -> int:
 
         live.stop_all()
 
+    server = uvicorn.Server(uvicorn.Config(**_uvicorn_kwargs(app, port)))
+    # Armed before READY so a parent that dies right after reading the banner
+    # is still seen (its ppid is recorded while it is alive).
+    from ghostbrain.api import parent_watch
+
+    parent_watch.start(_parent_gone_handler(server))
+
     # Print the READY banner BEFORE uvicorn takes over output. Parent process
     # parses this single line to capture port + token. Suffix with a hint about
     # scheduler state so debugging double-fetches is one log line away.
@@ -341,7 +397,7 @@ def _run_api_server() -> int:
         flush=True,
     )
 
-    uvicorn.run(**_uvicorn_kwargs(app, port))
+    server.run()
     return 0
 
 
