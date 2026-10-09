@@ -2,6 +2,7 @@
 """Companion-note format: YAML frontmatter + extracted body (spec §1)."""
 from __future__ import annotations
 
+import re
 import secrets
 from pathlib import Path
 
@@ -62,6 +63,48 @@ def unique_child(folder: Path, name: str) -> Path:
     while (folder / f"{stem} ({n}){suffix}").exists():
         n += 1
     return folder / f"{stem} ({n}){suffix}"
+
+
+def _candidates(name: str):
+    yield name
+    stem, suffix = Path(name).stem, Path(name).suffix
+    n = 2
+    while True:
+        yield f"{stem} ({n}){suffix}"
+        n += 1
+
+
+def create_exclusive(folder: Path, name: str, content: bytes) -> Path:
+    """Write `content` to the first free name (`name`, `name (2)`, …), claimed atomically
+    with O_EXCL so concurrent same-name writers never overwrite each other."""
+    for candidate in _candidates(name):
+        path = folder / candidate
+        try:
+            f = open(path, "xb")  # noqa: SIM115 — closed below; unlink on write failure
+        except FileExistsError:
+            continue
+        try:
+            with f:
+                f.write(content)
+        except BaseException:
+            path.unlink(missing_ok=True)
+            raise
+        return path
+    raise AssertionError("unreachable")
+
+
+_BAD_CHARS = re.compile(r'[<>:"|?*\x00-\x1f\x7f]')
+_MAX_STEM_BYTES = 200
+
+
+def sanitize_filename(stem: str, ext: str) -> str:
+    """A filename valid on Windows/macOS/Linux for a user-typed title (path separators
+    must already have been rejected): bad characters → '-', whitespace collapsed, the stem
+    trimmed to 200 UTF-8 bytes without splitting a character."""
+    clean = re.sub(r"\s+", " ", _BAD_CHARS.sub("-", stem)).strip()
+    raw = clean.encode("utf-8")[:_MAX_STEM_BYTES]
+    clean = raw.decode("utf-8", errors="ignore").rstrip(" .").lstrip(".") or "untitled"
+    return safe_filename(f"{clean}{ext}")
 
 
 def safe_filename(name: str) -> str:

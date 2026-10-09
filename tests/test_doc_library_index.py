@@ -140,3 +140,74 @@ def test_duplicate_doc_id_second_note_becomes_orphan(lib_vault: Path):
     assert [a["kind"] for a in attn if a["name"] == second.name] == ["orphan_note"]
     assert {"kind": "unclaimed_original", "context": "work", "project": "payments",
             "folder": "b", "name": "two.pdf", "doc_id": None} in attn
+
+
+def test_two_notes_claiming_one_original_second_is_orphan(lib_vault: Path):
+    from ghostbrain.api.repo.doc_library import ops
+    from ghostbrain.api.repo.doc_library.errors import Conflict
+
+    proot = lib_vault / "20-contexts/work/projects/payments/docs"
+    first = _seed(proot, "one.pdf", "aaaaaaaaaaaa", project="payments")
+    second = _note_with(proot, "zzz-bbbbbb.md", {
+        "doc_id": "bbbbbbbbbbbb", "original": "one.pdf", "title": "dup", "index_status": "ok",
+    })
+    index.invalidate()
+    assert list(index.all_docs()) == ["aaaaaaaaaaaa"]
+    assert index.all_docs()["aaaaaaaaaaaa"].note == first
+    assert index.orphans() == {"bbbbbbbbbbbb": second}
+    assert [a["kind"] for a in index.attention()] == ["orphan_note"]
+    with pytest.raises(Conflict):
+        ops.adopt("work", "payments", "", "one.pdf")
+
+
+def test_adopt_refuses_original_named_by_orphan_note(lib_vault: Path):
+    from ghostbrain.api.repo.doc_library import ops
+    from ghostbrain.api.repo.doc_library.errors import Conflict
+
+    proot = lib_vault / "20-contexts/work/projects/payments/docs"
+    _seed(proot / "a", "one.pdf", "eeeeeeeeeeee", project="payments")
+    _seed(proot / "b", "two.pdf", "eeeeeeeeeeee", project="payments")  # dup doc_id → orphan
+    index.invalidate()
+    with pytest.raises(Conflict):
+        ops.adopt("work", "payments", "b", "two.pdf")
+
+
+def test_symlinked_original_outside_vault_is_orphan(lib_vault: Path, tmp_path: Path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.pdf").write_bytes(b"x")
+    (outside / "loose.pdf").write_bytes(b"y")
+    root = lib_vault / "20-contexts/work/docs"
+    root.mkdir(parents=True)
+    (root / "secret.pdf").symlink_to(outside / "secret.pdf")
+    (root / "loose.pdf").symlink_to(outside / "loose.pdf")
+    note = _note_with(root, "secret-aaaaaa.md", {
+        "doc_id": "aaaaaaaaaaaa", "original": "secret.pdf", "title": "secret", "index_status": "ok",
+    })
+    index.invalidate()
+    t = index.tree("work", None)
+    assert t["scopes"][0]["docs"] == []
+    assert index.orphans() == {"aaaaaaaaaaaa": note}
+    kinds = sorted((a["kind"], a["name"]) for a in t["attention"])
+    assert kinds == [("orphan_note", note.name)]  # loose symlink is ignored, not adoptable
+    from ghostbrain.api.repo.doc_library import search
+    assert search.search("secret") == []
+
+
+def test_symlinked_docs_root_outside_vault_is_skipped(lib_vault: Path, tmp_path: Path):
+    outside = tmp_path / "elsewhere"
+    _seed(outside / "sub", "x.pdf", "ffffffffffff")
+    (outside / "stray.pdf").write_bytes(b"z")
+    ctx = lib_vault / "20-contexts/personal"
+    ctx.mkdir(parents=True)
+    (ctx / "docs").symlink_to(outside, target_is_directory=True)
+    index.invalidate()
+    t = index.tree("personal", None)
+    (sc,) = t["scopes"]
+    assert sc["docs"] == [] and sc["folders"] == [] and t["attention"] == []
+    assert index.all_docs() == {}
+    assert index.tree()["scopes"]  # the whole tree still renders
+
+
+def test_vault_rel_never_raises(lib_vault: Path, tmp_path: Path):
+    assert index._vault_rel(tmp_path / "nowhere" / "x.pdf") == "x.pdf"

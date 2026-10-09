@@ -8,6 +8,9 @@ from pathlib import Path
 from ghostbrain.api.repo.doc_library import index, notes, scope
 from ghostbrain.api.repo.doc_library.errors import Conflict, InvalidRequest, NotFound
 
+# OS/sync-tool droppings that never count as content: a folder holding only these is empty.
+_JUNK = frozenset({notes.KEEP, ".DS_Store", "Thumbs.db", "desktop.ini"})
+
 
 def _ref(context: str, project: str | None, path: str) -> dict:
     return {"context": context, "project": project or None, "path": path}
@@ -73,8 +76,10 @@ def delete(context: str, project: str | None, path: str) -> None:
     d = scope.resolve_in(root, cleaned)
     if not d.is_dir():
         raise NotFound(f"folder not found: {cleaned}")
-    if any(c.name != notes.KEEP for c in d.iterdir()):
+    entries = list(d.iterdir())
+    if any(c.name not in _JUNK or not c.is_file() for c in entries):
         raise Conflict(f"folder is not empty: {cleaned}")
-    (d / notes.KEEP).unlink(missing_ok=True)
+    for c in entries:
+        c.unlink(missing_ok=True)
     d.rmdir()
     index.invalidate()

@@ -60,11 +60,12 @@ def _fresh_id(folder: Path, title: str) -> str:
             return doc_id
 
 
-def _index_original(
-    orig: Path, *, context: str, project: str | None, title: str, mime: str, kind: str, digest: str
-) -> dict:
-    doc_id = _fresh_id(orig.parent, title)
-    body, status, pages = _extract(kind, orig.name, mime, orig)
+def _write_pending_note(
+    orig: Path, doc_id: str, *, context: str, project: str | None, title: str, mime: str,
+    kind: str, digest: str,
+) -> None:
+    """The companion note goes down BEFORE the (slow) extraction, so an in-flight
+    upload is a doc with index_status "pending" — never an unclaimed original."""
     front: dict = {
         "doc_id": doc_id,
         "source": notes.SOURCE,
@@ -79,11 +80,35 @@ def _index_original(
     }
     if project:
         front["project"] = project
-    if pages:
-        front["pages"] = pages
-    front["index_status"] = status
-    notes.write_atomic(orig.parent / notes.note_name(title, doc_id), notes.render(front, body))
+    front["index_status"] = "pending"
+    notes.write_atomic(orig.parent / notes.note_name(title, doc_id), notes.render(front, ""))
     index.invalidate()
+
+
+def _finish_index(doc_id: str) -> dict:
+    """Extract the pending doc's text and rewrite its note with body + final status.
+    Re-reads the doc each step so a rename/move made meanwhile is kept. Any
+    unexpected error leaves the note "failed", never "pending"."""
+    try:
+        e = index.get(doc_id)
+        kind = str(e.front.get("kind") or "opaque")
+        body, status, pages = _extract(kind, e.original.name, str(e.front.get("mime") or ""), e.original)
+        index.invalidate()
+        e = index.get(doc_id)
+        front = {**e.front, "index_status": status}
+        if pages:
+            front["pages"] = pages
+        notes.write_atomic(e.note, notes.render(front, body))
+    except NotFound:
+        index.invalidate()
+        raise
+    except Exception as err:  # noqa: BLE001 — degrade to "failed", keep the doc
+        log.warning("finishing index of %s failed: %s", doc_id, err)
+        index.invalidate()
+        e = index.get(doc_id)
+        notes.write_atomic(e.note, notes.render({**e.front, "index_status": "failed"}, e.body))
+    finally:
+        index.invalidate()
     return index.summary(index.get(doc_id))
 
 
@@ -102,11 +127,13 @@ def upload(
         if e.context == context and e.project == (project or None) and e.front.get("sha256") == digest:
             return {**index.summary(e), "duplicate": True}
     target.mkdir(parents=True, exist_ok=True)
-    orig = notes.unique_child(target, name)
-    orig.write_bytes(content)
+    title = Path(name).stem
+    # Pick the id before the original exists so no index scan sees it unclaimed.
+    doc_id = _fresh_id(target, title)
+    orig = notes.create_exclusive(target, name, content)
     try:
-        s = _index_original(
-            orig, context=context, project=project or None, title=Path(name).stem,
+        _write_pending_note(
+            orig, doc_id, context=context, project=project or None, title=title,
             mime=mime, kind=kind, digest=digest,
         )
     except Exception:
@@ -114,7 +141,7 @@ def upload(
         orig.unlink(missing_ok=True)
         index.invalidate()
         raise
-    return {**s, "duplicate": False}
+    return {**_finish_index(doc_id), "duplicate": False}
 
 
 def _with_scope(front: dict, context: str, project: str | None) -> dict:
@@ -160,7 +187,7 @@ def rename(doc_id: str, title: str) -> dict:
     ext = e.original.suffix
     if ext and title.lower().endswith(ext.lower()):
         title = title[: -len(ext)].strip() or title
-    want = notes.safe_filename(f"{title}{ext}")
+    want = notes.sanitize_filename(title, ext)
     new_orig = e.original
     if want != e.original.name:
         new_orig = notes.unique_child(e.original.parent, want)
@@ -206,18 +233,20 @@ def adopt(context: str, project: str | None, folder: str, name: str) -> dict:
     p = d / notes.safe_filename(name)
     if not p.is_file() or (p.name.endswith(".md") and notes.read_note(p) is not None):
         raise NotFound(f"file not found: {name}")
-    if any(e.original.resolve() == p.resolve() for e in index.all_docs().values()):
-        raise Conflict(f"already in the library: {name}")
+    if p.resolve() in index.claimed_originals():
+        raise Conflict(f"already claimed by a library note: {name}")
     mime = mimetypes.guess_type(p.name)[0] or ""
     kind = file_kinds.classify(p.name, mime) or "opaque"
     content = p.read_bytes()
     cap = file_kinds.cap_for(kind)
     if len(content) > cap:
         raise TooLarge(f"{p.name} is larger than {cap // 1_000_000} MB")
-    return _index_original(
-        p, context=context, project=project or None, title=p.stem, mime=mime, kind=kind,
-        digest=hashlib.sha256(content).hexdigest(),
+    doc_id = _fresh_id(p.parent, p.stem)
+    _write_pending_note(
+        p, doc_id, context=context, project=project or None, title=p.stem, mime=mime,
+        kind=kind, digest=hashlib.sha256(content).hexdigest(),
     )
+    return _finish_index(doc_id)
 
 
 def remove_orphan(doc_id: str) -> None:

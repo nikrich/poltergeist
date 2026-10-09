@@ -149,3 +149,17 @@ def test_rename_clash_suffixes_original(lib_vault: Path):
     r = ops.rename(s["doc_id"], "Target")
     assert r["original"] == "Target (2).pdf"
     assert (lib_vault / r["original_path"]).read_bytes() == b"one"
+
+
+def test_rename_sanitises_filename_but_keeps_title(lib_vault: Path):
+    s = ops.upload("work", None, "", "a.pdf", "", b"one")
+    r = ops.rename(s["doc_id"], 'Payments: v2 <draft>?*|"\t\x01  final')
+    assert r["title"] == 'Payments: v2 <draft>?*|"\t\x01  final'
+    assert r["original"].endswith(".pdf")
+    assert not any(c in r["original"] for c in '<>:"|?*\t\x01')
+    assert r["original"] == "Payments- v2 -draft------- final.pdf"
+    assert (lib_vault / r["original_path"]).read_bytes() == b"one"
+    long = ops.rename(s["doc_id"], "é" * 300)
+    stem = long["original"][: -len(".pdf")]
+    assert len(stem.encode("utf-8")) <= 200 and long["original"].endswith(".pdf")
+    assert stem == "é" * 100

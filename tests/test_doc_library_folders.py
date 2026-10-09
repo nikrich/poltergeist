@@ -66,3 +66,18 @@ def test_delete_only_empty(lib_vault: Path):
         folders.delete("work", None, "full")
     with pytest.raises(NotFound):
         folders.delete("work", None, "ghost")
+
+
+def test_delete_ignores_os_junk_files(lib_vault: Path):
+    folders.create("work", None, "mac")
+    d = lib_vault / W / "mac"
+    for junk in (".DS_Store", "Thumbs.db", "desktop.ini"):
+        (d / junk).write_bytes(b"junk")
+    folders.delete("work", None, "mac")
+    assert not d.exists()
+    folders.create("work", None, "real")
+    (lib_vault / W / "real" / ".DS_Store").write_bytes(b"j")
+    (lib_vault / W / "real" / "notes.txt").write_bytes(b"x")
+    with pytest.raises(Conflict):
+        folders.delete("work", None, "real")
+    assert (lib_vault / W / "real" / ".DS_Store").exists()

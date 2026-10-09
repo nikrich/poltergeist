@@ -29,7 +29,7 @@ class DocEntry:
 
 
 _lock = threading.Lock()
-_cache: dict = {"sig": None, "docs": {}, "orphans": {}, "attention": []}
+_cache: dict = {"sig": None, "docs": {}, "orphans": {}, "attention": [], "claims": frozenset()}
 
 
 def invalidate() -> None:
@@ -43,11 +43,25 @@ def _walk_dirs(root: Path):
         yield Path(dirpath), sorted(f for f in filenames if not f.startswith("."))
 
 
+def _inside(real_vault: Path, p: Path) -> bool:
+    """True when `p`'s realpath lives inside the vault's realpath (symlink guard)."""
+    try:
+        real = p.resolve()
+    except (OSError, RuntimeError):
+        return False
+    return real == real_vault or real_vault in real.parents
+
+
+def _usable_root(real_vault: Path, root: Path) -> bool:
+    return root.is_dir() and _inside(real_vault, root)
+
+
 def _signature() -> tuple:
     sig: list = [str(vault_path())]
+    real_vault = vault_path().resolve()
     for ctx, proj, root in scope.all_scopes():
         sig.append((ctx, proj))
-        if root.is_dir():
+        if _usable_root(real_vault, root):
             sig.extend((str(d), d.stat().st_mtime_ns) for d, _ in _walk_dirs(root))
     return tuple(sig)
 
@@ -70,22 +84,28 @@ def _as_int(v) -> int | None:
         return None
 
 
-def _scan() -> tuple[dict[str, DocEntry], dict[str, Path], list[dict]]:
+def _scan() -> tuple[dict[str, DocEntry], dict[str, Path], list[dict], frozenset[Path]]:
+    """docs, orphan notes, attention items, and the realpaths of every original any
+    note (doc or orphan) names — adopt must never hand one of those to a second note."""
     docs: dict[str, DocEntry] = {}
     orphans: dict[str, Path] = {}
     attention: list[dict] = []
+    claims: set[Path] = set()
+    real_vault = vault_path().resolve()
     for ctx, proj, root in scope.all_scopes():
-        if not root.is_dir():
-            continue
+        if not _usable_root(real_vault, root):
+            continue  # missing, or a symlink resolving outside the vault
         claimed: set[Path] = set()
         others: list[tuple[Path, str]] = []
         for d, files in _walk_dirs(root):
             folder = scope.rel_folder(root, d)
             for name in files:
                 p = d / name
+                inside = _inside(real_vault, p)
                 parsed = notes.read_note(p) if name.endswith(".md") else None
                 if parsed is None:
-                    others.append((p, folder))
+                    if inside:  # a symlink out of the vault is not a library file
+                        others.append((p, folder))
                     continue
                 front, body = parsed
                 doc_id = str(front.get("doc_id") or "")
@@ -93,13 +113,23 @@ def _scan() -> tuple[dict[str, DocEntry], dict[str, Path], list[dict]]:
                     continue
                 item = {"context": ctx, "project": proj, "folder": folder, "doc_id": doc_id}
                 name_ = str(front.get("original") or "")
-                if not _is_bare_name(name_) or not (d / name_).is_file() or doc_id in docs:
-                    # Unusable original, or a duplicate doc_id (first-seen wins):
-                    # this note is an orphan and its original is NOT claimed.
+                original = d / name_ if _is_bare_name(name_) else None
+                if original is not None and original.is_file() and _inside(real_vault, original):
+                    claims.add(original.resolve())
+                else:
+                    original = None
+                if (
+                    original is None
+                    or not inside
+                    or doc_id in docs
+                    or original in claimed
+                ):
+                    # Unusable original, a note outside the vault, a duplicate doc_id or
+                    # a second note naming an already-claimed original (first-seen wins):
+                    # this note is an orphan and claims nothing new.
                     orphans[doc_id] = p
                     attention.append({"kind": "orphan_note", "name": p.name, **item})
                     continue
-                original = d / name_
                 claimed.add(original)
                 docs[doc_id] = DocEntry(doc_id, p, original, front, body, ctx, proj, folder)
                 if front.get("index_status") == "failed":
@@ -110,15 +140,15 @@ def _scan() -> tuple[dict[str, DocEntry], dict[str, Path], list[dict]]:
                     "kind": "unclaimed_original", "context": ctx, "project": proj,
                     "folder": folder, "name": p.name, "doc_id": None,
                 })
-    return docs, orphans, attention
+    return docs, orphans, attention, frozenset(claims)
 
 
 def _state() -> dict:
     with _lock:
         sig = _signature()
         if _cache["sig"] != sig:
-            docs, orphans, attention = _scan()
-            _cache.update(sig=sig, docs=docs, orphans=orphans, attention=attention)
+            docs, orphans, attention, claims = _scan()
+            _cache.update(sig=sig, docs=docs, orphans=orphans, attention=attention, claims=claims)
         return dict(_cache)
 
 
@@ -134,6 +164,11 @@ def attention() -> list[dict]:
     return _state()["attention"]
 
 
+def claimed_originals() -> frozenset[Path]:
+    """Realpaths of originals named by any companion note, including orphan notes."""
+    return _state()["claims"]
+
+
 def get(doc_id: str) -> DocEntry:
     e = all_docs().get(doc_id)
     if e is None:
@@ -142,7 +177,15 @@ def get(doc_id: str) -> DocEntry:
 
 
 def _vault_rel(p: Path) -> str:
-    return p.resolve().relative_to(vault_path().resolve()).as_posix()
+    # The scan only admits paths inside the vault, but this feeds /tree and /search,
+    # so it must never raise: fall back to the lexical path, then the bare name.
+    try:
+        return p.resolve().relative_to(vault_path().resolve()).as_posix()
+    except (OSError, RuntimeError, ValueError):
+        try:
+            return p.relative_to(vault_path()).as_posix()
+        except ValueError:
+            return p.name
 
 
 def summary(e: DocEntry) -> dict:
@@ -171,23 +214,26 @@ def detail(e: DocEntry) -> dict:
     return {**summary(e), "body": e.body}
 
 
-def _folder_node(root: Path, rel: str, name: str, by_folder: dict[str, list[dict]]) -> dict:
+def _folder_node(
+    root: Path, rel: str, name: str, by_folder: dict[str, list[dict]], real_vault: Path
+) -> dict:
     d = root / rel if rel else root
     children = []
-    if d.is_dir():
+    if d.is_dir() and _inside(real_vault, d):
         subdirs = sorted(
             (c for c in d.iterdir() if c.is_dir() and not c.name.startswith(".")),
             key=lambda c: c.name.lower(),
         )
         for c in subdirs:
             crel = f"{rel}/{c.name}" if rel else c.name
-            children.append(_folder_node(root, crel, c.name, by_folder))
+            children.append(_folder_node(root, crel, c.name, by_folder, real_vault))
     docs = sorted(by_folder.get(rel, []), key=lambda s: s["title"].lower())
     return {"name": name, "path": rel, "folders": children, "docs": docs}
 
 
 def tree(context: str | None = None, project: str | None = None) -> dict:
     state = _state()
+    real_vault = vault_path().resolve()
     scopes = []
     for ctx, proj, root in scope.all_scopes():
         if context and ctx != context:
@@ -199,7 +245,7 @@ def tree(context: str | None = None, project: str | None = None) -> dict:
             if e.context == ctx and e.project == proj:
                 by_folder.setdefault(e.folder, []).append(summary(e))
         meta = projects.get_project(ctx, proj) if proj else None
-        node = _folder_node(root, "", "", by_folder)
+        node = _folder_node(root, "", "", by_folder, real_vault)
         scopes.append({
             "context": ctx,
             "project": proj,
