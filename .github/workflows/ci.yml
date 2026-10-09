@@ -28,6 +28,7 @@ jobs:
             tests/test_jira_connector.py \
             tests/test_no_hardcoded_contexts.py \
             tests/test_conftest_isolation.py \
+            tests/test_vault_write_text.py \
             tests/test_doctor_core.py \
             tests/test_doctor_app_checks.py \
             tests/test_doctor_recorder_checks.py \
