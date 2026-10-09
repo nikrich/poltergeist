@@ -78,3 +78,23 @@ def test_limits_and_archived(lib_vault: Path, fake_extract):
     with pytest.raises(Conflict):
         ops.upload("work", "claims", "", "a.pdf", "", b"x")
     assert index.all_docs() == {}
+
+
+def test_empty_caption_marks_image_failed_and_keeps_original(lib_vault: Path, monkeypatch):
+    monkeypatch.setattr("ghostbrain.api.repo.attachment_caption.caption_image", lambda path: "")
+    s = ops.upload("work", None, "", "flow.png", "image/png", b"\x89PNG")
+    assert s["index_status"] == "failed"
+    assert (lib_vault / s["original_path"]).read_bytes() == b"\x89PNG"
+    body = notes.read_note(lib_vault / s["note_path"])[1].strip()
+    assert body == "(image — no readable text extracted)"
+
+
+def test_note_write_failure_removes_orphan_original(lib_vault: Path, fake_extract, monkeypatch):
+    def fail(path, text):
+        raise OSError("disk full")
+    monkeypatch.setattr(ops.notes, "write_atomic", fail)
+    folder = lib_vault / PROOT / "specs"
+    with pytest.raises(OSError):
+        ops.upload("work", "payments", "specs", "a.pdf", "", b"x")
+    assert not (folder / "a.pdf").exists()
+    assert index.all_docs() == {}

@@ -39,7 +39,10 @@ def _extract(kind: str, filename: str, mime: str, path: Path) -> tuple[str, str,
         if kind == "text":
             return file_kinds.text_body(filename, path.read_bytes()), "ok", None
         if kind == "image":
-            return attachment_caption.caption_image(path) or _NO_TEXT_IMAGE, "ok", None
+            caption = attachment_caption.caption_image(path)  # "" on vision failure
+            if not caption:
+                return _NO_TEXT_IMAGE, "failed", None
+            return caption, "ok", None
         body = attachment_extract.extract_text(filename, mime, path)
         return body, "ok", _pdf_pages(path) if kind == "pdf" else None
     except Exception as e:  # noqa: BLE001 — a broken file must never lose the original
@@ -99,8 +102,14 @@ def upload(
     target.mkdir(parents=True, exist_ok=True)
     orig = notes.unique_child(target, name)
     orig.write_bytes(content)
-    s = _index_original(
-        orig, context=context, project=project or None, title=Path(name).stem,
-        mime=mime, kind=kind, digest=digest,
-    )
+    try:
+        s = _index_original(
+            orig, context=context, project=project or None, title=Path(name).stem,
+            mime=mime, kind=kind, digest=digest,
+        )
+    except Exception:
+        # No companion note: remove the original so it is not left as an unclaimed file.
+        orig.unlink(missing_ok=True)
+        index.invalidate()
+        raise
     return {**s, "duplicate": False}
