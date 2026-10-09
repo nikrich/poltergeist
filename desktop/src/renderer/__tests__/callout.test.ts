@@ -79,6 +79,30 @@ describe('callout node parsing', () => {
   });
 });
 
+describe('callout header separation', () => {
+  it('keeps a callout whose first body block is a divider a callout after save + reopen', () => {
+    const editor = makeEditor('');
+    editor.commands.setContent(
+      {
+        type: 'doc',
+        content: [
+          {
+            type: 'callout',
+            attrs: { kind: 'info', title: 'T', foldable: 'none' },
+            content: [{ type: 'horizontalRule' }, { type: 'paragraph', content: [{ type: 'text', text: 'x' }] }],
+          },
+        ],
+      },
+      false,
+    );
+    const md = markdownOf(editor);
+    expect(md).toBe('> [!info] T\n>\n> ---\n>\n> x');
+    const first = makeEditor(md).getJSON().content?.[0];
+    expect(first).toMatchObject({ type: 'callout', attrs: { kind: 'info', title: 'T' } });
+    expect(first?.content?.map((c) => c.type)).toEqual(['horizontalRule', 'paragraph']);
+  });
+});
+
 describe('callout commands', () => {
   it('setCallout wraps the current paragraph; unsetCallout lifts it back', () => {
     const editor = makeEditor('hello');

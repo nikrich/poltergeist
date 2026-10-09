@@ -66,6 +66,10 @@ const FIXTURES: Record<string, string> = {
   'foldable callout starts collapsed': '> [!note]- Details\n> Hidden body.',
   'foldable callout starts open': '> [!note]+ Details\n> Shown body.',
   'callout between paragraphs': 'before\n\n> [!info] Mid\n> body\n\nafter',
+  'callout starting with divider': '> [!info] T\n>\n> ---\n>\n> after',
+  'callout starting with ordered list from 2': '> [!note] Steps\n>\n> 2. second\n> 3. third',
+  'callout starting with a line of equals': '> [!tip] T\n>\n> ===\n>\n> after',
+  'callout starting with an empty list item': '> [!warning] T\n>\n> -\n> - next',
 };
 
 describe('markdown round-trip (serialize(deserialize(md)))', () => {

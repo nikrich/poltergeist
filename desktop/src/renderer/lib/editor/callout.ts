@@ -25,11 +25,43 @@ function isEmptyBody(node: PMNode): boolean {
   return !!only && only.isTextblock && only.content.size === 0;
 }
 
+const LIST_TYPES = new Set(['bulletList', 'orderedList']);
+
+/**
+ * True when `first`, written on the line right after the header, would not
+ * start a new block: it would instead continue the header paragraph or turn
+ * it into a setext heading, and the callout would be lost on reopen. Those
+ * bodies get a blank `>` line after the header. Plain paragraphs stay tight.
+ */
+function needsBlankAfterHeader(first: PMNode): boolean {
+  switch (first.type.name) {
+    case 'horizontalRule': // `---` → setext h2 underline
+      return true;
+    case 'orderedList': // only `1.` may interrupt a paragraph (serializer: start || 1)
+      if ((first.attrs.start || 1) !== 1) return true;
+      break;
+    case 'paragraph': // a line of only `=` → setext h1 underline
+      return /^ {0,3}=+[ \t]*(?:\n|$)/.test(first.textContent);
+  }
+  // An empty list item (`-`, `1.`) cannot interrupt a paragraph; a bare `-`
+  // even becomes a setext h2 underline.
+  if (LIST_TYPES.has(first.type.name)) {
+    const item = first.firstChild?.firstChild;
+    return !item || (item.isTextblock && item.content.size === 0);
+  }
+  return false;
+}
+
 export function serializeCallout(state: MarkdownSerializerState, node: PMNode): void {
   const attrs = node.attrs as CalloutAttrs;
   state.wrapBlock('> ', null, node, () => {
     state.write(calloutHeader(attrs));
     if (!isEmptyBody(node)) {
+      if (needsBlankAfterHeader(node.firstChild!)) {
+        // Blank `>` line between header and body.
+        state.ensureNewLine();
+        state.write('\n');
+      }
       state.ensureNewLine();
       state.renderContent(node);
     }
