@@ -1,4 +1,10 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  type QueryClient,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { rememberAnswers } from '../templates/last-answers';
 
 import type {
@@ -65,6 +71,7 @@ import type {
   TemplatesResponse,
   ChangeActionResponse,
   ChangeDetailResponse,
+  ChangeRejectResponse,
   ChangesListResponse,
 } from '../../../shared/api-types';
 import { ApiError, del, get, patch, post, put } from './client';
@@ -1252,20 +1259,22 @@ export function useChange(id: number | null) {
   });
 }
 
-function useChangeAction(action: 'revert' | 'undo') {
+function invalidateAfterChange(qc: QueryClient) {
+  qc.invalidateQueries({ queryKey: ['changes'] });
+  qc.invalidateQueries({ queryKey: ['change'] });
+  qc.invalidateQueries({ queryKey: ['note'] });
+  qc.invalidateQueries({ queryKey: ['note-by-path'] });
+  qc.invalidateQueries({ queryKey: ['note-history'] });
+  qc.invalidateQueries({ queryKey: JOTS_KEY });
+  qc.invalidateQueries({ queryKey: ['vault', 'backlinks'] });
+}
+
+function useChangeAction(action: 'revert' | 'undo' | 'approve') {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (vars: { id: number; force?: boolean }) =>
       post<ChangeActionResponse>(`/v1/changes/${vars.id}/${action}`, { force: vars.force ?? false }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['changes'] });
-      qc.invalidateQueries({ queryKey: ['change'] });
-      qc.invalidateQueries({ queryKey: ['note'] });
-      qc.invalidateQueries({ queryKey: ['note-by-path'] });
-      qc.invalidateQueries({ queryKey: ['note-history'] });
-      qc.invalidateQueries({ queryKey: JOTS_KEY });
-      qc.invalidateQueries({ queryKey: ['vault', 'backlinks'] });
-    },
+    onSuccess: () => invalidateAfterChange(qc),
   });
 }
 
@@ -1282,5 +1291,31 @@ export function useDismissChangesWarning() {
   return useMutation({
     mutationFn: () => del('/v1/changes/degraded'),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['changes'] }),
+  });
+}
+
+// ── Held changes (spec B §3, §6; slice B3) ──────────────────────────────────
+
+export const PENDING_CHANGES_PATH = '/v1/changes?status=pending&limit=200';
+
+/** Changes waiting for approval. The nav badge and the Pending section share
+ * this query, so they never disagree. */
+export function usePendingChanges() {
+  return useQuery({
+    queryKey: ['changes', 'pending'],
+    queryFn: () => get<ChangesListResponse>(PENDING_CHANGES_PATH),
+    refetchInterval: 30_000,
+  });
+}
+
+export function useApproveChange() {
+  return useChangeAction('approve');
+}
+
+export function useRejectChange() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { id: number }) => post<ChangeRejectResponse>(`/v1/changes/${vars.id}/reject`),
+    onSuccess: () => invalidateAfterChange(qc),
   });
 }

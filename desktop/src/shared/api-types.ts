@@ -1052,3 +1052,8 @@ export interface NoteStatusResponse {
   status: NoteStatusValue;
   etag: string | null;
 }
+
+export interface ChangeRejectResponse {
+  id: number;
+  status: ChangeStatus;
+}
