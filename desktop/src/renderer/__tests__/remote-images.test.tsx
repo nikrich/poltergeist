@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { rendererCsp } from '../../shared/renderer-csp';
 import {
+  INSECURE_IMAGE_BLOCKED_TEXT,
   REMOTE_IMAGE_BLOCKED_TEXT,
   isRemoteImageSrc,
   remoteImagesAllowed,
@@ -68,6 +69,13 @@ describe('MarkdownBody remote images', () => {
     expect(screen.queryByText(REMOTE_IMAGE_BLOCKED_TEXT)).toBeNull();
   });
 
+  it('still blocks plain http images when https images are allowed', () => {
+    installCsp(true);
+    const { container } = render(<MarkdownBody>{'![x](http://example.com/c.png)'}</MarkdownBody>);
+    expect(container.querySelector('img')).toBeNull();
+    expect(screen.getByText(INSECURE_IMAGE_BLOCKED_TEXT)).toBeInTheDocument();
+  });
+
   it('leaves data: images alone', () => {
     installCsp(false);
     const { container } = render(
@@ -101,6 +109,13 @@ describe('editor image node remote images', () => {
     const img = editor.view.dom.querySelector<HTMLImageElement>('img.gb-jot-img');
     expect(img?.getAttribute('src')).toBe('https://example.com/c.png');
     expect(editor.view.dom.textContent).not.toContain(REMOTE_IMAGE_BLOCKED_TEXT);
+  });
+
+  it('still blocks plain http images when https images are allowed', () => {
+    installCsp(true);
+    const editor = makeEditor('![x](http://example.com/c.png)');
+    expect(editor.view.dom.querySelector('img')).toBeNull();
+    expect(editor.view.dom.textContent).toContain(INSECURE_IMAGE_BLOCKED_TEXT);
   });
 
   it('vault and gbasset images still render when remote images are blocked', () => {

@@ -9,6 +9,8 @@
  */
 export const REMOTE_IMAGE_BLOCKED_TEXT =
   "Remote image blocked — enable 'Load remote images' in Settings";
+/** Plain http images stay blocked even with the setting on (img-src allows https: only). */
+export const INSECURE_IMAGE_BLOCKED_TEXT = 'Insecure (http) image blocked — only https images can load';
 
 /** http(s) or protocol-relative URL — anything that would hit the network. */
 export function isRemoteImageSrc(src: string | null | undefined): boolean {
@@ -37,17 +39,24 @@ export function remoteImagesAllowed(doc: Document = document): boolean {
   });
 }
 
-/** True when `src` is remote and the current policy would block it. */
-export function isBlockedRemoteImage(src: string | null | undefined): boolean {
-  return isRemoteImageSrc(src) && !remoteImagesAllowed();
+/**
+ * Placeholder text when `src` is a remote image the current policy would
+ * block, else null (render the image normally).
+ */
+export function blockedRemoteImageText(src: string | null | undefined): string | null {
+  if (!isRemoteImageSrc(src)) return null;
+  if (!remoteImagesAllowed()) return REMOTE_IMAGE_BLOCKED_TEXT;
+  // The relaxed policy adds `https:` only; http and protocol-relative URLs
+  // (which resolve to http in dev / file: in prod) are still blocked.
+  return /^https:/i.test(src!.trim()) ? null : INSECURE_IMAGE_BLOCKED_TEXT;
 }
 
 /** DOM placeholder for the editor node view (no request is made for `src`). */
-export function createRemoteImagePlaceholder(alt: string | null): HTMLElement {
+export function createRemoteImagePlaceholder(alt: string | null, text: string): HTMLElement {
   const el = document.createElement('span');
   el.className = 'gb-remote-img-blocked';
   el.setAttribute('role', 'img');
-  el.setAttribute('aria-label', alt ? `${alt} — ${REMOTE_IMAGE_BLOCKED_TEXT}` : REMOTE_IMAGE_BLOCKED_TEXT);
-  el.textContent = REMOTE_IMAGE_BLOCKED_TEXT;
+  el.setAttribute('aria-label', alt ? `${alt} — ${text}` : text);
+  el.textContent = text;
   return el;
 }

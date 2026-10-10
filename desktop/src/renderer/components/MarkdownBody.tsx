@@ -2,7 +2,7 @@ import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { toast } from '../stores/toast';
 import { useNoteView } from '../stores/note-view';
-import { isBlockedRemoteImage } from '../lib/remote-images';
+import { blockedRemoteImageText } from '../lib/remote-images';
 import { RemoteImagePlaceholder } from './RemoteImagePlaceholder';
 
 // react-markdown's default sanitizer only lets http(s)/mailto-style schemes
@@ -57,12 +57,14 @@ export function MarkdownBody({ children, className }: Props) {
         components={{
           // Remote images the CSP would block get a placeholder, not a
           // broken <img> (and no request).
-          img: ({ node: _node, src, alt, ...rest }) =>
-            typeof src === 'string' && isBlockedRemoteImage(src) ? (
-              <RemoteImagePlaceholder alt={alt} />
+          img: ({ node: _node, src, alt, ...rest }) => {
+            const blocked = typeof src === 'string' ? blockedRemoteImageText(src) : null;
+            return blocked ? (
+              <RemoteImagePlaceholder alt={alt} text={blocked} />
             ) : (
               <img {...rest} src={src} alt={alt} />
-            ),
+            );
+          },
           a: ({ href, children, ...rest }) => {
             const onClick = async (e: React.MouseEvent<HTMLAnchorElement>) => {
               e.preventDefault();

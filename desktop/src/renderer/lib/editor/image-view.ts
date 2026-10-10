@@ -2,7 +2,7 @@ import type { Editor } from '@tiptap/core';
 import type { Node as PMNode } from 'prosemirror-model';
 import type { NodeView } from '@tiptap/pm/view';
 import { toDisplaySrc } from './image';
-import { createRemoteImagePlaceholder, isBlockedRemoteImage } from '../remote-images';
+import { blockedRemoteImageText, createRemoteImagePlaceholder } from '../remote-images';
 
 export const SNAP_FRACTIONS = [0.25, 0.5, 0.75, 1] as const;
 export const MIN_IMAGE_WIDTH = 48;
@@ -37,12 +37,13 @@ export function createImageView(node: PMNode, editor: Editor, getPos: () => numb
     const a = current.attrs as { src: string | null; alt: string | null; title: string | null; width: number | null };
     // A remote src the CSP would block: show a placeholder and never set
     // img.src, so no request (and no CSP violation) is made.
-    if (isBlockedRemoteImage(a.src)) {
+    const blocked = blockedRemoteImageText(a.src);
+    if (blocked) {
       img.removeAttribute('src');
       img.remove();
       handle.hidden = true;
       placeholder?.remove();
-      placeholder = createRemoteImagePlaceholder(a.alt);
+      placeholder = createRemoteImagePlaceholder(a.alt, blocked);
       dom.prepend(placeholder);
       return;
     }
