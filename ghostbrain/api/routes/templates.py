@@ -4,18 +4,45 @@ GET  /v1/templates                  list (seeds starters if the folder is missin
 GET  /v1/templates/functions        the registry, for intellisense
 POST /v1/templates/{id}/create      render + vault_write.write_new(actor=user)
 POST /v1/templates/{id}/render      render only (the /template slash insert)
+
+Slice C3 (template editor):
+POST  /v1/templates/lint            diagnostics for template source
+POST  /v1/templates/render          Test run: render source with sample answers, write nothing
+GET   /v1/templates/query-values    known note types and statuses for query completions
+GET   /v1/templates/{id}/source     the file's text and etag
+PATCH /v1/templates/{id}/source     save (If-Match), through the write path
+POST  /v1/templates                 new blank template
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from ghostbrain.api.vault_http import if_match
 from ghostbrain.templates.create import create_from_template, preview_from_template
 from ghostbrain.templates.functions import registry_json
+from ghostbrain.templates.lang import MAX_TEMPLATE_CHARS
+from ghostbrain.templates.lint import lint
 from ghostbrain.templates.registry import TemplateInvalid, TemplateNotFound, list_templates
 from ghostbrain.templates.render import AnswerError, RenderError
+from ghostbrain.templates.source import (
+    MAX_NAME_CHARS,
+    SourceTooLarge,
+    create_blank,
+    query_values,
+    read_source,
+    save_source,
+)
+from ghostbrain.templates.testrun import dry_run
+from ghostbrain.vault_write import USER, Actor
+
+try:  # B2 attributes HTTP writes from the X-Poltergeist-Actor header.
+    from ghostbrain.api.vault_http import request_actor
+except ImportError:  # Before B2 every HTTP write is the user's.
+    def request_actor() -> Actor:
+        return USER
 
 router = APIRouter(prefix="/v1/templates", tags=["templates"])
 _ERRORS = (TemplateNotFound, TemplateInvalid, AnswerError, RenderError)
@@ -63,3 +90,70 @@ def render_note(template_id: str, body: AnswersBody) -> dict[str, Any]:
         raise _http_error(template_id, e) from e
     return {"path": note.path, "folder": note.folder, "filename": note.filename,
             "title": note.title, "frontmatter": note.frontmatter, "body": note.body}
+
+
+# ── C3: template editor ───────────────────────────────────────────────────
+
+
+class SourceBody(BaseModel):
+    source: str = Field(max_length=MAX_TEMPLATE_CHARS)
+
+
+class DryRunBody(BaseModel):
+    source: str = Field(max_length=MAX_TEMPLATE_CHARS)
+    answers: dict[str, str] = Field(default_factory=dict, max_length=50)
+    id: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9-]{0,63}$")
+    dry_run: Literal[True] = True
+
+
+class NewTemplateBody(BaseModel):
+    name: str = Field(min_length=1, max_length=MAX_NAME_CHARS)
+
+
+@router.post("/lint")
+def lint_source(body: SourceBody) -> dict[str, Any]:
+    return {"diagnostics": [d.to_json() for d in lint(body.source)]}
+
+
+@router.post("/render")
+def dry_run_source(body: DryRunBody) -> dict[str, Any]:
+    """Test run. Always 200: problems come back in ``error``/``diagnostics``
+    so the editor can show them next to the source."""
+    return dry_run(body.source, body.answers, template_id=body.id or "draft").to_json()
+
+
+@router.get("/query-values")
+def get_query_values() -> dict[str, Any]:
+    return query_values()
+
+
+@router.get("/{template_id}/source")
+def get_source(template_id: str) -> dict[str, Any]:
+    try:
+        return read_source(template_id).to_json()
+    except (TemplateNotFound, TemplateInvalid) as e:
+        raise _http_error(template_id, e) from e
+
+
+@router.patch("/{template_id}/source")
+def patch_source(
+    template_id: str,
+    body: SourceBody,
+    base_etag: str | None = Depends(if_match),
+    actor: Actor = Depends(request_actor),
+) -> dict[str, Any]:
+    try:
+        saved = save_source(template_id, body.source, actor=actor, base_etag=base_etag)
+    except (TemplateNotFound, TemplateInvalid) as e:
+        raise _http_error(template_id, e) from e
+    except SourceTooLarge as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    return saved.to_json()
+
+
+@router.post("", status_code=201)
+def new_template(body: NewTemplateBody, actor: Actor = Depends(request_actor)) -> dict[str, Any]:
+    try:
+        return create_blank(body.name, actor=actor).to_json()
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
