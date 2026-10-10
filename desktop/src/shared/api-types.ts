@@ -779,6 +779,7 @@ export interface DocSummary {
   context: string; project: string | null; folder: string; original: string;
   original_path: string; note_path: string; index_status: 'ok' | 'failed' | 'pending';
   pages: number | null; excerpt: string;
+  summary: string | null; summary_state: 'pending' | 'done' | 'none';
 }
 export interface UploadDocResponse extends DocSummary { duplicate: boolean }
 export interface DocDetail extends DocSummary { body: string }

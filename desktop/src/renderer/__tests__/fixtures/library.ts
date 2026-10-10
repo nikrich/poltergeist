@@ -8,7 +8,8 @@ export function doc(over: Partial<DocSummary>): DocSummary {
     folder: 'specs', original: 'Payments API v2.pdf',
     original_path: '20-contexts/work/projects/payments/docs/specs/Payments API v2.pdf',
     note_path: '20-contexts/work/projects/payments/docs/specs/payments-api-v2-aaaaaa.md',
-    index_status: 'ok', pages: 24, excerpt: 'Idempotency keys required on POST.', ...over,
+    index_status: 'ok', pages: 24, excerpt: 'Idempotency keys required on POST.',
+    summary: null, summary_state: 'none', ...over,
   };
 }
 

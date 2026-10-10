@@ -20,6 +20,8 @@ class DocSummary(BaseModel):
     index_status: str
     pages: int | None = None
     excerpt: str = ""
+    summary: str | None = None
+    summary_state: Literal["pending", "done", "none"] = "none"
 
 
 class UploadDocResponse(DocSummary):

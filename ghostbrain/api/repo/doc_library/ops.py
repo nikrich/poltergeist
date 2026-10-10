@@ -12,7 +12,7 @@ from pathlib import Path
 from send2trash import send2trash
 
 from ghostbrain.api.repo import attachment_caption, attachment_extract, file_kinds
-from ghostbrain.api.repo.doc_library import index, notes, scope
+from ghostbrain.api.repo.doc_library import ai_summary, index, notes, scope
 from ghostbrain.api.repo.doc_library.errors import Conflict, InvalidRequest, NotFound, TooLarge
 
 log = logging.getLogger("ghostbrain.doc_library")
@@ -113,6 +113,24 @@ def _finish_index(doc_id: str) -> dict:
     return index.summary(index.get(doc_id))
 
 
+def _safe_enqueue(doc_id: str) -> None:
+    """Queue a summary; a summary bug must never fail the surrounding operation."""
+    try:
+        ai_summary.enqueue(doc_id)
+    except Exception:  # noqa: BLE001
+        log.exception("could not enqueue summary for %s", doc_id)
+
+
+def _finish_and_enqueue(doc_id: str) -> dict:
+    """_finish_index, then queue an AI summary if indexing succeeded. Returns a
+    fresh summary so the response shows summary_state "pending"."""
+    s = _finish_index(doc_id)
+    if s.get("index_status") == "ok":
+        _safe_enqueue(doc_id)
+        s = index.summary(index.get(doc_id))
+    return s
+
+
 def upload(
     context: str, project: str | None, folder: str, filename: str, mime: str, content: bytes
 ) -> dict:
@@ -143,7 +161,7 @@ def upload(
         orig.unlink(missing_ok=True)
         index.unmark_active(doc_id)
         raise
-    return {**_finish_index(doc_id), "duplicate": False}
+    return {**_finish_and_enqueue(doc_id), "duplicate": False}
 
 
 def _with_scope(front: dict, context: str, project: str | None) -> dict:
@@ -226,8 +244,12 @@ def reindex(doc_id: str) -> dict:
     front = {**e.front, "index_status": status}
     if pages:
         front["pages"] = pages
+    if status != "ok" or body.strip() != e.body.strip():
+        front.pop("summary", None)  # a summary of the old text would be stale
     notes.write_atomic(e.note, notes.render(front, body))
     index.invalidate()
+    if status == "ok":
+        _safe_enqueue(doc_id)
     return index.summary(index.get(doc_id))
 
 
@@ -255,7 +277,7 @@ def adopt(context: str, project: str | None, folder: str, name: str) -> dict:
     except Exception:
         index.unmark_active(doc_id)
         raise
-    return _finish_index(doc_id)
+    return _finish_and_enqueue(doc_id)
 
 
 def remove_orphan(doc_id: str) -> None:

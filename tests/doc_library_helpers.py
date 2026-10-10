@@ -21,6 +21,8 @@ def lib_vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(
         "ghostbrain.api.repo.attachment_caption.caption_image", lambda path: "a diagram"
     )
+    # Never start a real background summary (LLM) job from a test.
+    monkeypatch.setattr("ghostbrain.api.repo.doc_library.ai_summary.enqueue", lambda doc_id: False)
     try:
         from ghostbrain.api.repo.doc_library import index
 
