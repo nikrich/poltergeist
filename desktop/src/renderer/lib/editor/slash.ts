@@ -28,6 +28,8 @@ export const SLASH_ITEMS: SlashItem[] = [
   { key: 'note', title: 'Note panel', run: (e, r) => e.chain().focus().deleteRange(r).setCallout({ kind: 'note' }).run(), blockOnly: true },
   { key: 'tip', title: 'Tip panel', run: (e, r) => e.chain().focus().deleteRange(r).setCallout({ kind: 'tip' }).run(), blockOnly: true },
   { key: 'warning', title: 'Warning panel', run: (e, r) => e.chain().focus().deleteRange(r).setCallout({ kind: 'warning' }).run(), blockOnly: true },
+  { key: 'success', title: 'Success panel', run: (e, r) => e.chain().focus().deleteRange(r).setCallout({ kind: 'success' }).run(), blockOnly: true },
+  { key: 'error', title: 'Error panel', run: (e, r) => e.chain().focus().deleteRange(r).setCallout({ kind: 'error' }).run(), blockOnly: true },
   {
     key: 'expand',
     title: 'Expand',

@@ -50,7 +50,7 @@ describe('A1 slash items', () => {
     for (const k of ['info', 'note', 'tip', 'warning', 'expand', 'status', 'toc', 'diagram', 'quote']) {
       expect(keys).toContain(k);
     }
-    expect(filterSlashItems('panel').map((i) => i.key)).toEqual(['info', 'note', 'tip', 'warning']);
+    expect(filterSlashItems('panel').map((i) => i.key)).toEqual(['info', 'note', 'tip', 'warning', 'success', 'error']);
     expect(filterSlashItems('contents').map((i) => i.key)).toEqual(['toc']);
   });
 
@@ -59,6 +59,8 @@ describe('A1 slash items', () => {
     ['note', '> [!note]'],
     ['tip', '> [!tip]'],
     ['warning', '> [!warning]'],
+    ['success', '> [!success]'],
+    ['error', '> [!error]'],
     ['expand', '> [!note]+ Details'],
     ['toc', '```toc\n```'],
     ['diagram', '```mermaid\nflowchart TD\n  A[Start] --> B[End]\n```'],
@@ -77,7 +79,7 @@ describe('A1 slash items', () => {
 });
 
 describe('slash items inside a table', () => {
-  const BLOCK_ONLY = ['info', 'note', 'tip', 'warning', 'expand', 'toc', 'diagram', 'divider', 'table', 'template'];
+  const BLOCK_ONLY = ['info', 'note', 'tip', 'warning', 'success', 'error', 'expand', 'toc', 'diagram', 'divider', 'table', 'template'];
 
   it('hides block-only items while the cursor is in a table cell', () => {
     const editor = makeEditor('| a | b |\n| --- | --- |\n| alpha | 1 |');
