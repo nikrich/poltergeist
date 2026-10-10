@@ -58,6 +58,36 @@ describe('WhatsAppChatPicker', () => {
     });
   });
 
+  it('select all ticks every shown chat and reports the count', async () => {
+    setup();
+    expect(await screen.findByText('1 of 2 selected')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'select all (2)' }));
+    expect(screen.getByText('2 of 2 selected')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'save' }));
+    await waitFor(() => expect(client.put).toHaveBeenCalled());
+    // Only the chat whose state changed is sent; Alex was already selected.
+    expect(client.put).toHaveBeenCalledWith('/v1/connectors/whatsapp/chats', {
+      chats: { 'g1@g.us': { allowed: true, context: null } },
+    });
+  });
+
+  it('select all and clear only touch the chats the filter shows', async () => {
+    setup();
+    await screen.findByText('Book Club');
+    fireEvent.click(screen.getByRole('button', { name: 'groups' }));
+    fireEvent.click(screen.getByRole('button', { name: 'select all (1)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'direct' }));
+    fireEvent.click(screen.getByRole('button', { name: 'clear (1)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'save' }));
+    await waitFor(() => expect(client.put).toHaveBeenCalled());
+    expect(client.put).toHaveBeenCalledWith('/v1/connectors/whatsapp/chats', {
+      chats: {
+        'g1@g.us': { allowed: true, context: null },
+        'd1@s.whatsapp.net': { allowed: false, context: 'work' },
+      },
+    });
+  });
+
   it('shows the access error from the sidecar', async () => {
     vi.mocked(client.get).mockImplementation(async (path: string) => {
       if (path === '/v1/vault/contexts') return contexts;

@@ -174,3 +174,15 @@ def test_transcript_cache_is_written_atomically(tmp_path, monkeypatch):
     assert make(tmp_path).line_for(vmsg(tmp_path)) == ("🎙 hello there", False)
     assert replaced == [("ABC_1.txt.tmp", "ABC_1.txt")]
     assert sorted(p.name for p in (tmp_path / "cache").iterdir()) == ["ABC_1.txt"]
+
+
+def test_cached_line_for_never_transcribes(tmp_path):
+    tr = fake_transcribe()
+    t = make(tmp_path, transcribe=tr, budget=5)
+    m = vmsg(tmp_path)
+    assert t.cached_line_for(m) == (v.PENDING, True)
+    assert tr.calls == [] and t.budget == 5
+    assert t.line_for(m) == ("🎙 hello there", False)
+    assert t.cached_line_for(m) == ("🎙 hello there", False)
+    gone = vmsg(tmp_path, stanza="GONE", exists=False)
+    assert t.cached_line_for(gone) == (v.NOT_DOWNLOADED, False)

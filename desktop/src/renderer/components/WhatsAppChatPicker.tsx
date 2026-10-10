@@ -31,8 +31,21 @@ export function WhatsAppChatPicker() {
     edits[c.jid] ?? { allowed: c.allowed, context: c.context };
   const edit = (c: WhatsAppChat, next: Partial<Choice>) =>
     setEdits((e) => ({ ...e, [c.jid]: { ...current(c), ...next } }));
+  // Select all / clear act on the rows the search + kind filter currently show,
+  // and only record an edit where the state actually changes.
+  const setAllowed = (allowed: boolean) =>
+    setEdits((e) => {
+      const next = { ...e };
+      for (const c of rows) {
+        const cur = next[c.jid] ?? { allowed: c.allowed, context: c.context };
+        if (cur.allowed !== allowed) next[c.jid] = { ...cur, allowed };
+      }
+      return next;
+    });
   const dirty = Object.keys(edits).length > 0;
   const active = contexts.data?.contexts ?? [];
+  const all = chats.data ?? [];
+  const selected = all.filter((c) => current(c).allowed).length;
 
   return (
     <div className="flex flex-col gap-2">
@@ -59,6 +72,25 @@ export function WhatsAppChatPicker() {
             onClick={() => setKind(k)}
           >
             {k === 'group' ? 'groups' : k}
+          </button>
+        ))}
+      </div>
+      <div className="flex items-center gap-[6px] text-11">
+        <span className="flex-1 font-mono text-ink-2">{`${selected} of ${all.length} selected`}</span>
+        {(
+          [
+            ['select all', true],
+            ['clear', false],
+          ] as const
+        ).map(([label, allowed]) => (
+          <button
+            key={label}
+            type="button"
+            disabled={rows.length === 0}
+            className="rounded-r6 border border-transparent px-2 py-1 text-ink-1 hover:bg-vellum disabled:opacity-40"
+            onClick={() => setAllowed(allowed)}
+          >
+            {`${label} (${rows.length})`}
           </button>
         ))}
       </div>

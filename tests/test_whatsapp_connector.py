@@ -25,6 +25,8 @@ class NoVoice:
     def line_for(self, m):
         return "[voice note — transcription pending]", True
 
+    cached_line_for = line_for
+
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
@@ -135,6 +137,9 @@ def test_pending_voice_day_is_rebuilt_next_run(env):
         p.unlink()
 
     class Done:
+        def cached_line_for(self, m):
+            return "[voice note — transcription pending]", True
+
         def line_for(self, m):
             return "🎙 now transcribed", False
 
@@ -296,6 +301,8 @@ class Downloaded:
             return "[voice note — not downloaded]", False
         return "🎙 got it", False
 
+    cached_line_for = line_for
+
 
 def test_voice_note_downloaded_later_re_emits_the_day(env, tmp_path):
     db, q, s = env
@@ -350,3 +357,74 @@ def test_day_hashes_are_pruned_to_today_and_yesterday(env):
                                    (later - timedelta(days=1)).date().isoformat()}
                for k in cur["day_hashes"])
     assert f"{A}|{NOW.date().isoformat()}" not in cur["day_hashes"]
+
+
+class Logged:
+    """Voice stub that records when transcription happens; `budget` transcripts max."""
+
+    def __init__(self, log, budget=10):
+        self.log, self.budget = log, budget
+
+    def cached_line_for(self, m):
+        return "[voice note — transcription pending]", True
+
+    def line_for(self, m):
+        if self.budget <= 0:
+            return "[voice note — transcription pending]", True
+        self.budget -= 1
+        self.log.append(("transcribe", m.at.date().isoformat()))
+        return f"🎙 said on {m.at.date().isoformat()}", False
+
+
+def _voice_msg(db, pk, when):
+    _sql(db, "INSERT INTO ZWAMESSAGE (Z_PK, ZCHATSESSION, ZMESSAGEDATE, ZMESSAGETYPE,"
+             f" ZISFROMME, ZSTANZAID) VALUES ({pk}, 1, ?, 3, 0, 'S{pk}')",
+         when.timestamp() - 978307200)
+
+
+def test_every_day_is_enqueued_before_any_voice_transcription(env, monkeypatch):
+    db, q, s = env
+    _voice_msg(db, 16, at(5, 11))
+    allowlist.save(s, {A: {"name": "Alex", "context": None}})
+    log = []
+    conn = make(db, q, s, voice=Logged(log))
+    original = conn._enqueue
+
+    def spy(event):
+        log.append(("enqueue", event["metadata"]["day"]))
+        original(event)
+
+    monkeypatch.setattr(conn, "_enqueue", spy)
+    assert conn.run() == 2  # distinct chat-days, even though one was sent twice
+    first_transcribe = log.index(("transcribe", at(5).date().isoformat()))
+    assert {d for kind, d in log[:first_transcribe] if kind == "enqueue"} == {
+        at(5).date().isoformat(), NOW.date().isoformat()}
+    assert log[first_transcribe + 1] == ("enqueue", at(5).date().isoformat())
+    bodies = {e["metadata"]["day"]: e["body"] for e in queued(q)}
+    assert len(bodies) == 2
+    assert "🎙 said on" in bodies[at(5).date().isoformat()]
+
+
+def test_voice_pass_fills_newest_days_first(env):
+    db, q, s = env
+    _voice_msg(db, 16, at(5, 11))
+    _voice_msg(db, 17, at(0, 11))
+    allowlist.save(s, {A: {"name": "Alex", "context": None}})
+    make(db, q, s, voice=Logged([], budget=1)).run()
+    bodies = {e["metadata"]["day"]: e["body"] for e in queued(q)}
+    assert "🎙 said on" in bodies[NOW.date().isoformat()]
+    assert "transcription pending" in bodies[at(5).date().isoformat()]
+    cur = json.loads((s / "whatsapp.cursor.json").read_text())
+    assert cur["pending_days"] == [[A, at(5).date().isoformat()]]
+
+
+def test_day_waiting_on_voice_is_not_re_sent_while_unchanged(env):
+    db, q, s = env
+    _voice_msg(db, 16, at(5, 11))
+    allowlist.save(s, {A: {"name": "Alex", "context": None}})
+    make(db, q, s).run()  # NoVoice: stays pending
+    _clear(q)
+    assert make(db, q, s).run() == 0
+    cur = json.loads((s / "whatsapp.cursor.json").read_text())
+    assert cur["pending_days"] == [[A, at(5).date().isoformat()]]
+    assert f"{A}|{at(5).date().isoformat()}" in cur["day_hashes"]
