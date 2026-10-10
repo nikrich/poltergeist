@@ -3,6 +3,7 @@ import { useTemplates } from '../lib/api/hooks';
 import type { TemplateCreateResponse, TemplateSummary } from '../../shared/api-types';
 import { Btn } from './Btn';
 import { Lucide } from './Lucide';
+import { MakeTemplateDialog } from './MakeTemplateDialog';
 import { TemplatePromptDialog } from './TemplatePromptDialog';
 
 function firstError(t: TemplateSummary): string {
@@ -59,6 +60,7 @@ export function TemplateList({
 export function TemplateMenu({ onCreated }: { onCreated: (res: TemplateCreateResponse) => void }) {
   const [open, setOpen] = useState(false);
   const [chosen, setChosen] = useState<TemplateSummary | null>(null);
+  const [makeWithAi, setMakeWithAi] = useState(false);
   return (
     <div className="relative">
       <Btn variant="ghost" size="sm" icon={<Lucide name="file-plus" size={13} />} onClick={() => setOpen((o) => !o)}>
@@ -73,8 +75,21 @@ export function TemplateMenu({ onCreated }: { onCreated: (res: TemplateCreateRes
               setChosen(t);
             }}
           />
+          <div className="mt-1 border-t border-hairline pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                setMakeWithAi(true);
+              }}
+              className="block w-full px-3 py-[6px] text-left text-12 text-ink-1 hover:bg-vellum"
+            >
+              make one with ai…
+            </button>
+          </div>
         </div>
       )}
+      {makeWithAi && <MakeTemplateDialog onClose={() => setMakeWithAi(false)} />}
       {chosen && (
         <TemplatePromptDialog
           key={chosen.id}

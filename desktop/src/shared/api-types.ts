@@ -1143,3 +1143,23 @@ export type OntologyActionBody =
   | { action: 'no' }
   | { action: 'investigate'; note?: string };
 export interface RegistryProject { id: string; context: string; name: string; archived: boolean }
+
+// ── AI-generated templates (C4) ───────────────────────────────────────────
+
+export interface TemplateGeneratePending {
+  status: 'pending';
+  id: string;
+  path: string;
+  name: string;
+  changeId: string | null;
+}
+
+export interface TemplateGenerateInvalid {
+  status: 'invalid';
+  message: string;
+  draft: string;
+  diagnostics: TemplateDiagnostic[];
+}
+
+/** POST /v1/templates/generate: saved for approval, or the draft that failed validation twice. */
+export type TemplateGenerateResponse = TemplateGeneratePending | TemplateGenerateInvalid;

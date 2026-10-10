@@ -108,3 +108,11 @@ describe('TemplatesPanel', () => {
     expect(onBack).toHaveBeenCalled();
   });
 });
+
+describe('TemplatesPanel: make one with ai', () => {
+  it('opens the AI dialog', async () => {
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'make one with ai' }));
+    expect(screen.getByRole('dialog', { name: 'make a template with ai' })).toBeInTheDocument();
+  });
+});
