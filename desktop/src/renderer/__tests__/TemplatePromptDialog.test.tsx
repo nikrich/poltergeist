@@ -295,7 +295,10 @@ describe('TemplatePromptDialog edge cases', () => {
         withQuery(<TemplatePromptDialog template={ONE_ON_ONE} mode="create" onClose={onClose} />),
       );
       await screen.findByRole('option', { name: 'personal' });
-      fireEvent.keyDown(screen.getByLabelText("Who's this 1-1 with?"), { key: 'Escape' });
+      // fireEvent returns false when the handler called preventDefault.
+      expect(
+        fireEvent.keyDown(screen.getByLabelText("Who's this 1-1 with?"), { key: 'Escape' }),
+      ).toBe(false);
       expect(onClose).toHaveBeenCalledTimes(1);
       expect(parentWindow).not.toHaveBeenCalled();
       expect(parentDocument).not.toHaveBeenCalled();
@@ -314,6 +317,8 @@ describe('TemplatePromptDialog edge cases', () => {
       );
       fireEvent.keyDown(screen.getByLabelText("Who's this 1-1 with?"), { key: 'a' });
       expect(parentWindow).toHaveBeenCalled();
+      // Let the contexts/projects queries settle inside the test (no late act() warnings).
+      await screen.findByRole('option', { name: 'personal' });
     } finally {
       window.removeEventListener('keydown', parentWindow);
     }
@@ -355,5 +360,27 @@ describe('TemplatePromptDialog edge cases', () => {
     fireEvent.click(screen.getByRole('button', { name: 'insert' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('nonsense: bad value');
     expect(screen.getByLabelText("Who's this 1-1 with?")).toHaveAttribute('aria-invalid', 'false');
+  });
+});
+
+describe('TemplatePromptDialog person default', () => {
+  it('shows a person prompt default in the input and submits it', async () => {
+    postMock.mockResolvedValue({ path: 'x.md', title: 'x', etag: null, status: 'applied' });
+    const withDefault: TemplateSummary = {
+      ...ONE_ON_ONE,
+      prompts: [{ ...ONE_ON_ONE.prompts[0]!, default: 'Alex' }, ONE_ON_ONE.prompts[1]!],
+    };
+    render(
+      withQuery(<TemplatePromptDialog template={withDefault} mode="create" onClose={() => {}} />),
+    );
+    await screen.findByRole('option', { name: 'personal' });
+    expect(screen.getByLabelText("Who's this 1-1 with?")).toHaveValue('Alex');
+    expect(screen.getByRole('button', { name: 'create' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'create' }));
+    await waitFor(() =>
+      expect(postMock).toHaveBeenCalledWith('/v1/templates/one-on-one/create', {
+        answers: { person: 'Alex', context: 'work' },
+      }),
+    );
   });
 });

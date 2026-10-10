@@ -92,13 +92,15 @@ function initialValue(f: TemplatePrompt): string {
 
 interface PersonFieldProps {
   inputId: string;
+  /** Starting text, e.g. the prompt's default, so the input shows what will be submitted. */
+  initial: string;
   invalid: boolean;
   onChange: (value: string) => void;
   suggest: (query: string) => Promise<SuggestResult>;
 }
 
-function PersonField({ inputId, invalid, onChange, suggest }: PersonFieldProps) {
-  const [text, setText] = useState('');
+function PersonField({ inputId, initial, invalid, onChange, suggest }: PersonFieldProps) {
+  const [text, setText] = useState(initial);
   const [items, setItems] = useState<SuggestItem[]>([]);
   const latest = useRef('');
 
@@ -254,6 +256,7 @@ export function TemplatePromptDialog({ template, mode, onClose, onCreated, onIns
         return (
           <PersonField
             inputId={inputId}
+            initial={values[f.id] ?? ''}
             invalid={invalid}
             onChange={(v) => set(f.id, v)}
             suggest={(q) => peopleFetcher('person', q)}
