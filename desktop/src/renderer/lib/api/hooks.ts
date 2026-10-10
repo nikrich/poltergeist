@@ -51,6 +51,7 @@ import type {
   UpdateRecorderSettings,
   VaultGraph,
   VaultContexts,
+  WhatsAppChat,
   VaultStats,
   McpServersResponse,
   McpServerWrite,
@@ -631,6 +632,7 @@ export function useRouteJot() {
       qc.invalidateQueries({ queryKey: JOTS_KEY });
       // Routing moves the file — the open detail view's path is now stale.
       qc.invalidateQueries({ queryKey: ['note-by-path'] });
+      qc.invalidateQueries({ queryKey: ['vault', 'backlinks'] });
     },
   });
 }
@@ -643,6 +645,7 @@ export function useAutoRouteJot() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: JOTS_KEY });
       qc.invalidateQueries({ queryKey: ['note-by-path'] });
+      qc.invalidateQueries({ queryKey: ['vault', 'backlinks'] });
     },
   });
 }
@@ -655,6 +658,7 @@ export function useExtractPhoto() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: JOTS_KEY });
       qc.invalidateQueries({ queryKey: ['note-by-path'] });
+      qc.invalidateQueries({ queryKey: ['vault', 'backlinks'] });
     },
   });
 }
@@ -663,7 +667,11 @@ export function useDeleteJot() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => del(`/v1/notes/${encodeURIComponent(id)}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: JOTS_KEY }),
+    onSuccess: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: JOTS_KEY }),
+        qc.invalidateQueries({ queryKey: ['vault', 'backlinks'] }),
+      ]),
   });
 }
 
@@ -933,6 +941,29 @@ export function useRecheckLlmProviders() {
   return useMutation({
     mutationFn: () => get<LlmProvidersResponse>('/v1/llm/providers?refresh=1'),
     onSuccess: (data) => qc.setQueryData(['llm', 'providers'], data),
+  });
+}
+
+export function useWhatsAppChats(enabled = true) {
+  return useQuery({
+    queryKey: ['whatsapp', 'chats'],
+    queryFn: () => get<WhatsAppChat[]>('/v1/connectors/whatsapp/chats'),
+    enabled,
+    retry: false,
+    staleTime: 60_000,
+  });
+}
+
+export function useSaveWhatsAppChats() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (chats: Record<string, { allowed: boolean; context: string | null }>) =>
+      put<WhatsAppChat[]>('/v1/connectors/whatsapp/chats', { chats }),
+    onSuccess: (data) => {
+      qc.setQueryData(['whatsapp', 'chats'], data);
+      qc.invalidateQueries({ queryKey: ['connectors'] });
+      qc.invalidateQueries({ queryKey: ['connector', 'whatsapp'] });
+    },
   });
 }
 

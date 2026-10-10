@@ -7,7 +7,7 @@ describe('connector catalog', () => {
   it('covers the nine connect cards', () => {
     const ids = CONNECTOR_CARDS.map((c) => c.id);
     expect(ids).toEqual(expect.arrayContaining([
-      'gmail', 'calendar', 'slack', 'github', 'jira', 'confluence', 'joplin', 'macos_calendar', 'claude_code',
+      'gmail', 'calendar', 'slack', 'github', 'jira', 'confluence', 'joplin', 'macos_calendar', 'whatsapp', 'claude_code',
     ]));
   });
   it('every card has a known pattern', () => {

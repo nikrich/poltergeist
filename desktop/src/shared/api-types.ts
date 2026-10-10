@@ -294,6 +294,8 @@ export interface RecorderSettings {
   transcription_model: string | null;
   /** Read-only: false for English-only `.en` models. */
   multilingual_model: boolean;
+  /** Read-only: `env` when GHOSTBRAIN_WHISPER_MODEL pins the model. */
+  transcription_model_source: 'env' | 'default';
 }
 
 export type TranscriptionLanguage = 'auto' | 'en' | 'af';
@@ -717,6 +719,16 @@ export interface LlmProviderDiagnostics {
 export interface LlmProvidersResponse {
   active: SidecarProviderId;
   providers: Record<SidecarProviderId, LlmProviderDiagnostics>;
+}
+
+export interface WhatsAppChat {
+  jid: string;
+  name: string;
+  kind: 'direct' | 'group';
+  lastMessageAt: string | null;
+  messageCount: number;
+  allowed: boolean;
+  context: string | null;
 }
 
 // ── Docs library ─────────────────────────────────────────────────────────────

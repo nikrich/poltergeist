@@ -92,6 +92,12 @@ export const CONNECTOR_CARDS: ConnectorCard[] = [
     pattern: 'local_grant',
   },
   {
+    id: 'whatsapp',
+    displayName: 'WhatsApp',
+    blurb: "macOS only. Reads WhatsApp for Mac's local data, read-only, for the chats you pick — one note per chat per day, voice notes transcribed locally. Needs Full Disk Access.",
+    pattern: 'local_grant',
+  },
+  {
     id: 'claude_code',
     displayName: 'Claude Code',
     blurb: 'Captures finished Claude Code sessions via the SessionEnd hook. Routes the digest to a context based on the project path.',

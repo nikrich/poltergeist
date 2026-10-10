@@ -79,6 +79,44 @@ def test_whisper_model_missing_and_present(darwin, monkeypatch, tmp_path: Path):
     assert r.data["model"].endswith("ggml-large-v3-turbo-q5_0.bin")
 
 
+@pytest.mark.parametrize("platform", ["darwin", "win32"])
+def test_whisper_model_pinned_by_env_names_the_variable(monkeypatch, tmp_path: Path, platform):
+    from ghostbrain.recorder import transcribe
+
+    monkeypatch.setattr(cr, "_platform", lambda: platform)
+    # A multilingual model in the default dir must not mask the pin.
+    monkeypatch.setattr(transcribe, "DEFAULT_MODEL_DIR", tmp_path)
+    (tmp_path / "ggml-large-v3-turbo-q5_0.bin").write_bytes(b"x")
+    pinned = tmp_path / "ggml-base.en.bin"
+    pinned.write_bytes(b"x")
+    monkeypatch.setenv("GHOSTBRAIN_WHISPER_MODEL", str(pinned))
+
+    r = cr.check_whisper_model()
+    assert r.status == "warn"
+    assert r.data["model"].endswith("ggml-base.en.bin")
+    assert r.data["source"] == "env"
+    text = " ".join([r.summary, r.detail, r.fix.command, r.fix.note])
+    assert "GHOSTBRAIN_WHISPER_MODEL" in text
+    assert "~/.ghostbrain/.env" in text
+    assert "multilingual" in r.fix.command
+    assert "unset" in r.fix.command
+    assert r.fix.kind == "manual"
+    assert "fetch-model" not in text
+
+
+def test_whisper_model_pinned_to_a_missing_file_names_the_variable(darwin, monkeypatch, tmp_path: Path):
+    from ghostbrain.recorder import transcribe
+
+    monkeypatch.setattr(transcribe, "DEFAULT_MODEL_DIR", tmp_path)
+    monkeypatch.setenv("GHOSTBRAIN_WHISPER_MODEL", str(tmp_path / "gone.bin"))
+    r = cr.check_whisper_model()
+    assert r.status == "fail"
+    text = " ".join([r.summary, r.detail, r.fix.command, r.fix.note])
+    assert "GHOSTBRAIN_WHISPER_MODEL" in text
+    assert r.fix.kind == "manual"
+    assert "fetch-model" not in text
+
+
 def test_blackhole_and_audio_device(darwin, monkeypatch):
     monkeypatch.setattr(cr.shutil, "which", _which({"SwitchAudioSource"}))
     monkeypatch.setattr(audio_switcher, "list_outputs", lambda: ["MacBook Pro Speakers"])

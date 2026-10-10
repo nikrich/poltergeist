@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useGuardedSave, type SaveTarget } from '../lib/use-guarded-save';
 import { ConflictBanner } from './ConflictBanner';
 import { RichMarkdownEditor, type RichMarkdownEditorProps } from './RichMarkdownEditor';
+import { registerNavigationGuard, type NavigationScope } from '../stores/navigation';
 
 export interface GuardHandle {
   adopt: (etag: string | null, body: string) => void;
@@ -15,7 +16,11 @@ const DISCARD_PROMPT =
 /** Call before navigating away from a guarded editor: true when it is safe to
  * leave (no conflict, or the user agreed to discard their unsaved text). */
 export function confirmLeave(guardRef: React.MutableRefObject<GuardHandle | null>): boolean {
-  return !guardRef.current?.hasConflict() || window.confirm(DISCARD_PROMPT);
+  return confirmDiscard(guardRef.current);
+}
+
+function confirmDiscard(handle: GuardHandle | null): boolean {
+  return !handle?.hasConflict() || window.confirm(DISCARD_PROMPT);
 }
 
 export interface GuardedNoteEditorProps {
@@ -26,6 +31,9 @@ export interface GuardedNoteEditorProps {
   onSaveError?: (err: Error) => void;
   /** Lets the parent hand over an etag produced outside the editor (extract-photo). */
   guardRef?: React.MutableRefObject<GuardHandle | null>;
+  /** App navigation that would unmount this editor; guarded (same prompt)
+   * while the conflict banner is up. */
+  navigationScope?: NavigationScope;
   editorProps: Omit<RichMarkdownEditorProps, 'markdown' | 'onSave'>;
 }
 
@@ -38,6 +46,7 @@ export function GuardedNoteEditor({
   fetchLatest,
   onSaveError,
   guardRef,
+  navigationScope,
   editorProps,
 }: GuardedNoteEditorProps) {
   const [doc, setDoc] = useState({ body: initialBody, nonce: 0 });
@@ -61,6 +70,11 @@ export function GuardedNoteEditor({
       if (guardRef.current === handle) guardRef.current = null;
     };
   }, [guardRef, handle]);
+  const conflictPending = guard.conflict !== null;
+  useEffect(() => {
+    if (!navigationScope || !conflictPending) return;
+    return registerNavigationGuard(navigationScope, () => confirmDiscard(handle));
+  }, [navigationScope, conflictPending, handle]);
 
   const keepTheirs = () => {
     const c = guard.keepTheirs();

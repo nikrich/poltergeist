@@ -15,11 +15,14 @@ Exits non-zero (with the binary's stderr) on any failure.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
+import queue
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -64,9 +67,89 @@ def check_server_ready(binary: str, tmp: Path) -> None:
         proc.wait()
 
 
-def check_mcp_handshake(binary: str, tmp: Path) -> None:
-    requests = (
-        json.dumps(
+def _send(proc: subprocess.Popen[str], message: dict) -> None:
+    assert proc.stdin is not None
+    proc.stdin.write(json.dumps(message) + "\n")
+    proc.stdin.flush()
+
+
+def _drain(stream, sink) -> None:
+    """Pump a pipe from a thread: a portable stand-in for select() on pipes,
+    which Windows runners don't support."""
+    for line in stream:
+        sink(line)
+
+
+def check_mcp_handshake(binary: str, tmp: Path, timeout: float = 120) -> None:
+    # Strictly request/response: the mcp server cancels in-flight handlers as
+    # soon as stdin hits EOF, so closing stdin right after writing tools/list
+    # races the handler and intermittently drops its response (v1.11.0 Linux
+    # release flake: "missing tools: got []"). Only close stdin once every
+    # response we need has arrived.
+    proc = subprocess.Popen(
+        [binary, "mcp"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=_env(tmp),
+    )
+    lines: queue.Queue[str | None] = queue.Queue()
+    stderr: list[str] = []
+
+    def pump_stdout() -> None:
+        _drain(proc.stdout, lines.put)
+        lines.put(None)
+
+    readers = [
+        threading.Thread(target=pump_stdout, daemon=True),
+        threading.Thread(target=_drain, args=(proc.stderr, stderr.append), daemon=True),
+    ]
+    for reader in readers:
+        reader.start()
+    deadline = time.monotonic() + timeout
+
+    def stop(grace: float) -> None:
+        # Closing stdin is the server's shutdown signal; kill it if it lingers.
+        with contextlib.suppress(OSError):
+            proc.stdin.close()
+        try:
+            proc.wait(timeout=grace)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+        for reader in readers:
+            reader.join(timeout=5)
+        proc.stdout.close()
+        proc.stderr.close()
+
+    def fail(reason: str) -> SystemExit:
+        stop(grace=0)
+        return SystemExit(
+            f"{reason} (exit code={proc.returncode}). stderr:\n{''.join(stderr)[-2000:]}"
+        )
+
+    def response(req_id: int) -> dict | None:
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise fail(f"mcp handshake timed out after {timeout:.0f}s")
+            try:
+                raw = lines.get(timeout=remaining)
+            except queue.Empty:
+                continue
+            if raw is None:
+                return None  # stdout closed: the binary exited
+            try:
+                msg = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(msg, dict) and msg.get("id") == req_id:
+                return msg
+
+    try:
+        _send(
+            proc,
             {
                 "jsonrpc": "2.0",
                 "id": 1,
@@ -76,49 +159,23 @@ def check_mcp_handshake(binary: str, tmp: Path) -> None:
                     "capabilities": {},
                     "clientInfo": {"name": "smoke", "version": "0"},
                 },
-            }
+            },
         )
-        + "\n"
-        + json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"})
-        + "\n"
-        + json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
-        + "\n"
-    )
-    proc = subprocess.Popen(
-        [binary, "mcp"],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        env=_env(tmp),
-    )
-    try:
-        out, err = proc.communicate(input=requests, timeout=120)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        out, err = proc.communicate()
-        raise SystemExit(f"mcp handshake timed out. stderr:\n{err[-2000:]}")
+        init = response(1)
+        if not init or "result" not in init:
+            raise fail(f"mcp initialize got no result: {init}")
+        _send(proc, {"jsonrpc": "2.0", "method": "notifications/initialized"})
+        _send(proc, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+        listed = response(2)
+    except OSError as exc:  # broken pipe: the binary died mid-handshake
+        raise fail(f"mcp handshake write failed: {exc}") from None
 
-    tools: list[str] = []
-    initialized = False
-    for raw in out.splitlines():
-        raw = raw.strip()
-        if not raw:
-            continue
-        try:
-            msg = json.loads(raw)
-        except json.JSONDecodeError:
-            continue
-        if msg.get("id") == 1 and "result" in msg:
-            initialized = True
-        if msg.get("id") == 2 and "result" in msg:
-            tools = [t["name"] for t in msg["result"].get("tools", [])]
-
-    if not initialized:
-        raise SystemExit(f"mcp initialize got no result. stderr:\n{err[-2000:]}")
+    tools = [t["name"] for t in ((listed or {}).get("result") or {}).get("tools", [])]
     expected = {"poltergeist_ask", "poltergeist_search", "poltergeist_get_note"}
     if not expected.issubset(tools):
-        raise SystemExit(f"mcp tools/list missing tools: got {tools}")
+        raise fail(f"mcp tools/list missing tools: got {tools} (response: {listed})")
+
+    stop(grace=10)
     print(f"mcp subcommand: initialize + tools/list ({len(tools)} tools) … OK")
 
 

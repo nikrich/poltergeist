@@ -514,7 +514,9 @@ export function MeetingSettings() {
             sub={
               recorder.multilingual_model
                 ? 'auto detects every few seconds of speech · handles meetings that mix English and Afrikaans'
-                : 'the installed model only knows English · run `poltergeist setup fetch-model` for Afrikaans'
+                : recorder.transcription_model_source === 'env'
+                  ? 'the model is pinned by GHOSTBRAIN_WHISPER_MODEL · for Afrikaans, unset it (environment or ~/.ghostbrain/.env) or point it at a multilingual model, then restart the app'
+                  : 'the installed model only knows English · run `poltergeist setup fetch-model` for Afrikaans'
             }
             control={
               <select

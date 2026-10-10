@@ -86,6 +86,12 @@ _DISPLAY: dict[str, dict] = {
         "pulls": ["transcripts"],
         "vaultDestination": "20-contexts/{ctx}/teams_meetings/",
     },
+    "whatsapp": {
+        "displayName": "WhatsApp",
+        "scopes": ["read WhatsApp for Mac's local data"],
+        "pulls": ["chats you select", "voice-note transcripts"],
+        "vaultDestination": "20-contexts/{ctx}/whatsapp/",
+    },
 }
 
 # Connector id → state-file key. Most connectors use their id; one exception:

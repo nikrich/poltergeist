@@ -333,6 +333,7 @@ export function JotsScreen() {
                   }
                   onSaveError={(err) => toast.error(`save failed: ${err.message}`)}
                   guardRef={guardRef}
+                  navigationScope="screen"
                   editorProps={{
                     onWikilinkClick: (target) => openNote(notePathFromTarget(target)),
                     handleRef: editorHandle,

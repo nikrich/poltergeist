@@ -67,6 +67,9 @@ class RecorderSettings(BaseModel):
     # whether it can do anything but English.
     transcription_model: str | None = None
     multilingual_model: bool = False
+    # Read-only: "env" when GHOSTBRAIN_WHISPER_MODEL pins the model, so
+    # `setup fetch-model` can't change it.
+    transcription_model_source: Literal["env", "default"] = "default"
 
 
 class UpdateRecorderSettings(BaseModel):

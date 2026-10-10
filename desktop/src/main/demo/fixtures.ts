@@ -273,6 +273,7 @@ const RECORDER_SETTINGS: RecorderSettings = {
   live_transcription: true,
   transcription_model: 'ggml-large-v3-turbo-q5_0.bin',
   multilingual_model: true,
+  transcription_model_source: 'default',
 };
 
 const RECORDER_STATUS: RecorderStatus = {
