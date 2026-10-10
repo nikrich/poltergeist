@@ -103,11 +103,7 @@ def test_enqueue_dedupes_in_flight(lib_vault: Path, calls, monkeypatch):
     monkeypatch.setattr(ops.attachment_extract, "extract_text", lambda *a: "text")
     submitted = []
 
-    class FakeExecutor:
-        def submit(self, fn, *args):
-            submitted.append(args)
-
-    monkeypatch.setattr(ai_summary, "_executor", FakeExecutor())
+    monkeypatch.setattr(ai_summary, "_submit", lambda doc_id: submitted.append(doc_id))
     monkeypatch.setattr(ai_summary, "enqueue", REAL_ENQUEUE)
     s = ops.upload("work", None, "", "b.pdf", "", b"%PDF-b")  # upload enqueues once
     try:
@@ -116,4 +112,66 @@ def test_enqueue_dedupes_in_flight(lib_vault: Path, calls, monkeypatch):
         assert ai_summary.is_summarising(s["doc_id"])
         assert index.summary(index.get(s["doc_id"]))["summary_state"] == "pending"
     finally:
-        ai_summary._inflight.discard(s["doc_id"])  # the fake executor never runs the job
+        ai_summary._inflight.discard(s["doc_id"])  # the fake _submit never runs the job
+
+
+def test_delete_during_llm_does_not_resurrect_note(lib_vault: Path, calls, monkeypatch):
+    s = _upload()
+    monkeypatch.setattr(ops, "send2trash", lambda p: Path(p).unlink())
+
+    def run_and_delete(prompt, **kw):
+        ops.delete(s["doc_id"])
+        return _Result("Late summary.")
+
+    monkeypatch.setattr(ai_summary.llm_client, "run", run_and_delete)
+    assert ai_summary.run_now(s["doc_id"]) is False
+    assert not (lib_vault / s["note_path"]).exists()
+
+
+def test_body_changed_during_llm_skips_write(lib_vault: Path, calls, monkeypatch):
+    s = _upload()
+
+    def run_and_rewrite(prompt, **kw):
+        front, _ = notes.read_note(lib_vault / s["note_path"])
+        notes.write_atomic(lib_vault / s["note_path"], notes.render(front, "completely different"))
+        return _Result("Stale summary.")
+
+    monkeypatch.setattr(ai_summary.llm_client, "run", run_and_rewrite)
+    assert ai_summary.run_now(s["doc_id"]) is False
+    assert "summary" not in notes.read_note(lib_vault / s["note_path"])[0]
+
+
+def test_status_changed_during_llm_skips_write(lib_vault: Path, calls, monkeypatch):
+    s = _upload()
+
+    def run_and_fail_status(prompt, **kw):
+        front, body = notes.read_note(lib_vault / s["note_path"])
+        notes.write_atomic(lib_vault / s["note_path"], notes.render({**front, "index_status": "failed"}, body))
+        return _Result("Stale summary.")
+
+    monkeypatch.setattr(ai_summary.llm_client, "run", run_and_fail_status)
+    assert ai_summary.run_now(s["doc_id"]) is False
+
+
+def test_worker_thread_is_daemon(lib_vault: Path, calls):
+    ai_summary._submit("ffffffffffff")  # unknown doc: the job no-ops
+    assert ai_summary._worker is not None and ai_summary._worker.daemon
+
+
+def test_enqueue_submit_failure_does_not_leak_inflight(lib_vault: Path, calls, monkeypatch):
+    s = _upload()
+
+    def boom(doc_id):
+        raise RuntimeError("queue broken")
+
+    monkeypatch.setattr(ai_summary, "_submit", boom)
+    assert REAL_ENQUEUE(s["doc_id"]) is False
+    assert not ai_summary.is_summarising(s["doc_id"])
+
+
+def test_summary_is_capped_at_word_boundary(lib_vault: Path, calls, monkeypatch):
+    s = _upload()
+    monkeypatch.setattr(ai_summary.llm_client, "run", lambda *a, **k: _Result("word " * 400))
+    assert ai_summary.run_now(s["doc_id"]) is True
+    got = notes.read_note(lib_vault / s["note_path"])[0]["summary"]
+    assert len(got) <= ai_summary.MAX_SUMMARY_CHARS + 1 and got.endswith("word…")

@@ -8,8 +8,8 @@ note's frontmatter as ``summary:``. Failures are logged and leave no summary;
 from __future__ import annotations
 
 import logging
+import queue
 import threading
-from concurrent.futures import ThreadPoolExecutor
 
 from ghostbrain.api.repo.doc_library import index, notes
 from ghostbrain.api.repo.doc_library.errors import LibraryError
@@ -28,9 +28,34 @@ SYSTEM_PROMPT = (
     "No preamble, no markdown, no speculation."
 )
 
-_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="doc-summary")
+MAX_SUMMARY_CHARS = 800
+
 _lock = threading.Lock()
 _inflight: set[str] = set()
+_queue: "queue.Queue[str]" = queue.Queue()
+_worker: threading.Thread | None = None
+
+
+def _worker_loop() -> None:
+    while True:
+        _run_queued(_queue.get())
+
+
+def _submit(doc_id: str) -> None:
+    """Put a job on the queue, lazily starting the single daemon worker."""
+    global _worker
+    with _lock:
+        if _worker is None or not _worker.is_alive():
+            _worker = threading.Thread(target=_worker_loop, name="doc-summary", daemon=True)
+            _worker.start()
+    _queue.put(doc_id)
+
+
+def _cap(text: str) -> str:
+    if len(text) <= MAX_SUMMARY_CHARS:
+        return text
+    cut = text[:MAX_SUMMARY_CHARS].rsplit(" ", 1)[0].rstrip(" ,;:.")
+    return (cut or text[:MAX_SUMMARY_CHARS]) + "…"
 
 
 def is_summarising(doc_id: str) -> bool:
@@ -68,12 +93,19 @@ def _generate(doc_id: str) -> bool:
     except Exception as exc:  # noqa: BLE001 — a summary is best-effort
         log.warning("summary failed for %s: %s", doc_id, exc)
         return False
-    text = " ".join((result.text or "").split())
+    text = _cap(" ".join((result.text or "").split()))
     if not text:
         return False
+    index.invalidate()  # the cache may predate a move/delete/reindex during the LLM call
     try:
-        current = index.get(doc_id)  # re-read: the doc may have moved or changed meanwhile
+        current = index.get(doc_id)
     except LibraryError:
+        return False
+    if not current.note.exists():  # deleted meanwhile: never resurrect the note
+        return False
+    if not should_summarise(current.front, current.body):
+        return False
+    if current.body[:MAX_INPUT_CHARS] != e.body[:MAX_INPUT_CHARS]:  # content changed under us
         return False
     notes.write_atomic(current.note, notes.render({**current.front, "summary": text}, current.body))
     index.invalidate()
@@ -118,5 +150,11 @@ def enqueue(doc_id: str) -> bool:
         if doc_id in _inflight:
             return False
         _inflight.add(doc_id)
-    _executor.submit(_run_queued, doc_id)
+    try:
+        _submit(doc_id)
+    except Exception:  # noqa: BLE001
+        log.exception("could not queue summary for %s", doc_id)
+        with _lock:
+            _inflight.discard(doc_id)
+        return False
     return True
