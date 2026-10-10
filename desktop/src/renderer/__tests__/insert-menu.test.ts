@@ -30,14 +30,16 @@ describe('insertEntries', () => {
     expect(keys).not.toContain('image');
   });
 
-  it('adds Ask AI last only when an assist handler exists', () => {
-    expect(insertEntries({ canPickImage: true, canAssist: true }).at(-1)).toEqual({ key: 'assist', label: 'Ask AI', icon: 'sparkles', kind: 'assist' });
+  it('leads with Ask AI (visible without scrolling) only when an assist handler exists', () => {
+    const entries = insertEntries({ canPickImage: true, canAssist: true });
+    expect(entries[0]).toEqual({ key: 'assist', label: 'Ask AI', icon: 'sparkles', kind: 'assist' });
+    expect(entries.filter((e) => e.kind === 'assist')).toHaveLength(1);
     expect(insertEntries({ canPickImage: true, canAssist: false }).map((e) => e.key)).not.toContain('assist');
   });
 
   it('inside a table cell, drops the block-only rows the slash menu also hides', () => {
     const keys = insertEntries({ canPickImage: true, canAssist: true, inTable: true }).map((e) => e.key);
-    expect(keys).toEqual(['status', 'image', 'photo', 'code', 'quote', 'assist']);
+    expect(keys).toEqual(['assist', 'status', 'image', 'photo', 'code', 'quote']);
   });
 });
 

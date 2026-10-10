@@ -221,6 +221,11 @@ describe('EditorToolbar (A7)', () => {
     openInsert();
     const rows = screen.getAllByRole('menuitem', { name: /Ask AI/ });
     expect(rows).toHaveLength(1);
+    // First row, so the 60vh-capped menu shows it without scrolling, then its own rule.
+    expect(screen.getAllByRole('menuitem')[0]).toBe(rows[0]);
+    const menu = screen.getByRole('menu');
+    const order = Array.from(menu.querySelectorAll('[role="menuitem"], [role="separator"]')).map((el) => el.getAttribute('role'));
+    expect(order.slice(0, 3)).toEqual(['menuitem', 'separator', 'menuitem']);
     expect(rows[0]).toHaveTextContent(shortcutLabel('inlineAi'));
     fireEvent.click(rows[0]!);
     expect(onAssist).toHaveBeenCalledOnce();

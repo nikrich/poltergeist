@@ -55,10 +55,13 @@ export function insertEntries({
   const have = new Set(slashItems.filter((i) => !(inTable && i.blockOnly)).map((i) => i.key));
   const slash = (rows: Row[]): InsertEntry[] =>
     rows.filter((r) => have.has(r.key)).map((r): InsertEntry => ({ ...r, kind: 'slash' }));
-  const out: InsertEntry[] = [...slash(BLOCKS)];
+  // Ask AI leads: it is the editor's one inline-AI entry, and the menu is
+  // height-capped, so a last row would sit below the fold.
+  const out: InsertEntry[] = [];
+  if (canAssist) out.push({ key: 'assist', label: 'Ask AI', icon: 'sparkles', kind: 'assist' });
+  out.push(...slash(BLOCKS));
   if (canPickImage) out.push({ key: 'image', label: 'Image', icon: 'image', kind: 'image' });
   out.push(...slash(AFTER_IMAGE));
-  if (canAssist) out.push({ key: 'assist', label: 'Ask AI', icon: 'sparkles', kind: 'assist' });
   return out;
 }
 

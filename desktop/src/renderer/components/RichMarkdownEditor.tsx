@@ -47,10 +47,10 @@ export interface EditorHandle {
   getMarkdown: () => string;
   /** Open inline AI on the current selection and run `action` at once (the
    * docs panel hands selection-level actions here); with no action it opens
-   * the empty popover, like ⌘J / ✦ (true without restarting when already
+   * the empty popover, like ⌘J or the Insert menu's Ask AI (true without restarting when already
    * open). False when inline AI is unavailable: source mode, read-only, no
    * target, or a cell selection (refused silently; the caller decides).
-   * This is the entry point other UI (e.g. an Insert-menu "Ask AI") calls. */
+   * This is the entry point the Insert menu's Ask AI row calls. */
   startInlineAssist?: (action?: InlineAction) => boolean;
 }
 
@@ -96,11 +96,12 @@ export interface RichMarkdownEditorProps {
   openCameraSignal?: number;
   /** Focus mode (A4): hide the formatting toolbar and centre the page. */
   focus?: boolean;
-  /** Enables inline AI (⌘J / ✦, spec A5): the note the assist reads, and a
-   * hook called right before an accepted suggestion is saved (the caller
-   * marks that save as the assistant's — B2 attributeNext). Other entry
-   * points (e.g. an Insert-menu "Ask AI") go through
-   * `EditorHandle.startInlineAssist`; they work only while this is set. */
+  /** Enables inline AI (⌘J / the Insert menu's Ask AI, spec A5): the note
+   * the assist reads, and a hook called right before an accepted suggestion
+   * is saved (the caller marks that save as the assistant's — B2
+   * attributeNext). Entry points outside the editor (the Insert menu's Ask
+   * AI) go through `EditorHandle.startInlineAssist`; they work only while
+   * this is set. */
   inlineAssist?: { target: InlineAssistTarget; onAccept?: () => void };
   /** A7: page header (breadcrumb, title, byline) shown above the document
    * inside the page canvas. GuardedNoteEditor supplies it in page mode. */
@@ -371,7 +372,7 @@ export function RichMarkdownEditor({
   function openInline(initial?: InlineAction): boolean {
     if (!editor || editor.isDestroyed || mode !== 'rich' || readOnly || !inlineAssist) return false;
     if (editor.state.selection instanceof CellSelection) {
-      // Only ⌘J / ✦ explain themselves; a hand-off caller gets a silent false.
+      // Only ⌘J / the Insert menu's Ask AI explain themselves; a hand-off caller gets a silent false.
       if (!initial) toast.error('select text inside one table cell for inline ai');
       return false;
     }
