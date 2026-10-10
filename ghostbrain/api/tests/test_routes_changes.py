@@ -96,6 +96,13 @@ def test_a_collected_version_is_410(tmp_vault, client, auth_headers):
     assert r.status_code == 410
 
 
+def test_dismiss_degraded_is_user_only(client, auth_headers):
+    changes.mark_degraded("insert failed")
+    r = client.delete("/v1/changes/degraded", headers={**auth_headers, **FAM})
+    assert r.status_code == 403
+    assert client.get("/v1/changes", headers=auth_headers).json()["degraded"] is True
+
+
 def test_degraded_flag_and_dismiss(client, auth_headers):
     changes.mark_degraded("insert failed")
     assert client.get("/v1/changes", headers=auth_headers).json()["degraded"] is True

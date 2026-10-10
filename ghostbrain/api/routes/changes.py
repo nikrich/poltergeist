@@ -59,7 +59,9 @@ def list_route(
 
 
 @router.delete("/degraded", status_code=204)
-def dismiss_degraded() -> Response:
+def dismiss_degraded(actor: Actor = Depends(request_actor)) -> Response:
+    if actor != USER:
+        raise HTTPException(status_code=403, detail="only you can dismiss this warning")
     changes_log.clear_degraded()
     return Response(status_code=204)
 
