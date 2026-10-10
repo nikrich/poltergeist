@@ -99,6 +99,9 @@ def test_move_jot_without_project_golden(tmp_vault):
 
 
 def test_move_jot_with_project_appends_key_and_keeps_other_lines(tmp_vault):
+    from ghostbrain.api.repo import projects
+
+    projects.create_project("work", "Alpha")
     rec = write_inbox_jot("project jot", captured_at=WHEN)
     res = move_jot(rec["id"], to_context="work", to_project="alpha", confidence=1.0,
                    method="user", reasoning="manual re-route by user")
