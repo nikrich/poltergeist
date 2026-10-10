@@ -7,6 +7,7 @@ const { runVaultQuery, setNoteStatus } = vi.hoisted(() => ({ runVaultQuery: vi.f
 vi.mock('../lib/editor/query-api', () => ({ runVaultQuery, setNoteStatus }));
 
 import { ApiError } from '../lib/api/client';
+import { QUERY_EDIT_DEBOUNCE_MS } from '../lib/editor/query-view';
 import { makeEditor, markdownOf } from './helpers/editor';
 
 const SRC = '```query\ntype: action_item\n```';
@@ -143,6 +144,33 @@ describe('query block actions', () => {
     resolve(ok([], { diagnostics: [{ line: 1, col: 1, severity: 'error', message: 'bad', code: 'bad-value' }] }));
     await flush();
     expect(freezeItem(editor).disabled).toBe(true);
+    editor.destroy();
+  });
+
+  it('freeze waits for results of the edited query', async () => {
+    const editor = makeEditor(`${SRC}\n\nafter`);
+    await flush();
+    expect(freezeItem(editor).disabled).toBe(false);
+    let resolve: (v: VaultQueryResponse) => void = () => {};
+    runVaultQuery.mockImplementationOnce(() => new Promise((r) => { resolve = r; }));
+    act(() => {
+      const end = editor.state.doc.content.size - 1 - 'after'.length - 2; // end of the code text
+      editor.view.dispatch(editor.state.tr.insertText('\nlimit: 1', end));
+    });
+    const item = freezeItem(editor);
+    expect(item.disabled).toBe(true);
+    item.disabled = false; // force the click through: freeze() must refuse on its own
+    fireEvent.click(item);
+    expect(editor.view.dom.querySelector('.gb-query')).not.toBeNull();
+    await flush(QUERY_EDIT_DEBOUNCE_MS);
+    expect(runVaultQuery).toHaveBeenLastCalledWith('type: action_item\nlimit: 1');
+    expect(freezeItem(editor).disabled).toBe(true); // refreshed results still in flight
+    resolve(ok([OPEN]));
+    await flush();
+    const ready = freezeItem(editor);
+    expect(ready.disabled).toBe(false);
+    fireEvent.click(ready);
+    expect(markdownOf(editor)).toBe('- [ ] [[20-contexts/work/a|Send Alex the budget]]\n\nafter');
     editor.destroy();
   });
 

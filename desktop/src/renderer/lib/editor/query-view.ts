@@ -14,7 +14,7 @@ export const QUERY_INDEX_RETRIES = 5;
 
 type Phase =
   | { kind: 'loading' }
-  | { kind: 'ready'; data: VaultQueryResponse }
+  | { kind: 'ready'; data: VaultQueryResponse; source: string }
   | { kind: 'unavailable' };
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -94,10 +94,14 @@ export function createQueryView(initial: PMNode, editor: Editor, getPos: unknown
     return editor.isEditable;
   }
 
+  // Results must be for the text on screen: not while an edit's refresh is
+  // still debouncing or in flight.
   function canFreeze(): boolean {
     return (
       canWrite() &&
+      editTimer === null &&
       phase.kind === 'ready' &&
+      phase.source === node.textContent &&
       !phase.data.diagnostics.some((d) => d.severity === 'error')
     );
   }
@@ -179,8 +183,9 @@ export function createQueryView(initial: PMNode, editor: Editor, getPos: unknown
     const mine = ++seq;
     let next: Phase;
     let retry = false;
+    const source = node.textContent;
     try {
-      const data: unknown = await runVaultQuery(node.textContent);
+      const data: unknown = await runVaultQuery(source);
       if (!isResponse(data)) {
         next = { kind: 'unavailable' };
       } else if (data.indexing) {
@@ -188,7 +193,7 @@ export function createQueryView(initial: PMNode, editor: Editor, getPos: unknown
         retry = indexRetries < QUERY_INDEX_RETRIES;
       } else {
         indexRetries = 0;
-        next = { kind: 'ready', data };
+        next = { kind: 'ready', data, source };
       }
     } catch {
       next = { kind: 'unavailable' };
@@ -285,6 +290,7 @@ export function createQueryView(initial: PMNode, editor: Editor, getPos: unknown
           editTimer = null;
           void refresh();
         }, QUERY_EDIT_DEBOUNCE_MS);
+        paintChrome(); // freeze is off until the edited query's results load
       }
       return true;
     },
