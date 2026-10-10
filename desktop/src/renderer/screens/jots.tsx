@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { TopBar } from '../components/TopBar';
+import { TemplatesPanel } from './templates';
 import { Btn } from '../components/Btn';
 import { ConfluenceExportDialog } from '../components/ConfluenceExportDialog';
 import { Lucide } from '../components/Lucide';
@@ -36,6 +37,7 @@ import { useGraphView } from '../stores/graph-view';
 import { useDocsAssist } from '../stores/docs-assist';
 
 export function JotsScreen() {
+  const [tab, setTab] = useState<'jots' | 'templates'>('jots');
   const knownContexts = useContexts().data?.contexts ?? [];
   const [q, setQ] = useState('');
   const openNote = useNoteView((s) => s.open);
@@ -264,6 +266,8 @@ export function JotsScreen() {
     }
   }
 
+  if (tab === 'templates') return <TemplatesPanel onBack={() => setTab('jots')} />;
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden bg-paper">
       {focusActive ? (
@@ -274,6 +278,16 @@ export function JotsScreen() {
           subtitle={list.data ? `${list.data.total} total` : '…'}
           right={
             <div className="flex gap-2">
+              <Btn
+                variant="ghost"
+                size="sm"
+                icon={<Lucide name="layout-template" size={13} />}
+                onClick={() => {
+                  if (confirmLeave(guardRef)) setTab('templates');
+                }}
+              >
+                templates
+              </Btn>
               {selectedItem && (
                 <NoteHistoryButton key={selectedItem.path} path={selectedItem.path} guardRef={guardRef} />
               )}

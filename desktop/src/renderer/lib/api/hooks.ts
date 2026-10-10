@@ -1,4 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { rememberAnswers } from '../templates/last-answers';
 
 import type {
   DocDetail,
@@ -1201,11 +1202,13 @@ export function useCreateFromTemplate() {
   return useMutation({
     mutationFn: ({ id, answers }: TemplateAnswersVars) =>
       post<TemplateCreateResponse>(`/v1/templates/${encodeURIComponent(id)}/create`, { answers }),
-    onSuccess: () =>
-      Promise.all([
+    onSuccess: (_res, { id, answers }) => {
+      rememberAnswers(id, answers);
+      return Promise.all([
         qc.invalidateQueries({ queryKey: JOTS_KEY }),
         qc.invalidateQueries({ queryKey: ['vault', 'backlinks'] }),
-      ]),
+      ]);
+    },
   });
 }
 
