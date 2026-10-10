@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from ghostbrain.changes import log as changes
 from ghostbrain.history import store
-from ghostbrain.vault_write import compute_etag
+from ghostbrain.vault_write import compute_etag, worker_actor, write
 
 FAM = {"X-Poltergeist-Actor": "plugin:familiar"}
 TEMPLATE = "90-meta/templates/standup.md"
@@ -81,3 +81,17 @@ def test_unknown_and_collected(tmp_vault, client, auth_headers):
     cid = _propose(client, auth_headers)
     store._blob_path(changes.get(cid).pending_bytes_blob).unlink()
     assert client.post(f"/v1/changes/{cid}/approve", json={}, headers=auth_headers).status_code == 410
+
+
+def test_a_forced_worker_edit_of_a_note_now_gone_is_400(tmp_vault, client, auth_headers):
+    (tmp_vault / TEMPLATE).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_vault / TEMPLATE).write_text(BODY)
+    # worker:* never comes over HTTP; a background job proposes in-process.
+    res = write(TEMPLATE, body="- today\n", actor=worker_actor("reversal"))
+    assert res.status == "pending"
+    cid = int(res.change_id)
+    (tmp_vault / TEMPLATE).unlink()
+    f = client.post(f"/v1/changes/{cid}/approve", json={"force": True}, headers=auth_headers)
+    assert f.status_code == 400 and "no longer exists" in f.json()["detail"]
+    assert not (tmp_vault / TEMPLATE).exists()
+    assert changes.get(cid).status == "pending"

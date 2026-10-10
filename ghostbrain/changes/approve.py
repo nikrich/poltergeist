@@ -79,6 +79,10 @@ def _write_approved(c: Change, flip: Flip, target: bytes | None, current: bytes 
     except UnicodeDecodeError:
         raise NotApprovable("the proposed version is not UTF-8 text") from None
     if current is None:
+        # A forced worker edit/move of a vanished note would be a worker
+        # create, which the log never records: nothing to approve into.
+        if not vault_write.records_change(c.actor, "create"):
+            raise NotApprovable("the note no longer exists; reject this change")
         return vault_write.write(
             flip.to, content=text, op="create", actor=c.actor, reason=reason,
             verbatim=True, approved_change=c.id,

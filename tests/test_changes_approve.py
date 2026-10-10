@@ -16,6 +16,7 @@ from ghostbrain.vault_write import (
     compute_etag,
     plugin_actor,
     set_hold_policy,
+    worker_actor,
     write,
 )
 
@@ -133,6 +134,16 @@ def test_a_forced_delete_of_a_note_already_gone_just_closes_it(vault):
     with pytest.raises(ap.StaleProposal):
         ap.approve(int(gone.change_id))
     assert ap.approve(int(gone.change_id), force=True).change.status == "applied"
+
+
+def test_a_forced_worker_edit_of_a_note_now_gone_is_not_approvable(vault):
+    res = write(REL, body="worker draft", actor=worker_actor("reversal"))
+    cid = int(res.change_id)
+    (vault / REL).unlink()
+    with pytest.raises(ap.NotApprovable, match="no longer exists"):
+        ap.approve(cid, force=True)
+    assert not (vault / REL).exists()
+    assert changes.get(cid).status == "pending"
 
 
 def test_a_proposal_already_on_disk_is_marked_applied(vault):
