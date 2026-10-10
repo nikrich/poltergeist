@@ -62,7 +62,8 @@ describe('contentTypeFor', () => {
   });
 });
 
-describe('resolveServedFile (symlink guard)', () => {
+// Creating symlinks needs extra privileges on Windows.
+describe.skipIf(process.platform === 'win32')('resolveServedFile (symlink guard)', () => {
   let tmp: string;
   let root: string;
 
