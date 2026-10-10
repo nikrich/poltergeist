@@ -555,7 +555,6 @@ export function RichMarkdownEditor({
       {mode === 'rich' && editor && !focus && !readOnly && (
         <EditorToolbar
           editor={editor}
-          onPhoto={() => setCamOpen(true)}
           onAssist={inlineAssist ? () => void openInline() : undefined}
         />
       )}
