@@ -131,6 +131,17 @@ def test_prune_skips_gc_when_a_ref_source_fails():
     assert store.has_blob(orphan)
 
 
+def test_prune_skips_gc_when_a_ref_source_returns_a_bare_string():
+    """A bare str would be iterated as characters, leaving the real id
+    unreferenced; it counts as a failing source."""
+    orphan = store.put_blob(b"named by a str\n")
+    _age_file(store._blob_path(orphan), days=2)
+    history.register_ref_source("changes", lambda: orphan)
+    res = store.prune(now=NOW)
+    assert res.gc_skipped is True and res.blobs_deleted == 0
+    assert store.has_blob(orphan)
+
+
 def test_prune_drops_logs_with_no_readable_entries():
     log_file = store._log_path("a.md")
     log_file.parent.mkdir(parents=True)

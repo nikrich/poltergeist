@@ -315,7 +315,12 @@ class PruneResult:
 
 def register_ref_source(name: str, source: Callable[[], Iterable[str]]) -> None:
     """Blob ids referenced outside the note logs (spec B's changes.db). GC
-    keeps every id a source yields; a source that raises skips GC."""
+    keeps every id a source yields; a source that raises (or returns a bare
+    str instead of an iterable of ids) skips GC.
+
+    Sources are called while prune holds the history lock. A source must be a
+    quick read-only query that takes no lock another thread may hold while it
+    waits on history, and must not call back into ghostbrain.history."""
     _ref_sources[name] = source
 
 
@@ -384,7 +389,10 @@ def prune(now: datetime | None = None) -> PruneResult:
                 referenced.update(s.blob for s in keep)
             for name, source in list(_ref_sources.items()):
                 try:
-                    referenced.update(source())
+                    ids = source()
+                    if isinstance(ids, str):
+                        raise TypeError("ref source returned a str, not an iterable of ids")
+                    referenced.update(ids)
                 except Exception:  # noqa: BLE001 — unknown refs: deleting would be unsafe
                     log.exception("history ref source %r failed; skipping blob GC", name)
                     return PruneResult(notes, kept, dropped, 0, gc_skipped=True)

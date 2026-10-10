@@ -76,9 +76,14 @@ def restore_version(req: RestoreRequest, base_etag: str | None = Depends(if_matc
     match = _find(rel, req.blob)
     text = _blob_text(req.blob)
     exists = vault_write.current_etag(rel) is not None
+    # A version carried here by a move (jot re-route) was written at another
+    # path: its frontmatter describes that location, so keep the current
+    # frontmatter and restore only the body.
+    carried = exists and match.rel_path != rel
     res = vault_write.write(
         rel,
-        content=text,
+        content=None if carried else text,
+        body=vault_write.parse_note(text).body if carried else None,
         op="modify" if exists else "create",
         actor=RESTORE,
         reason=f"restored the version from {match.ts}",

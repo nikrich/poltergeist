@@ -3,10 +3,11 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from ghostbrain import vault_write
 from ghostbrain.api.repo.notes_manual import write_inbox_jot
 from ghostbrain.api.tests.conftest import write_note
 from ghostbrain.history import store
-from ghostbrain.vault_write import compute_etag
+from ghostbrain.vault_write import compute_etag, worker_actor
 
 REL = "20-contexts/work/notes/plan.md"
 V1 = "---\ntitle: Plan\n---\n\nfirst draft\n"
@@ -163,3 +164,46 @@ def test_plugin_write_is_refused_when_history_fails(tmp_vault, client, auth_head
     assert r.status_code == 500
     assert r.json()["detail"] == "history unavailable"
     assert note.read_bytes() == V1.encode()
+
+
+INBOX = "20-contexts/inbox/notes/jot.md"
+ROUTED = "20-contexts/work/notes/jot.md"
+PRE_ROUTE = "---\ncontext: inbox\nroutingStatus: pending\n---\n\nold body\n"
+
+
+def test_restoring_a_version_carried_by_a_move_restores_only_the_body(
+    tmp_vault, client, auth_headers,
+):
+    write_note(tmp_vault, INBOX, PRE_ROUTE)
+    vault_write.write(INBOX, op="move", dest=ROUTED, actor=worker_actor("router"),
+                      fields={"context": "work", "routingStatus": "routed"},
+                      body="new body")
+    items = client.get("/v1/notes/history", params={"path": ROUTED},
+                       headers=auth_headers).json()["items"]
+    [carried] = [i for i in items if i["path"] == INBOX]
+    r = client.post("/v1/notes/history/restore",
+                    json={"path": ROUTED, "blob": carried["blob"]}, headers=auth_headers)
+    assert r.status_code == 200
+    assert r.json()["body"] == "old body"
+    meta = vault_write.read(ROUTED).metadata()
+    assert meta["context"] == "work" and meta["routingStatus"] == "routed"
+    assert not (tmp_vault / INBOX).exists()
+
+
+def test_restore_is_500_and_leaves_the_file_when_history_is_unavailable(
+    tmp_vault, client, auth_headers, monkeypatch,
+):
+    note = write_note(tmp_vault, REL, V1)
+    _save(client, auth_headers, "second draft")
+    current = note.read_bytes()
+    blob = store.blob_id(V1.encode())
+
+    def boom(*_a, **_k):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(store, "snapshot", boom)
+    r = client.post("/v1/notes/history/restore", json={"path": REL, "blob": blob},
+                    headers=auth_headers)
+    assert r.status_code == 500
+    assert r.json()["detail"] == "history unavailable"
+    assert note.read_bytes() == current
