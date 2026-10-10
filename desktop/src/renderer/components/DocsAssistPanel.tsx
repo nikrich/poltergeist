@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { DocsAssistMode } from '../../shared/api-types';
+import { subscribeAssistEvents } from '../lib/docs-assist-events';
 import { useDocsAssist } from '../stores/docs-assist';
 import type { EditorHandle } from './RichMarkdownEditor';
 import { Btn } from './Btn';
@@ -46,38 +47,24 @@ export function DocsAssistPanel({ jotId, editorHandle, onAccept }: Props) {
     target: 'selection' | 'doc';
   } | null>(null);
 
-  // Subscribe to docs:event — one listener for all jots, filtered to ours.
-  // gb.on returns an unsubscribe function; clean it up on unmount.
+  // Subscribe to this jot's assist stream (Task 5 helper; same behaviour).
   useEffect(() => {
-    return window.gb.on('docs:event', ({ jotId: id, event }) => {
-      if (id !== jotId) return;
-      switch (event.type) {
-        case 'delta':
-          appendDelta(event.text);
-          break;
-        case 'done':
-          finish(event.text);
-          setToolHint(null);
-          break;
-        case 'error':
-          // A user-initiated stop arrives as an error event with the
-          // interrupted flag — intentional, not a failure: return to idle
-          // instead of showing a red retry banner.
-          if (event.interrupted) {
-            reset();
-          } else {
-            fail(event.message);
-          }
-          setToolHint(null);
-          break;
-        case 'tool':
-          // Show the most recent tool summary as a subtle inline hint while streaming.
-          setToolHint(event.summary);
-          break;
-        default:
-          // session event — no UI update needed
-          break;
-      }
+    return subscribeAssistEvents(jotId, {
+      onDelta: appendDelta,
+      onDone: (text) => {
+        finish(text);
+        setToolHint(null);
+      },
+      // A user-initiated stop is intentional, not a failure: back to idle.
+      onInterrupted: () => {
+        reset();
+        setToolHint(null);
+      },
+      onError: (message) => {
+        fail(message);
+        setToolHint(null);
+      },
+      onTool: setToolHint,
     });
   }, [jotId, appendDelta, finish, fail, reset]);
 

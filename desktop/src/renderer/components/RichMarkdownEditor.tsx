@@ -3,7 +3,7 @@ import { Editor } from '@tiptap/core';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { buildEditorExtensions } from '../lib/editor/extensions';
 import { onGb } from '../lib/editor/events';
-import { clipboardPayload, getMarkdown, restoreWikilinks } from '../lib/editor/markdown';
+import { clipboardPayload, getMarkdown, rangeMarkdown } from '../lib/editor/markdown';
 import { insertImageFile } from '../lib/editor/insert-image';
 import { noteTarget } from '../lib/editor/link-suggest';
 import { toast } from '../stores/toast';
@@ -307,21 +307,7 @@ export function RichMarkdownEditor({
         // Source mode has no selection concept we can extract here.
         if (!editor || editor.isDestroyed || mode !== 'rich') return '';
         const { from, to, empty } = editor.state.selection;
-        if (empty) return '';
-        // v1: tiptap-markdown's serializer cannot operate on a partial range
-        // without building a top-level doc node from the slice — use the
-        // same slice→doc pattern as clipboardPayload (markdown.ts) for rich
-        // content, falling back to plain text when the slice cannot form a doc.
-        const slice = editor.state.selection.content();
-        const docNode = editor.schema.topNodeType.createAndFill(null, slice.content);
-        if (docNode) {
-          const storage = editor.storage.markdown as {
-            serializer: { serialize(content: unknown): string };
-          };
-          return restoreWikilinks(storage.serializer.serialize(docNode));
-        }
-        // Fallback: plain-text extraction (acceptable for v1 — no rich formatting).
-        return editor.state.doc.textBetween(from, to, '\n');
+        return empty ? '' : rangeMarkdown(editor, from, to);
       },
       replaceWith(md: string, target: 'selection' | 'doc'): void {
         if (mode === 'rich' && editor && !editor.isDestroyed) {
