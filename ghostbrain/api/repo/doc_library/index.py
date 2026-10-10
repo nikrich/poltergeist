@@ -218,8 +218,13 @@ def _vault_rel(p: Path) -> str:
 
 
 def summary(e: DocEntry) -> dict:
+    from ghostbrain.api.repo.doc_library import ai_summary  # noqa: PLC0415 — avoids an import cycle
+
     f = e.front
     created = f.get("created", "")
+    raw = f.get("summary")
+    text = str(raw).strip() if isinstance(raw, str) and raw.strip() else None
+    state = "pending" if ai_summary.is_summarising(e.doc_id) else ("done" if text else "none")
     return {
         "doc_id": e.doc_id,
         "title": str(f.get("title") or e.original.stem),
@@ -236,6 +241,8 @@ def summary(e: DocEntry) -> dict:
         "index_status": str(f.get("index_status") or "ok"),
         "pages": _as_int(f.get("pages")),
         "excerpt": re.sub(r"\s+", " ", e.body).strip()[:_EXCERPT_CHARS],
+        "summary": text,
+        "summary_state": state,
     }
 
 
