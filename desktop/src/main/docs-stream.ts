@@ -2,8 +2,29 @@ import type { Sidecar } from './sidecar';
 import type { DocsAssistEvent, DocsAssistRequest } from '../shared/api-types';
 import { createSseParser } from './chat-stream';
 
-// One in-flight stream per jot; sending again aborts the previous.
+// One in-flight stream per key; sending again with the same key aborts the
+// previous. Keys: inline AI's stream_id, else the jot id (docs panel), else
+// `path:<path>` — so the panel and inline AI on one jot never collide.
 const active = new Map<string, AbortController>();
+
+export const STREAM_ID_RE = /^[A-Za-z0-9][A-Za-z0-9:_-]{0,79}$/;
+
+export function docsStreamKey(req: DocsAssistRequest): string {
+  return req.stream_id ?? req.jot_id ?? `path:${req.path ?? ''}`;
+}
+
+export function isDocsAssistRequest(req: unknown): req is DocsAssistRequest {
+  if (typeof req !== 'object' || req === null) return false;
+  const r = req as Record<string, unknown>;
+  const hasJot = typeof r.jot_id === 'string' && r.jot_id !== '';
+  const hasPath = typeof r.path === 'string' && r.path !== '';
+  if (hasJot === hasPath) return false;
+  if (typeof r.mode !== 'string') return false;
+  if (r.stream_id !== undefined && (typeof r.stream_id !== 'string' || !STREAM_ID_RE.test(r.stream_id))) {
+    return false;
+  }
+  return true;
+}
 
 export async function startDocsStream(
   sidecar: Sidecar,
@@ -12,9 +33,10 @@ export async function startDocsStream(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const info = sidecar.getInfo();
   if (!info) return { ok: false, error: 'Sidecar not ready' };
-  active.get(req.jot_id)?.abort();
+  const key = docsStreamKey(req);
+  active.get(key)?.abort();
   const ac = new AbortController();
-  active.set(req.jot_id, ac);
+  active.set(key, ac);
   try {
     const res = await fetch(
       `http://127.0.0.1:${info.port}/v1/docs/assist`,
@@ -68,16 +90,16 @@ export async function startDocsStream(
     }
     return { ok: true };
   } catch (err) {
-    // Deliberate abort: user pressed stop, or a re-send for this jot
+    // Deliberate abort: user pressed stop, or a re-send for this key
     // aborted us (the OLD invoke lands here and resolves {ok:true} harmlessly).
     if (ac.signal.aborted) return { ok: true };
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   } finally {
-    if (active.get(req.jot_id) === ac) active.delete(req.jot_id);
+    if (active.get(key) === ac) active.delete(key);
   }
 }
 
-export function stopDocsStream(jotId: string): void {
-  active.get(jotId)?.abort();
-  active.delete(jotId);
+export function stopDocsStream(key: string): void {
+  active.get(key)?.abort();
+  active.delete(key);
 }

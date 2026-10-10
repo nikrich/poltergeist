@@ -39,7 +39,7 @@ const bridge: GbBridge = {
   },
   docs: {
     assist: (req) => ipcRenderer.invoke('gb:docs:assist', req),
-    assistStop: (jotId) => ipcRenderer.invoke('gb:docs:assist-stop', jotId),
+    assistStop: (key) => ipcRenderer.invoke('gb:docs:assist-stop', key),
     exportPdf: (payload) => ipcRenderer.invoke('gb:docs:export-pdf', payload),
     openGenerated: (path: string) => ipcRenderer.invoke('gb:docs:open-generated', path),
   },

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { startDocsStream, stopDocsStream } from '../docs-stream';
+import { docsStreamKey, isDocsAssistRequest, startDocsStream, stopDocsStream } from '../docs-stream';
 import type { Sidecar } from '../sidecar';
 import type { DocsAssistRequest, DocsAssistEvent } from '../../shared/api-types';
 
@@ -137,5 +137,57 @@ describe('stopDocsStream', () => {
 
   it('is a no-op when no stream is active for that jotId', () => {
     expect(() => stopDocsStream('non-existent')).not.toThrow();
+  });
+});
+
+describe('stream keys (A5)', () => {
+  it('docsStreamKey prefers stream_id, then jot_id, then the path', () => {
+    expect(docsStreamKey({ jot_id: 'j1', stream_id: 'inline-1', mode: 'polish' })).toBe('inline-1');
+    expect(docsStreamKey({ jot_id: 'j1', mode: 'polish' })).toBe('j1');
+    expect(docsStreamKey({ path: '20-contexts/work/a.md', mode: 'continue' })).toBe(
+      'path:20-contexts/work/a.md',
+    );
+  });
+
+  it('isDocsAssistRequest wants exactly one target, a mode and a sane stream_id', () => {
+    expect(isDocsAssistRequest({ jot_id: 'j1', mode: 'polish' })).toBe(true);
+    expect(isDocsAssistRequest({ path: 'a.md', mode: 'continue', stream_id: 'inline-x' })).toBe(true);
+    expect(isDocsAssistRequest({ mode: 'polish' })).toBe(false);
+    expect(isDocsAssistRequest({ jot_id: 'j1', path: 'a.md', mode: 'polish' })).toBe(false);
+    expect(isDocsAssistRequest({ jot_id: '', mode: 'polish' })).toBe(false);
+    expect(isDocsAssistRequest({ jot_id: 'j1' })).toBe(false);
+    expect(isDocsAssistRequest({ jot_id: 'j1', mode: 'polish', stream_id: 'a b' })).toBe(false);
+    expect(isDocsAssistRequest({ jot_id: 'j1', mode: 'polish', stream_id: 7 })).toBe(false);
+    expect(isDocsAssistRequest(null)).toBe(false);
+  });
+
+  it('a stream_id keys its own stream, so an inline turn never aborts the panel turn on the same jot', () => {
+    const signals: AbortSignal[] = [];
+    fetchMock.mockImplementation((_url: string, init: RequestInit) => {
+      signals.push(init.signal as AbortSignal);
+      return new Promise(() => {});
+    });
+    void startDocsStream(sidecar, { jot_id: 'j1', mode: 'polish' }, vi.fn());
+    void startDocsStream(sidecar, { jot_id: 'j1', stream_id: 'inline-1', mode: 'continue' }, vi.fn());
+    expect(signals).toHaveLength(2);
+    expect(signals[0]!.aborted).toBe(false);
+    stopDocsStream('inline-1');
+    expect(signals[1]!.aborted).toBe(true);
+    expect(signals[0]!.aborted).toBe(false);
+    stopDocsStream('j1');
+    expect(signals[0]!.aborted).toBe(true);
+  });
+
+  it('ignores SSE keepalive comments', async () => {
+    const events: DocsAssistEvent[] = [];
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      body: makeStream(': keepalive\n\n: keepalive\n\ndata: {"type":"done","text":"x"}\n\n'),
+    });
+    await startDocsStream(sidecar, { path: 'a.md', stream_id: 'inline-2', mode: 'continue' }, (e) =>
+      events.push(e),
+    );
+    expect(events).toEqual([{ type: 'done', text: 'x' }]);
   });
 });

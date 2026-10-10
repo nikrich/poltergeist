@@ -486,13 +486,27 @@ export type ChatStreamEvent =
  *  same shape as chat events so the same renderer logic handles both. */
 export type DocsAssistEvent = ChatStreamEvent;
 
-export type DocsAssistMode = 'draft' | 'polish' | 'expand' | 'summarize';
+export type DocsAssistMode = 'draft' | 'polish' | 'expand' | 'summarize' | 'continue' | 'translate';
+
+/** Where the answer goes: the whole doc (docs panel), over the selection, or
+ * inserted at the cursor (continue / draft at the cursor). */
+export type DocsAssistPlacement = 'doc' | 'selection' | 'cursor';
 
 export interface DocsAssistRequest {
-  jot_id: string;
+  /** Exactly one of jot_id (docs panel, jots) / path (any vault note). */
+  jot_id?: string;
+  path?: string;
+  /** Inline AI's own stream key (`inline-<uuid>`); without it the stream is
+   * keyed by jot_id (or `path:<path>`). */
+  stream_id?: string;
   mode: DocsAssistMode;
   instruction?: string;
   selection?: string;
+  /** translate only: a language name, e.g. "Afrikaans". */
+  target_language?: string;
+  /** Markdown before the cursor (continue / insert at the cursor). */
+  before?: string;
+  placement?: DocsAssistPlacement;
 }
 
 export interface ConfluenceExportRequest {

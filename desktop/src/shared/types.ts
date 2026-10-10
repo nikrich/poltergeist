@@ -105,7 +105,7 @@ export interface GbBridge {
   };
   docs: {
     assist(req: DocsAssistRequest): Promise<{ ok: true } | { ok: false; error: string }>;
-    assistStop(jotId: string): Promise<{ ok: true } | { ok: false; error: string }>;
+    assistStop(key: string): Promise<{ ok: true } | { ok: false; error: string }>;
     exportPdf(payload: {
       title: string;
       html: string;
@@ -199,7 +199,9 @@ export interface GbBridge {
   ): () => void;
   on(
     channel: 'docs:event',
-    listener: (payload: { jotId: string; event: DocsAssistEvent }) => void,
+    /** `key` is the stream key (stream_id, else jot id, else `path:<path>`);
+     * `jotId` repeats it for listeners written before A5. */
+    listener: (payload: { key?: string; jotId: string; event: DocsAssistEvent }) => void,
   ): () => void;
 }
 
