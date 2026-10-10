@@ -20,8 +20,11 @@ character after the colon, and ``data:``/``file:`` one that isn't ``*``,
 so the ``file:`` key and a ``**Data:**`` label pass. The whole text is
 also read with line breaks dropped, to catch a ``//``, ``www.`` or
 ``scheme:/`` split over lines; there a scheme alone is not a hit, since no
-reader joins ``Raw data:`` and the next line into a URL. YAML values are
-read as YAML resolves them (escaped line breaks joined), the same way.
+reader joins ``Raw data:`` and the next line into a URL. A scheme ending a
+line is a hit when the next non-blank line starts (after spaces and quotes)
+with a host-like ``word.``: a quoted mermaid string spans the break, so
+``"https:`` + ``evil.com"`` is a link. YAML values are read as YAML
+resolves them (escaped line breaks joined), the same way.
 
 =====================  ========================================================
 Rule                   Vector it covers
@@ -31,6 +34,7 @@ Rule                   Vector it covers
 ``_RAW_TAG_RE``        any raw HTML or ``<…>`` link (``<`` + letter, ``/``,
                        ``!``, ``?``), so ``<img>``, ``<a href>``, comments
 ``_CLICK_RE``          mermaid ``click`` actions (callbacks run code)
+``_DIRECTIVE_RE``      mermaid ``%%{…}%%`` directives (theme CSS, config)
 ``_DIAGRAM_META_RE``   mermaid ``@{ img:/icon: … }`` shape images and icons
 ``_placeholder_links`` link/definition destinations holding a placeholder or
                        not on their line; emails built from placeholders
@@ -76,6 +80,8 @@ _CLICK_RE = re.compile(
     r"|(?-i:^\s*click\s+\S+\s+[A-Za-z_$][\w$]*\s*(?:\"[^\"]*\"\s*)?$)",  # click A fn
     re.IGNORECASE,
 )
+# Mermaid %%{init: …}%% and other directives: they carry theme CSS and config.
+_DIRECTIVE_RE = re.compile(r"%%\s*\{")
 # Mermaid shape metadata A@{ … }, across lines, and the keys that load media.
 _DIAGRAM_META_RE = re.compile(r"@\{[^}]*")
 _RESOURCE_KEY_RE = re.compile(r"\b(?:img|icon)\s*:", re.IGNORECASE)
@@ -99,6 +105,11 @@ _JOINED_HIT_RE = re.compile(
     r"|(?<![a-z0-9/])/{2,}+(?=[^\s/])"
     r"|(?<![a-z0-9])www\.(?=[^\s.])"
 )
+# A scheme ending a line, and a next line that starts like a host.
+_SCHEMES = r"(?:https?|ftp|wss?|data|file|(?:java|vb)script)"
+_LINE_END_SCHEME_RE = re.compile(rf"(?<![a-z0-9]){_SCHEMES}:$")
+_HOST_START_RE = re.compile(r"[\s\"'`\u2018\u2019\u201c\u201d\u00ab\u00bb]*+[a-z0-9-]++\.",
+                            re.IGNORECASE)
 # Invisible characters readers drop or ignore inside a token: C0/C1
 # controls (tab and line breaks too), soft hyphen, zero-width and bidi
 # marks, word joiners, BOM, interlinear annotations and tag characters.
@@ -172,9 +183,8 @@ def _readings(text: str) -> list[str]:
     return out
 
 
-def url_hit(text: str, pattern: re.Pattern[str] = _URL_HIT_RE) -> re.Match[str] | None:
-    """The first URL or web address in any reading of ``text``."""
-    for reading in _readings(text):
+def _hit_in(readings: list[str], pattern: re.Pattern[str]) -> re.Match[str] | None:
+    for reading in readings:
         folded = reading.casefold()
         m = pattern.search(folded) or pattern.search(folded.replace("\\", "/"))
         if m:
@@ -182,19 +192,43 @@ def url_hit(text: str, pattern: re.Pattern[str] = _URL_HIT_RE) -> re.Match[str] 
     return None
 
 
+def url_hit(text: str, pattern: re.Pattern[str] = _URL_HIT_RE) -> re.Match[str] | None:
+    """The first URL or web address in any reading of ``text``."""
+    return _hit_in(_readings(text), pattern)
+
+
 def _url_problem(line: int, col: int, m: re.Match[str]) -> Diagnostic:
     return _problem(line, col, f"`{m.group()}` is a URL or web address; {URL_MESSAGE}")
 
 
 def url_problems(text: str) -> list[Diagnostic]:
-    """One problem per line holding a URL, or one at line 1 for a ``//``,
-    ``www.`` or ``scheme:/`` only the whole text spells (split over lines)."""
+    """One problem per line holding a URL; else one per line ending in a
+    scheme whose host starts the next non-blank line; else one at line 1
+    for a ``//``, ``www.`` or ``scheme:/`` only the whole text spells
+    (split over lines)."""
     out = []
-    for i, line in enumerate(text.split("\n")):
-        m = url_hit(line)
+    lines = text.split("\n")
+    ends_scheme: list[bool] = []
+    starts_host: list[bool] = []
+    for i, line in enumerate(lines):
+        readings = _readings(line)
+        m = _hit_in(readings, _URL_HIT_RE)
         if m:
             raw = _URL_HIT_RE.search(line.casefold())
             out.append(_url_problem(i + 1, raw.start() + 1 if raw else 1, m))
+        # Only the last few characters can end in a scheme: bounded work.
+        ends_scheme.append(any(_LINE_END_SCHEME_RE.search(r.rstrip()[-16:].casefold())
+                               for r in readings))
+        starts_host.append(any(_HOST_START_RE.match(r) for r in readings))
+    if not out:
+        host_next = False  # does the next non-blank line start with a host?
+        for i in range(len(lines) - 1, -1, -1):
+            if ends_scheme[i] and host_next:
+                out.append(_problem(i + 1, 1, "a scheme at a line end joined to the host on the "
+                                              f"next line is a URL; {URL_MESSAGE}"))
+            if lines[i].strip():
+                host_next = starts_host[i]
+        out.reverse()
     if not out:
         m = url_hit(text, _JOINED_HIT_RE)
         if m:
@@ -217,6 +251,10 @@ def _line_rules(i: int, line: str, decoded: str) -> list[Diagnostic]:
     tag = _RAW_TAG_RE.search(decoded)
     if tag and not out:
         out.append(_problem(i + 1, tag.start() + 1, "raw HTML is not allowed in a template"))
+    directive = _DIRECTIVE_RE.search(decoded) or _DIRECTIVE_RE.search(line)
+    if directive:
+        out.append(_problem(i + 1, directive.start() + 1,
+                            "diagram directives are not allowed in a template"))
     click = _CLICK_RE.search(decoded)
     if click:
         out.append(_problem(i + 1, click.start() + 1, "diagram click actions are not allowed"))

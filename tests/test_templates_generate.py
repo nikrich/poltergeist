@@ -876,9 +876,6 @@ def test_adversarial_inputs_stay_fast():
         "## Data:\n\nNumbers go here",
         "Attach file:\n- link",
         "Raw data:\nnone yet",
-        # flipped (rejected in round 4): no reader joins a scheme word at a
-        # line end with the next line's text
-        "https:\nevil.com",
     ],
 )
 def test_a_scheme_word_at_a_line_end_is_not_joined_with_the_next_line(body):
@@ -930,3 +927,81 @@ def test_too_many_choice_combinations_are_rejected():
     assert "limit" in codes(draft)
     ok = GOOD.replace("      type: text\n", "      type: text\n" + extra.replace(options, "[a, b, c]"), 1)
     assert check_draft(ok).ok
+
+
+# ── Task 2 carry-overs ────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        # mermaid reads a quoted classDiagram link across the line break
+        "```mermaid\nclassDiagram\nclass A\nlink A \"https:\nevil.com/{{team}}\"\n```",
+        "https:\nevil.com",
+        "see https:\n  'evil.com/x'",
+        "ftp:\n\"files.example-host.org\"",
+    ],
+)
+def test_a_line_end_scheme_before_a_host_is_rejected(body):
+    assert url_problems(GOOD.replace("## Blockers", body))
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Raw data:\nnone yet",
+        "Supporting data:\n- {{team}}",
+        "Attach file:\n- link",
+        "## Data:\n\nNumbers go here",
+    ],
+)
+def test_a_line_end_scheme_word_before_text_still_passes(body):
+    assert check_draft(GOOD.replace("## Blockers", body)).ok
+
+
+@pytest.mark.parametrize("unit", ["a", "%25", "#58;"])
+def test_rendering_every_choice_shares_one_work_budget(unit):
+    import time
+
+    option = unit * (280 // len(unit))
+    prompts = "".join(
+        f"    - id: {c}\n      ask: Pick?\n      type: choice\n"
+        f"      options: [\"{option}\", \"{'b' * 280}\"]\n" for c in "abcde")
+    placeholders = "{{a}}{{b}}{{c}}{{d}}{{e}}"
+    body = placeholders * (19_900 // len(placeholders))
+    draft = GOOD.replace("      type: text\n", "      type: text\n" + prompts, 1) \
+        .replace("## Blockers", body)
+    draft = draft[: generate.MAX_DRAFT_CHARS]
+    start = time.perf_counter()
+    first = check_draft(draft)
+    elapsed = time.perf_counter() - start
+    assert elapsed < 10.0
+    assert not first.ok and "limit" in [d.code for d in first.problems]
+    assert check_draft(draft) == first  # deterministic
+
+
+def test_a_small_choice_draft_is_inside_the_budget():
+    draft = GOOD.replace(
+        "      type: text\n",
+        "      type: text\n    - id: c\n      ask: Which?\n      type: choice\n      options: [x, y]\n", 1,
+    ).replace("## Blockers", "Picked {{c}}")
+    assert check_draft(draft).ok
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        # JSON \n becomes a line break; CSS's backslash-newline then joins https:
+        "```mermaid\n%%{init: {\"themeCSS\": \"@import 'htt\\\\\\nps:evil.com/x.css';\"}}%%\ngraph TD\n```",
+        "```mermaid\n%%{init: {\"theme\": \"dark\"}}%%\ngraph TD\n```",
+        "```mermaid\ngraph TD\n%%{ wrap }%%\n```",
+        "%%{init: {}}%%",
+    ],
+)
+def test_mermaid_directives_are_rejected(body):
+    found = forbidden(GOOD.replace("## Blockers", body))
+    assert any(d.message == "diagram directives are not allowed in a template" for d in found)
+
+
+def test_mermaid_comments_still_pass():
+    assert check_draft(GOOD.replace("## Blockers", "```mermaid\ngraph TD\n%% a comment\nA --> B\n```")).ok

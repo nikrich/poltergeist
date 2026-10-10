@@ -43,6 +43,9 @@ MAX_PROBLEMS = 20
 # Every combination of choice options is rendered and checked; past this
 # many the draft is rejected rather than checked in part.
 MAX_CHOICE_RENDERS = 32
+# All those renders share one budget of checked characters; past it the
+# draft is rejected rather than checked in part.
+MAX_RENDERED_CHARS = 2_000_000
 GENERATE_TIER = "balanced"
 GENERATE_TIMEOUT_S = 180
 # Search only: its snippets are bounded, so little vault text reaches the draft.
@@ -234,6 +237,7 @@ def _rendered_problems(draft: str, template: Template) -> list[Diagnostic]:
                            "options; use fewer options", "limit")]
     render_errors: set[str] = set()
     checked: set[str] = set()
+    spent = 0
     for answers in answer_sets:
         try:
             note: RenderedNote = render(template, answers, SAMPLE_ENV)
@@ -243,6 +247,13 @@ def _rendered_problems(draft: str, template: Template) -> list[Diagnostic]:
                 out.append(Diagnostic(1, 1, "error", f"the template does not render: {e}", "render"))
             continue
         full = note.markdown()
+        spent += len(full) + len(note.folder) + len(note.filename)
+        if spent > MAX_RENDERED_CHARS:
+            out.append(Diagnostic(1, 1, "error",
+                                  f"the notes this template creates are longer than "
+                                  f"{MAX_RENDERED_CHARS} characters in all; use fewer or "
+                                  "shorter choice options or placeholders", "limit"))
+            break
         head = full[: len(full) - len(note.body)]
         for text, offset in ((note.body, template.body_line - 1), (head, None),
                              (note.folder, None), (note.filename, None)):
