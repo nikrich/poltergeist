@@ -1,4 +1,5 @@
 """PUT /v1/notes — path-addressed upsert (Familiar plugin write-back)."""
+from ghostbrain.vault_write import compute_etag
 
 
 def test_upsert_creates_nested_note(client, tmp_vault, auth_headers):
@@ -18,7 +19,11 @@ def test_upsert_replaces_existing(client, tmp_vault, auth_headers):
     p = tmp_vault / "Familiar"
     p.mkdir()
     (p / "memory.md").write_text("old\n")
-    r = client.put("/v1/notes", json={"path": "Familiar/memory.md", "content": "new body\n"}, headers=auth_headers)
+    old_etag = compute_etag(b"old\n")
+    r = client.put(
+        "/v1/notes", json={"path": "Familiar/memory.md", "content": "new body\n"},
+        headers={**auth_headers, "If-Match": f'"{old_etag}"'},
+    )
     assert r.status_code == 200
     assert r.json()["created"] is False
     assert (p / "memory.md").read_text() == "new body\n"

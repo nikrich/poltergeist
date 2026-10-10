@@ -160,7 +160,7 @@ def test_plugin_write_is_refused_when_history_fails(tmp_vault, client, auth_head
 
     monkeypatch.setattr(store, "snapshot", boom)
     r = client.put("/v1/notes", json={"path": REL, "content": "plugin text"},
-                   headers=auth_headers)
+                   headers={**auth_headers, "If-Match": f'"{compute_etag(V1.encode())}"'})
     assert r.status_code == 500
     assert r.json()["detail"] == "history unavailable"
     assert note.read_bytes() == V1.encode()

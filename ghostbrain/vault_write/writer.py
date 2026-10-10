@@ -1,11 +1,11 @@
 """The single vault write path: lock → etag check → minimal-diff bytes →
-history snapshot → atomic replace (spec B §1; snapshot from spec A3).
+hold check → history snapshot → atomic replace → change row (spec B §1;
+snapshot from spec A3, change log from slice B2).
 
-A3 snapshots the current bytes inside ``_write`` (``_snapshot``) before every
-write that changes a file, so every writer — routes, MCP, plugins, worker —
-gets page history without per-route code. B2 adds the change record and B3
-the risk hold at the marked hook points (under the file lock; the public
-``write`` wrapper only re-indexes the A2 link index afterwards).
+Every write by an actor other than ``user`` / ``restore`` gets a row in the
+change log (``ghostbrain.changes``), except a ``worker:*`` create, which is
+connector ingest and stays audit-only (user decision 2026-10-09). The B3 risk
+policy plugs in through ``set_hold_policy``; B2's default never holds.
 """
 from __future__ import annotations
 
@@ -18,13 +18,20 @@ import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any, Iterator, Literal, Mapping
+from typing import Any, Callable, Iterator, Literal, Mapping
 
 import ghostbrain.paths as _paths
+from ghostbrain.changes import log as _changes
 from ghostbrain.history import store as _history_store
 from ghostbrain.history.store import HistoryUnavailable, Snapshot
-from ghostbrain.vault_write.actor import USER, Actor, parse_actor
-from ghostbrain.vault_write.errors import FileMissing, InvalidPath, MalformedNote, WriteConflict
+from ghostbrain.vault_write.actor import RESTORE, USER, Actor, parse_actor
+from ghostbrain.vault_write.errors import (
+    EtagRequired,
+    FileMissing,
+    InvalidPath,
+    MalformedNote,
+    WriteConflict,
+)
 from ghostbrain.vault_write.etag import compute_etag
 from ghostbrain.vault_write.text import (
     ParsedNote,
@@ -156,8 +163,8 @@ def _atomic_write(path: Path, data: bytes) -> None:
         raise
 
 
-def _content_bytes(path: Path, content: str) -> bytes:
-    if path.suffix.lower() == ".md" and not content.endswith("\n"):
+def _content_bytes(path: Path, content: str, *, verbatim: bool = False) -> bytes:
+    if not verbatim and path.suffix.lower() == ".md" and not content.endswith("\n"):
         content += "\n"
     return content.encode("utf-8")
 
@@ -200,8 +207,6 @@ def _check_args(
         raise ValueError("op='create' needs content")
     if op == "delete" and (content is not None or body is not None or fields):
         raise ValueError("op='delete' takes no content/body/fields")
-    if op == "move" and content is not None:
-        raise ValueError("op='move' takes body/fields, not content")
     if op == "modify" and content is None and body is None and not fields:
         raise ValueError("op='modify' needs content, body or fields")
 
@@ -217,10 +222,11 @@ def write(
     dest: str | None = None,
     reason: str = "",
     base_etag: str | None = None,
+    verbatim: bool = False,
 ) -> WriteResult:
     result = _write(
         rel_path, actor=actor, content=content, body=body, fields=fields,
-        op=op, dest=dest, reason=reason, base_etag=base_etag,
+        op=op, dest=dest, reason=reason, base_etag=base_etag, verbatim=verbatim,
     )
     _reindex(result.path, *([rel_path] if dest is not None else []))
     return result
@@ -236,6 +242,113 @@ def _reindex(*rel_paths: str) -> None:
             note_written(rel)
     except Exception:  # noqa: BLE001 — indexing must never fail a write
         log.exception("link index update failed after write")
+
+
+@dataclass(frozen=True)
+class ProposedChange:
+    """What a non-user write is about to do (spec B §3 input; B3 reads it)."""
+
+    actor: Actor
+    op: Op
+    rel_path: str
+    dest_path: str | None
+    before: bytes | None
+    after: bytes | None
+    reason: str
+
+
+HoldPolicy = Callable[[ProposedChange], list[str]]
+
+
+def _never_hold(_change: ProposedChange) -> list[str]:
+    return []
+
+
+_hold_policy: HoldPolicy = _never_hold
+
+
+def set_hold_policy(policy: HoldPolicy | None) -> None:
+    """B3 installs its risk rules here. ``None`` restores B2's default: never
+    hold (user decision 2026-10-09: new notes apply now, revert in one click)."""
+    global _hold_policy
+    _hold_policy = policy or _never_hold
+
+
+def records_change(actor: Actor, op: Op) -> bool:
+    """Spec B §1 step 7: user (and restore) writes get no row. A worker
+    *creating* a note is connector ingest: audit log only (decision 1)."""
+    if actor in (USER, RESTORE):
+        return False
+    return not (actor.startswith("worker:") and op == "create")
+
+
+def needs_base_etag(actor: Actor) -> bool:
+    """Spec B §1: base_etag is required for actor != worker when op != create.
+    User writes keep it optional; restore checks its own expectations."""
+    return actor not in (USER, RESTORE) and not actor.startswith("worker:")
+
+
+def _require_base(rel: str, current: bytes, *, actor: Actor, etag_now: str | None) -> None:
+    """No base_etag: allowed only when the file still holds exactly what this
+    actor last wrote there (a plugin re-upserting its own note)."""
+    if not needs_base_etag(actor):
+        return
+    try:
+        own = _changes.last_after_blob(rel, actor)
+    except Exception:  # noqa: BLE001 — unknown history: fail closed
+        log.warning("change log unavailable; refusing an etag-less %s write to %s", actor, rel)
+        own = None
+    if own is None or own != _history_store.blob_id(current):
+        raise EtagRequired(etag_now)
+
+
+def _put_blob(data: bytes) -> str:
+    try:
+        return _history_store.put_blob(data)
+    except Exception as e:  # noqa: BLE001 — a non-user write must stay revertible
+        raise HistoryUnavailable(f"history unavailable: {e}") from e
+
+
+def _hold_reasons(proposed: ProposedChange) -> list[str]:
+    try:
+        return [str(r) for r in _hold_policy(proposed)]
+    except Exception:  # noqa: BLE001 — a broken rule must not let a change through
+        log.exception("hold policy failed for %s; holding the change", proposed.rel_path)
+        return ["risk check failed"]
+
+
+def _hold(proposed: ProposedChange, reasons: list[str]) -> WriteResult:
+    """B3 path: keep the proposal as a pending row; write nothing."""
+    before_blob = _put_blob(proposed.before) if proposed.before is not None else None
+    pending_blob = _put_blob(proposed.after) if proposed.after is not None else None
+    try:
+        cid = _changes.record(
+            actor=proposed.actor, rel_path=proposed.rel_path, op=proposed.op,
+            reason=proposed.reason, before_blob=before_blob, dest_path=proposed.dest_path,
+            status="pending", pending_bytes_blob=pending_blob, risk_reasons=reasons,
+        )
+    except Exception as e:  # noqa: BLE001 — cannot hold → refuse, file untouched
+        raise HistoryUnavailable(f"history unavailable: {e}") from e
+    etag = compute_etag(proposed.before) if proposed.before is not None else None
+    return WriteResult("pending", str(cid), etag, proposed.rel_path, None)
+
+
+def _record(
+    proposed: ProposedChange, *, before_blob: str | None, after_blob: str | None
+) -> str | None:
+    """Spec B error handling: an insert failure after the write leaves the
+    write standing (the snapshot exists) and raises the degraded banner."""
+    try:
+        cid = _changes.record(
+            actor=proposed.actor, rel_path=proposed.rel_path, op=proposed.op,
+            reason=proposed.reason, before_blob=before_blob, after_blob=after_blob,
+            dest_path=proposed.dest_path,
+        )
+    except Exception as e:  # noqa: BLE001
+        log.exception("change log insert failed for %s; the write stands", proposed.rel_path)
+        _changes.mark_degraded(f"change to {proposed.rel_path} not recorded: {e}")
+        return None
+    return str(cid)
 
 
 def _snapshot(
@@ -274,6 +387,7 @@ def _write(
     dest: str | None = None,
     reason: str = "",
     base_etag: str | None = None,
+    verbatim: bool = False,
 ) -> WriteResult:
     actor = parse_actor(actor)
     _check_args(op, content, body, fields, dest)
@@ -287,45 +401,61 @@ def _write(
         etag_now = compute_etag(current) if current is not None else None
         if base_etag is not None and base_etag != etag_now:
             raise WriteConflict(etag_now)
-        # B3 hook point: the risk check (→ pending) goes here, before any snapshot.
+        src_rel = _rel(src)
+        dst_rel = _rel(dst) if dst is not None else None
+        updated: str | None = None
+        data: bytes | None
         if op == "create":
             if current is not None:
                 raise WriteConflict(etag_now)
             assert content is not None
-            data = _content_bytes(src, content)
-            _atomic_write(src, data)
-            # B2 hook point: change row for a create (no before-version).
-            return WriteResult("applied", None, compute_etag(data), _rel(src), None)
-        if current is None:
-            raise FileMissing(rel_path)
-        src_rel = _rel(src)
-        if op == "delete":
-            _, history_ok = _snapshot(src_rel, current, actor=actor, reason=reason, after=None)
-            src.unlink()
-            return WriteResult("applied", None, None, src_rel, None, history_ok)
-        updated: str | None = None
-        if content is not None:
-            data = _content_bytes(src, content)
-        elif body is not None or fields:
-            data, updated = _edit_bytes(current, body=body, fields=fields, suffix=src.suffix)
+            data = _content_bytes(src, content, verbatim=verbatim)
         else:
-            data = current  # plain move
+            if current is None:
+                raise FileMissing(rel_path)
+            if base_etag is None:
+                _require_base(src_rel, current, actor=actor, etag_now=etag_now)
+            if op == "delete":
+                data = None
+            elif content is not None:
+                data = _content_bytes(dst or src, content, verbatim=verbatim)
+            elif body is not None or fields:
+                data, updated = _edit_bytes(current, body=body, fields=fields, suffix=src.suffix)
+            else:
+                data = current  # plain move
         if dst is not None:
             existing = _read_bytes(dst)
             if existing is not None:
                 raise WriteConflict(compute_etag(existing))
-            _, history_ok = _snapshot(src_rel, current, actor=actor, reason=reason, after=data)
+        if op == "modify" and data == current:
+            return WriteResult("applied", None, etag_now, src_rel, updated)
+        proposed = ProposedChange(actor, op, src_rel, dst_rel, current, data, reason)
+        recorded = records_change(actor, op)
+        if recorded:
+            reasons = _hold_reasons(proposed)
+            if reasons:
+                return _hold(proposed, reasons)  # B3: nothing is written
+        history_ok = True
+        before_blob: str | None = None
+        if current is not None:
+            snap, history_ok = _snapshot(src_rel, current, actor=actor, reason=reason, after=data)
+            if recorded:
+                before_blob = snap.blob if snap is not None else _put_blob(current)
+        after_blob = _put_blob(data) if recorded and data is not None else None
+        if data is None:
+            src.unlink()
+        elif dst is not None:
+            assert dst_rel is not None
             _atomic_write(dst, data)
             src.unlink()
-            dst_rel = _rel(dst)
             history_ok = _move_history(src_rel, dst_rel) and history_ok
-            return WriteResult("applied", None, compute_etag(data), dst_rel, updated, history_ok)
-        history_ok = True
-        if data != current:
-            # B2 hook point: the snapshot's blob is the change row's before_blob.
-            _, history_ok = _snapshot(src_rel, current, actor=actor, reason=reason, after=data)
+        else:
             _atomic_write(src, data)
-        return WriteResult("applied", None, compute_etag(data), src_rel, updated, history_ok)
+        change_id = (
+            _record(proposed, before_blob=before_blob, after_blob=after_blob) if recorded else None
+        )
+        etag = compute_etag(data) if data is not None else None
+        return WriteResult("applied", change_id, etag, dst_rel or src_rel, updated, history_ok)
 
 
 def write_new(

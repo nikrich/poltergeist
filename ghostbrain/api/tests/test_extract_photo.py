@@ -43,3 +43,38 @@ def test_extract_blank_vision_result_returns_extracted_false(tmp_vault):
     # Body must not have been modified — no callout appended.
     assert out["body"] == original_body
     assert "> **Extracted from photo**" not in out["body"]
+
+
+def test_extract_is_an_assistant_change(tmp_vault):
+    from ghostbrain.changes import log as changes
+
+    rec = notes_manual.write_inbox_jot("whiteboard shot\n\n")
+
+    class R:
+        text = "Queue feeds the handler."
+
+    with patch.object(notes_manual, "llm_run", return_value=R()):
+        out = notes_manual.extract_photo_into_jot(rec["id"], "90-meta/assets/jots/2026/06/y.jpg")
+
+    assert out["extracted"] is True
+    [row] = changes.list_changes()
+    assert (row.actor, row.op, row.reason) == ("assistant", "modify", "added text from a photo")
+
+
+def test_extract_never_overwrites_an_edit_made_while_reading_the_photo(tmp_vault):
+    rec = notes_manual.write_inbox_jot("whiteboard shot\n\n")
+
+    class R:
+        text = "Queue feeds the handler."
+
+    def slow_vision(*_a, **_k):
+        notes_manual.update_jot_body(rec["id"], "typed while it ran")
+        return R()
+
+    with patch.object(notes_manual, "llm_run", side_effect=slow_vision):
+        out = notes_manual.extract_photo_into_jot(rec["id"], "90-meta/assets/jots/2026/06/z.jpg")
+
+    assert out["extracted"] is False
+    assert "changed" in out["reason"]
+    assert out["body"] == "typed while it ran"
+    assert notes_manual.read_jot(rec["id"])["body"] == "typed while it ran"

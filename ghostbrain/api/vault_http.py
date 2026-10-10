@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 
 from ghostbrain.history import HistoryUnavailable
 from ghostbrain.vault_write import (
+    EtagRequired,
     FileMissing,
     InvalidPath,
     MalformedNote,
@@ -25,6 +26,13 @@ def install_vault_write_errors(app: FastAPI) -> None:
         assert isinstance(exc, WriteConflict)
         return JSONResponse(
             status_code=409,
+            content={"detail": str(exc), "currentEtag": exc.current_etag},
+        )
+
+    async def _etag_required(_req: Request, exc: Exception) -> JSONResponse:
+        assert isinstance(exc, EtagRequired)
+        return JSONResponse(
+            status_code=428,
             content={"detail": str(exc), "currentEtag": exc.current_etag},
         )
 
@@ -47,3 +55,4 @@ def install_vault_write_errors(app: FastAPI) -> None:
     app.add_exception_handler(MalformedNote, _malformed)
     app.add_exception_handler(InvalidPath, _invalid)
     app.add_exception_handler(HistoryUnavailable, _history)
+    app.add_exception_handler(EtagRequired, _etag_required)

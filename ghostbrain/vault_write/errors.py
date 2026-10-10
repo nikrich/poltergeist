@@ -1,5 +1,5 @@
 """Exceptions raised by the vault write path. ``ghostbrain.api.vault_http``
-maps them to HTTP statuses (400 / 404 / 409 / 422)."""
+maps them to HTTP statuses (400 / 404 / 409 / 422 / 428)."""
 from __future__ import annotations
 
 CONFLICT_MESSAGE = "note changed since you read it — re-read and retry"
@@ -29,4 +29,17 @@ class WriteConflict(VaultWriteError):
 
     def __init__(self, current_etag: str | None, message: str = CONFLICT_MESSAGE) -> None:
         super().__init__(message)
+        self.current_etag = current_etag
+
+
+ETAG_REQUIRED_MESSAGE = "read the note first and send its etag (If-Match) to change it"
+
+
+class EtagRequired(VaultWriteError):
+    """A non-user writer changed an existing file without ``base_etag`` and
+    the file is not exactly what that writer last wrote there (spec B §1:
+    required for actor != worker when op != create). HTTP 428."""
+
+    def __init__(self, current_etag: str | None) -> None:
+        super().__init__(ETAG_REQUIRED_MESSAGE)
         self.current_etag = current_etag

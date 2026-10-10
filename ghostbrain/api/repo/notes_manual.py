@@ -245,7 +245,12 @@ def read_jot(jot_id: str) -> dict:
 
 
 def update_jot_body(
-    jot_id: str, new_body: str, *, actor: Actor = USER, base_etag: str | None = None
+    jot_id: str,
+    new_body: str,
+    *,
+    actor: Actor = USER,
+    base_etag: str | None = None,
+    reason: str = "edited jot",
 ) -> dict:
     path = _find_file(jot_id)
     now = _now_iso()
@@ -255,7 +260,7 @@ def update_jot_body(
         fields={"updated": now, "tags": extract_tags(new_body)},
         actor=actor,
         base_etag=base_etag,
-        reason="edited jot",
+        reason=reason,
     )
     return {"id": jot_id, "path": res.path, "updated": now, "etag": res.etag,
             "historyOk": res.history_ok}
@@ -403,7 +408,22 @@ def extract_photo_into_jot(jot_id: str, asset_rel_path: str) -> dict:
             "reason": "no readable content in photo",
         }
     new_body = record["body"].rstrip() + "\n\n" + _callout(text) + "\n"
-    saved = update_jot_body(jot_id, new_body, actor=ASSISTANT)
+    try:
+        # The vision call can take a while; the jot's etag from before it
+        # guarantees an edit typed meanwhile is never overwritten (spec B §1).
+        saved = update_jot_body(
+            jot_id, new_body, actor=ASSISTANT, base_etag=record["etag"],
+            reason="added text from a photo",
+        )
+    except vault_write.WriteConflict:
+        fresh = read_jot(jot_id)
+        return {
+            "id": jot_id,
+            "path": fresh["path"],
+            "body": fresh["body"],
+            "extracted": False,
+            "reason": "the note changed while reading the photo — try again",
+        }
     return {"id": jot_id, "path": saved["path"], "body": new_body, "extracted": True, "etag": saved["etag"]}
 
 
