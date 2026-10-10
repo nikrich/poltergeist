@@ -63,19 +63,19 @@ def test_plain_prose_is_not_held():
     assert risk.evaluate(_p()) == []
     prose = (
         b"Learn javascript: the basics.\nWe use {{ in Go templates.\n"
-        b"Move the onboarding doc.\n```python\nprint(1)\n```\nthe <scripted> plan\n"
+        b"Move the onboarding doc.\n```python\nprint(1)\n```\nthe scripted plan\n"
         b"```python\none = \"two\"\nonly = 'x'\n```\nA {{ nested { brace }} aside.\n"
     )
     assert risk.evaluate(_p(op="create", before=None, after=prose)) == []
     # A `<` in prose or code is not a tag left open for the next line.
     for code in (
-        b"if a<b:\n    online = 1\n",
+        b"if a < b:\n    online = 1\n",
         b"```c\nfor (i=0; i<n; i++)\n  online = 1;\n```\n",
-        b"- latency p95<b target\n\n- online = 1 rollout\n",
+        b"- latency p95 < 200ms target\n\n- online = 1 rollout\n",
         b"```html\n<img src=x\n```\nonline = 1\n",
-        b"a <b>bold</b> idea\n\nonline = 1\n",
+        b"a **bold** idea\n\nonline = 1\n",
         b"1 < 2\n\nonline = 1\n",
-        b"line<br>\n\nonline = 1\n",
+        b"a <3 b <= c <- d << e 1 <2\n\nonline = 1\n",
     ):
         assert risk.evaluate(_p(op="create", before=None, after=code)) == [], code
 
@@ -336,7 +336,7 @@ def test_a_reversal_link_on_a_users_note_applies(vault):
 
 @pytest.mark.parametrize("rel", ["80-profile/current-projects.md", "80-profile/_review.md"])
 def test_the_profile_applier_rewrites_its_files(vault, rel):
-    (vault / rel).write_bytes(b"# Current projects\n\n## work\n\n- keep p95<b target\n")
+    (vault / rel).write_bytes(b"# Current projects\n\n## work\n\n- keep p95 under 200ms\n")
 
     def transform(text: str | None) -> str:
         assert text is not None
@@ -350,7 +350,7 @@ def test_the_profile_applier_rewrites_its_files(vault, rel):
 
 def test_the_profile_applier_creating_its_file_applies(vault):
     rel = "80-profile/_review.md"
-    res = jobs.rewrite_text(rel, lambda _t: "# Review\n\n- a <b>bold</b> idea\n",
+    res = jobs.rewrite_text(rel, lambda _t: "# Review\n\n- a **bold** idea\n",
                             actor=worker_actor("profile-apply"), reason="weekly")
     assert res is not None and res.status == "applied" and res.change_id is None
     assert (vault / rel).exists()
@@ -661,8 +661,9 @@ def test_a_type_1_block_stays_open_for_a_tag_later_on_its_line():
 
 
 @pytest.mark.parametrize("payload,expected", [
-    # a blank line ends a type-6 block: not raw HTML in CommonMark
-    ("<div\n\nonclick=alert(1)>", []),
+    # CommonMark: a blank line ends the type-6 block; held anyway (raw HTML,
+    # and the tag is read as still open)
+    ("<div\n\nonclick=alert(1)>", [risk.REASON_HANDLER]),
     # CommonMark renders this as text plus a code block; a fence no longer ends
     # an open tag, so it is held (fails closed)
     ("<img src=x\n```\nonerror=alert(1)>", [risk.REASON_HANDLER]),
@@ -707,3 +708,169 @@ def test_ordinary_worker_creates_still_apply(vault, rel):
     res = write(rel, content="# x\n", op="create", actor=worker_actor("ingest"))
     assert (res.status, res.change_id) == ("applied", None)
     assert (vault / rel).exists()
+
+
+
+# ── Task 10: in markdown, any raw HTML waits (fail closed, R15) ────────────
+
+def _md(text: str, *, before: bytes | None = V1) -> list[str]:
+    return risk.evaluate(_p(before=before, after=V1 + text.encode()))
+
+
+# Every bypass shape from the two post-rebase re-reviews, plus plain HTML.
+RAW_HTML_SHAPES = [
+    "<pre>\n<img src=x\n\nonerror=alert(1)>\n</pre>\n",
+    "<pre>x\n<img src=x\n\n\nonerror=alert(1)>\n",
+    "<div>\n```\n<img src=x\n```\nonerror=alert(1)>\n",
+    "<span>\n```\n<img src=x\n```\nonerror=alert(1)>\n",
+    "<div>\n~~~\n<img src=x\n~~~\nonerror=alert(1)>\n",
+    "``` a`b\n<div\n```\nonclick=alert(1)>\n",  # not a fence: info has a backtick
+    "> <img src=x\n> onerror=alert(1)>\n",
+    "> <div\n> ```\n> onclick=alert(1)>\n",
+    "> <pre\n>\n> onmouseover=alert(1)>\n",
+    "- <img src=x\n  onerror=alert(1)>\n",
+    "<div\n```\nonclick=alert(1)>x</div>\n",
+    "<details\n~~~\nontoggle=alert(1) open>\n",
+    "<textarea\n\nonfocus=alert(1) autofocus>\n",
+    "<div\n\x0c\nonclick=alert(1)>\n",
+    "<img src=x\n\u00a0\nonerror=alert(1)>\n",
+    "<details open ontoggle=alert(1)><summary>x</summary></details>\n",
+    '<iframe src="https://example.com"></iframe>\n',
+    "<svg onload=alert(1)>\n",
+    "<img src=x onerror=alert(1)>\n",
+    "```\nfine\n```\n<img src=x onerror=alert(1)>\n",  # right after a closing fence
+    "  ```\n<img src=x onerror=alert(1)>\n",  # indented opener: not trusted as a fence
+    "`code` <b>bold</b>\n",
+    "\\`x` <i>y</i>\n",  # an escaped backtick opens no code span
+    "<http://x`> <img src=x> `\n",  # an autolink's backtick opens no code span
+    "<!-- note -->\n",
+    "<?php echo 1 ?>\n",
+    "</div>\n",
+]
+
+
+@pytest.mark.parametrize("text", RAW_HTML_SHAPES)
+def test_raw_html_in_markdown_is_held(text):
+    reasons = _md(text)
+    assert reasons, text
+    assert set(reasons) <= {risk.REASON_RAW_HTML, risk.REASON_HANDLER, risk.REASON_SCRIPT,
+                            risk.REASON_JS_URL}, reasons
+
+
+@pytest.mark.parametrize("text", [
+    "<details>\n<summary>More</summary>\n\nHidden\n</details>\n",
+    '<iframe src="https://example.com"></iframe>\n',
+    "a <b>bold</b> idea\n",
+    "the <scripted> plan\n",
+    "line<br>\n",
+    "if a<b:\n",
+    "- latency p95<b target\n",
+    "Use Vec<T> here\n",
+])
+def test_plain_tags_are_held_as_raw_html(text):
+    assert _md(text) == [risk.REASON_RAW_HTML]
+
+
+@pytest.mark.parametrize("text,reason", [
+    ('<a href="&#106;avascript:alert(1)">x</a>\n', risk.REASON_JS_URL),
+    ("[x](javascript&#58;alert(1))\n", risk.REASON_JS_URL),
+    ("[x](javascript\\:alert(1))\n", risk.REASON_JS_URL),
+    ("[x](vbscript:msgbox(1))\n", risk.REASON_JS_URL),
+    ("[x](VBScript&colon;msgbox(1))\n", risk.REASON_JS_URL),
+    ("[x](data:text/html,<script>alert(1)</script>)\n", risk.REASON_JS_URL),
+    ("[x](data:text/html;base64,PHNjcmlwdD4=)\n", risk.REASON_JS_URL),
+    ('<a href="\x01 javascript:alert(1)">x</a>\n', risk.REASON_JS_URL),
+    ("<javascript:alert(1)>\n", risk.REASON_JS_URL),
+    ("<vbscript:msgbox(1)>\n", risk.REASON_JS_URL),
+    ("<data:text/html,x>\n", risk.REASON_JS_URL),
+])
+def test_script_url_schemes_are_held(text, reason):
+    assert reason in _md(text)
+
+
+@pytest.mark.parametrize("text", [
+    "```html\n<div onclick=alert(1)><script>x()</script></div>\n```\n",
+    "~~~\n<img src=x onerror=alert(1)>\n~~~\n",
+    "````\n```\n<div>\n```\n<img src=x>\n````\n",
+    "Use `<div>` and ``a `<b>` c`` here.\n",
+    "a < b, <3, 1 <2, x <= y, a <- b, a << b\n",
+    "See <https://example.com/a?b=c> and <me@example.com>.\n",
+    "Mail <first.last+tag@sub.example.org>, ftp <ftp://files.example.com>.\n",
+    "\\<div> is how you write a tag\n",
+    "x &lt;div&gt; y\n",
+])
+def test_code_prose_and_autolinks_are_not_raw_html(text):
+    assert _md(text) == []
+
+
+def test_an_added_line_inside_a_kept_fence_is_code():
+    before = V1 + b"```html\n<p>old</p>\n```\n"
+    after = V1 + b"```html\n<p>old</p>\n<img src=x onerror=alert(1)>\n```\n"
+    assert risk.evaluate(_p(before=before, after=after)) == []
+
+
+def test_an_attribute_line_added_under_a_kept_open_tag_is_held():
+    before = V1 + b"> <img src=x\n>\n"
+    after = V1 + b"> <img src=x\n> onerror=alert(1)>\n"
+    assert risk.evaluate(_p(before=before, after=after)) == [risk.REASON_RAW_HTML]
+
+
+def test_html_documents_keep_the_html_rules():
+    doc = b"<!doctype html>\n<p>Report</p>\n<details><summary>x</summary></details>\n"
+    assert risk.evaluate(_p(HTML_DOC, op="create", before=None, after=doc)) == []
+
+
+@pytest.mark.parametrize("actor", [ASSISTANT, FAMILIAR])
+@pytest.mark.parametrize("text", [
+    "<details open ontoggle=alert(1)>x</details>",
+    "<pre>\n<img src=x\n\nonerror=alert(1)>\n</pre>",
+    "> <img src=x\n> onerror=alert(1)>",
+    "<span>inline</span> html",
+])
+def test_raw_html_through_the_writer_waits(vault, actor, text):
+    res = write(NOTE, content=V1.decode() + text + "\n", actor=actor, base_etag=compute_etag(V1))
+    assert res.status == "pending"
+    assert (vault / NOTE).read_bytes() == V1
+
+
+def test_code_and_autolinks_through_the_writer_apply(vault):
+    text = "```html\n<div>x</div>\n```\nSee <https://example.com> and `<b>`.\n"
+    res = write(NOTE, content=V1.decode() + text, actor=ASSISTANT, base_etag=compute_etag(V1))
+    assert res.status == "applied"
+
+
+# B4 workers write realistic text through the real path: it applies.
+
+def test_b4_reversal_fields_apply(vault):
+    rel = _user_note(vault)
+    res = jobs.update_fields(
+        rel, lambda _m: {"reversed_by": ["[[20-contexts/work/decisions/2026-10-09-use-sqlite]]"],
+                         "status": "reversed"},
+        actor=worker_actor("reversal"), reason="reversed by a newer decision",
+    )
+    assert res is not None and res.status == "applied"
+
+
+@pytest.mark.parametrize("rel,text", [
+    ("80-profile/current-projects.md",
+     "# Current projects\n\n## work\n\n- Billing migration: p95 < 200ms, rollout 50% -> 100%\n"
+     "- Onboarding plan (owner: me) — see [[20-contexts/work/plan]]\n"),
+    ("80-profile/_review.md",
+     "# Review\n\n## Proposed stable changes\n\n- prefers **short** answers (seen 4x)\n"
+     "- works 08:00-16:00 SAST; tz: Africa/Johannesburg\n"),
+])
+def test_b4_profile_apply_bullets_apply(vault, rel, text):
+    (vault / rel).parent.mkdir(parents=True, exist_ok=True)
+    (vault / rel).write_bytes(b"# Old\n\n- an older bullet\n")
+    res = jobs.rewrite_text(rel, lambda _t: text, actor=worker_actor("profile-apply"),
+                            reason="weekly")
+    assert res is not None and res.status == "applied", res
+    assert (vault / rel).read_text() == text
+
+
+def test_b4_semantic_related_links_apply(vault):
+    rel = _user_note(vault)
+    links = ["[[20-contexts/work/plan]]", "[[20-contexts/personal/notes/reading-list]]"]
+    res = jobs.update_fields(rel, lambda _m: {"related": links},
+                             actor=worker_actor("semantic-refresh"), reason="related")
+    assert res is not None and res.status == "applied"

@@ -38,7 +38,10 @@ REASON_STABLE = "changes your stable profile"
 REASON_PATH = "uses an unusual path (..)"
 REASON_SCRIPT = "adds a <script> tag"
 REASON_HANDLER = "adds an HTML event handler (on…=)"
-REASON_JS_URL = "adds a javascript: link"
+REASON_JS_URL = "adds a script link (javascript:, vbscript:, data:text/html)"
+# Markdown notes only (R15): any raw HTML outside code waits. The tag rules
+# above stay for clearer messages; this is the safety net under them.
+REASON_RAW_HTML = "adds raw HTML"
 REASON_TEMPLATE_EXPR = "adds a template expression ({{ … }})"
 REASON_EXEC_FENCE = "adds an executable code block"
 REASON_DELETE = "deletes a note it didn't create"
@@ -48,26 +51,53 @@ _SCRIPT_RE = re.compile(r"<\s*script\b", re.IGNORECASE)
 # HTML parsers accept "/" as well as whitespace before an attribute.
 _HANDLER_RE = re.compile(r"<[a-z][^>]*[\s/]on[a-z]+\s*=", re.IGNORECASE)
 # A tag still open at the end of a line: the next line continues its attributes.
-# In markdown the tag name ends at whitespace, "/" or the line end (``a<b:`` and
-# ``i<n;`` are prose). As in CommonMark HTML blocks, a tag opened on a line that
-# starts with a type-1 name (pre, script, style, textarea) runs until it closes;
-# any other ends at a blank line (spaces/tabs only), never at a fence; and a
-# ``<`` inside fenced code opens nothing. HTML has none of this: the tokenizer
-# reads any run up to whitespace, "/" or ">" as the name (``<b:x``).
-_OPEN_TAG_MD_RE = re.compile(r"<[a-z][a-z0-9-]*(?:[\s/][^>]*)?$", re.IGNORECASE)
-_OPEN_TAG_HTML_RE = re.compile(r"<[a-z][^\s/>]*(?:[\s/][^>]*)?$", re.IGNORECASE)
-_TYPE1_BLOCK_RE = re.compile(r"^ {0,3}</?(?:pre|script|style|textarea)(?=[\s>]|$)", re.IGNORECASE)
-_FENCE_OPEN_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+# Read as the HTML tokenizer does: the name runs to whitespace, "/" or ">"
+# (``<b:x``), and nothing but ">" closes it, not a blank line or a fence.
+_OPEN_TAG_RE = re.compile(r"<[a-z][^\s/>]*(?:[\s/][^>]*)?$", re.IGNORECASE)
+# Raw HTML in markdown: "<" then a letter, "/", "!" or "?" (CommonMark tags,
+# closing tags, comments, declarations, processing instructions).
+_RAW_TAG_RE = re.compile(r"<[A-Za-z/!?]")
+# CommonMark autolinks render as links, not HTML: <scheme:...> and <a@b.c>.
+_AUTOLINK_RE = re.compile(
+    r"<([A-Za-z][A-Za-z0-9+.-]{1,31}):[^\x00-\x20<>]*>"
+    r"|<[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+    r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*>"
+)
+_SCRIPT_SCHEMES = frozenset({"javascript", "vbscript", "data"})
+# A fence is trusted only at column 0: indented, it may belong to a list item
+# that a later line closes, and the "code" after it would render as HTML.
+# A backtick fence's info string may not hold a backtick (then it's prose).
+_FENCE_OPEN_RE = re.compile(r"^(?:(`{3,})[^`]*|(~{3,}).*)$")
+_FENCE_CLOSE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})[ \t]*$")
+# Where a CommonMark HTML block that starts on a line ends. Blocks 1-5 run to
+# their end marker; anything else is taken to run to a blank line (types 6
+# and 7, over-approximated: fences inside are raw text, not code).
+_HTML_BLOCK_STARTS = (
+    (re.compile(r"^ {0,3}<(?:pre|script|style|textarea)(?=[\s>]|$)", re.IGNORECASE),
+     re.compile(r"</(?:pre|script|style|textarea)>", re.IGNORECASE)),
+    (re.compile(r"^ {0,3}<!--"), re.compile(r"-->")),
+    (re.compile(r"^ {0,3}<\?"), re.compile(r"\?>")),
+    (re.compile(r"^ {0,3}<!\[CDATA\["), re.compile(r"\]\]>")),
+    (re.compile(r"^ {0,3}<![A-Za-z]"), re.compile(r">")),
+    (re.compile(r"^ {0,3}</?[A-Za-z]"), None),  # ends at a blank line
+)
 # Only LF, CR and CRLF end a line (CommonMark); str.splitlines() also splits on
 # form feed, NEL, U+2028 … which leaves a tag open in a browser.
 _LINE_END_RE = re.compile(r"\r\n|\r|\n")
+# Browsers strip leading C0 controls and spaces from a URL.
+_BAD_SCHEME = (
+    r"[\x00-\x20]*(?:(?:javascript|vbscript)[\x00-\x20]*:"
+    r"|data[\x00-\x20]*:[\x00-\x20]*text/html)"
+)
 _JS_URL_RE = re.compile(
-    r"(?:href|src|action|formaction|xlink:href|data)\s*=\s*[\"']?\s*javascript\s*:"
-    r"|\]\(\s*<?\s*javascript\s*:"
-    r"|<\s*javascript\s*:"
-    r"|^\s*\[[^\]]+\]:\s*<?\s*javascript\s*:",  # markdown reference definition
+    rf"(?:href|src|action|formaction|xlink:href|data)\s*=\s*[\"']?{_BAD_SCHEME}"
+    rf"|\]\(\s*<?{_BAD_SCHEME}"
+    rf"|<{_BAD_SCHEME}"
+    rf"|^\s*\[[^\]]+\]:\s*<?{_BAD_SCHEME}",  # markdown reference definition
     re.IGNORECASE,
 )
+# Markdown backslash escapes: ``javascript\:`` is ``javascript:`` in a link.
+_MD_ESCAPE_RE = re.compile(r"\\(?=[!-/:-@\[-`{-~])")
 # Browsers drop these inside a URL: java<TAB>script: is javascript:.
 _URL_IGNORED_RE = re.compile(r"[\t\r\n]")
 # Spec C placeholders: {{ name }}, {{ a.b }}, {{ a | filter: "arg" }}; quoted
@@ -190,47 +220,98 @@ def _lines(data: bytes) -> list[str]:
     return lines
 
 
-def _fence_closes(line: str, fence: str) -> bool:
-    """``line`` closes a block opened by ``fence``: same character, at least as
-    long, at most 3 spaces in, nothing after but spaces/tabs."""
-    m = _FENCE_OPEN_RE.match(line)
-    return (
-        m is not None and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence)
-        and line[m.end():].strip(" \t") == ""
-    )
-
-
-def _scan_lines(lines: list[str], markdown: bool) -> Iterator[str]:
+def _scan_lines(lines: list[str]) -> Iterator[str]:
     """Each line as the tag rules see it: prefixed with ``<x `` when it
     continues a tag left open on an earlier line."""
-    open_tag_re = _OPEN_TAG_MD_RE if markdown else _OPEN_TAG_HTML_RE
     tag_open = False
-    never_reset = False  # the open tag started a type-1 block
-    fence: str | None = None  # the fence of the code block we're in
     for line in lines:
-        if tag_open:
-            if markdown and not never_reset and line.strip(" \t") == "":
-                tag_open = False
-                yield line
-                continue
-            scan = "<x " + line
-            tag_open = open_tag_re.search(scan) is not None
-            yield scan
+        scan = "<x " + line if tag_open else line
+        tag_open = _OPEN_TAG_RE.search(scan) is not None
+        yield scan
+
+
+def _outside_code(line: str) -> str:
+    """``line`` with what can't be raw HTML blanked out, read left to right as
+    CommonMark does: backslash escapes, code spans (a backtick run closed by
+    one of the same length; unclosed, it's literal) and safe autolinks."""
+    out: list[str] = []
+    i, n = 0, len(line)
+    while i < n:
+        c = line[i]
+        if c == "\\" and i + 1 < n:
+            out.append("  ")
+            i += 2
             continue
-        if markdown:
-            if fence is not None:
-                if _fence_closes(line, fence):
-                    fence = None
-                yield line
+        if c == "`":
+            j = i
+            while j < n and line[j] == "`":
+                j += 1
+            close = re.compile(rf"(?<!`){'`' * (j - i)}(?!`)").search(line, j)
+            if close is not None:
+                out.append(" " * (close.end() - i))
+                i = close.end()
+            else:
+                out.append(line[i:j])
+                i = j
+            continue
+        if c == "<":
+            m = _AUTOLINK_RE.match(line, i)
+            if m is not None and (m.group(1) or "").lower() not in _SCRIPT_SCHEMES:
+                out.append(" " * (m.end() - i))
+                i = m.end()
                 continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def _html_block_end(line: str) -> re.Pattern[str] | None | bool:
+    """The end marker of an HTML block this line starts; ``None`` for one that
+    ends at a blank line; ``False`` when it starts none or ends on this line."""
+    for start, end in _HTML_BLOCK_STARTS:
+        m = start.match(line)
+        if m is None:
+            continue
+        if end is not None and end.search(line, m.end()):
+            return False
+        return end
+    return False
+
+
+def _markdown_lines(lines: list[str]) -> Iterator[tuple[bool, str]]:
+    """``(code, scan)`` per line of a markdown note: whether it is fenced code,
+    and the line as the HTML rules see it (code spans, escapes and safe
+    autolinks blanked; ``<x `` prefixed inside a tag left open). Fail closed:
+    a fence counts only where CommonMark surely reads one — never while a tag
+    or an HTML block is open."""
+    fence: str | None = None
+    tag_open = False
+    block: re.Pattern[str] | None | bool = False  # see _html_block_end
+    for line in lines:
+        if fence is not None:
+            m = _FENCE_CLOSE_RE.match(line)
+            if m is not None and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence):
+                fence = None
+            yield True, line
+            continue
+        if not tag_open and block is False:
             m = _FENCE_OPEN_RE.match(line)
             if m is not None:
-                fence = m.group(1)
-                yield line
+                fence = m.group(1) or m.group(2)
+                yield True, line
                 continue
-        tag_open = open_tag_re.search(line) is not None
-        never_reset = tag_open and _TYPE1_BLOCK_RE.match(line) is not None
-        yield line
+        text = _outside_code(line)
+        scan = "<x " + text if tag_open else text
+        tag_open = _OPEN_TAG_RE.search(scan) is not None
+        if block is None:
+            if line.strip(" \t") == "":
+                block = False
+        elif block is not False:
+            if block.search(line):
+                block = False
+        else:
+            block = _html_block_end(line)
+        yield False, scan
 
 
 def _added_indices(before: bytes | None, after: bytes) -> list[int]:
@@ -264,37 +345,50 @@ def _content_reasons(change: ProposedChange, paths: list[str]) -> list[str]:
     if change.after is None:
         return []
     in_template = any(p.startswith(_TEMPLATES_FOLDED) for p in paths)
-    # Unknown or mixed suffix: judged as HTML, the stricter reading.
+    # Unknown or mixed suffix: judged as HTML. Raw HTML is the point of an
+    # .html document, so only the tag rules apply there.
     markdown = bool(paths) and all(p.endswith(".md") for p in paths)
     new = _lines(change.after)
     added = _added_indices(change.before, change.after)
     added_set = set(added)
+    # Tracked over the whole file: a kept line can open a tag or a fence.
+    walk = _markdown_lines(new) if markdown else ((False, s) for s in _scan_lines(new))
     reasons: list[str] = []
-    # Tracked over the whole file: a kept line can open the tag.
-    for i, (line, scan) in enumerate(zip(new, _scan_lines(new, markdown))):
+    raw_html = False
+    prose: list[str] = []  # the added lines outside fenced code
+    for i, (code, scan) in enumerate(walk):
         if i not in added_set:
             continue
-        if _SCRIPT_RE.search(line):
-            _add(reasons, REASON_SCRIPT)
-        if _HANDLER_RE.search(scan):
-            _add(reasons, REASON_HANDLER)
-        if _js_url(line) or _js_url(scan):
-            _add(reasons, REASON_JS_URL)
+        line = new[i]
         fence = _FENCE_RE.match(line)
         if fence is not None:
             lang = fence.group(1).lower()
             if lang in _ALWAYS_EXECUTABLE or (in_template and lang in _EXECUTABLE_IN_TEMPLATES):
                 _add(reasons, REASON_EXEC_FENCE)
-    joined = "\n".join(new[i] for i in added)
+        if code:
+            continue
+        prose.append(line)
+        if _SCRIPT_RE.search(scan):
+            _add(reasons, REASON_SCRIPT)
+        if _HANDLER_RE.search(scan):
+            _add(reasons, REASON_HANDLER)
+        if _js_url(line) or _js_url(scan) or (markdown and _js_url(_MD_ESCAPE_RE.sub("", line))):
+            _add(reasons, REASON_JS_URL)
+        if markdown and _RAW_TAG_RE.search(scan):
+            raw_html = True
+    joined = "\n".join(prose)
     if REASON_JS_URL not in reasons and _js_url(joined):  # an attribute split across lines
         _add(reasons, REASON_JS_URL)
-    if _TEMPLATE_EXPR_RE.search(joined):  # per-line matches included; may span lines
+    if _TEMPLATE_EXPR_RE.search("\n".join(new[i] for i in added)):  # may span lines
         _add(reasons, REASON_TEMPLATE_EXPR)
+    if raw_html and not {REASON_SCRIPT, REASON_HANDLER, REASON_JS_URL} & set(reasons):
+        _add(reasons, REASON_RAW_HTML)  # the specific reason already says it
     return _in_rule_order(reasons)
 
 
 _CONTENT_ORDER = (
-    REASON_SCRIPT, REASON_HANDLER, REASON_JS_URL, REASON_TEMPLATE_EXPR, REASON_EXEC_FENCE,
+    REASON_SCRIPT, REASON_HANDLER, REASON_JS_URL, REASON_RAW_HTML, REASON_TEMPLATE_EXPR,
+    REASON_EXEC_FENCE,
 )
 
 
