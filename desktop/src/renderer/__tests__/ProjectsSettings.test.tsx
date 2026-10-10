@@ -226,7 +226,7 @@ describe('ProjectsSettings', () => {
     expect(screen.getByLabelText('project name work/paymnets')).toBeTruthy();
     fireEvent.keyDown(screen.getByLabelText('project name work/paymnets'), { key: 'Enter' });
     expect(vi.mocked(client.patch)).toHaveBeenCalledTimes(1);
-    resolve({ ...projects[1], slug: 'payments', id: 'work/payments', name: 'Payments' });
+    resolve({ ...projects[1]!, slug: 'payments', id: 'work/payments', name: 'Payments' });
     await waitFor(() => expect(screen.queryByLabelText('project name work/paymnets')).toBeNull());
   });
 });
