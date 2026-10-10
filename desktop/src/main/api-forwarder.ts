@@ -1,6 +1,6 @@
 import { request } from 'node:http';
 import type { Sidecar } from './sidecar';
-import type { HttpMethod } from '../shared/types';
+import type { HttpMethod, WriteActor } from '../shared/types';
 
 export type { HttpMethod };
 
@@ -27,16 +27,36 @@ export type ApiResult<T = unknown> =
 
 const ETAG_RE = /^[0-9a-f]{16}$/;
 
-/** Headers the renderer may ask the forwarder to set. B1: only If-Match
- * (spec B §7), and only a well-formed 16-hex etag. B2 adds the actor
- * header here. Anything else is dropped. */
-export function requestHeadersFrom(opts: unknown): Record<string, string> {
+/** Spec B §2: who is writing. The sidecar reads it; a missing header = user. */
+export const ACTOR_HEADER = 'X-Poltergeist-Actor';
+
+/** Same rule as the plugin manifest id (shared/plugin-types.ts). */
+const PLUGIN_ID_RE = /^[a-z][a-z0-9-]{1,31}$/;
+
+function ifMatchFrom(opts: unknown): Record<string, string> {
   if (!opts || typeof opts !== 'object') return {};
   const ifMatch = (opts as { ifMatch?: unknown }).ifMatch;
-  if (typeof ifMatch === 'string' && ETAG_RE.test(ifMatch)) {
-    return { 'If-Match': `"${ifMatch}"` };
-  }
-  return {};
+  return typeof ifMatch === 'string' && ETAG_RE.test(ifMatch)
+    ? { 'If-Match': `"${ifMatch}"` }
+    : {};
+}
+
+/** Headers the renderer may ask the forwarder to set: If-Match (a 16-hex
+ * etag, spec B §7) and the actor. The renderer may only claim `assistant`;
+ * anything else is sent as `user`. Every other key is dropped. */
+export function requestHeadersFrom(opts: unknown): Record<string, string> {
+  const claimed = opts && typeof opts === 'object' ? (opts as { actor?: unknown }).actor : undefined;
+  const actor: WriteActor | 'user' = claimed === 'assistant' ? 'assistant' : 'user';
+  return { ...ifMatchFrom(opts), [ACTOR_HEADER]: actor };
+}
+
+/** Headers for a plugin's sidecar call (main-process `api.fetch` and the
+ * renderer bridge): always `plugin:<id>`, plus If-Match. null for a string
+ * that is not a plugin id. Best-effort (spec B §2): renderer-side plugin
+ * code shares the renderer and could reach gb:api:request directly. */
+export function pluginHeadersFrom(pluginId: string, opts?: unknown): Record<string, string> | null {
+  if (!PLUGIN_ID_RE.test(pluginId)) return null;
+  return { ...ifMatchFrom(opts), [ACTOR_HEADER]: `plugin:${pluginId}` };
 }
 
 // node:http, not fetch: undici (behind Node's fetch) enforces a hidden 300s

@@ -3,6 +3,10 @@ import type { ActivePluginInfo, MarketplaceListing, PluginRecord } from './plugi
 
 export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE' | 'PUT';
 
+/** The only non-user actor the renderer may claim (spec B §2): inline AI and
+ * the docs panel's Accept. The main process sends everything else as user. */
+export type WriteActor = 'assistant';
+
 export type Theme = 'dark' | 'light';
 export type Density = 'comfortable' | 'compact';
 export type LlmProvider = 'claude' | 'codex' | 'gemini' | 'local';
@@ -71,7 +75,7 @@ export interface GbBridge {
       method: HttpMethod,
       path: string,
       body?: unknown,
-      opts?: { ifMatch?: string },
+      opts?: { ifMatch?: string; actor?: WriteActor },
     ): Promise<
       | { ok: true; data: T }
       | { ok: false; error: string; status?: number }
@@ -163,6 +167,7 @@ export interface GbBridge {
         method: string,
         path: string,
         body?: unknown,
+        opts?: { ifMatch?: string },
       ): Promise<{ ok: true; data: unknown } | { ok: false; error: string; status?: number }>;
     };
   };

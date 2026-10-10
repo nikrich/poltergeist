@@ -156,13 +156,25 @@ describe('loader', () => {
 
     const ok = await ctx!.api.fetch('GET', '/v1/vault/stats');
     expect(ok).toEqual({ ok: true, data: { hello: 1 } });
-    expect(calls).toEqual([['GET', '/v1/vault/stats', undefined]]);
+    expect(calls).toEqual([
+      ['GET', '/v1/vault/stats', undefined, { 'X-Poltergeist-Actor': 'plugin:ctx-capture' }],
+    ]);
+
+    await ctx!.api.fetch('PUT', '/v1/notes', { path: 'a.md', content: 'x' }, {
+      ifMatch: '0123456789abcdef',
+    });
+    expect(calls[1]).toEqual([
+      'PUT',
+      '/v1/notes',
+      { path: 'a.md', content: 'x' },
+      { 'X-Poltergeist-Actor': 'plugin:ctx-capture', 'If-Match': '"0123456789abcdef"' },
+    ]);
 
     const badMethod = await ctx!.api.fetch('TRACE', '/v1/x');
     expect(badMethod.ok).toBe(false);
 
     const badPath = await ctx!.api.fetch('GET', 'v1/../x');
     expect(badPath.ok).toBe(false);
-    expect(calls.length).toBe(1); // invalid calls never reach fetchApi
+    expect(calls.length).toBe(2); // invalid calls never reach fetchApi
   });
 });

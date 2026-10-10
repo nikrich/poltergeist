@@ -80,7 +80,7 @@ function installPlugins(): void {
       }
     },
     // 15-minute ceiling covers long LLM sweeps plugins may kick off.
-    fetchApi: (method, path, body) => forward(sidecar, method, path, body, 900_000),
+    fetchApi: (method, path, body, headers) => forward(sidecar, method, path, body, 900_000, headers),
   });
   pluginLoader = loader;
   loader.scan();
@@ -91,8 +91,9 @@ function installPlugins(): void {
   });
   installPluginProtocol((id) => loader.dirFor(id));
   const sidecarBridge = makeSidecarHandler({
-    forward: (m, p, b) => forward(sidecar, m as never, p, b),
+    forward: (m, p, b, h) => forward(sidecar, m as never, p, b, undefined, h),
     isAllowedMethod,
+    isKnownPlugin: (id) => loader.records().some((r) => r.id === id),
     demo: DEMO,
     handleDemoApi: (m, p, b) => handleDemoApi(m as never, p, b),
   });

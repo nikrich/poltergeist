@@ -8,7 +8,7 @@ import {
   type PluginRecord,
 } from '../../shared/plugin-types';
 import * as store from './store';
-import { isAllowedMethod, isSafeApiPath, type ApiResult, type HttpMethod } from '../api-forwarder';
+import { isAllowedMethod, isSafeApiPath, pluginHeadersFrom, type ApiResult, type HttpMethod } from '../api-forwarder';
 
 // Loads trusted plugin code. Every call into a plugin is fenced: a throw marks
 // the plugin `errored`, removes its IPC handlers, and never propagates.
@@ -29,7 +29,7 @@ export interface PluginContext {
     send(channel: string, payload: unknown): void;
   };
   api: {
-    fetch(method: string, path: string, body?: unknown): Promise<ApiResult>;
+    fetch(method: string, path: string, body?: unknown, opts?: { ifMatch?: string }): Promise<ApiResult>;
   };
   log: (...args: unknown[]) => void;
 }
@@ -40,7 +40,12 @@ export interface LoaderDeps {
   registerHandler(channel: string, fn: (...args: unknown[]) => unknown): void;
   unregisterHandler(channel: string): void;
   broadcast(channel: string, payload: unknown): void;
-  fetchApi(method: HttpMethod, path: string, body?: unknown): Promise<ApiResult>;
+  fetchApi(
+    method: HttpMethod,
+    path: string,
+    body: unknown,
+    headers: Record<string, string>,
+  ): Promise<ApiResult>;
 }
 
 interface PluginModule {
@@ -129,14 +134,16 @@ export function createLoader(deps: LoaderDeps) {
         },
       },
       api: {
-        fetch: async (method, path, body) => {
+        fetch: async (method, path, body, opts) => {
           if (!isAllowedMethod(method)) {
             return { ok: false, error: `method not allowed: ${method}` };
           }
           if (typeof path !== 'string' || !isSafeApiPath(path)) {
             return { ok: false, error: 'invalid api path' };
           }
-          return deps.fetchApi(method, path, body);
+          const headers = pluginHeadersFrom(record.id, opts);
+          if (!headers) return { ok: false, error: 'invalid plugin id' };
+          return deps.fetchApi(method, path, body, headers);
         },
       },
       log: (...args) => console.log(`[plugin:${record.id}]`, ...args),

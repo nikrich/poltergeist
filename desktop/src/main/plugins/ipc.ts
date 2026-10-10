@@ -4,6 +4,7 @@ import { fetchRegistry } from './registry';
 import { makeMarketplaceHandlers } from './marketplace';
 import * as store from './store';
 import type { PluginLoader } from './loader';
+import { pluginHeadersFrom } from '../api-forwarder';
 
 // Host-side IPC for the Plugins screen. Plugin-scoped channels
 // (gb:plugin:<id>:*) are registered by the loader; these are the gb:plugins:*
@@ -20,35 +21,54 @@ type ApiResult = { ok: true; data: unknown } | { ok: false; error: string; statu
 /**
  * The plugin sidecar bridge, factored as a pure function over injected deps so
  * it is unit-testable without electron. Guards mirror the app's own
- * gb:api:request handler: method allowlist + path must start with /v1/.
+ * gb:api:request handler (method allowlist, path under /v1/); every call is
+ * stamped `X-Poltergeist-Actor: plugin:<id>` for the change log (spec B §2).
  */
 export function makeSidecarHandler(deps: {
-  forward: (m: string, p: string, b?: unknown) => Promise<ApiResult>;
+  forward: (m: string, p: string, b: unknown, headers: Record<string, string>) => Promise<ApiResult>;
   isAllowedMethod: (m: string) => boolean;
+  isKnownPlugin: (id: string) => boolean;
   demo: boolean;
   handleDemoApi: (m: string, p: string, b?: unknown) => Promise<ApiResult> | ApiResult;
 }) {
-  return async (method: unknown, path: unknown, body?: unknown): Promise<ApiResult> => {
+  return async (
+    pluginId: unknown,
+    method: unknown,
+    path: unknown,
+    body?: unknown,
+    opts?: unknown,
+  ): Promise<ApiResult> => {
     if (typeof method !== 'string' || typeof path !== 'string') {
       return { ok: false, error: 'Invalid request shape' };
     }
+    const headers =
+      typeof pluginId === 'string' && deps.isKnownPlugin(pluginId)
+        ? pluginHeadersFrom(pluginId, opts)
+        : null;
+    if (!headers) return { ok: false, error: 'unknown plugin' };
     const m = method.toUpperCase();
     if (!deps.isAllowedMethod(m)) return { ok: false, error: 'Method not allowed' };
     if (!path.startsWith('/v1/')) return { ok: false, error: 'Path not allowed (must start with /v1/)' };
     if (deps.demo) return deps.handleDemoApi(m, path, body);
-    return deps.forward(m, path, body);
+    return deps.forward(m, path, body, headers);
   };
 }
 
 export function installPluginsIpc(opts: {
   loader: PluginLoader;
   pluginsRoot: string;
-  sidecarBridge: (method: unknown, path: unknown, body?: unknown) => Promise<ApiResult>;
+  sidecarBridge: (
+    pluginId: unknown,
+    method: unknown,
+    path: unknown,
+    body?: unknown,
+    reqOpts?: unknown,
+  ) => Promise<ApiResult>;
 }): void {
   const { loader, pluginsRoot } = opts;
 
-  ipcMain.handle('gb:plugins:sidecar', (_e, method, path, body) =>
-    opts.sidecarBridge(method, path, body),
+  ipcMain.handle('gb:plugins:sidecar', (_e, pluginId, method, path, body, reqOpts) =>
+    opts.sidecarBridge(pluginId, method, path, body, reqOpts),
   );
 
   const broadcastChanged = (): void => {
