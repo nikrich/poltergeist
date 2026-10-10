@@ -175,4 +175,14 @@ describe('ChangesScreen', () => {
     setup(list({ items: [] }));
     expect(await screen.findByText('nothing has changed your notes yet')).toBeInTheDocument();
   });
+
+  it('shows held changes above the history and keeps them out of it', async () => {
+    const held: ChangeSummary = {
+      ...AI, id: 9, status: 'pending', riskReasons: ['edits a template'], reason: 'held one',
+    };
+    setup(list({ items: [held, AI, PLUGIN], pendingCount: 1 }));
+    expect(await screen.findByTestId('pending-9')).toBeInTheDocument();
+    expect(screen.queryByTestId('change-9')).toBeNull();
+    expect(screen.getByTestId('change-2')).toBeInTheDocument();
+  });
 });
