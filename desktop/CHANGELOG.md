@@ -1,5 +1,64 @@
 # Changelog
 
+## [1.12.0](https://github.com/nikrich/poltergeist/compare/v1.11.0...v1.12.0) (2026-10-10)
+
+
+### Features
+
+* feat(docs): docs library — per-project folder trees, in-app viewer, AI-indexed (slice 1) (#144)
+* feat(whatsapp): connector card and opt-in chat picker in the detail pane
+* feat(whatsapp): chat picker API, probe, display entry, Full Disk Access provider
+* feat(whatsapp): path routing to personal/override; stable per-chat-day note filename
+* feat(whatsapp): connector emits one event per chat-day; hourly scheduler job
+* feat(whatsapp): opt-in chat allowlist state file
+* feat(desktop): backlinks panel in the note viewer and jots; open wikilinks as .md
+* feat(editor): [[ / # / @ suggestion menus backed by the link index
+* feat(desktop): suggest fetch helpers, link insertion text and useBacklinks
+* feat(api): GET /v1/vault/backlinks over the link index
+* feat(api): GET /v1/vault/suggest for page, tag and person autocomplete
+* feat(vault-index): incremental in-memory link index with background cold build
+* feat(vault-index): pure note parser for the link index
+* feat(whatsapp): cached whisper transcripts for voice notes
+* feat(whatsapp): render a chat-day as a markdown transcript
+* feat(whatsapp): read-only ChatStorage reader with schema guard
+* feat(desktop): conflict banner with view diff / keep theirs / keep mine in jots and note view
+* feat(desktop): etag-chained guarded autosave with conflict state and line diff
+* feat(desktop): carry If-Match from renderer through IPC to the sidecar
+* feat(api): generated docs (mcp) and chat attachments create via vault_write, never overwrite
+* feat(api): jot create/edit/route/review/stamp/delete go through vault_write
+* feat(api): note body/upsert saves go through vault_write with If-Match
+* feat(api): etag on note reads and 409/404/422/400 mapping for vault writes
+* feat(vault-write): atomic locked write path with content-hash etags
+* feat(vault-write): byte-preserving frontmatter splice and line-level field edits
+
+### Bug Fixes
+
+* fix(security): block foreign navigation and window.open in every Electron window
+* fix(whatsapp): untick a chat even when its context is archived
+* fix(whatsapp): classify SQLITE_AUTH as a Full Disk Access denial
+* fix(whatsapp): re-check today and yesterday for edits and late downloads
+* fix(whatsapp): validate each cursor field on load
+* fix(whatsapp): a missing tool or model doesn't burn voice-note attempts
+* fix(whatsapp): don't touch the store before a chat is opted in
+* fix(whatsapp): honour zero for voice_max_per_run and initial_lookback_days
+* fix(whatsapp): tolerate corrupt store in probe/API; validate chat context
+* fix(whatsapp): re-selected chats backfill; atomic cursor
+* fix(whatsapp): allowlist load tolerates malformed state
+* fix(vault-index): re-index a note on save so backlinks show at once
+* fix(editor): replace the live suggestion range when a newer query is pending
+* fix(editor): suggestion popup ignores late results after exit
+* fix(desktop): latest-wins suggest fetcher re-checks after each await
+* fix(graph): match layout positions on posix keys; pin embed behaviour
+* fix(vault-index): refresh off the request path; reject drive-letter targets
+* fix(whatsapp): resolve DST-aware local timezone
+* fix(desktop): confirm before discarding text under the conflict banner
+* fix(api): open notes whose frontmatter is not a mapping
+* fix(desktop): guarded save handles CRLF auto-resolve, late typing on keep-mine conflict, unread theirs
+
+### Performance
+
+* perf(api): select top suggestions with heapq; answer cold queries within 0.1 s
+
 ## [1.11.0](https://github.com/nikrich/poltergeist/compare/v1.10.1...v1.11.0) (2026-10-09)
 
 
