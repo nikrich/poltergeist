@@ -13,6 +13,7 @@ import {
   QUICK_ACTIONS,
   buildInlineRequest,
   cleanModelOutput,
+  isLanguageName,
   joinWithSpaceFor,
   newStreamId,
   suggestionRange,
@@ -229,6 +230,7 @@ export function InlineAssistPopover({
   };
 
   const busy = phase === 'streaming';
+  const otherValid = isLanguageName(otherLanguage);
 
   return (
     <div
@@ -283,12 +285,12 @@ export function InlineAssistPopover({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
-                    translate(otherLanguage);
+                    if (otherValid) translate(otherLanguage);
                   }
                 }}
                 className="w-[120px] rounded-r6 border border-hairline bg-paper px-2 py-[2px] text-12 text-ink-0"
               />
-              <Btn variant="primary" size="sm" onClick={() => translate(otherLanguage)}>
+              <Btn variant="primary" size="sm" disabled={!otherValid} onClick={() => translate(otherLanguage)}>
                 go
               </Btn>
             </>

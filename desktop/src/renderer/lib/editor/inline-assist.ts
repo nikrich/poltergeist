@@ -43,6 +43,15 @@ export const LANGUAGES: ReadonlyArray<{ name: string; label: string }> = [
   { name: 'Afrikaans', label: 'afrikaans' },
 ];
 
+// Source: _LANGUAGE_RE in ghostbrain/api/models/docs.py (the sidecar 422s
+// anything else): a letter, then letters, spaces and ()'-, at most 40.
+const LANGUAGE_RE = /^\p{L}[\p{L} ()'-]{0,39}$/u;
+
+/** Whether a typed "other…" language passes the sidecar's check. */
+export function isLanguageName(value: string): boolean {
+  return LANGUAGE_RE.test(value.trim());
+}
+
 export function captureInlineContext(editor: Editor): InlineContext {
   const { from, to, empty } = editor.state.selection;
   return {

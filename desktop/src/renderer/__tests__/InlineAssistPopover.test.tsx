@@ -197,6 +197,21 @@ describe('InlineAssistPopover', () => {
     expect(lastRequest()).toMatchObject({ mode: 'translate', target_language: 'isiZulu' });
   });
 
+  it('translate other… refuses what the sidecar would reject', () => {
+    selectText('beta');
+    open();
+    click('translate');
+    click('other…');
+    const box = screen.getByRole('textbox', { name: 'language' });
+    fireEvent.change(box, { target: { value: 'Klingon 2' } });
+    expect(screen.getByRole('button', { name: 'go' })).toBeDisabled();
+    fireEvent.keyDown(box, { key: 'Enter' });
+    click('go');
+    expect(assist).not.toHaveBeenCalled();
+    fireEvent.change(box, { target: { value: 'Klingon' } });
+    expect(screen.getByRole('button', { name: 'go' })).toBeEnabled();
+  });
+
   it('draft from vault needs an instruction', () => {
     open();
     click('draft from vault');

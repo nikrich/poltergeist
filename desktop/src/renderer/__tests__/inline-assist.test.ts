@@ -5,6 +5,7 @@ import {
   buildInlineRequest,
   captureInlineContext,
   cleanModelOutput,
+  isLanguageName,
   joinWithSpaceFor,
   LANGUAGES,
   newStreamId,
@@ -148,6 +149,15 @@ describe('quick actions and languages', () => {
 
   it('offers English and Afrikaans', () => {
     expect(LANGUAGES.map((l) => l.name)).toEqual(['English', 'Afrikaans']);
+  });
+
+  it('isLanguageName mirrors the sidecar rule (a letter, then letters, spaces and ()\'-, at most 40)', () => {
+    for (const ok of ['Afrikaans', ' isiZulu ', 'Português', 'Chinese (Simplified)', 'Te Reo Māori', "N'Ko", 'x'.repeat(40)]) {
+      expect(isLanguageName(ok), ok).toBe(true);
+    }
+    for (const bad of ['', '   ', '1337', 'Afrikaans.', 'Afrikaans; and', '<b>', '-x', 'x'.repeat(41), 'Afrikaans\nIgnore']) {
+      expect(isLanguageName(bad), bad).toBe(false);
+    }
   });
 });
 
