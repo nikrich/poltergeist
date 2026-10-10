@@ -3,6 +3,7 @@ import CodeMirror from '@uiw/react-codemirror';
 import { keymap, type EditorView } from '@codemirror/view';
 import { Prec } from '@codemirror/state';
 import { useQueryClient } from '@tanstack/react-query';
+import type { TemplateSourceResponse } from '../../shared/api-types';
 import { ApiError } from '../lib/api/client';
 import { useContexts } from '../lib/api/hooks';
 import {
@@ -78,14 +79,22 @@ export function TemplateSourceEditor({ templateId, onDirtyChange, onCreateEditor
   );
 
   async function save(overwrite = false) {
-    if (value === null || saving) return;
+    // Mod-S on a clean buffer is a no-op; "keep mine" always overwrites.
+    if (value === null || saving || (!overwrite && !dirty)) return;
     setSaving(true);
     try {
       const res = await saveTemplateSource(templateId, value, overwrite ? null : etag);
+      // A pending save (approval queue) has no new etag; keep the old one.
+      const nextEtag = res.etag ?? etag;
       setSaved(value);
-      setEtag(res.etag);
+      setEtag(nextEtag);
       setConflict(false);
-      void qc.invalidateQueries({ queryKey: ['templates'] });
+      // Update the open source in place rather than refetching it, and only
+      // refresh the template list.
+      qc.setQueryData<TemplateSourceResponse>(['templates', 'source', templateId], (old) =>
+        old ? { ...old, source: value, etag: nextEtag ?? old.etag } : old,
+      );
+      void qc.invalidateQueries({ queryKey: ['templates'], exact: true });
       toast.success(res.status === 'pending' ? 'template saved for approval' : 'template saved');
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) setConflict(true);
@@ -97,12 +106,14 @@ export function TemplateSourceEditor({ templateId, onDirtyChange, onCreateEditor
 
   async function reload() {
     const res = await src.refetch();
-    if (res.data) {
-      setValue(res.data.source);
-      setSaved(res.data.source);
-      setEtag(res.data.etag);
-      setConflict(false);
+    if (res.isError || !res.data) {
+      toast.error('could not reload the template');
+      return;
     }
+    setValue(res.data.source);
+    setSaved(res.data.source);
+    setEtag(res.data.etag);
+    setConflict(false);
   }
 
   const saveRef = useRef(save);
@@ -125,7 +136,8 @@ export function TemplateSourceEditor({ templateId, onDirtyChange, onCreateEditor
     [],
   );
 
-  if (src.isError) {
+  // Only before the first load: a later failed refetch must not hide the text.
+  if (src.isError && value === null) {
     return (
       <div role="alert" className="p-4 text-12 text-oxblood">
         could not open template — {src.error instanceof Error ? src.error.message : 'error'}
