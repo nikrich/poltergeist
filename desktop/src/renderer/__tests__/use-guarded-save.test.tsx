@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
-import { useGuardedSave } from '../lib/use-guarded-save';
+import { RESTORE_BLOCKED, useGuardedSave } from '../lib/use-guarded-save';
 import { ApiError } from '../lib/api/client';
 
 const conflict = () => new ApiError('note changed since you read it — re-read and retry', 409);
@@ -204,5 +204,83 @@ describe('useGuardedSave', () => {
     await act(async () => result.current.keepMine());
     expect(send).toHaveBeenLastCalledWith('b', 'e9');
     expect(result.current.conflict).toBeNull();
+  });
+
+  it('runExclusive waits for the in-flight save, then adopts the result etag', async () => {
+    const first = deferred<{ etag: string }>();
+    const send = vi.fn().mockReturnValueOnce(first.promise).mockResolvedValue({ etag: 'e4' });
+    const { result } = renderHook(() =>
+      useGuardedSave({ body: 'a', etag: 'e1' }, { send, fetchLatest: vi.fn() }),
+    );
+    act(() => result.current.save('b'));
+    const perform = vi.fn().mockResolvedValue({ body: 'restored', etag: 'e3' });
+    let done!: Promise<unknown>;
+    act(() => {
+      done = result.current.runExclusive(perform);
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 40));
+    });
+    expect(perform).not.toHaveBeenCalled();
+    await act(async () => {
+      first.resolve({ etag: 'e2' });
+      await done;
+    });
+    expect(perform).toHaveBeenCalledTimes(1);
+    act(() => result.current.save('after'));
+    await waitFor(() => expect(send).toHaveBeenLastCalledWith('after', 'e3'));
+  });
+
+  it('runExclusive drops text queued during a successful restore', async () => {
+    const gate = deferred<{ body: string; etag: string }>();
+    const send = vi.fn().mockResolvedValue({ etag: 'e9' });
+    const { result } = renderHook(() =>
+      useGuardedSave({ body: 'a', etag: 'e1' }, { send, fetchLatest: vi.fn() }),
+    );
+    let done!: Promise<unknown>;
+    act(() => {
+      done = result.current.runExclusive(() => gate.promise);
+    });
+    act(() => result.current.save('typed during restore'));
+    await act(async () => {
+      gate.resolve({ body: 'restored', etag: 'e3' });
+      await done;
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 40));
+    });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('runExclusive replays queued text when the restore fails', async () => {
+    let fail!: (e: Error) => void;
+    const gate = new Promise<{ body: string; etag: string }>((_, rej) => (fail = rej));
+    const send = vi.fn().mockResolvedValue({ etag: 'e2' });
+    const { result } = renderHook(() =>
+      useGuardedSave({ body: 'a', etag: 'e1' }, { send, fetchLatest: vi.fn() }),
+    );
+    let done!: Promise<unknown>;
+    act(() => {
+      done = result.current.runExclusive(() => gate);
+    });
+    act(() => result.current.save('typed'));
+    await act(async () => {
+      fail(new Error('boom'));
+      await expect(done).rejects.toThrow('boom');
+    });
+    await waitFor(() => expect(send).toHaveBeenCalledWith('typed', 'e1'));
+  });
+
+  it('runExclusive refuses while the conflict banner is up', async () => {
+    const send = vi.fn().mockRejectedValueOnce(conflict());
+    const fetchLatest = vi.fn().mockResolvedValue({ body: 'theirs', etag: 'e2' });
+    const { result } = renderHook(() =>
+      useGuardedSave({ body: 'a', etag: 'e1' }, { send, fetchLatest }),
+    );
+    act(() => result.current.save('mine'));
+    await waitFor(() => expect(result.current.conflict).not.toBeNull());
+    const perform = vi.fn();
+    await expect(result.current.runExclusive(perform)).rejects.toThrow(RESTORE_BLOCKED);
+    expect(perform).not.toHaveBeenCalled();
   });
 });

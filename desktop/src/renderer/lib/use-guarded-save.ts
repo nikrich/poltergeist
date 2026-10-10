@@ -26,6 +26,13 @@ export interface GuardedSave {
   adopt: (etag: string | null, body: string) => void;
   /** Reads the live conflict state (a ref), never a stale render's. */
   hasConflict: () => boolean;
+  /** Run a whole-note replacement (history restore) between autosaves: waits
+   * for the in-flight save and its queue, adopts the result's etag, drops text
+   * queued meanwhile on success (the editor reloads) and replays it on
+   * failure. Rejects with RESTORE_BLOCKED while a conflict is up. */
+  runExclusive: <T extends { body: string; etag?: string | null }>(
+    perform: () => Promise<T>,
+  ) => Promise<T>;
 }
 
 /** GET bodies come back trimmed (both ends) by the server and keep the file's
@@ -38,6 +45,8 @@ export function sameBody(a: string, b: string): boolean {
 
 const isConflict = (err: unknown): boolean => err instanceof ApiError && err.status === 409;
 const asError = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)));
+export const RESTORE_BLOCKED = 'resolve the conflict banner first (keep mine or keep theirs)';
+const IDLE_POLL_MS = 20;
 
 /**
  * Etag-chained autosave (spec B §7). Saves are serialised so a save never
@@ -161,6 +170,27 @@ export function useGuardedSave(
     if (followUp !== null) await run(followUp);
   };
 
+  const runExclusive = async <T extends { body: string; etag?: string | null }>(
+    perform: () => Promise<T>,
+  ): Promise<T> => {
+    if (conflictRef.current) throw new Error(RESTORE_BLOCKED);
+    while (inFlightRef.current) await new Promise((r) => setTimeout(r, IDLE_POLL_MS));
+    if (conflictRef.current) throw new Error(RESTORE_BLOCKED);
+    inFlightRef.current = true;
+    let ok = false;
+    try {
+      const res = await perform();
+      markSaved(res.body, res.etag);
+      ok = true;
+      return res;
+    } finally {
+      inFlightRef.current = false;
+      const next = queuedRef.current;
+      queuedRef.current = null;
+      if (!ok && next !== null) void run(next);
+    }
+  };
+
   const keepTheirs = (): Conflict | null => {
     const c = conflictRef.current;
     if (!c || c.unread) return null;
@@ -173,5 +203,5 @@ export function useGuardedSave(
 
   const hasConflict = () => conflictRef.current !== null;
 
-  return { save, conflict, resolving, keepMine, keepTheirs, adopt, hasConflict };
+  return { save, conflict, resolving, keepMine, keepTheirs, adopt, hasConflict, runExclusive };
 }

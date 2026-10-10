@@ -77,7 +77,8 @@ def save_note_body(
     res = vault_write.write(
         rel_path, body=body, actor=actor, base_etag=base_etag, reason="edited in the editor",
     )
-    return {"path": rel_path, "updated": res.updated, "etag": res.etag}
+    return {"path": rel_path, "updated": res.updated, "etag": res.etag,
+            "historyOk": res.history_ok}
 
 
 def save_note_at_path(

@@ -8,6 +8,9 @@ export interface GuardHandle {
   adopt: (etag: string | null, body: string) => void;
   /** True while the conflict banner is up (autosave paused, text unsaved). */
   hasConflict: () => boolean;
+  /** Replace the note through `perform` (history restore) between autosaves,
+   * then reload the editor with the result. Rejects under a conflict. */
+  restore: (perform: () => Promise<{ body: string; etag?: string | null }>) => Promise<void>;
 }
 
 const DISCARD_PROMPT =
@@ -50,6 +53,13 @@ export function GuardedNoteEditor({
   editorProps,
 }: GuardedNoteEditorProps) {
   const [doc, setDoc] = useState({ body: initialBody, nonce: 0 });
+  // Bumped synchronously on every reload, so a debounced save from the
+  // replaced editor instance (scheduled before a restore) is dropped.
+  const liveNonce = useRef(0);
+  const remount = (body: string) => {
+    liveNonce.current += 1;
+    setDoc({ body, nonce: liveNonce.current });
+  };
   const guard = useGuardedSave(
     { body: initialBody, etag: initialEtag },
     { send, fetchLatest },
@@ -62,6 +72,10 @@ export function GuardedNoteEditor({
   const [handle] = useState<GuardHandle>(() => ({
     adopt: (etag, body) => guardLatest.current.adopt(etag, body),
     hasConflict: () => guardLatest.current.hasConflict(),
+    restore: async (perform) => {
+      const res = await guardLatest.current.runExclusive(perform);
+      remount(res.body);
+    },
   }));
   useEffect(() => {
     if (!guardRef) return;
@@ -78,9 +92,10 @@ export function GuardedNoteEditor({
 
   const keepTheirs = () => {
     const c = guard.keepTheirs();
-    if (c) setDoc((d) => ({ body: c.theirs, nonce: d.nonce + 1 }));
+    if (c) remount(c.theirs);
   };
 
+  const mountNonce = doc.nonce;
   return (
     <>
       {guard.conflict && (
@@ -91,7 +106,14 @@ export function GuardedNoteEditor({
           onKeepTheirs={keepTheirs}
         />
       )}
-      <RichMarkdownEditor key={doc.nonce} markdown={doc.body} onSave={guard.save} {...editorProps} />
+      <RichMarkdownEditor
+        key={doc.nonce}
+        markdown={doc.body}
+        onSave={(body) => {
+          if (liveNonce.current === mountNonce) guard.save(body);
+        }}
+        {...editorProps}
+      />
     </>
   );
 }

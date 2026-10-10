@@ -199,6 +199,17 @@ def _gdrive_backfill_job() -> RunResult:
     return _wrap_job("gdrive-backfill", lambda: gdrive_backfill.run_tick())
 
 
+def _history_prune_job() -> RunResult:
+    """Daily page-history retention + blob GC (spec A3). Lazy import keeps
+    sidecar start cheap; prune only touches app state, never the vault."""
+    def work() -> dict:
+        from ghostbrain.history import store
+
+        return store.prune().to_details()
+
+    return _wrap_job("history-prune", work)
+
+
 def _semantic_refresh() -> RunResult:
     """Run a semantic index refresh and translate the result into RunResult.
 
@@ -267,6 +278,12 @@ def register_connectors(scheduler: Scheduler) -> None:
     # Match the schedules in orchestration/launchd/com.ghostbrain.*.plist.
     scheduler.add_job("digest", DailyAt(hour=6, minute=30), _digest_job, "daily 06:30")
     scheduler.add_job("claudemd", DailyAt(hour=2, minute=0), _claudemd_job, "daily 02:00")
+    scheduler.add_job(
+        "history-prune",
+        DailyAt(hour=3, minute=15),
+        _history_prune_job,
+        "daily 03:15",
+    )
     # launchd Weekday=0 is Sunday; datetime.weekday()=6 is Sunday.
     scheduler.add_job(
         "profile-weekly",

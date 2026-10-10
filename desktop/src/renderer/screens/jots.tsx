@@ -10,6 +10,7 @@ import type { EditorHandle } from '../components/RichMarkdownEditor';
 import { DocsAssistPanel } from '../components/DocsAssistPanel';
 import { get } from '../lib/api/client';
 import { BacklinksPanel } from '../components/BacklinksPanel';
+import { NoteHistoryButton } from '../components/NoteHistory';
 import { notePathFromTarget } from '../lib/editor/link-suggest';
 import {
   useAutoRouteJot,
@@ -261,6 +262,9 @@ export function JotsScreen() {
         subtitle={list.data ? `${list.data.total} total` : '…'}
         right={
           <div className="flex gap-2">
+            {selectedItem && (
+              <NoteHistoryButton key={selectedItem.path} path={selectedItem.path} guardRef={guardRef} />
+            )}
             <Btn
               variant="ghost"
               size="sm"
