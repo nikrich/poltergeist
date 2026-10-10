@@ -60,6 +60,7 @@ describe('PendingChanges', () => {
     expect(within(within(card).getByRole('list', { name: 'why it waits' })).getByText('edits a template'))
       .toBeInTheDocument();
     expect(await screen.findByTestId('pending-diff-7')).toHaveTextContent('+ # Standup');
+    expect(screen.getByText('- when proposed · + proposed')).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'waiting for your approval' })).toBeInTheDocument();
   });
 

@@ -271,6 +271,20 @@ describe('useGuardedSave', () => {
     await waitFor(() => expect(send).toHaveBeenCalledWith('typed', 'e1'));
   });
 
+  it('runExclusive clears an assistant mark, so the next keystroke is the user', async () => {
+    const send = vi.fn().mockResolvedValue({ etag: 'e4' });
+    const { result } = renderHook(() =>
+      useGuardedSave({ body: 'a', etag: 'e1' }, { send, fetchLatest: vi.fn() }),
+    );
+    act(() => result.current.attributeNext('assistant'));
+    await act(async () => {
+      await result.current.runExclusive(() => Promise.resolve({ body: 'restored', etag: 'e3' }));
+    });
+    act(() => result.current.save('typed after'));
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    expect(send.mock.calls).toEqual([['typed after', 'e3']]);
+  });
+
   it('runExclusive refuses while the conflict banner is up', async () => {
     const send = vi.fn().mockRejectedValueOnce(conflict());
     const fetchLatest = vi.fn().mockResolvedValue({ body: 'theirs', etag: 'e2' });

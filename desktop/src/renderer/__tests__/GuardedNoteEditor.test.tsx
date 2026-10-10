@@ -227,7 +227,8 @@ describe('GuardedNoteEditor', () => {
     await waitFor(() => expect(screen.queryByText(/my tail/)).toBeNull());
     expect(screen.getByText('original line')).toBeInTheDocument();
     expect(useToasts.getState().toasts.map((t) => t.message)).toContain(
-      'The assistant’s change is waiting for your approval on the Changes screen.',
+      'The assistant’s change is waiting for your approval on the Changes screen. '
+        + 'Anything you typed since is part of that change.',
     );
   });
 });

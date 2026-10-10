@@ -118,7 +118,10 @@ export function GuardedNoteEditor({
     onSaveError,
     (diskBody) => {
       remount(diskBody);
-      toast.info('The assistant’s change is waiting for your approval on the Changes screen.');
+      toast.info(
+        'The assistant’s change is waiting for your approval on the Changes screen. '
+          + 'Anything you typed since is part of that change.',
+      );
     },
   );
   const guardLatest = useRef(guard);

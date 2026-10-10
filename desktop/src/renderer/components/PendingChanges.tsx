@@ -102,7 +102,7 @@ function PendingCard({ change }: { change: ChangeSummary }) {
           className="mt-2 max-h-[320px]"
           oldText={d.before ?? ''}
           newText={d.after ?? ''}
-          legend="- now · + proposed"
+          legend="- when proposed · + proposed"
         />
       ) : detail.isError ? (
         <p className="m-0 mt-2 text-11 text-ink-2">

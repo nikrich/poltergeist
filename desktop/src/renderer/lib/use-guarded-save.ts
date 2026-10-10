@@ -264,6 +264,8 @@ export function useGuardedSave(
     try {
       const res = await perform();
       markSaved(res.body, res.etag);
+      // The restored text replaces whatever an assistant mark covered.
+      nextActorRef.current = null;
       ok = true;
       return res;
     } finally {
