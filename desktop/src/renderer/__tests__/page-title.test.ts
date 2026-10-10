@@ -139,3 +139,119 @@ describe('sanitizePageTitle', () => {
     expect(sanitizePageTitle('x'.repeat(250))).toHaveLength(200);
   });
 });
+
+describe('pathological first lines parse in linear time (no ReDoS)', () => {
+  /** Warm the JIT on the same call, then time a second run. */
+  const elapsed = (fn: () => unknown): number => {
+    fn();
+    const t0 = performance.now();
+    fn();
+    return performance.now() - t0;
+  };
+  const BOUND_MS = 50;
+  const spaces = ' '.repeat(100_000);
+  const nearCap = (unit: string, end: string) =>
+    unit.repeat(Math.floor((1_999 - 2 - end.length) / unit.length)) + end;
+
+  it.each([
+    ['long space run before a non-space', '# a' + spaces + 'b'],
+    ['many " #" pairs', '# ' + ' #'.repeat(50_000) + 'x'],
+    ['space runs between # runs', '# a' + (' '.repeat(50) + '#').repeat(2_000) + 'b'],
+    ['long backslash run', '# ' + '\\'.repeat(100_000) + '#'],
+    ['spaces then tabs', '# a' + ' \t'.repeat(50_000) + 'b'],
+    ['near-cap space run', '# a' + ' '.repeat(1_990) + 'b'],
+    ['near-cap " #" pairs', '# ' + nearCap(' #', 'x')],
+    ['near-cap spaces + # runs', '# ' + nearCap('  ##', 'x')],
+    ['near-cap backslashes', '# ' + nearCap('\\', '#')],
+    ['near-cap list-ish', nearCap('- ', 'x')],
+    ['long list-ish', '- '.repeat(50_000) + 'x'],
+    ['long thematic-ish', '-  '.repeat(33_000) + 'x'],
+    ['long ===', '='.repeat(100_000) + 'x'],
+  ])('splitPageTitle: %s', (_name, line) => {
+    for (const rule of ['note', 'jot'] as const) {
+      for (const body of [line, line + '\n\nbody']) {
+        expect(elapsed(() => splitPageTitle(body, rule))).toBeLessThan(BOUND_MS);
+      }
+    }
+  });
+
+  it.each([
+    ['h1 at EOF after a long blank-ish lead', spaces + '\n# T', 'note'],
+    ['plain jot title at EOF after a long blank-ish lead', spaces + '\nfirst jot', 'jot'],
+    ['h1 then a long whitespace tail', '# T\n' + spaces, 'note'],
+    ['tab/space lead lines', ' \t'.repeat(50_000) + '\n# T', 'note'],
+  ] as const)('joinPageTitle / retitlePage: %s', (_name, body, rule) => {
+    const s = splitPageTitle(body, rule);
+    expect(s.kind).not.toBeNull();
+    expect(elapsed(() => joinPageTitle(s, 'more'))).toBeLessThan(BOUND_MS);
+    expect(elapsed(() => joinPageTitle(s, s.rest))).toBeLessThan(BOUND_MS);
+    expect(elapsed(() => retitlePage(s, 'Renamed #'))).toBeLessThan(BOUND_MS);
+  });
+
+  it('retitlePage / sanitizePageTitle on a huge pasted title', () => {
+    const s = splitPageTitle('# Plan\n\nx', 'note');
+    for (const raw of [' '.repeat(100_000) + 'x', 'a ' + '#'.repeat(100_000), '\\'.repeat(100_000) + '#']) {
+      expect(elapsed(() => retitlePage(s, raw))).toBeLessThan(BOUND_MS);
+    }
+  });
+
+  it('a first line longer than 2,000 chars owns no title but round-trips', () => {
+    for (const rule of ['note', 'jot'] as const) {
+      const body = '# ' + 'x'.repeat(2_000) + '\n\nbody';
+      const s = splitPageTitle(body, rule);
+      expect(s.kind).toBeNull();
+      expect(joinPageTitle(s, s.rest)).toBe(body);
+    }
+    expect(splitPageTitle('# ' + 'x'.repeat(1_990) + '\n\nbody', 'note').kind).toBe('h1');
+  });
+});
+
+describe('Task 2 review fixes', () => {
+  it('# # (only a closing sequence) is an empty heading and owns no title', () => {
+    expect(splitPageTitle('# #\n\nx', 'note').kind).toBeNull();
+    expect(splitPageTitle('# ###\n\nx', 'jot').kind).toBeNull();
+    expect(splitPageTitle('#  #  \n\nx', 'note').kind).toBeNull();
+  });
+
+  it.each([
+    ['h1 + whitespace-only rest', '# T\n\n ', 'note'],
+    ['jot + whitespace-only rest', 'title\n\t', 'jot'],
+    ['jot crlf', 't\r\n\r\nbody\r\n', 'jot'],
+    ['jot leading blank lines', '\n\n  \nfirst jot\n\nbody', 'jot'],
+  ] as const)('round-trips %s byte for byte', (_name, body, rule) => {
+    const s = splitPageTitle(body, rule);
+    expect(s.kind).not.toBeNull();
+    expect(joinPageTitle(s, s.rest)).toBe(body);
+  });
+
+  it('an emptied body still keeps just the head', () => {
+    const s = splitPageTitle('# T\n\n ', 'note');
+    expect(joinPageTitle(s, '')).toBe('# T\n\n');
+  });
+
+  it.each(['    code\n\nx', '\tcode\n\nx', '  \tcode\n\nx'])(
+    'an indented code block %j is not a jot title',
+    (body) => {
+      expect(splitPageTitle(body, 'jot').kind).toBeNull();
+    },
+  );
+
+  it.each(['Issue #', 'C\\#', '#', '##', 'C#', 'a \\\\##', 'x \\'])(
+    'retitle -> join -> split round-trips %j',
+    (title) => {
+      for (const [body, rule] of [['# Plan\n\nx', 'note'], ['first jot\n\nx', 'jot'], ['plain', 'note']] as const) {
+        const next = retitlePage(splitPageTitle(body, rule), title)!;
+        expect(next.title).toBe(title);
+        const saved = joinPageTitle(next, next.rest);
+        expect(splitPageTitle(saved, rule)).toMatchObject({ title, kind: next.kind });
+      }
+    },
+  );
+
+  it('sanitizePageTitle never splits a surrogate pair at the cap', () => {
+    const out = sanitizePageTitle('x'.repeat(199) + '\u{1F600}' + 'tail');
+    expect(Array.from(out)).toHaveLength(200);
+    expect(out.endsWith('\u{1F600}')).toBe(true);
+    expect(sanitizePageTitle('x'.repeat(199) + ' y')).toBe('x'.repeat(199));
+  });
+});
