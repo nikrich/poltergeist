@@ -11,6 +11,7 @@ from ghostbrain.vault_write import (
     USER,
     ProposedChange,
     compute_etag,
+    jobs,
     plugin_actor,
     risk,
     set_hold_policy,
@@ -63,6 +64,14 @@ def test_plain_prose_is_not_held():
         b"```python\none = \"two\"\nonly = 'x'\n```\nA {{ nested { brace }} aside.\n"
     )
     assert risk.evaluate(_p(op="create", before=None, after=prose)) == []
+    # A `<` in prose or code is not a tag left open for the next line.
+    for code in (
+        b"if a<b:\n    online = 1\n",
+        b"```c\nfor (i=0; i<n; i++)\n  online = 1;\n```\n",
+        b"- latency p95<b target\n\n- online = 1 rollout\n",
+        b"```html\n<img src=x\n```\nonline = 1\n",
+    ):
+        assert risk.evaluate(_p(op="create", before=None, after=code)) == [], code
 
 
 @pytest.mark.parametrize("rel,reason", [
@@ -184,6 +193,12 @@ def test_a_tag_opened_on_a_kept_line_still_counts():
     assert risk.evaluate(_p(before=before, after=after)) == [risk.REASON_HANDLER]
 
 
+@pytest.mark.parametrize("opened", [b"<img src=x", b"<img", b"<svg/x", b"<my-el a=1"])
+def test_a_tag_left_open_still_continues_onto_the_next_line(opened):
+    after = V1 + opened + b"\nonerror=alert(1)>\n"
+    assert risk.evaluate(_p(after=after)) == [risk.REASON_HANDLER]
+
+
 def test_unknown_ownership_fails_closed(monkeypatch):
     def boom(*_a, **_k):
         raise changes.ChangeLogError("database is locked")
@@ -289,3 +304,59 @@ def test_routine_worker_modifies_are_not_held(vault):
     res = write(current, body="- the plan", actor=worker_actor("profile-apply"))
     assert res.status == "applied"
     assert b"- the plan" in (vault / current).read_bytes()
+
+
+# ── the B4 worker jobs, with the default policy ───────────────────────────
+
+USER_NOTE = b"---\ntitle: Old decision\nupdated: '2026-10-01'\n---\n\nWe chose Postgres.\n"
+
+
+def _user_note(vault: Path, rel: str = "20-contexts/work/decisions/old.md") -> str:
+    write(rel, content=USER_NOTE.decode(), op="create", actor=USER)
+    return rel
+
+
+def test_a_reversal_link_on_a_users_note_applies(vault):
+    rel = _user_note(vault)
+    res = jobs.update_fields(
+        rel, lambda _meta: {"reversed_by": ["[[new-decision]]"]},
+        actor=worker_actor("reversal"), reason="reversed by a newer decision",
+    )
+    assert res is not None and res.status == "applied"
+    assert b"reversed_by:" in (vault / rel).read_bytes()
+    row = changes.get(int(res.change_id))
+    assert (row.status, row.actor, row.risk_reasons) == ("applied", "worker:reversal", ())
+
+
+@pytest.mark.parametrize("rel", ["80-profile/current-projects.md", "80-profile/_review.md"])
+def test_the_profile_applier_rewrites_its_files(vault, rel):
+    (vault / rel).write_bytes(b"# Current projects\n\n## work\n\n- keep p95<b target\n")
+
+    def transform(text: str | None) -> str:
+        assert text is not None
+        return text + "\n- online = 1 rollout for billing\n- Ship the onboarding plan\n"
+
+    res = jobs.rewrite_text(rel, transform, actor=worker_actor("profile-apply"), reason="weekly")
+    assert res is not None and res.status == "applied", res
+    assert b"- Ship the onboarding plan" in (vault / rel).read_bytes()
+    assert changes.get(int(res.change_id)).status == "applied"
+
+
+def test_the_profile_applier_creating_its_file_applies(vault):
+    rel = "80-profile/_review.md"
+    res = jobs.rewrite_text(rel, lambda _t: "# Review\n\n- a <b>bold</b> idea\n",
+                            actor=worker_actor("profile-apply"), reason="weekly")
+    assert res is not None and res.status == "applied" and res.change_id is None
+    assert (vault / rel).exists()
+
+
+def test_semantic_related_links_apply_with_no_change_row(vault):
+    rel = _user_note(vault)
+    before = changes.counts()
+    res = jobs.update_fields(
+        rel, lambda _meta: {"related": ["[[20-contexts/work/plan]]"]},
+        actor=worker_actor("semantic-refresh"), reason="updated related notes",
+    )
+    assert res is not None and (res.status, res.change_id) == ("applied", None)
+    assert b"related:" in (vault / rel).read_bytes()
+    assert changes.counts() == before

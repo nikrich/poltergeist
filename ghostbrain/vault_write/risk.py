@@ -43,7 +43,10 @@ _SCRIPT_RE = re.compile(r"<\s*script\b", re.IGNORECASE)
 # HTML parsers accept "/" as well as whitespace before an attribute.
 _HANDLER_RE = re.compile(r"<[a-z][^>]*[\s/]on[a-z]+\s*=", re.IGNORECASE)
 # A tag still open at the end of a line: the next line continues its attributes.
-_OPEN_TAG_RE = re.compile(r"<[a-z][^>]*$", re.IGNORECASE)
+# As in CommonMark raw HTML, the tag name ends at whitespace, "/" or the line
+# end (``a<b:`` and ``i<n;`` are prose), and a blank line or code fence ends it.
+_OPEN_TAG_RE = re.compile(r"<[a-z][a-z0-9-]*(?:[\s/][^>]*)?$", re.IGNORECASE)
+_FENCE_LINE_RE = re.compile(r"^\s*(?:`{3,}|~{3,})")
 _JS_URL_RE = re.compile(
     r"(?:href|src|action|formaction|xlink:href|data)\s*=\s*[\"']?\s*javascript\s*:"
     r"|\]\(\s*<?\s*javascript\s*:"
@@ -148,8 +151,9 @@ def _content_reasons(change: ProposedChange) -> list[str]:
     tag_open = False  # tracked over the whole file: a kept line can open the tag
     for i, line in enumerate(new):
         # A line inside an unclosed tag is more of its attributes.
-        scan = "<x " + line if tag_open else line
-        tag_open = _OPEN_TAG_RE.search(scan) is not None
+        boundary = not line.strip() or _FENCE_LINE_RE.match(line) is not None
+        scan = "<x " + line if tag_open and not boundary else line
+        tag_open = not boundary and _OPEN_TAG_RE.search(scan) is not None
         if i not in added_set:
             continue
         if _SCRIPT_RE.search(line):
