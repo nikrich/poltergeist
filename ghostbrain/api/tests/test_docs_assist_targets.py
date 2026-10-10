@@ -100,3 +100,19 @@ def test_cancel_uses_the_stream_key(monkeypatch):
     monkeypatch.setattr(docs_assist.agent, "cancel_turn", lambda key: seen.append(key) or True)
     assert docs_assist.cancel("inline-9") is True
     assert seen == ["docs:inline-9"]
+
+
+def test_a_windows_jot_path_reaches_gather_as_posix(tmp_vault, monkeypatch):
+    monkeypatch.setattr(
+        docs_assist.notes_manual, "read_jot",
+        lambda jot_id: {"body": "# Doc\n", "path": "00-inbox\\manual\\doc.md"},
+    )
+    seen: list = []
+    monkeypatch.setattr(
+        docs_assist.docs_context, "gather",
+        lambda q, current_path: seen.append(current_path) or "",
+    )
+    _, fake = _capture()
+    with patch.object(docs_assist.agent, "run_chat_turn", fake):
+        list(docs_assist.run_assist("j1", instruction="risks", selection=None, mode="draft"))
+    assert seen == ["00-inbox/manual/doc.md"]

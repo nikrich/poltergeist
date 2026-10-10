@@ -81,3 +81,10 @@ def test_output_is_capped_per_note_and_in_total(tmp_vault, monkeypatch):
 
 def test_nothing_to_go_on_is_empty(tmp_vault):
     assert docs_context.gather("", current_path=None) == ""
+
+
+def test_a_backslash_current_path_is_treated_as_posix(notes, monkeypatch):
+    monkeypatch.setattr(search_repo, "search", _hits("20-contexts/work/plan.md"))
+    ctx = docs_context.gather("q", current_path="20-contexts\\work\\plan.md")
+    assert "### Risks" in ctx  # link neighbours found under the posix key
+    assert "(20-contexts/work/plan.md)" not in ctx  # and the note itself excluded

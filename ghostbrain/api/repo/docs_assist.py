@@ -129,7 +129,8 @@ def _resolve_target(jot_id: str | None, path: str | None) -> tuple[str, str]:
             jot = notes_manual.read_jot(jot_id)
         except notes_manual.JotNotFound:
             raise _TargetError("jot not found") from None
-        return jot["body"], jot["path"]
+        # notes_manual builds the path with str(Path), so backslashes on Windows.
+        return jot["body"], jot["path"].replace("\\", "/")
     if not path:
         raise _TargetError("send a jot_id or a path")
     try:

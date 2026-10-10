@@ -66,6 +66,8 @@ def _block(rel: str) -> str | None:
 
 
 def gather(query: str, *, current_path: str | None) -> str:
+    if current_path:  # link-index keys and search hits are posix
+        current_path = current_path.replace("\\", "/")
     seen: set[str] = {current_path} if current_path else set()
     blocks: list[str] = []
     total = 0
