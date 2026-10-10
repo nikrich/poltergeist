@@ -59,7 +59,9 @@ export function captureInlineContext(editor: Editor): InlineContext {
     to,
     empty,
     selection: empty ? '' : rangeMarkdown(editor, from, to),
-    before: rangeMarkdown(editor, 0, to).slice(-BEFORE_CAP),
+    // A cut through a surrogate pair would leave a lone low half, which the
+    // sidecar can't encode for the CLI.
+    before: rangeMarkdown(editor, 0, to).slice(-BEFORE_CAP).replace(/^[\uDC00-\uDFFF]/, ''),
     charBefore: to > 0 ? editor.state.doc.textBetween(to - 1, to, '\n', ' ') : '',
   };
 }

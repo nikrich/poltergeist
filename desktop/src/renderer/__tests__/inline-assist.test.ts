@@ -49,6 +49,18 @@ describe('captureInlineContext', () => {
     expect(ctx.selection).toBe('');
   });
 
+  it('the 8k cap never starts on half of a surrogate pair', () => {
+    // One of these two cuts lands between an emoji's surrogates.
+    for (const tail of ['z', 'zz']) {
+      editor = makeEditor('\u{1F600}'.repeat(5000) + tail);
+      editor.commands.setTextSelection(editor.state.doc.content.size - 1);
+      const { before } = captureInlineContext(editor);
+      expect(before).not.toMatch(/^[\uDC00-\uDFFF]/);
+      expect(before.length).toBeGreaterThan(BEFORE_CAP - 4);
+      editor.destroy();
+    }
+  });
+
   it('charBefore is empty at the very start of the document', () => {
     editor = makeEditor('hello');
     editor.commands.setTextSelection(1);
