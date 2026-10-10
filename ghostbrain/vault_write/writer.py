@@ -388,6 +388,22 @@ def _mark_approved(
     return str(change_id)
 
 
+def _check_approved(change_id: int, *, actor: Actor, op: Op, src_rel: str, dst_rel: str | None) -> None:
+    """B3: ``approved_change`` skips the hold, so it must name this very
+    write's pending row. Anything else, or an unreadable log, refuses."""
+    try:
+        row = _changes.get(change_id)
+    except Exception as e:  # noqa: BLE001
+        raise ValueError(f"cannot check approved change #{change_id}: {e}") from e
+    if row is None or row.status != "pending" or row.actor != actor:
+        raise ValueError(f"change #{change_id} is not this actor's pending change")
+    same = src_rel == row.rel_path and dst_rel == row.dest_path
+    # A forced approval of a move whose source vanished creates at the destination.
+    at_dest = op == "create" and dst_rel is None and src_rel == row.current_path
+    if not (same or at_dest):
+        raise ValueError(f"change #{change_id} is for another path")
+
+
 def _snapshot(
     rel: str, before: bytes, *, actor: Actor, reason: str, after: bytes | None
 ) -> tuple[Snapshot | None, bool]:
@@ -438,6 +454,9 @@ def _write(
         raise ValueError("move destination equals the source")
     log.debug("vault write op=%s path=%s actor=%s reason=%s", op, rel_path, actor, reason)
     with _locked(src, *([dst] if dst is not None else [])):
+        if approved_change is not None:
+            _check_approved(approved_change, actor=actor, op=op, src_rel=_rel(src),
+                            dst_rel=_rel(dst) if dst is not None else None)
         current = _read_bytes(src)
         etag_now = compute_etag(current) if current is not None else None
         if base_etag is not None and base_etag != etag_now:

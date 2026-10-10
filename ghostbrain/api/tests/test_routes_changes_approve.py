@@ -95,3 +95,20 @@ def test_a_forced_worker_edit_of_a_note_now_gone_is_400(tmp_vault, client, auth_
     assert f.status_code == 400 and "no longer exists" in f.json()["detail"]
     assert not (tmp_vault / TEMPLATE).exists()
     assert changes.get(cid).status == "pending"
+
+
+def test_a_move_whose_destination_was_taken_meanwhile_is_400(tmp_vault, client, auth_headers):
+    (tmp_vault / TEMPLATE).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_vault / TEMPLATE).write_text(BODY)
+    dest = "90-meta/templates/daily.md"
+    res = write(TEMPLATE, op="move", dest=dest, actor="plugin:familiar",
+                base_etag=compute_etag(BODY.encode()))
+    assert res.status == "pending"
+    cid = int(res.change_id)
+    (tmp_vault / dest).write_text("the user made this\n")
+    for body in ({}, {"force": True}):
+        r = client.post(f"/v1/changes/{cid}/approve", json=body, headers=auth_headers)
+        assert r.status_code == 400 and "now exists" in r.json()["detail"]
+    assert (tmp_vault / TEMPLATE).read_text() == BODY
+    assert (tmp_vault / dest).read_text() == "the user made this\n"
+    assert changes.get(cid).status == "pending"

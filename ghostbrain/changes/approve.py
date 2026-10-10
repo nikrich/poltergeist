@@ -66,6 +66,8 @@ def _bytes(blob: str | None) -> bytes | None:
 
 def _write_approved(c: Change, flip: Flip, target: bytes | None, current: bytes | None) -> WriteResult:
     reason = c.reason or f"approved change #{c.id}"
+    if flip.at != flip.to and _rv.read_current(flip.to) is not None:
+        raise NotApprovable(f"the destination {flip.to} now exists; reject this change")
     if target is None:  # a delete
         if current is None:  # already gone (forced): the outcome holds
             changes_log.apply_pending(c.id, before_blob=c.before_blob, after_blob=None)

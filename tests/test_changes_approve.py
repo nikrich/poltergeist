@@ -188,3 +188,65 @@ def test_a_collected_proposal_is_reported_gone(vault):
 def test_user_writes_cannot_claim_an_approval(vault):
     with pytest.raises(ValueError):
         write(REL, body="x", actor=USER, approved_change=1)
+
+
+def test_an_approval_naming_another_change_is_refused(vault):
+    mine = _held_edit()  # the assistant's edit of REL
+    other = int(write(NEW, content="# New\n", op="create", actor=FAMILIAR).change_id)
+    with pytest.raises(ValueError):  # the row is the assistant's, not the plugin's
+        write(REL, body="sneaky", actor=FAMILIAR, base_etag=compute_etag(V1), approved_change=mine)
+    with pytest.raises(ValueError):  # the row is for another path
+        write(REL, body="sneaky", actor=FAMILIAR, base_etag=compute_etag(V1), approved_change=other)
+    with pytest.raises(ValueError):  # the row is an edit in place, not a move
+        write(REL, op="move", dest=NEW, actor=ASSISTANT, base_etag=compute_etag(V1),
+              approved_change=mine)
+    assert (vault / REL).read_bytes() == V1 and not (vault / NEW).exists()
+    assert (changes.get(mine).status, changes.get(other).status) == ("pending", "pending")
+    assert {c.id for c in changes.list_changes()} == {mine, other}
+    assert store.list_snapshots(REL) == []
+
+
+def test_an_approval_naming_no_pending_change_is_refused(vault, monkeypatch):
+    with pytest.raises(ValueError):
+        write(REL, body="x", actor=ASSISTANT, base_etag=compute_etag(V1), approved_change=999)
+    set_hold_policy(lambda _p: [])
+    done = write(REL, body="applied now", actor=ASSISTANT, base_etag=compute_etag(V1))
+    now = (vault / REL).read_bytes()
+    with pytest.raises(ValueError):
+        write(REL, body="again", actor=ASSISTANT, base_etag=compute_etag(now),
+              approved_change=int(done.change_id))
+    assert (vault / REL).read_bytes() == now
+    assert changes.get(int(done.change_id)).status == "applied"
+    assert len(changes.list_changes()) == 1
+
+    def broken(_cid):
+        raise OSError("change log unreadable")
+
+    set_hold_policy(lambda _p: ["held for test"])
+    cid = int(write(REL, body="held", actor=ASSISTANT, base_etag=compute_etag(now)).change_id)
+    monkeypatch.setattr(changes, "get", broken)
+    with pytest.raises(ValueError):  # fails closed
+        write(REL, body="held", actor=ASSISTANT, base_etag=compute_etag(now), approved_change=cid)
+    assert (vault / REL).read_bytes() == now
+
+
+def test_a_move_whose_destination_was_taken_meanwhile_is_not_approvable(vault):
+    dest = "20-contexts/work/archive/plan.md"
+    cid = int(write(REL, op="move", dest=dest, actor=FAMILIAR, base_etag=compute_etag(V1)).change_id)
+    (vault / dest).parent.mkdir(parents=True)
+    (vault / dest).write_bytes(b"the user filed this here\n")
+    for force in (False, True):
+        with pytest.raises(ap.NotApprovable, match="now exists; reject this change"):
+            ap.approve(cid, force=force)
+    assert (vault / REL).read_bytes() == V1
+    assert (vault / dest).read_bytes() == b"the user filed this here\n"
+    assert changes.get(cid).status == "pending"
+
+
+def test_a_forced_move_of_a_vanished_note_creates_it_at_the_destination(vault):
+    dest = "20-contexts/work/archive/plan.md"
+    cid = int(write(REL, op="move", dest=dest, actor=FAMILIAR, base_etag=compute_etag(V1)).change_id)
+    (vault / REL).unlink()
+    res = ap.approve(cid, force=True)  # the approval names this row from the destination
+    assert res.path == dest and (vault / dest).read_bytes() == V1
+    assert changes.get(cid).status == "applied"
