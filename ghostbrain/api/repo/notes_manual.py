@@ -429,6 +429,19 @@ def extract_photo_into_jot(jot_id: str, asset_rel_path: str) -> dict:
             "extracted": False,
             "reason": "the note changed while reading the photo — try again",
         }
+    if saved["status"] == "pending":
+        # Held for approval (B3): hand back what is on disk, never the proposal,
+        # so the editor cannot autosave the held text as the user.
+        return {
+            "id": jot_id,
+            "path": record["path"],
+            "body": record["body"],
+            "extracted": False,
+            "etag": record["etag"],
+            "status": "pending",
+            "changeId": saved["changeId"],
+            "reason": "the photo text is waiting for your approval on the Changes screen",
+        }
     return {"id": jot_id, "path": saved["path"], "body": new_body, "extracted": True, "etag": saved["etag"]}
 
 

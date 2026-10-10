@@ -441,6 +441,9 @@ export function JotsScreen() {
                               guardRef.current?.reload(res.etag ?? null, res.body);
                             }
                             toast.success('photo text extracted');
+                          } else if (res.status === 'pending') {
+                            // Held for approval (B3): nothing to adopt.
+                            toast.info(res.reason ?? 'photo text is waiting for your approval');
                           } else {
                             toast.info(`couldn't read photo: ${res.reason ?? ''}`);
                           }

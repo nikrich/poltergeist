@@ -572,6 +572,9 @@ export interface ExtractPhotoResponse {
   extracted: boolean;
   reason?: string;
   etag?: string;
+  /** "pending": the callout is held for approval (B3); body is the on-disk one. */
+  status?: 'applied' | 'pending';
+  changeId?: string | null;
 }
 
 // ── Confluence space list (shared with the Confluence export dialog) ──
