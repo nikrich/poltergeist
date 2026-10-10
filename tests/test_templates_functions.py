@@ -98,7 +98,7 @@ def test_variable_names():
 
 def test_every_spec_is_documented_and_json_ready():
     data = registry_json()
-    assert set(data) == {"variables", "fields", "filters", "promptTypes"}
+    assert set(data) == {"variables", "fields", "filters", "promptTypes", "queryKeys"}
     json.dumps(data)
     for group in data.values():
         for spec in group:
@@ -128,3 +128,19 @@ def test_filter_behaviour():
     assert FILTER_IMPLS["lower"]("HI", None) == "hi"
     for name in ("slug", "upper", "lower"):
         assert FILTER_IMPLS[name](EMPTY, None) is EMPTY
+
+
+def test_query_keys_registry():
+    from ghostbrain.templates.functions import QUERY_KEYS
+
+    assert [s.name for s in QUERY_KEYS] == [
+        "type", "context", "tag", "mentions", "status", "since", "sort", "limit",
+    ]
+    for spec in QUERY_KEYS:
+        assert spec.kind == "query_key"
+        assert spec.doc and spec.example.startswith(f"{spec.name}:")
+    assert find_spec("query_key", "mentions") is QUERY_KEYS[3]
+    assert find_spec("variable", "mentions") is None
+    assert find_spec("query_key", "date") is None
+    assert [s["name"] for s in registry_json()["queryKeys"]] == [s.name for s in QUERY_KEYS]
+    assert registry_json()["queryKeys"][0]["kind"] == "query_key"

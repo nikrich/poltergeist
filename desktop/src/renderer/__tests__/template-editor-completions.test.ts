@@ -67,8 +67,8 @@ describe('template completions', () => {
     expect(value!.options[0]!.info).toBe('open = not done.\n\nExample: status: open');
   });
 
-  it('skips query completions when the registry has no query keys (C2 absent)', () => {
-    const { queryKeys: _omit, ...withoutQueries } = REGISTRY;
+  it('offers no query keys or values when the registry lists none', () => {
+    const withoutQueries = { ...REGISTRY, queryKeys: [] };
     expect(complete(TEMPLATE.replace('status: open', '‸'), { registry: withoutQueries })).toBeNull();
     expect(complete(TEMPLATE.replace('status: open', 'status: ‸'), { registry: withoutQueries })).toBeNull();
     expect(labels(complete(BODY, { registry: withoutQueries }))).toContain('person');

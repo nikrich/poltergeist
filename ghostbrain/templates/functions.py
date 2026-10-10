@@ -23,7 +23,7 @@ from ghostbrain.templates.values import (
     to_text,
 )
 
-Kind = Literal["variable", "field", "filter", "prompt_type"]
+Kind = Literal["variable", "field", "filter", "prompt_type", "query_key"]
 _ISO_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
@@ -167,9 +167,35 @@ PROMPT_TYPES: tuple[FunctionSpec, ...] = (
 )
 PROMPT_VALUE_TYPES: Mapping[str, str] = {s.name: s.type for s in PROMPT_TYPES}
 
+# Keys of a ```query``` block (spec C2). query.py builds its whitelist from
+# this tuple, so the parser, the docs and C3's completions cannot drift apart.
+QUERY_KEYS: tuple[FunctionSpec, ...] = (
+    FunctionSpec("type", "query_key", "text",
+                 "Notes whose frontmatter `artifactType` or `type` equals this, e.g. action_item, "
+                 "decision or meeting.", "type: action_item"),
+    FunctionSpec("context", "query_key", "text",
+                 "Notes in this context: the 20-contexts/<name> folder, or frontmatter `context`.",
+                 "context: work"),
+    FunctionSpec("tag", "query_key", "text",
+                 "Notes with this tag, in frontmatter `tags` or as #tag in the text.", "tag: roadmap"),
+    FunctionSpec("mentions", "query_key", "text",
+                 "Notes that link to this page, or else name it in their text. A wikilink or a name.",
+                 'mentions: "[[30-cross-context/people/alex]]"'),
+    FunctionSpec("status", "query_key", "text",
+                 "`open` = status is not done or closed (notes with no status count as open). "
+                 "Any other word matches exactly.", "status: open"),
+    FunctionSpec("since", "query_key", "text",
+                 "Created on or after: `7d`, `2w`, or a date like 2026-10-01.", "since: 7d"),
+    FunctionSpec("sort", "query_key", "text",
+                 "`created` or `updated`, then `asc` or `desc`. Default: created desc.",
+                 "sort: created desc"),
+    FunctionSpec("limit", "query_key", "number",
+                 "How many notes to show: default 20, at most 100.", "limit: 20"),
+)
+
 
 def find_spec(kind: Kind, name: str, owner: str | None = None) -> FunctionSpec | None:
-    for spec in (*VARIABLES, *FIELDS, *FILTERS, *PROMPT_TYPES):
+    for spec in (*VARIABLES, *FIELDS, *FILTERS, *PROMPT_TYPES, *QUERY_KEYS):
         if spec.kind == kind and spec.name == name and (owner is None or spec.owner == owner):
             return spec
     return None
@@ -181,4 +207,5 @@ def registry_json() -> dict[str, list[dict[str, Any]]]:
         "fields": [s.to_json() for s in FIELDS],
         "filters": [s.to_json() for s in FILTERS],
         "promptTypes": [s.to_json() for s in PROMPT_TYPES],
+        "queryKeys": [s.to_json() for s in QUERY_KEYS],
     }

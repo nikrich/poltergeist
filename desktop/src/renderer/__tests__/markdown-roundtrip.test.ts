@@ -33,6 +33,8 @@ function normalize(md: string): string {
 }
 
 const FIXTURES: Record<string, string> = {
+  'frozen query list':
+    '- [ ] [[20-contexts/work/a|Send Alex the budget]]\n- [x] [[20-contexts/work/b|Book the room]]',
   headings: '# h1\n\n## h2\n\n### h3\n\nbody text',
   emphasis: '**bold** and *italic* and `inline code`',
   'nested bullet lists': '- top\n  - nested\n    - deeper\n- second top',
@@ -78,6 +80,8 @@ const FIXTURES: Record<string, string> = {
   'status inside bold': '**`status:Done/green`**',
   'table of contents': '```toc\n```',
   'toc among headings': '# Title\n\n```toc\n```\n\n## Section\n\nbody',
+  'live query block':
+    '```query\ntype: action_item\nmentions: "[[30-cross-context/people/alex]]"\nstatus: open\nsort: created desc\n```',
   'toc fence with plugin options stays code': '```toc\nstyle: number\n```',
   'toc inside a callout': '> [!info] T\n> ```toc\n> ```\n\nafter',
   'toc inside a list item': '- item\n\n  ```toc\n  ```\n\n- next',
