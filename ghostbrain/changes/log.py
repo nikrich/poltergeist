@@ -28,6 +28,7 @@ OPS = ("create", "modify", "delete", "move")
 STATUSES = ("applied", "pending", "reverted", "rejected", "conflicted")
 _NEW_STATUSES = ("applied", "pending")
 _RESOLVED = ("reverted", "rejected", "conflicted")
+MAX_OWNERSHIP_HOPS = 50
 
 _SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -237,6 +238,42 @@ def last_after_blob(path: str, actor: str) -> str | None:
             (actor, path),
         ).fetchone()
     return r["after_blob"] if r is not None else None
+
+
+def created_by(path: str, actor: str) -> bool:
+    """Spec B §3 ownership: did ``actor`` create the file now at ``path``?
+    Yes when it has an applied create there, or its own applied moves lead
+    back to one. Moving someone else's note never makes it yours."""
+    current = path
+    with _connect() as conn:
+        for _ in range(MAX_OWNERSHIP_HOPS):
+            hit = conn.execute(
+                "SELECT 1 FROM changes WHERE actor = ? AND status = 'applied'"
+                " AND op = 'create' AND rel_path = ? LIMIT 1",
+                (actor, current),
+            ).fetchone()
+            if hit is not None:
+                return True
+            moved = conn.execute(
+                "SELECT rel_path FROM changes WHERE actor = ? AND status = 'applied'"
+                " AND op = 'move' AND dest_path = ? ORDER BY id DESC LIMIT 1",
+                (actor, current),
+            ).fetchone()
+            if moved is None:
+                return False
+            current = moved["rel_path"]
+    return False
+
+
+def apply_pending(change_id: int, *, before_blob: str | None, after_blob: str | None) -> bool:
+    """B3: an approved change. The pending row becomes the applied row."""
+    with _connect() as conn:
+        cur = conn.execute(
+            "UPDATE changes SET status = 'applied', before_blob = ?, after_blob = ?,"
+            " resolved_ts = NULL WHERE id = ? AND status = 'pending'",
+            (before_blob, after_blob, change_id),
+        )
+        return cur.rowcount == 1
 
 
 def referenced_blobs() -> list[str]:

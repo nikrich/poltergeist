@@ -10,8 +10,10 @@ from ghostbrain.changes.log import (
     STATUSES,
     Change,
     ChangeLogError,
+    apply_pending,
     clear_degraded,
     counts,
+    created_by,
     db_path,
     degraded,
     get,
@@ -27,7 +29,7 @@ from ghostbrain.changes.log import (
 
 __all__ = [
     "DB_NAME", "OPS", "RETENTION", "STATUSES", "Change", "ChangeLogError",
-    "clear_degraded", "counts", "db_path", "degraded", "get", "last_after_blob",
-    "list_changes", "mark_degraded", "prune", "record", "referenced_blobs",
-    "register_with_history", "set_status",
+    "apply_pending", "clear_degraded", "counts", "created_by", "db_path", "degraded",
+    "get", "last_after_blob", "list_changes", "mark_degraded", "prune", "record",
+    "referenced_blobs", "register_with_history", "set_status",
 ]
