@@ -92,6 +92,9 @@ def refresh(
         index = Index(model_name=model_name)
 
     candidates = list(_iter_notes(contexts_root))
+    # Drop rows for notes that no longer exist (moved by a project rename,
+    # deleted, …) so related: never links to a dead path.
+    _prune_missing(index, {str(p.relative_to(vault_path())) for p in candidates})
 
     # Determine what needs (re-)embedding.
     to_embed_paths: list[Path] = []
@@ -199,6 +202,31 @@ def _extract_text_and_context(path: Path) -> tuple[str, str]:
     text = f"{title}\n\n{body}".strip()
     ctx = str(note.metadata.get("context") or "")
     return text, ctx
+
+
+def _prune_missing(index: Index, keep: set[str]) -> int:
+    """Remove entries whose path is not in ``keep`` and compact the vector
+    matrix so rows stay contiguous. Returns the number of entries removed."""
+    n_rows = index.vectors.shape[0] if index.vectors is not None else 0
+    stale = [
+        rel for rel, e in index.entries.items()
+        if rel not in keep or not 0 <= e.row < n_rows
+    ]
+    if not stale:
+        return 0
+    for rel in stale:
+        del index.entries[rel]
+    if not index.entries:
+        index.vectors = None
+        return len(stale)
+    import numpy as np
+
+    kept = sorted(index.entries.items(), key=lambda kv: kv[1].row)
+    index.vectors = np.ascontiguousarray(index.vectors[[e.row for _, e in kept]])
+    for new_row, (_, e) in enumerate(kept):
+        e.row = new_row
+    log.info("pruned %d index entries for notes that no longer exist", len(stale))
+    return len(stale)
 
 
 def _set_index_row(

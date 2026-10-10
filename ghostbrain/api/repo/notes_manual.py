@@ -273,6 +273,18 @@ def move_jot(
 ) -> dict:
     src = _find_file(jot_id)
     if to_project:
+        # Callers validate the project first, but the router does so before a
+        # slow LLM call: a rename/archive in between must not recreate the old
+        # folder. Re-check right before creating it; gone → context-only.
+        from ghostbrain.api.repo import projects  # function-level: import cycle
+
+        if projects.get_project(to_context, to_project, active_only=True) is None:
+            log.warning(
+                "project %s/%s is gone or archived; filing jot %s to the context only",
+                to_context, to_project, jot_id,
+            )
+            to_project = None
+    if to_project:
         _safe_component(to_context)
         _safe_component(to_project)
         dst_dir = _guard_inside_vault(

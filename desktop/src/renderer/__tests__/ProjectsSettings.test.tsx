@@ -1,8 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { useToasts } from '../stores/toast';
 
 import * as client from '../lib/api/client';
+import { useUpdateProject } from '../lib/api/hooks';
 import { ProjectsSettings } from '../screens/settings';
 import type { Project } from '../../shared/api-types';
 
@@ -15,6 +17,24 @@ const projects: Project[] = [
     description: 'second brain',
     archived: false,
     created_at: 1,
+  },
+  {
+    id: 'work/paymnets',
+    context: 'work',
+    slug: 'paymnets',
+    name: 'Paymnets',
+    description: 'card rails',
+    archived: false,
+    created_at: 2,
+  },
+  {
+    id: 'work/old-thing',
+    context: 'work',
+    slug: 'old-thing',
+    name: 'Old Thing',
+    description: '',
+    archived: true,
+    created_at: 3,
   },
 ];
 
@@ -41,6 +61,11 @@ function renderSection() {
 }
 
 describe('ProjectsSettings', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useToasts.setState({ toasts: [] });
+  });
+
   it('lists projects grouped under their context', async () => {
     renderSection();
     expect(await screen.findByText('Poltergeist')).toBeTruthy();
@@ -81,5 +106,142 @@ describe('ProjectsSettings', () => {
     // Only the endpoint-served list renders — no baked-in defaults sneak in.
     expect(screen.getAllByRole('option')).toHaveLength(2);
     expect(screen.queryByRole('option', { name: 'personal' })).toBeNull();
+  });
+
+  it('edits a project name and saves with the PATCH body', async () => {
+    renderSection();
+    await screen.findByText('Paymnets');
+    fireEvent.click(screen.getByRole('button', { name: 'edit work/paymnets' }));
+    const nameInput = screen.getByLabelText('project name work/paymnets');
+    fireEvent.change(nameInput, { target: { value: 'Payments' } });
+    expect(screen.getByText('renames the folder too')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'save' }));
+    await waitFor(() =>
+      expect(vi.mocked(client.patch)).toHaveBeenCalledWith('/v1/projects/work/paymnets', {
+        name: 'Payments',
+        description: 'card rails',
+        archived: undefined,
+      }),
+    );
+  });
+
+  it('shows no folder hint when the slug is unchanged', async () => {
+    renderSection();
+    await screen.findByText('Paymnets');
+    fireEvent.click(screen.getByRole('button', { name: 'edit work/paymnets' }));
+    fireEvent.change(screen.getByLabelText('project name work/paymnets'), {
+      target: { value: 'PAYMNETS!' },
+    });
+    expect(screen.queryByText('renames the folder too')).toBeNull();
+  });
+
+  it('Enter saves and Escape cancels', async () => {
+    renderSection();
+    await screen.findByText('Paymnets');
+    fireEvent.click(screen.getByRole('button', { name: 'edit work/paymnets' }));
+    const input = screen.getByLabelText('project name work/paymnets');
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(screen.queryByLabelText('project name work/paymnets')).toBeNull();
+    expect(vi.mocked(client.patch)).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'edit work/paymnets' }));
+    fireEvent.change(screen.getByLabelText('project name work/paymnets'), {
+      target: { value: 'Payments' },
+    });
+    fireEvent.keyDown(screen.getByLabelText('project name work/paymnets'), { key: 'Enter' });
+    await waitFor(() => expect(vi.mocked(client.patch)).toHaveBeenCalledTimes(1));
+  });
+
+  it('unarchives an archived row', async () => {
+    renderSection();
+    await screen.findByText('Old Thing');
+    fireEvent.click(screen.getByRole('button', { name: 'unarchive' }));
+    await waitFor(() =>
+      expect(vi.mocked(client.patch)).toHaveBeenCalledWith('/v1/projects/work/old-thing', {
+        name: undefined,
+        description: undefined,
+        archived: false,
+      }),
+    );
+  });
+
+  it('toasts the server detail when a rename fails', async () => {
+    renderSection();
+    vi.mocked(client.patch).mockRejectedValue(new Error('project name already taken'));
+    await screen.findByText('Paymnets');
+    fireEvent.click(screen.getByRole('button', { name: 'edit work/paymnets' }));
+    fireEvent.change(screen.getByLabelText('project name work/paymnets'), {
+      target: { value: 'Poltergeist' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'save' }));
+    await waitFor(() =>
+      expect(
+        useToasts.getState().toasts.some((t) => t.message === 'project name already taken'),
+      ).toBe(true),
+    );
+  });
+  it('keeps the editor open with the draft when the PATCH is rejected', async () => {
+    renderSection();
+    vi.mocked(client.patch).mockRejectedValue(
+      new Error('project busy: a doc is still being indexed or summarised'),
+    );
+    await screen.findByText('Paymnets');
+    fireEvent.click(screen.getByRole('button', { name: 'edit work/paymnets' }));
+    fireEvent.change(screen.getByLabelText('project name work/paymnets'), {
+      target: { value: 'Payments' },
+    });
+    fireEvent.change(screen.getByLabelText('project description work/paymnets'), {
+      target: { value: 'card + EFT rails' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'save' }));
+    await waitFor(() =>
+      expect(
+        useToasts.getState().toasts.some((t) => t.message.startsWith('project busy')),
+      ).toBe(true),
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'save' })).toBeTruthy());
+    expect(
+      (screen.getByLabelText('project name work/paymnets') as HTMLInputElement).value,
+    ).toBe('Payments');
+    expect(
+      (screen.getByLabelText('project description work/paymnets') as HTMLInputElement).value,
+    ).toBe('card + EFT rails');
+  });
+
+  it('disables save while the PATCH is pending and closes on success', async () => {
+    renderSection();
+    let resolve!: (p: Project) => void;
+    vi.mocked(client.patch).mockReturnValue(
+      new Promise<Project>((r) => {
+        resolve = r;
+      }) as never,
+    );
+    await screen.findByText('Paymnets');
+    fireEvent.click(screen.getByRole('button', { name: 'edit work/paymnets' }));
+    fireEvent.change(screen.getByLabelText('project name work/paymnets'), {
+      target: { value: 'Payments' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'save' }));
+    const pending = await screen.findByRole('button', { name: 'saving…' });
+    expect((pending as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByLabelText('project name work/paymnets')).toBeTruthy();
+    fireEvent.keyDown(screen.getByLabelText('project name work/paymnets'), { key: 'Enter' });
+    expect(vi.mocked(client.patch)).toHaveBeenCalledTimes(1);
+    resolve({ ...projects[1]!, slug: 'payments', id: 'work/payments', name: 'Payments' });
+    await waitFor(() => expect(screen.queryByLabelText('project name work/paymnets')).toBeNull());
+  });
+});
+
+describe('useUpdateProject', () => {
+  it('invalidates page history along with the other moved surfaces', async () => {
+    vi.mocked(client.patch).mockResolvedValue(projects[1] as never);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const spy = vi.spyOn(qc, 'invalidateQueries');
+    const { result } = renderHook(() => useUpdateProject(), {
+      wrapper: ({ children }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>,
+    });
+    await result.current.mutateAsync({ context: 'work', slug: 'paymnets', name: 'Payments' });
+    const keys = spy.mock.calls.map(([f]) => JSON.stringify(f?.queryKey));
+    expect(keys).toContain('["note-history"]');
+    expect(keys).toContain('["projects"]');
   });
 });

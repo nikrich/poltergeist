@@ -25,6 +25,8 @@ def vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         encoding="utf-8",
     )
     monkeypatch.setenv("VAULT_PATH", str(v))
+    monkeypatch.setenv("GHOSTBRAIN_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("GHOSTBRAIN_CHATS_DIR", str(tmp_path / "chats"))
     return v
 
 
@@ -126,3 +128,22 @@ def test_route_jot_core_passes_project(vault, monkeypatch):
     assert result["context"] == "consulting"
     assert result["project"] == "poltergeist"
     assert result["path"].startswith("20-contexts/consulting/projects/poltergeist/")
+
+
+@pytest.mark.parametrize("change", ["rename", "archive"])
+def test_move_jot_to_project_gone_mid_route_files_to_context_only(vault: Path, change: str):
+    """The router validates the project before its LLM call; a rename or
+    archive landing in between must not recreate the old project folder."""
+    projects.create_project("consulting", "Poltergeist")
+    jot = write_inbox_jot("note routed while the project changes")
+    if change == "rename":
+        projects.rename_project("consulting", "poltergeist", name="Ghost Brain")
+    else:
+        projects.update_project("consulting", "poltergeist", archived=True)
+    moved = move_jot(jot["id"], to_context="consulting", to_project="poltergeist",
+                     confidence=0.9, method="llm", reasoning="r")
+    assert moved["project"] is None
+    assert moved["path"].startswith("20-contexts/consulting/notes/")
+    assert frontmatter.load(vault / moved["path"]).get("project") is None
+    if change == "rename":
+        assert not (vault / "20-contexts/consulting/projects/poltergeist").exists()

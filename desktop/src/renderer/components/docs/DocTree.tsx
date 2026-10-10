@@ -16,6 +16,7 @@ interface Props {
   onUploadFiles: (files: File[], to: FolderRef) => void;
   onCreateFolder: (ref: FolderRef) => void;
   onRenameFolder: (from: FolderRef, to: FolderRef) => void;
+  onRenameProject: (ref: { context: string; project: string }, name: string) => void;
   onDeleteFolder: (ref: FolderRef) => void;
 }
 
@@ -31,15 +32,18 @@ function joinPath(parent: string, name: string): string {
 }
 
 // Module scope (not inside DocTree) so parent re-renders, e.g. drag hover, don't remount it mid-typing.
-function FolderInput({ initial, onDone }: { initial: string; onDone: (v: string | null) => void }) {
+function FolderInput({ initial, onDone, placeholder = 'folder name', raw = false }: { initial: string; onDone: (v: string | null) => void; placeholder?: string; raw?: boolean }) {
   return (
     <input
       autoFocus
       defaultValue={initial}
-      placeholder="folder name"
+      placeholder={placeholder}
       className="ml-6 w-[calc(100%-1.5rem)] rounded border border-hairline-2 bg-vellum px-2 py-1 text-12 text-ink-0 outline-none focus:border-neon"
       onKeyDown={(e) => {
-        if (e.key === 'Enter') onDone(validName((e.target as HTMLInputElement).value.trim() || null));
+        if (e.key === 'Enter') {
+          const v = (e.target as HTMLInputElement).value.trim() || null;
+          onDone(raw ? v : validName(v));
+        }
         if (e.key === 'Escape') onDone(null);
       }}
       onBlur={() => onDone(null)}
@@ -184,6 +188,17 @@ export function DocTree(props: Props) {
     const root: DocFolderNode = { name: scope.name, path: '', folders: scope.folders, docs: scope.docs };
     return (
       <div key={key} className={scope.archived ? 'opacity-50' : ''}>
+        {renaming === key && scope.project ? (
+          <FolderInput
+            raw
+            placeholder="project name"
+            initial={scope.name}
+            onDone={(v) => {
+              setRenaming(null);
+              if (v && v !== scope.name) props.onRenameProject({ context: scope.context, project: scope.project! }, v);
+            }}
+          />
+        ) : (
         <div data-testid={`folder-${key}`} {...dropHandlers(ref, scope.archived)} className={`${rowCls(active, key)} ${scope.project ? 'font-medium text-ink-0' : 'text-ink-2'}`}>
           <button type="button" aria-label={open ? 'collapse' : 'expand'} onClick={() => toggle(key)} className="w-2.5 text-[9px] text-ink-3">
             {open ? '▾' : '▸'}
@@ -197,14 +212,22 @@ export function DocTree(props: Props) {
             <span className="truncate">{scope.name}</span>
           </button>
           {!scope.archived && (
-            <button type="button" aria-label={`new folder in ${key}`} onClick={() => setCreatingIn(key)} className="hidden text-ink-3 hover:text-neon group-hover:block group-focus-within:block">
-              <Lucide name="folder-plus" size={12} />
-            </button>
+            <span className="hidden items-center gap-1 group-hover:flex group-focus-within:flex">
+              <button type="button" aria-label={`new folder in ${key}`} onClick={() => setCreatingIn(key)} className="text-ink-3 hover:text-neon">
+                <Lucide name="folder-plus" size={12} />
+              </button>
+              {scope.project && (
+                <button type="button" aria-label={`rename ${scope.context}/${scope.project}`} onClick={() => setRenaming(key)} className="text-ink-3 hover:text-neon">
+                  <Lucide name="pencil" size={12} />
+                </button>
+              )}
+            </span>
           )}
           <span data-testid={`count-${scope.context}/${scope.project ?? '_'}/`} className="ml-auto font-mono text-10 text-ink-3 group-hover:hidden group-focus-within:hidden">
             {countDocs(root)}
           </span>
         </div>
+        )}
         {creatingIn === key && (
           <FolderInput initial="" onDone={(v) => { setCreatingIn(null); if (v) props.onCreateFolder({ ...ref, path: v }); }} />
         )}
