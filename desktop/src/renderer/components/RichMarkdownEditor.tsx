@@ -13,6 +13,7 @@ import { JotEditor } from './JotEditor';
 import { Lucide } from './Lucide';
 import { ReadAloudControls } from './ReadAloudControls';
 import { StatusPopover } from './StatusPopover';
+import { TableToolbar } from './TableToolbar';
 import { WebcamCaptureModal } from './WebcamCaptureModal';
 import { TemplateInsertDialog } from './TemplatePicker';
 
@@ -420,6 +421,7 @@ export function RichMarkdownEditor({
         <EditorToolbar editor={editor} onPhoto={() => setCamOpen(true)} />
       )}
       <div className="flex-1 overflow-auto">
+        {mode === 'rich' && editor && !readOnly && <TableToolbar editor={editor} />}
         {mode === 'rich' ? (
           <EditorContent
             editor={editor}
