@@ -105,7 +105,8 @@ export type DesignCommandKind =
   | 'pause'
   | 'resume'
   | 'nudge'
-  | 'codebase';
+  | 'codebase'
+  | 'update';
 
 /** Events on GET /v1/design/live (forwarded to `design:live:event`). */
 export type DesignLiveEvent =

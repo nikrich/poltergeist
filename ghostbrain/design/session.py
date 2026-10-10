@@ -55,6 +55,10 @@ log = logging.getLogger("ghostbrain.design.session")
 
 CANVASES = ("ui", "board")
 WINDOW_S = 45.0
+# Relevance judges the speech since the last run, back this far.
+JUDGE_S = 60.0
+# Cap on what a canvas keeps between runs (segments).
+HEARD_MAX = 400
 # Whisper often splits one sentence over several segments ("let's start a
 # design session" / "a front-end prototype"): command detection judges the
 # speech since the last command, back to this many seconds, as one utterance.
@@ -178,6 +182,10 @@ class _Canvas:
         self.fix_runs = 0
         self.build_error: str | None = None
         self.consumed_seq = 0
+        # Everything said to this canvas since its last run, relevant or not:
+        # whisper cuts sentences into fragments, so a fragment alone is often
+        # "irrelevant" while the utterance it belongs to is the requirement.
+        self.heard: list[Segment] = []
 
     def snapshot(self) -> dict:
         return {
@@ -396,16 +404,25 @@ class DesignSession:
             focus = self.focus
             if focus is None or self._ending or self.canvases[focus].state != "active":
                 return
-            first = segments[0][0]
+            cv = self.canvases[focus]
+            known = {s[0] for s in cv.heard}
+            cv.heard = [s for s in cv.heard if s[0] > cv.consumed_seq] + [
+                s for s in segments if s[0] > cv.consumed_seq and s[0] not in known]
+            cv.heard = cv.heard[-HEARD_MAX:]
+            # Judge the whole stretch since the last run, never a lone fragment.
+            newest = segments[-1][3]
+            stretch = [s for s in cv.heard if s[3] >= newest - JUDGE_S]
+            first = stretch[0][0] if stretch else segments[0][0]
             context = "\n".join(s[1] for s in self._window if s[0] < first)
-        ok, _summary = relevance.relevant(focus, "\n".join(s[1] for s in segments), context=context)
+        ok, _summary = relevance.relevant(focus, "\n".join(s[1] for s in stretch or segments), context=context)
         if not ok:
             return
         with self._lock:
             cv = self.canvases[focus]
             if self.focus != focus or cv.state != "active":
                 return
-            cv.buffer.restore([s for s in segments if s[0] > cv.consumed_seq])
+            held = {s[0] for s in cv.buffer.segments}
+            cv.buffer.restore([s for s in cv.heard if s[0] > cv.consumed_seq and s[0] not in held])
             cv.buffer.last_at = self._clock()
         self._emit_snapshot()
 
@@ -535,6 +552,7 @@ class DesignSession:
                     cv.fix_runs = 0
                 if segments:
                     cv.consumed_seq = max(cv.consumed_seq, max(s[0] for s in segments))
+                    cv.heard = [s for s in cv.heard if s[0] > cv.consumed_seq]
                 if bootstrap and (cv.buffer.segments or cv.nudges):
                     self._schedule_locked("ui")
                 self._persist("revision")
@@ -776,10 +794,10 @@ class DesignSession:
             if toast is not None:
                 self._publish({"type": "command", "command": "codebase", "canvas": "ui",
                                "label": toast, "undo_token": None, "spoken": spoken})
-            if cmd.command != "nudge" and self._ui_state() == before:
+            if cmd.command not in ("nudge", "update") and self._ui_state() == before:
                 return None
             token = None
-            if cmd.command != "nudge":
+            if cmd.command not in ("nudge", "update"):
                 token = uuid.uuid4().hex
                 self._undo[token] = (self._clock() + UNDO_TTL_S, before)
             event = {
@@ -827,6 +845,8 @@ class DesignSession:
             return f"Focused on the {_NAMES[cmd.command[6:]]}"
         if cmd.command == "nudge":
             return f"Nudge: {cmd.text}"
+        if cmd.command == "update":
+            return f"Updating the {_NAMES.get(cmd.canvas or 'ui', 'prototype')}"
         verb = "Paused" if cmd.command == "pause" else "Resumed"
         return f"{verb} {_NAMES.get(cmd.canvas or 'both', 'design session')}"
 
@@ -842,6 +862,8 @@ class DesignSession:
             self._resume(cmd.canvas)
         elif name == "nudge":
             self._nudge(cmd.canvas, cmd.text or "")
+        elif name == "update":
+            self._catch_up(cmd.canvas or self.focus, raise_if_empty=False)
         else:
             raise SessionError(f"unknown command {name!r}")
 
@@ -996,16 +1018,25 @@ class DesignSession:
             canvas = canvas or self.focus
             if canvas not in CANVASES or self.canvases[canvas].state not in ("active", "paused"):
                 raise SessionError("Nothing to update — start the prototype or the board first")
-            cv = self.canvases[canvas]
-            # "Update now" means "catch up with what we just said", including
-            # speech the relevance filter let go.
-            held = {s[0] for s in cv.buffer.segments}
-            cv.buffer.restore([s for s in self._window
-                               if s[0] > cv.consumed_seq and s[0] not in held and s[1]])
-            if not cv.buffer.segments and not cv.nudges and not cv.running:
+            self._catch_up(canvas, raise_if_empty=True)
+
+    def _catch_up(self, canvas: str | None, *, raise_if_empty: bool) -> None:
+        """"Update now" (button or spoken): run on everything said since the
+        last run, including speech the relevance filter let go. Caller holds
+        the lock."""
+        if canvas not in CANVASES or self.canvases[canvas].state not in ("active", "paused"):
+            raise SessionError("Nothing to update — start the prototype or the board first")
+        cv = self.canvases[canvas]
+        held = {s[0] for s in cv.buffer.segments}
+        seen = {s[0]: s for s in [*cv.heard, *self._window]}
+        cv.buffer.restore([s for q, s in sorted(seen.items())
+                           if q > cv.consumed_seq and q not in held and s[1]])
+        if not cv.buffer.segments and not cv.nudges and not cv.running:
+            if raise_if_empty:
                 raise SessionError("Nothing new said since the last update")
-            cv.buffer.force()
-            self._schedule_locked(canvas)
+            return
+        cv.buffer.force()
+        self._schedule_locked(canvas)
 
     def undo(self, token: str) -> None:
         with self._lock:
