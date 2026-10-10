@@ -365,8 +365,9 @@ function VaultSettings() {
   );
 }
 
-function PrivacySettings() {
+export function PrivacySettings() {
   const cloudSync = useSettings((s) => s.cloudSync);
+  const loadRemoteImages = useSettings((s) => s.loadRemoteImages);
   const e2eEncryption = useSettings((s) => s.e2eEncryption);
   const telemetry = useSettings((s) => s.telemetry);
   const setSetting = useSettings((s) => s.set);
@@ -392,6 +393,17 @@ function PrivacySettings() {
         label="telemetry"
         sub="anonymous crash reports. no message contents, ever."
         control={<Toggle on={telemetry} onChange={(v) => void trySet(setSetting, 'telemetry', v)} />}
+      />
+      <SettingRow
+        label="load remote images"
+        sub="show https images from the web in notes. off: they're blocked and never requested. takes effect immediately (the window reloads)."
+        control={
+          <Toggle
+            ariaLabel="load remote images"
+            on={loadRemoteImages}
+            onChange={(v) => void trySet(setSetting, 'loadRemoteImages', v)}
+          />
+        }
       />
     </div>
   );

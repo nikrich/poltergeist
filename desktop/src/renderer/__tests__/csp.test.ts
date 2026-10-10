@@ -19,7 +19,11 @@ function imgSrc(htmlPath: string): string {
 }
 
 describe('renderer CSP allows gbasset: images', () => {
-  for (const html of ['src/renderer/index.html', 'src/renderer/overlay.html']) {
+  for (const html of [
+    'src/renderer/index.html',
+    'src/renderer/index-remote-images.html',
+    'src/renderer/overlay.html',
+  ]) {
     it(`${html} img-src includes gbasset: (plus self + data:)`, () => {
       const src = imgSrc(html);
       expect(src).toContain("'self'");

@@ -301,6 +301,8 @@ body[data-theme='light'] {
 .gb-prose em { color: var(--ink-1); }
 .gb-prose strong { color: var(--ink-0); }
 .gb-jot-img { max-width: 100%; border-radius: 8px; border: 1px solid var(--hairline-2); margin: 6px 0; }
+/* Remote image the renderer CSP blocks (Settings → privacy → load remote images). */
+.gb-remote-img-blocked { display: inline-block; max-width: 100%; margin: 6px 0; padding: 10px 12px; border: 1px dashed var(--hairline-2); border-radius: 8px; font-size: 12px; color: var(--ink-2); }
 
 /* ── A7 page canvas ───────────────────────────────────────────────────
    A centred document column on bg-paper: no card, border or shadow. Width

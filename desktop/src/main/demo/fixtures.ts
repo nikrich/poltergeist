@@ -424,6 +424,7 @@ export const DEMO_SETTINGS = {
   readAloudVoice: '',
   readAloudRate: 1,
   pageWidth: 'fixed' as const,
+  loadRemoteImages: false,
   hotkeys: { jotOverlay: 'Alt+J' },
 };
 

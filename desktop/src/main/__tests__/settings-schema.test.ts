@@ -34,3 +34,11 @@ describe('settings schema — page width (A7)', () => {
     expect(settingsSchema.shape.pageWidth.safeParse(true).success).toBe(false);
   });
 });
+
+describe('settings schema — remote images', () => {
+  it('loadRemoteImages is a boolean', () => {
+    expect(settingsSchema.shape.loadRemoteImages.safeParse(true).success).toBe(true);
+    expect(settingsSchema.shape.loadRemoteImages.safeParse(false).success).toBe(true);
+    expect(settingsSchema.shape.loadRemoteImages.safeParse('true').success).toBe(false);
+  });
+});

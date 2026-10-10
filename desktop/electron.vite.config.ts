@@ -37,6 +37,9 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/renderer/index.html'),
+          // Same page, CSP img-src + https: — loaded when "load remote
+          // images" is on (see src/main/renderer-entry.ts).
+          'index-remote-images': resolve(__dirname, 'src/renderer/index-remote-images.html'),
           overlay: resolve(__dirname, 'src/renderer/overlay.html'),
         },
       },
