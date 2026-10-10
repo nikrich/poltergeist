@@ -1,7 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { Editor } from '@tiptap/core';
-import { filterSlashItems, SLASH_ITEMS } from '../lib/editor/slash';
+import { filterSlashItems, slashItemsFor, SLASH_ITEMS } from '../lib/editor/slash';
 import { buildEditorExtensions } from '../lib/editor/extensions';
+import { onGb } from '../lib/editor/events';
+import { makeEditor, markdownOf, textPos } from './helpers/editor';
 
 describe('filterSlashItems', () => {
   it('returns all items for empty query', () => {
@@ -31,5 +33,70 @@ describe('template slash command', () => {
     expect(spy).toHaveBeenCalledTimes(1);
     expect(editor.getText()).toBe('');
     editor.destroy();
+  });
+});
+
+function runSlash(key: string) {
+  const editor = makeEditor('/');
+  const item = SLASH_ITEMS.find((i) => i.key === key);
+  if (!item) throw new Error(`no slash item ${key}`);
+  item.run(editor, { from: 1, to: 2 });
+  return editor;
+}
+
+describe('A1 slash items', () => {
+  it('lists the new block items and keeps Quote', () => {
+    const keys = SLASH_ITEMS.map((i) => i.key);
+    for (const k of ['info', 'note', 'tip', 'warning', 'expand', 'status', 'toc', 'diagram', 'quote']) {
+      expect(keys).toContain(k);
+    }
+    expect(filterSlashItems('panel').map((i) => i.key)).toEqual(['info', 'note', 'tip', 'warning']);
+    expect(filterSlashItems('contents').map((i) => i.key)).toEqual(['toc']);
+  });
+
+  it.each([
+    ['info', '> [!info]'],
+    ['note', '> [!note]'],
+    ['tip', '> [!tip]'],
+    ['warning', '> [!warning]'],
+    ['expand', '> [!note]+ Details'],
+    ['toc', '```toc\n```'],
+    ['diagram', '```mermaid\nflowchart TD\n  A[Start] --> B[End]\n```'],
+  ])('%s inserts its markdown form', (key, expected) => {
+    expect(markdownOf(runSlash(key))).toBe(expected);
+  });
+
+  it('status inserts a grey To do lozenge and opens the editor for it', () => {
+    const editor = makeEditor('/');
+    const spy = vi.fn();
+    onGb(editor, 'gb:status:edit', spy);
+    SLASH_ITEMS.find((i) => i.key === 'status')!.run(editor, { from: 1, to: 2 });
+    expect(markdownOf(editor)).toBe('`status:To do/grey`');
+    expect(spy).toHaveBeenCalledWith({ pos: 1 });
+  });
+});
+
+describe('slash items inside a table', () => {
+  const BLOCK_ONLY = ['info', 'note', 'tip', 'warning', 'expand', 'toc', 'diagram', 'divider', 'table', 'template'];
+
+  it('hides block-only items while the cursor is in a table cell', () => {
+    const editor = makeEditor('| a | b |\n| --- | --- |\n| alpha | 1 |');
+    editor.commands.setTextSelection(textPos(editor, 'alpha'));
+    const keys = slashItemsFor(editor, '').map((i) => i.key);
+    for (const k of BLOCK_ONLY) expect(keys).not.toContain(k);
+    for (const k of ['status', 'h1', 'h2', 'h3', 'bullet', 'task', 'quote', 'code', 'photo']) {
+      expect(keys).toContain(k);
+    }
+    expect(slashItemsFor(editor, 'panel')).toEqual([]);
+    expect(slashItemsFor(editor, 'stat').map((i) => i.key)).toEqual(['status']);
+    // Templates insert parsed block markdown (headings, lists) a GFM cell cannot hold.
+    expect(slashItemsFor(editor, 'templ')).toEqual([]);
+  });
+
+  it('lists every item outside a table', () => {
+    const editor = makeEditor('plain\n\n| a |\n| --- |\n| 1 |');
+    editor.commands.setTextSelection(textPos(editor, 'plain'));
+    expect(slashItemsFor(editor, '').map((i) => i.key)).toEqual(SLASH_ITEMS.map((i) => i.key));
+    expect(slashItemsFor(editor, 'panel')).toEqual(filterSlashItems('panel'));
   });
 });

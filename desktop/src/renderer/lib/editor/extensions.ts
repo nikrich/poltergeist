@@ -2,13 +2,15 @@ import { Extension } from '@tiptap/core';
 import type { Extensions } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
-import Table from '@tiptap/extension-table';
 import TableRow from '@tiptap/extension-table-row';
-import TableCell from '@tiptap/extension-table-cell';
-import TableHeader from '@tiptap/extension-table-header';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import { Markdown } from 'tiptap-markdown';
+import { Callout } from './callout';
+import { Status } from './status';
+import { Toc } from './toc';
+import { GbCodeBlock } from './code-block';
+import { GbTable, GbTableCell, GbTableHeader } from './table';
 import { JotImage } from './image';
 import { SlashExtension } from './slash';
 import { WikilinkSuggest } from './wikilink-suggest';
@@ -52,14 +54,18 @@ const TaskListTight = Extension.create({
  */
 export function buildEditorExtensions(): Extensions {
   return [
-    StarterKit.configure({ blockquote: false }),
+    StarterKit.configure({ blockquote: false, codeBlock: false }),
+    GbCodeBlock,
     ExtractCallout,
+    Callout,
+    Status,
+    Toc,
     Link.configure({ openOnClick: false }),
     JotImage.configure({ inline: false, allowBase64: false }),
-    Table.configure({ resizable: false }),
+    GbTable.configure({ resizable: false }),
     TableRow,
-    TableHeader,
-    TableCell,
+    GbTableHeader,
+    GbTableCell,
     TaskList,
     TaskItem.configure({ nested: true }),
     TaskListTight,

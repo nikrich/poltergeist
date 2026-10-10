@@ -1,15 +1,20 @@
 import { Extension } from '@tiptap/core';
 import type { Editor, Range } from '@tiptap/core';
+import { isInTable } from '@tiptap/pm/tables';
 import { Suggestion } from '@tiptap/suggestion';
 import type { SuggestionProps, SuggestionKeyDownProps } from '@tiptap/suggestion';
 import * as ReactDOM from 'react-dom/client';
 import { createElement } from 'react';
 import { SlashMenu } from '../../components/SlashMenu';
+import { emitGb } from './events';
+import { MERMAID_TEMPLATE } from './code-block';
 
 export interface SlashItem {
   key: string;
   title: string;
   run: (editor: Editor, range: Range) => void;
+  /** Block-level item whose content a table cell cannot hold (cells serialise to one GFM line). */
+  blockOnly?: true;
 }
 
 export const SLASH_ITEMS: SlashItem[] = [
@@ -19,9 +24,60 @@ export const SLASH_ITEMS: SlashItem[] = [
   { key: 'bullet', title: 'Bullet list', run: (e, r) => e.chain().focus().deleteRange(r).toggleBulletList().run() },
   { key: 'task', title: 'Task list', run: (e, r) => e.chain().focus().deleteRange(r).toggleTaskList().run() },
   { key: 'quote', title: 'Quote', run: (e, r) => e.chain().focus().deleteRange(r).toggleBlockquote().run() },
+  { key: 'info', title: 'Info panel', run: (e, r) => e.chain().focus().deleteRange(r).setCallout({ kind: 'info' }).run(), blockOnly: true },
+  { key: 'note', title: 'Note panel', run: (e, r) => e.chain().focus().deleteRange(r).setCallout({ kind: 'note' }).run(), blockOnly: true },
+  { key: 'tip', title: 'Tip panel', run: (e, r) => e.chain().focus().deleteRange(r).setCallout({ kind: 'tip' }).run(), blockOnly: true },
+  { key: 'warning', title: 'Warning panel', run: (e, r) => e.chain().focus().deleteRange(r).setCallout({ kind: 'warning' }).run(), blockOnly: true },
+  {
+    key: 'expand',
+    title: 'Expand',
+    blockOnly: true,
+    run: (e, r) =>
+      e.chain().focus().deleteRange(r).setCallout({ kind: 'note', title: 'Details', foldable: 'open' }).run(),
+  },
+  {
+    key: 'status',
+    title: 'Status',
+    run: (e, r) => {
+      e.chain().focus().deleteRange(r).insertStatus({ label: 'To do', color: 'grey' }).run();
+      emitGb(e, 'gb:status:edit', { pos: r.from });
+    },
+  },
+  {
+    key: 'toc',
+    title: 'Table of contents',
+    blockOnly: true,
+    run: (e, r) => e.chain().focus().deleteRange(r).insertToc().run(),
+  },
+  {
+    key: 'diagram',
+    title: 'Diagram',
+    blockOnly: true,
+    run: (e, r) =>
+      e
+        .chain()
+        .focus()
+        .deleteRange(r)
+        .insertContent({
+          type: 'codeBlock',
+          attrs: { language: 'mermaid' },
+          content: [{ type: 'text', text: MERMAID_TEMPLATE }],
+        })
+        .run(),
+  },
   { key: 'code', title: 'Code block', run: (e, r) => e.chain().focus().deleteRange(r).toggleCodeBlock().run() },
-  { key: 'divider', title: 'Divider', run: (e, r) => e.chain().focus().deleteRange(r).setHorizontalRule().run() },
-  { key: 'table', title: 'Table', run: (e, r) => e.chain().focus().deleteRange(r).insertTable({ rows: 2, cols: 2, withHeaderRow: true }).run() },
+  {
+    key: 'divider',
+    title: 'Divider',
+    blockOnly: true,
+    run: (e, r) => e.chain().focus().deleteRange(r).setHorizontalRule().run(),
+  },
+  {
+    key: 'table',
+    title: 'Table',
+    blockOnly: true,
+    run: (e, r) => e.chain().focus().deleteRange(r).insertTable({ rows: 2, cols: 2, withHeaderRow: true }).run(),
+  },
   {
     key: 'photo',
     title: 'Photo (webcam)',
@@ -35,6 +91,7 @@ export const SLASH_ITEMS: SlashItem[] = [
   {
     key: 'template',
     title: 'Template',
+    blockOnly: true, // inserts the template's parsed markdown, which can hold headings and lists
     run: (e, r) => {
       e.chain().focus().deleteRange(r).run();
       // EditorEvents is a closed interface; gb:slash:template is a custom event
@@ -45,9 +102,14 @@ export const SLASH_ITEMS: SlashItem[] = [
   },
 ];
 
-export function filterSlashItems(query: string): SlashItem[] {
+export function filterSlashItems(query: string, opts: { inTable?: boolean } = {}): SlashItem[] {
   const q = query.toLowerCase();
-  return SLASH_ITEMS.filter((i) => i.title.toLowerCase().includes(q));
+  return SLASH_ITEMS.filter((i) => !(opts.inTable && i.blockOnly) && i.title.toLowerCase().includes(q));
+}
+
+/** The items the slash menu offers at the editor's current selection. */
+export function slashItemsFor(editor: Editor, query: string): SlashItem[] {
+  return filterSlashItems(query, { inTable: isInTable(editor.state) });
 }
 
 /** Factory returned to Suggestion's `render` hook. */
@@ -142,7 +204,7 @@ export const SlashExtension = Extension.create({
         char: '/',
         startOfLine: false,
         command: ({ editor, range, props }) => props.run(editor, range),
-        items: ({ query }) => filterSlashItems(query),
+        items: ({ editor, query }) => slashItemsFor(editor, query),
         render: renderSlashPopup,
       }),
     ];

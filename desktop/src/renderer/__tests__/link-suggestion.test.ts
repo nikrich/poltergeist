@@ -263,3 +263,59 @@ describe('late results after the session ended', () => {
     await settle();
   });
 });
+
+/** A link suggestion's plugin state, found by its PluginKey name (`cfg.name`). */
+function suggestState(e: Editor, name: string): { active: boolean } | undefined {
+  const keyOf = (p: { spec: { key?: unknown } }) => (p.spec.key as { key?: string } | undefined)?.key ?? '';
+  const plugin = e.state.plugins.find((p) => new RegExp(`^${name}\\$\\d*$`).test(keyOf(p)));
+  if (!plugin) throw new Error(`no plugin ${name}`);
+  return plugin.getState(e.state) as { active: boolean } | undefined;
+}
+
+describe('link suggestions stay out of code', () => {
+  it('[[ inside a mermaid fence does not activate the wikilink suggestion', async () => {
+    respond({ page: { items: [ALPHA], indexing: false } });
+    const e = mount('```mermaid\ngraph TD\n```');
+    e.commands.setTextSelection(e.state.doc.firstChild!.nodeSize - 1);
+    type(e, '\n  A[[Sub');
+    expect(suggestState(e, 'wikilinkSuggest')?.active).toBe(false);
+    await tick();
+    expect(getMock).not.toHaveBeenCalled();
+    expect(document.querySelector('[role=listbox]')).toBeNull();
+  });
+
+  it('# and @ inside a code block do not activate either', async () => {
+    respond({ tag: { items: [ROADMAP], indexing: false }, person: { items: [ALEX], indexing: false } });
+    const e = mount('```\nx\n```');
+    e.commands.setTextSelection(e.state.doc.firstChild!.nodeSize - 1);
+    type(e, ' #ro');
+    expect(suggestState(e, 'tagSuggest')?.active).toBe(false);
+    type(e, ' @al');
+    expect(suggestState(e, 'personSuggest')?.active).toBe(false);
+    await tick();
+    expect(getMock).not.toHaveBeenCalled();
+  });
+
+  it('[[ inside an inline code span does not activate the wikilink suggestion', async () => {
+    respond({ page: { items: [ALPHA], indexing: false } });
+    const e = mount('see `ab` here');
+    let inCode = -1;
+    e.state.doc.descendants((node, pos) => {
+      if (node.isText && node.text === 'ab') inCode = pos + 1;
+    });
+    e.commands.setTextSelection(inCode);
+    type(e, '[[alp');
+    expect(e.state.selection.$from.marks().some((m) => m.type.name === 'code')).toBe(true);
+    expect(suggestState(e, 'wikilinkSuggest')?.active).toBe(false);
+    await tick();
+    expect(getMock).not.toHaveBeenCalled();
+  });
+
+  it('[[ in a paragraph still activates it', async () => {
+    respond({ page: { items: [ALPHA], indexing: false } });
+    const e = mount();
+    type(e, 'see [[alp');
+    expect(suggestState(e, 'wikilinkSuggest')?.active).toBe(true);
+    expect(await screen.findByText('Alpha plan')).toBeInTheDocument();
+  });
+});

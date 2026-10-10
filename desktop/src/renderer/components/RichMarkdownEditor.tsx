@@ -1,15 +1,19 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Editor } from '@tiptap/core';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { buildEditorExtensions } from '../lib/editor/extensions';
+import { onGb } from '../lib/editor/events';
 import { clipboardPayload, getMarkdown, restoreWikilinks } from '../lib/editor/markdown';
 import { insertImageFile } from '../lib/editor/insert-image';
 import { toast } from '../stores/toast';
 import { Btn } from './Btn';
+import { DiagramModal } from './DiagramModal';
 import { EditorToolbar } from './EditorToolbar';
 import { JotEditor } from './JotEditor';
 import { Lucide } from './Lucide';
 import { ReadAloudControls } from './ReadAloudControls';
+import { StatusPopover } from './StatusPopover';
+import { TableToolbar } from './TableToolbar';
 import { WebcamCaptureModal } from './WebcamCaptureModal';
 import { TemplateInsertDialog } from './TemplatePicker';
 
@@ -101,6 +105,10 @@ export function RichMarkdownEditor({
   const [mode, setMode] = useState<Mode>(parseFailed ? 'source' : 'rich');
   const [camOpen, setCamOpen] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
+  const [statusPos, setStatusPos] = useState<number | null>(null);
+  const closeStatus = useCallback(() => setStatusPos(null), []);
+  const [diagramSource, setDiagramSource] = useState<string | null>(null);
+  const closeDiagram = useCallback(() => setDiagramSource(null), []);
   // Track previous openCameraSignal to skip the initial mount value.
   const prevCameraSignalRef = useRef(openCameraSignal);
 
@@ -251,6 +259,28 @@ export function RichMarkdownEditor({
     };
   }, [editor]);
 
+  useEffect(() => {
+    if (!editor) return;
+    return onGb(editor, 'gb:status:edit', ({ pos }) => setStatusPos(pos));
+  }, [editor]);
+
+  // Any document edit can move the lozenge — close the popover rather than act on a stale position.
+  useEffect(() => {
+    if (!editor) return;
+    const onTransaction = ({ transaction }: { transaction: { docChanged: boolean } }): void => {
+      if (transaction.docChanged) setStatusPos(null);
+    };
+    editor.on('transaction', onTransaction);
+    return () => {
+      editor.off('transaction', onTransaction);
+    };
+  }, [editor]);
+
+  useEffect(() => {
+    if (!editor) return;
+    return onGb(editor, 'gb:diagram:open', ({ source }) => setDiagramSource(source));
+  }, [editor]);
+
   // Open the camera whenever openCameraSignal is incremented (skip initial mount).
   useEffect(() => {
     if (openCameraSignal === prevCameraSignalRef.current) return;
@@ -379,6 +409,7 @@ export function RichMarkdownEditor({
 
   function switchMode(next: Mode) {
     if (next === mode) return;
+    setStatusPos(null);
     if (next === 'source') {
       if (editor && !editor.isDestroyed) current.current = getMarkdown(editor);
       setMode('source');
@@ -403,6 +434,7 @@ export function RichMarkdownEditor({
         <EditorToolbar editor={editor} onPhoto={() => setCamOpen(true)} />
       )}
       <div className="flex-1 overflow-auto">
+        {mode === 'rich' && editor && !readOnly && <TableToolbar editor={editor} />}
         {mode === 'rich' ? (
           <EditorContent
             editor={editor}
@@ -458,6 +490,10 @@ export function RichMarkdownEditor({
           </button>
         </div>
       </div>
+      {mode === 'rich' && editor && statusPos !== null && (
+        <StatusPopover key={statusPos} editor={editor} pos={statusPos} onClose={closeStatus} />
+      )}
+      {diagramSource !== null && <DiagramModal source={diagramSource} onClose={closeDiagram} />}
       <WebcamCaptureModal
         open={camOpen}
         onClose={() => setCamOpen(false)}
