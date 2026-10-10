@@ -90,7 +90,7 @@ async function polishTo(editor: Editor, word: string, answer: string) {
 }
 
 describe('RichMarkdownEditor inline ai', () => {
-  it('⌘J opens the popover; without inlineAssist it does nothing', async () => {
+  it('⌘J opens the popover', async () => {
     const { editor } = setup();
     pressModJ(editor());
     expect(await screen.findByRole('dialog', { name: 'inline ai' })).toBeInTheDocument();
@@ -187,6 +187,42 @@ describe('RichMarkdownEditor inline ai', () => {
     expect(ok).toBe(true);
     await waitFor(() => expect(assist).toHaveBeenCalledTimes(1));
     expect(lastRequest()).toMatchObject({ jot_id: 'j1', mode: 'polish', instruction: 'shorter', placement: 'selection' });
+  });
+
+  it('an edit while the popover waits for an action closes it (stale range)', async () => {
+    const { editor, onSave, onAccept } = setup();
+    select(editor(), 'beta');
+    pressModJ(editor());
+    await screen.findByRole('dialog', { name: 'inline ai' });
+    act(() => {
+      editor().view.dispatch(editor().state.tr.insertText('typed ', 1));
+    });
+    expect(screen.queryByRole('dialog', { name: 'inline ai' })).toBeNull();
+    expect(markdownOf(editor())).toBe('typed alpha beta gamma');
+    // The typing stays a pending user save; reopening flushes it unattributed.
+    pressModJ(editor());
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect((onSave.mock.calls[0]![0] as string).trim()).toBe('typed alpha beta gamma');
+    expect(onAccept).not.toHaveBeenCalled();
+  });
+
+  it('startInlineAssist with the popover open restarts it with the new action', async () => {
+    const { editor, handleRef } = setup();
+    select(editor(), 'beta');
+    pressModJ(editor());
+    fireEvent.click(await screen.findByRole('button', { name: 'polish' }));
+    expect(assist).toHaveBeenCalledTimes(1);
+    const first = lastRequest().stream_id;
+    let ok = false;
+    act(() => {
+      ok = handleRef.current!.startInlineAssist!({ mode: 'expand' });
+    });
+    expect(ok).toBe(true);
+    await waitFor(() => expect(assist).toHaveBeenCalledTimes(2));
+    expect(lastRequest()).toMatchObject({ mode: 'expand', placement: 'selection' });
+    expect(lastRequest().stream_id).not.toBe(first);
+    expect(window.gb.docs.assistStop).toHaveBeenCalledWith(first);
+    expect(screen.getAllByRole('dialog', { name: 'inline ai' })).toHaveLength(1);
   });
 
   it('a selection across table cells is refused', () => {

@@ -11,6 +11,7 @@ import {
   acceptAiSuggestion,
   attachAiSuggestion,
   clearAiSuggestion,
+  getAiSuggestion,
   type SuggestionKey,
 } from '../lib/editor/ai-suggestion';
 import {
@@ -360,7 +361,16 @@ export function RichMarkdownEditor({
       toast.error('select text inside one table cell for inline ai');
       return false;
     }
-    if (inline) return true;
+    if (inline) {
+      if (!initial) return true;
+      // A new action (docs panel) replaces the open popover: re-keying
+      // unmounts the old one, whose teardown stops its stream.
+      clearAiSuggestion(editor);
+      flushSave();
+      const fresh = captureInlineContext(editor);
+      setInline((prev) => ({ ctx: fresh, initial, n: (prev?.n ?? 0) + 1 }));
+      return true;
+    }
     // Keystrokes typed before ⌘J are the user's: save them unattributed first.
     flushSave();
     const ctx = captureInlineContext(editor);
@@ -378,6 +388,8 @@ export function RichMarkdownEditor({
 
   function acceptInline() {
     if (!editor || editor.isDestroyed) return;
+    // Defensive: anything still debounced is the user's, never the assistant's.
+    flushSave();
     const changed = acceptAiSuggestion(editor);
     setInline(null);
     // One immediate save carrying exactly the accepted text, marked as the
@@ -385,6 +397,20 @@ export function RichMarkdownEditor({
     if (changed) flushSave(inlineAssist?.onAccept);
     editor.commands.focus();
   }
+
+  // The popover's context is a position snapshot. Until an action locks the
+  // document (a suggestion exists), any edit makes it stale: close instead.
+  const inlineOpen = inline !== null;
+  useEffect(() => {
+    if (!editor || !inlineOpen) return;
+    const onTransaction = ({ transaction }: { transaction: { docChanged: boolean } }): void => {
+      if (transaction.docChanged && !getAiSuggestion(editor)) setInline(null);
+    };
+    editor.on('transaction', onTransaction);
+    return () => {
+      editor.off('transaction', onTransaction);
+    };
+  }, [editor, inlineOpen]);
 
   // Populate the imperative handle so docs-assist panel and PDF export can
   // programmatically read/replace editor content without prop drilling.
@@ -592,7 +618,7 @@ export function RichMarkdownEditor({
         <StatusPopover key={statusPos} editor={editor} pos={statusPos} onClose={closeStatus} />
       )}
       {diagramSource !== null && <DiagramModal source={diagramSource} onClose={closeDiagram} />}
-      {mode === 'rich' && editor && inline && inlineAssist && (
+      {mode === 'rich' && editor && !readOnly && inline && inlineAssist && (
         <InlineAssistPopover
           key={inline.n}
           editor={editor}
