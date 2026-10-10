@@ -3,6 +3,7 @@ import { useGuardedSave, type SaveTarget } from '../lib/use-guarded-save';
 import { ConflictBanner } from './ConflictBanner';
 import { RichMarkdownEditor, type RichMarkdownEditorProps } from './RichMarkdownEditor';
 import { registerNavigationGuard, type NavigationScope } from '../stores/navigation';
+import type { WriteActor } from '../../shared/types';
 
 export interface GuardHandle {
   adopt: (etag: string | null, body: string) => void;
@@ -11,6 +12,8 @@ export interface GuardHandle {
   /** Replace the note through `perform` (history restore) between autosaves,
    * then reload the editor with the result. Rejects under a conflict. */
   restore: (perform: () => Promise<{ body: string; etag?: string | null }>) => Promise<void>;
+  /** The next autosave is `actor`'s write (docs panel Accept, spec B §2). */
+  attributeNext: (actor: WriteActor) => void;
 }
 
 const DISCARD_PROMPT =
@@ -76,6 +79,7 @@ export function GuardedNoteEditor({
       const res = await guardLatest.current.runExclusive(perform);
       remount(res.body);
     },
+    attributeNext: (actor) => guardLatest.current.attributeNext(actor),
   }));
   useEffect(() => {
     if (!guardRef) return;

@@ -281,4 +281,19 @@ describe('DocsAssistPanel', () => {
     );
     expect(useDocsAssist.getState().phase).toBe('idle');
   });
+
+  it('Accept tells the editor the next save is the assistant’s before replacing the text', async () => {
+    const { fire } = captureDocsListener();
+    const order: string[] = [];
+    const handle = makeHandle({ replaceWith: vi.fn(() => order.push('replace')) });
+    const onAccept = vi.fn(() => order.push('attribute'));
+    render(<DocsAssistPanel jotId={JOTID} editorHandle={handle} onAccept={onAccept} />);
+    fireEvent.click(screen.getByRole('button', { name: 'polish' }));
+    await waitFor(() => expect(useDocsAssist.getState().phase).toBe('streaming'));
+    act(() => {
+      fire({ jotId: JOTID, event: { type: 'done', text: 'polished' } });
+    });
+    fireEvent.click(await screen.findByRole('button', { name: /accept/i }));
+    expect(order).toEqual(['attribute', 'replace']);
+  });
 });

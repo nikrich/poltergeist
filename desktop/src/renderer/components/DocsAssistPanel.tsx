@@ -11,6 +11,9 @@ import { PanelError } from './PanelError';
 interface Props {
   jotId: string;
   editorHandle: React.MutableRefObject<EditorHandle | null>;
+  /** Called just before an accepted proposal replaces the editor text, so the
+   * resulting save is recorded as the assistant's (spec B §2). */
+  onAccept?: () => void;
 }
 
 // Quick-action mode buttons rendered at the top of the panel.
@@ -20,7 +23,7 @@ const QUICK_ACTIONS: { mode: DocsAssistMode; label: string }[] = [
   { mode: 'summarize', label: 'summarize' },
 ];
 
-export function DocsAssistPanel({ jotId, editorHandle }: Props) {
+export function DocsAssistPanel({ jotId, editorHandle, onAccept }: Props) {
   const phase = useDocsAssist((s) => s.phase);
   const streamed = useDocsAssist((s) => s.streamed);
   const error = useDocsAssist((s) => s.error);
@@ -131,6 +134,7 @@ export function DocsAssistPanel({ jotId, editorHandle }: Props) {
   }
 
   function handleAccept() {
+    onAccept?.();
     editorHandle.current?.replaceWith(streamed, target);
     reset();
     setToolHint(null);

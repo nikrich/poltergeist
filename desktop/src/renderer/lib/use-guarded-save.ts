@@ -1,9 +1,11 @@
 import { useCallback, useRef, useState } from 'react';
 import { ApiError } from './api/client';
+import type { WriteActor } from '../../shared/types';
 
 export interface SaveTarget {
-  /** Persist `body`; `ifMatch` is the etag the save is based on (null = unconditional). */
-  send: (body: string, ifMatch: string | null) => Promise<{ etag?: string | null }>;
+  /** Persist `body`; `ifMatch` is the etag the save is based on (null = unconditional).
+   * `actor` is passed only for an attributed save (spec B §2: docs Accept). */
+  send: (body: string, ifMatch: string | null, actor?: WriteActor) => Promise<{ etag?: string | null }>;
   /** Re-read the note as it is on disk now. */
   fetchLatest: () => Promise<{ body: string; etag?: string | null }>;
 }
@@ -33,6 +35,10 @@ export interface GuardedSave {
   runExclusive: <T extends { body: string; etag?: string | null }>(
     perform: () => Promise<T>,
   ) => Promise<T>;
+  /** The next save() is `actor`'s write (the docs panel's Accept), not a
+   * keystroke. Rides with that body through the queue and the auto-resolve
+   * resend; dropped if the save lands in a conflict (the user decides then). */
+  attributeNext: (actor: WriteActor) => void;
 }
 
 /** GET bodies come back trimmed (both ends) by the server and keep the file's
@@ -64,6 +70,8 @@ export function useGuardedSave(
   const baseBodyRef = useRef(initial.body);
   const inFlightRef = useRef(false);
   const queuedRef = useRef<string | null>(null);
+  const nextActorRef = useRef<WriteActor | null>(null);
+  const queuedActorRef = useRef<WriteActor | null>(null);
   const conflictRef = useRef<Conflict | null>(null);
   const [conflict, setConflictState] = useState<Conflict | null>(null);
   const [resolving, setResolving] = useState(false);
@@ -82,7 +90,14 @@ export function useGuardedSave(
     baseBodyRef.current = body;
   };
 
-  const handleConflict = async (mine: string, allowAutoResolve: boolean): Promise<void> => {
+  const sendAs = (body: string, ifMatch: string | null, actor?: WriteActor) =>
+    actor ? targetRef.current.send(body, ifMatch, actor) : targetRef.current.send(body, ifMatch);
+
+  const handleConflict = async (
+    mine: string,
+    allowAutoResolve: boolean,
+    actor?: WriteActor,
+  ): Promise<void> => {
     let latest: { body: string; etag?: string | null };
     try {
       latest = await targetRef.current.fetchLatest();
@@ -101,10 +116,10 @@ export function useGuardedSave(
     }
     if (allowAutoResolve && sameBody(latest.body, baseBodyRef.current)) {
       try {
-        const res = await targetRef.current.send(mine, latest.etag ?? null);
+        const res = await sendAs(mine, latest.etag ?? null, actor);
         markSaved(mine, res.etag);
       } catch (err) {
-        if (isConflict(err)) await handleConflict(mine, false);
+        if (isConflict(err)) await handleConflict(mine, false, actor);
         else onErrorRef.current?.(asError(err));
       }
       return;
@@ -116,34 +131,41 @@ export function useGuardedSave(
     });
   };
 
-  const run = async (body: string): Promise<void> => {
+  const run = async (body: string, actor?: WriteActor): Promise<void> => {
     inFlightRef.current = true;
     try {
-      const res = await targetRef.current.send(body, etagRef.current);
+      const res = await sendAs(body, etagRef.current, actor);
       markSaved(body, res.etag);
     } catch (err) {
-      if (isConflict(err)) await handleConflict(body, true);
+      if (isConflict(err)) await handleConflict(body, true, actor);
       else onErrorRef.current?.(asError(err));
     } finally {
       inFlightRef.current = false;
     }
     const next = queuedRef.current;
+    const nextActor = queuedActorRef.current ?? undefined;
     queuedRef.current = null;
+    queuedActorRef.current = null;
     if (next === null) return;
     if (conflictRef.current) setConflict({ ...conflictRef.current, mine: next });
-    else await run(next);
+    else await run(next, nextActor);
   };
 
   const save = (body: string) => {
+    const actor = nextActorRef.current ?? undefined;
+    nextActorRef.current = null;
     if (conflictRef.current) {
       setConflict({ ...conflictRef.current, mine: body });
       return;
     }
     if (inFlightRef.current) {
+      // A newer body replaces the queued one but still holds the AI text,
+      // so an assistant mark already queued is kept.
       queuedRef.current = body;
+      if (actor) queuedActorRef.current = actor;
       return;
     }
-    void run(body);
+    void run(body, actor);
   };
 
   const keepMine = async (): Promise<void> => {
@@ -186,8 +208,10 @@ export function useGuardedSave(
     } finally {
       inFlightRef.current = false;
       const next = queuedRef.current;
+      const nextActor = queuedActorRef.current ?? undefined;
       queuedRef.current = null;
-      if (!ok && next !== null) void run(next);
+      queuedActorRef.current = null;
+      if (!ok && next !== null) void run(next, nextActor);
     }
   };
 
@@ -203,5 +227,19 @@ export function useGuardedSave(
 
   const hasConflict = () => conflictRef.current !== null;
 
-  return { save, conflict, resolving, keepMine, keepTheirs, adopt, hasConflict, runExclusive };
+  const attributeNext = (actor: WriteActor) => {
+    nextActorRef.current = actor;
+  };
+
+  return {
+    save,
+    conflict,
+    resolving,
+    keepMine,
+    keepTheirs,
+    adopt,
+    hasConflict,
+    runExclusive,
+    attributeNext,
+  };
 }

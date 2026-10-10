@@ -65,6 +65,7 @@ import type {
 } from '../../../shared/api-types';
 import { ApiError, del, get, patch, post, put } from './client';
 import { reportHistoryHealth } from '../history-health';
+import type { WriteActor } from '../../../shared/types';
 
 export function useVaultStats() {
   return useQuery({
@@ -629,11 +630,11 @@ export function useCreateJot() {
 export function useUpdateJot() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { id: string; body: string; ifMatch?: string | null }) =>
+    mutationFn: (vars: { id: string; body: string; ifMatch?: string | null; actor?: WriteActor }) =>
       patch<UpdateJotResponse>(
         `/v1/notes/${encodeURIComponent(vars.id)}`,
         { body: vars.body },
-        { ifMatch: vars.ifMatch },
+        { ifMatch: vars.ifMatch, ...(vars.actor ? { actor: vars.actor } : {}) },
       ),
     onSuccess: (res) => {
       reportHistoryHealth(res);
