@@ -6,8 +6,8 @@ function fakePlugin(routes) {
   return {
     calls,
     sidecar: {
-      request: async (method, path, body) => {
-        calls.push({ method, path, body });
+      request: async (method, path, body, opts) => {
+        calls.push(opts === undefined ? { method, path, body } : { method, path, body, opts });
         const h = routes[`${method} ${path.split('?')[0]}`];
         return h ? h(path, body) : { ok: false, error: 'no route', status: 500 };
       },
@@ -56,5 +56,55 @@ describe('backend', () => {
       'GET /v1/projects': () => ({ ok: true, data: [existing] }),
     });
     expect(await createProject(p, 'personal', 'long night')).toEqual(existing);
+  });
+
+  describe('If-Match on rewrites', () => {
+    const ETAG_READ = '0123456789abcdef';
+    const ETAG_PUT1 = '1111111111111111';
+    const ETAG_PUT2 = '2222222222222222';
+
+    function notesPlugin() {
+      const putEtags = [ETAG_PUT1, ETAG_PUT2];
+      return fakePlugin({
+        'GET /v1/notes': (path) => (path.includes('missing')
+          ? { ok: false, error: 'Note not found', status: 404 }
+          : { ok: true, data: { body: 'FADE IN:', frontmatter: { title: 'X' }, etag: ETAG_READ } }),
+        'PUT /v1/notes': (_path, body) => ({ ok: true, data: { path: body.path, created: false, etag: putEtags.shift() } }),
+      });
+    }
+    const puts = (p) => p.calls.filter((c) => c.method === 'PUT');
+
+    it('read → write sends the etag the read returned', async () => {
+      const p = notesPlugin();
+      await readScript(p, 'a.screenplay.md');
+      await writeScript(p, 'a.screenplay.md', { title: 'X' }, 'Go.');
+      expect(puts(p)[0].opts).toEqual({ ifMatch: ETAG_READ });
+    });
+
+    it('write → write sends the etag the first PUT returned', async () => {
+      const p = notesPlugin();
+      await readScript(p, 'a.screenplay.md');
+      await writeScript(p, 'a.screenplay.md', { title: 'X' }, 'Go.');
+      await writeScript(p, 'a.screenplay.md', { title: 'X' }, 'Go on.');
+      expect(puts(p)[1].opts).toEqual({ ifMatch: ETAG_PUT1 });
+    });
+
+    it('a new script (read 404) sends no If-Match, nor an etag from another path', async () => {
+      const p = notesPlugin();
+      await readScript(p, 'a.screenplay.md');
+      expect(await readScript(p, 'missing.screenplay.md')).toBeNull();
+      await writeScript(p, 'missing.screenplay.md', { title: 'New' }, 'FADE IN:');
+      expect(puts(p)[0].opts).toBeUndefined();
+    });
+
+    it('a refused rewrite (409/428) throws with the server message and is not retried', async () => {
+      const p = fakePlugin({
+        'GET /v1/notes': () => ({ ok: true, data: { body: 'x', frontmatter: {}, etag: ETAG_READ } }),
+        'PUT /v1/notes': () => ({ ok: false, error: 'Note changed since it was read', status: 409 }),
+      });
+      await readScript(p, 'a.md');
+      await expect(writeScript(p, 'a.md', { title: 'X' }, 'Go.')).rejects.toMatchObject({ status: 409, message: 'Note changed since it was read' });
+      expect(puts(p)).toHaveLength(1);
+    });
   });
 });

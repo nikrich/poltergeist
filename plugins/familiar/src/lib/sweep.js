@@ -2,6 +2,7 @@ import { extractPaths, listDays } from './delta.js';
 import { renderNoteBlocks, trimToBudget } from './budget.js';
 import { buildUserPrompt, SYSTEM_PROMPT } from './prompt.js';
 import { parseSweepOutput, SWEEP_JSON_SCHEMA } from './output.js';
+import { createNoteIO } from './notes-io.js';
 import {
   mergeDecisions, mergeLoops, parseDecisions, parseOpenLoops,
   renderDecisions, renderOpenLoops,
@@ -22,27 +23,10 @@ async function getJson(api, path) {
   return r.data;
 }
 
-/** Read a note; missing note (404) → null, other failures throw. */
-async function readNoteData(api, notePath) {
-  const r = await api.fetch('GET', `/v1/notes?path=${encodeURIComponent(notePath)}`);
-  if (r.ok) return r.data;
-  if (r.status === 404) return null;
-  throw new Error(`read ${notePath}: ${r.error}`);
-}
-
-/** Read a note body; missing note (404) → null, other failures throw. */
-async function readNote(api, notePath) {
-  const data = await readNoteData(api, notePath);
-  return data ? data.body : null;
-}
-
-async function writeNote(api, notePath, content) {
-  const r = await api.fetch('PUT', '/v1/notes', { path: notePath, content });
-  if (!r.ok) throw new Error(`write ${notePath}: ${r.error}`);
-}
-
 export async function runSweep(deps) {
   const { api, settings, state, now, log } = deps;
+  // Per-run etag tracking: each rewrite sends the etag of the version read here.
+  const { readNoteData, readNote, writeNote } = createNoteIO((...a) => api.fetch(...a));
   const windowStart = state.lastSuccessfulRunAt
     ?? new Date(now.getTime() - 7 * 24 * 3600 * 1000).toISOString();
   const windowEnd = now.toISOString();
@@ -62,7 +46,7 @@ export async function runSweep(deps) {
     // 2. full text of every delta note (dropped from the feed if unreadable)
     const notes = [];
     for (const p of paths) {
-      const data = await readNoteData(api, p);
+      const data = await readNoteData(p);
       if (data !== null) {
         const modified = data.frontmatter?.updated ?? data.frontmatter?.created ?? '';
         notes.push({ path: p, modified, text: data.body });
@@ -73,9 +57,9 @@ export async function runSweep(deps) {
     report.droppedCount = dropped.length;
 
     // 3. current memory + trackers
-    const memoryMd = (await readNote(api, MEMORY_PATH)) ?? '';
-    const loopsMd = (await readNote(api, LOOPS_PATH)) ?? '';
-    const decisionsMd = (await readNote(api, DECISIONS_PATH)) ?? '';
+    const memoryMd = (await readNote(MEMORY_PATH)) ?? '';
+    const loopsMd = (await readNote(LOOPS_PATH)) ?? '';
+    const decisionsMd = (await readNote(DECISIONS_PATH)) ?? '';
 
     // 4. LLM call, one retry on contract violation
     const userPrompt = buildUserPrompt({
@@ -115,14 +99,16 @@ export async function runSweep(deps) {
     }
 
     // 5. merge trackers against a FRESH read (user may have edited mid-run)
-    const freshLoops = parseOpenLoops((await readNote(api, LOOPS_PATH)) ?? '');
+    const freshLoops = parseOpenLoops((await readNote(LOOPS_PATH)) ?? '');
     const mergedLoops = mergeLoops(freshLoops.loops, output.openLoops);
-    const freshDecisions = parseDecisions((await readNote(api, DECISIONS_PATH)) ?? '');
+    const freshDecisions = parseDecisions((await readNote(DECISIONS_PATH)) ?? '');
     const mergedDecisions = mergeDecisions(freshDecisions, output.decisions);
 
     // 6. write-back — briefing first (worst crash outcome: briefing without
     //    tracker update, repaired by the next run)
     const ymd = localYmd(now);
+    // A same-day rerun replaces today's briefing; read it for its etag.
+    await readNoteData(briefingPath(ymd));
     const briefing = [
       '---',
       'type: familiar-briefing',
@@ -134,10 +120,10 @@ export async function runSweep(deps) {
       '',
       output.briefingMarkdown,
     ].join('\n');
-    await writeNote(api, briefingPath(ymd), briefing);
-    await writeNote(api, MEMORY_PATH, output.memoryMarkdown);
-    await writeNote(api, LOOPS_PATH, renderOpenLoops(mergedLoops, freshLoops.unparsed));
-    await writeNote(api, DECISIONS_PATH, renderDecisions(mergedDecisions));
+    await writeNote(briefingPath(ymd), briefing);
+    await writeNote(MEMORY_PATH, output.memoryMarkdown);
+    await writeNote(LOOPS_PATH, renderOpenLoops(mergedLoops, freshLoops.unparsed));
+    await writeNote(DECISIONS_PATH, renderDecisions(mergedDecisions));
 
     report.ok = true;
     report.briefingPath = briefingPath(ymd);

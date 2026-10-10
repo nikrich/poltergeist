@@ -142,3 +142,22 @@ def test_a_plugin_creating_and_routing_a_jot_files_it_as_the_router(
     rows = sorted(changes.list_changes(), key=lambda c: c.op)
     assert [(c.actor, c.op) for c in rows] == [
         ("plugin:familiar", "create"), ("worker:jot-router", "move")]
+
+
+def test_a_plugin_rewriting_a_pre_b2_note_needs_the_etag_from_its_read(
+        tmp_vault, client, auth_headers):
+    # Written before B2: on disk, but no change row names it.
+    note = write_note(tmp_vault, "Familiar/memory.md", "# Memory\nold\n")
+    body = {"path": "Familiar/memory.md", "content": "# Memory\nnew\n"}
+    r = client.put("/v1/notes", json=body, headers=_h(auth_headers, "plugin:familiar"))
+    assert r.status_code == 428
+    assert note.read_text() == "# Memory\nold\n"
+
+    g = client.get("/v1/notes", params={"path": "Familiar/memory.md"}, headers=auth_headers)
+    assert g.status_code == 200
+    etag = g.json()["etag"]
+    r = client.put("/v1/notes", json=body, headers=_h(auth_headers, "plugin:familiar", etag))
+    assert r.status_code == 200
+    assert note.read_text() == "# Memory\nnew\n"
+    [row] = changes.list_changes()
+    assert (row.actor, row.op, row.rel_path) == ("plugin:familiar", "modify", "Familiar/memory.md")

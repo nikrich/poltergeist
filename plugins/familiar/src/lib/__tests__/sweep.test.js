@@ -9,24 +9,35 @@ const GOOD_OUTPUT = {
   decisions: [{ date: '2026-07-07', text: 'Familiar is a plugin', sourcePath: '10-daily/2026-07-07.md' }],
 };
 
-function makeFakeApi({ llmResponses }) {
+// Deterministic 16-hex etag of a body, like the sidecar's (content-derived).
+function etagOf(body) {
+  let h = 0n;
+  for (const ch of body) h = (h * 131n + BigInt(ch.codePointAt(0))) % (2n ** 64n);
+  return h.toString(16).padStart(16, '0');
+}
+
+function makeFakeApi({ llmResponses, putFailure = null }) {
   const notes = new Map();       // path -> body
   const puts = [];               // recorded PUT payloads
+  const putOpts = [];            // recorded PUT 4th arg, aligned with puts
   const llmCalls = [];
   const api = {
-    fetch: async (method, path, body) => {
+    fetch: async (method, path, body, opts) => {
       if (method === 'GET' && path.startsWith('/v1/activity')) {
         return { ok: true, data: [{ path: '10-daily/2026-07-07.md' }, { path: 'Familiar/memory.md' }] };
       }
       if (method === 'GET' && path.startsWith('/v1/notes?path=')) {
         const p = decodeURIComponent(path.slice('/v1/notes?path='.length));
         if (!notes.has(p)) return { ok: false, error: 'Note not found', status: 404 };
-        return { ok: true, data: { path: p, title: p, body: notes.get(p), frontmatter: {} } };
+        return { ok: true, data: { path: p, title: p, body: notes.get(p), frontmatter: {}, etag: etagOf(notes.get(p)) } };
       }
       if (method === 'PUT' && path === '/v1/notes') {
         puts.push(body);
+        putOpts.push(opts);
+        if (putFailure && notes.has(body.path)) return putFailure;
+        const created = !notes.has(body.path);
         notes.set(body.path, body.content);
-        return { ok: true, data: { path: body.path, created: true } };
+        return { ok: true, data: { path: body.path, created, etag: etagOf(body.content) } };
       }
       if (method === 'POST' && path === '/v1/llm/run') {
         llmCalls.push(body);
@@ -35,7 +46,7 @@ function makeFakeApi({ llmResponses }) {
       throw new Error(`unexpected call: ${method} ${path}`);
     },
   };
-  return { api, notes, puts, llmCalls };
+  return { api, notes, puts, putOpts, llmCalls };
 }
 
 const DEPS = (api) => ({
@@ -117,5 +128,52 @@ describe('runSweep', () => {
     const report = await runSweep(DEPS(fake.api));
     expect(report.ok).toBe(false);
     expect(report.error).toContain('boom');
+  });
+
+  it('sends the etag it read as If-Match on every rewrite of an existing note', async () => {
+    fake.notes.set(MEMORY_PATH, '# Memory\nold');
+    fake.notes.set(LOOPS_PATH, renderOpenLoops([], []));
+    fake.notes.set(DECISIONS_PATH, '# Decisions\n');
+    fake.notes.set('Familiar/briefings/2026-07-08.md', 'earlier briefing today');
+    const before = new Map(fake.notes);
+    const report = await runSweep(DEPS(fake.api));
+    expect(report.ok).toBe(true);
+    expect(fake.puts).toHaveLength(4);
+    fake.puts.forEach((put, i) => {
+      expect(fake.putOpts[i]).toEqual({ ifMatch: etagOf(before.get(put.path)) });
+    });
+  });
+
+  it('sends no If-Match when creating a note that does not exist yet', async () => {
+    const report = await runSweep(DEPS(fake.api));
+    expect(report.ok).toBe(true);
+    expect(fake.puts).toHaveLength(4);
+    fake.putOpts.forEach((o) => expect(o).toBeUndefined());
+  });
+
+  it('a later run sends the etag of what the earlier run wrote', async () => {
+    // two sweeps on the same api: the second run reads again, so it sends the etag of what run 1 wrote
+    await runSweep(DEPS(fake.api));
+    const written = fake.notes.get(MEMORY_PATH);
+    fake.puts.length = 0; fake.putOpts.length = 0;
+    await runSweep(DEPS(fake.api));
+    const i = fake.puts.findIndex((p) => p.path === MEMORY_PATH);
+    expect(fake.putOpts[i]).toEqual({ ifMatch: etagOf(written) });
+  });
+
+  it.each([
+    [409, 'Note changed since it was read'],
+    [428, 'If-Match required'],
+  ])('reports failure when a rewrite is refused with %i', async (status, error) => {
+    fake = makeFakeApi({
+      llmResponses: [{ text: '', structured: GOOD_OUTPUT, error: null }],
+      putFailure: { ok: false, status, error },
+    });
+    fake.notes.set('10-daily/2026-07-07.md', 'x');
+    fake.notes.set(MEMORY_PATH, '# Memory\nuser edit');
+    const report = await runSweep(DEPS(fake.api));
+    expect(report.ok).toBe(false);
+    expect(report.error).toContain(error);
+    expect(fake.notes.get(MEMORY_PATH)).toBe('# Memory\nuser edit');
   });
 });
