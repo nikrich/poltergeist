@@ -719,6 +719,16 @@ export interface LlmProvidersResponse {
   providers: Record<SidecarProviderId, LlmProviderDiagnostics>;
 }
 
+export interface WhatsAppChat {
+  jid: string;
+  name: string;
+  kind: 'direct' | 'group';
+  lastMessageAt: string | null;
+  messageCount: number;
+  allowed: boolean;
+  context: string | null;
+}
+
 // ── Docs library ─────────────────────────────────────────────────────────────
 
 export type DocKind = 'pdf' | 'image' | 'docx' | 'xlsx' | 'text' | 'opaque';

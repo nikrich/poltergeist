@@ -122,6 +122,47 @@ def _load_routing() -> dict:
     return load_routing()
 
 
+def _whatsapp_store_status() -> tuple[str, str | None]:
+    import sqlite3
+    from contextlib import closing
+
+    from ghostbrain.connectors.whatsapp import store
+
+    try:
+        with closing(store.open_store(store.default_store_path())) as conn:
+            store.check_schema(conn)
+    except FileNotFoundError:
+        return "missing", None
+    except store.StoreSchemaError as e:
+        return "schema", str(e)
+    except (PermissionError, sqlite3.OperationalError) as e:
+        return "denied", str(e)
+    except sqlite3.DatabaseError as e:
+        if store.is_access_denied(e):
+            return "denied", str(e)
+        return "schema", f"WhatsApp store is unreadable: {e}"
+    return "ok", None
+
+
+def _whatsapp_probe() -> ProbeResult:
+    if _platform() != "darwin":
+        return ProbeResult("off")
+    from ghostbrain.connectors.whatsapp import allowlist
+
+    # Opt-in first: no chats picked means off, without touching the store.
+    n = len(allowlist.load(state_dir()))
+    if n == 0:
+        return ProbeResult("off")
+    status, detail = _whatsapp_store_status()
+    if status == "missing":
+        return ProbeResult("off")
+    if status == "denied":
+        return ProbeResult("err", error="Grant Poltergeist Full Disk Access to read WhatsApp")
+    if status == "schema":
+        return ProbeResult("err", error=detail)
+    return ProbeResult("on", account=f"{n} chat" + ("" if n == 1 else "s"))
+
+
 def probe(connector_id: str) -> ProbeResult:
     if connector_id == "gmail":
         return _google_probe("gmail")
@@ -147,4 +188,6 @@ def probe(connector_id: str) -> ProbeResult:
         return _github_probe()
     if connector_id == "claude_code":
         return _claude_code_probe()
+    if connector_id == "whatsapp":
+        return _whatsapp_probe()
     return ProbeResult("off")

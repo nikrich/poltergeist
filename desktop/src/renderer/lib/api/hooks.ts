@@ -50,6 +50,7 @@ import type {
   UpdateRecorderSettings,
   VaultGraph,
   VaultContexts,
+  WhatsAppChat,
   VaultStats,
   McpServersResponse,
   McpServerWrite,
@@ -932,6 +933,29 @@ export function useRecheckLlmProviders() {
   return useMutation({
     mutationFn: () => get<LlmProvidersResponse>('/v1/llm/providers?refresh=1'),
     onSuccess: (data) => qc.setQueryData(['llm', 'providers'], data),
+  });
+}
+
+export function useWhatsAppChats(enabled = true) {
+  return useQuery({
+    queryKey: ['whatsapp', 'chats'],
+    queryFn: () => get<WhatsAppChat[]>('/v1/connectors/whatsapp/chats'),
+    enabled,
+    retry: false,
+    staleTime: 60_000,
+  });
+}
+
+export function useSaveWhatsAppChats() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (chats: Record<string, { allowed: boolean; context: string | null }>) =>
+      put<WhatsAppChat[]>('/v1/connectors/whatsapp/chats', { chats }),
+    onSuccess: (data) => {
+      qc.setQueryData(['whatsapp', 'chats'], data);
+      qc.invalidateQueries({ queryKey: ['connectors'] });
+      qc.invalidateQueries({ queryKey: ['connector', 'whatsapp'] });
+    },
   });
 }
 

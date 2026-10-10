@@ -230,6 +230,20 @@ def _fast_route(event: dict, routing: dict) -> RoutingDecision | None:
                     method="path",
                 )
 
+    if source == "whatsapp":
+        configured = routing_config.contexts()
+        candidates = (metadata.get("context"),
+                      (routing.get("whatsapp") or {}).get("default_context"),
+                      "personal")
+        ctx = next((c for c in candidates if c and c in configured), configured[0])
+        log.info("path-routed event=%s ctx=%s whatsapp", event.get("id"), ctx)
+        return RoutingDecision(
+            context=ctx,
+            confidence=1.0,
+            reasoning="whatsapp chat context (override → default_context → personal)",
+            method="path",
+        )
+
     return _account_route(event)
 
 
