@@ -1195,3 +1195,71 @@ def test_spans_markdown_it_may_pair_differently_are_not_code(before, after):
 ])
 def test_table_headers_and_escaped_backticks_are_read_as_markdown_it_does(before, after):
     _held(before, after)
+
+
+# ── Task 10 round 3 ────────────────────────────────────────────────────────
+
+# I-A2: a quote opened 4 columns in sits inside a list item, not in code.
+@pytest.mark.parametrize("before,after", [
+    (D + "\n- a\n  b\n    >     " + X + "\n", D + "\n- a\n  > b\n    >     " + X + "\n"),
+    ("---\nt: 1\n---\n* ===\n a ` b\n    >     " + X + "\n",
+     "---\nt: 1\n---\n* ===\n- > %%\n    >     " + X + "\n"),
+])
+def test_indented_code_in_a_container_opened_inside_a_list_item_is_inert_before(before, after):
+    _held(before, after)
+
+
+# I-B: the container ends a type 1-5 block before its end marker; markdown-it
+# then reads the marker line as a type-7 block running to a blank line.
+@pytest.mark.parametrize("kept,added", [
+    ("- <textarea>\n</textarea>\n", "` X `"),
+    ("> <pre>\n</pre>\n", "` X `"),
+    ("- <pre>\n</pre>\n", "` X `"),
+    ("> <style>\n</style>\n", "\\X"),
+    ("> <script>\n</script>\n", "` X `"),
+    ("- <pre>\n</pre>\n", "`` X ``"),
+])
+def test_a_block_a_container_ends_early_leaves_raw_html_after_it(kept, added):
+    before = D + "\n" + kept
+    _held(before, before + added.replace("X", X) + "\n")
+
+
+def test_a_block_a_container_ends_early_found_by_fuzzing():
+    tail = "- ` " + X + " `\n\n1. ```html\n\t``` a`b\n"
+    _held("\t` " + X + " `\n-\t<textarea>\n b c\n   </textarea>\n" + tail,
+          "\t` " + X + " `\n-\t<textarea>\n   </textarea>\n" + tail)
+
+
+# I-C: a "|" in a code span splits nothing outside a table.
+@pytest.mark.parametrize("text", [
+    "Returns `Result<T> | null`.\n",
+    "Run `cat <file> | grep x`.\n",
+])
+def test_a_pipe_in_a_code_span_outside_a_table_is_code(text):
+    assert _md(text) == []
+
+
+def test_an_unrelated_edit_near_a_piped_code_span_applies():
+    before = D + "\nAPI returns `Promise<User> | undefined`.\n"
+    assert risk.evaluate(_p(before=before.encode(), after=(before + "more\n").encode())) == []
+
+
+def test_b4_workers_on_notes_with_piped_code_spans_apply(vault):
+    rel = "80-profile/current-projects.md"
+    (vault / rel).parent.mkdir(parents=True, exist_ok=True)
+    (vault / rel).write_text("# Current projects\n\nAPI returns `Promise<User> | undefined`.\n")
+    res = jobs.rewrite_text(rel, lambda t: t + "\n- Billing: p95 < 200ms\n",
+                            actor=worker_actor("profile-apply"), reason="weekly")
+    assert res is not None and res.status == "applied", res
+    note = "20-contexts/work/decisions/old.md"
+    write(note, content=USER_NOTE.decode() + "\nReturns `Option<T> | None`.\n", op="create", actor=USER)
+    res = jobs.update_fields(note, lambda _m: {"reversed_by": ["[[new-decision]]"]},
+                             actor=worker_actor("reversal"), reason="reversed")
+    assert res is not None and res.status == "applied"
+
+
+def test_judging_a_note_keeps_none_of_its_text_afterwards():
+    from ghostbrain.vault_write import html_live
+
+    risk.evaluate(_p(after=V1 + b"<!-- a\n<?b\n" + X.encode() + b"\n"))
+    assert html_live._inline_html_end.cache_info().currsize == 0

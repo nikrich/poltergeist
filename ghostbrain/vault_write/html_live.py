@@ -170,7 +170,7 @@ _UNKNOWN = -1
 _TERMINATORS = (("<!--", "-->", 2), ("<?", "?>", 2), ("<![CDATA[", "]]>", 9), ("<!", ">", 2))
 
 
-@lru_cache(maxsize=65536)
+@lru_cache(maxsize=65536)  # cleared after each note (markdown_findings)
 def _inline_html_end(text: str, pos: int) -> int | None:
     """Where the inline HTML starting at ``pos`` ends; ``_UNKNOWN`` when it
     may run past the window; None when none starts there."""
@@ -327,7 +327,9 @@ def _walk(lines: list[str]) -> _Walk:
             if end is None and blank:
                 walk.block[i] = block = None
             elif end is not None and end.search(line):
-                block = None
+                # A container may have ended the block first; then markdown-it
+                # reads this line as a type-7 block running to a blank line (I-B).
+                block = None if sure else (None, False)
         elif shape is not None and lost is None:
             prefix, run = shape.group(1), shape.group(2) or shape.group(3)
             if region is not None or "\t" in prefix or _header_row(lines, i):
@@ -451,14 +453,15 @@ class _Tails:
         return k >= 0 and self.reach[k] > x
 
 
-def _plain_spans(line: str, text: str, offset: int, tails: _Tails,
+def _plain_spans(line: str, text: str, offset: int, tails: _Tails, table: bool,
                  ) -> tuple[Ranges, Ranges, bool]:
     """Code spans paired within ``line`` read on its own (left to right, as
     CommonMark does), its escapes and safe autolinks, and whether the line is
     *simple*: every backtick run pairs on the line, no span holds a "|" a
-    table row would split it at, and no run sits in inline HTML or in a
-    link's destination or title (markdown-it reads links first). ``text`` is
-    the line's segment and ``offset`` maps a line position into it."""
+    table row would split it at (when the segment may hold a ``table``), and
+    no run sits in inline HTML or in a link's destination or title
+    (markdown-it reads links first). ``text`` is the line's segment and
+    ``offset`` maps a line position into it."""
     spans: Ranges = []
     other: Ranges = []
     simple = True
@@ -486,7 +489,7 @@ def _plain_spans(line: str, text: str, offset: int, tails: _Tails,
         elif c == "`":
             end = _RUN_RE.match(line, pos).end()
             close = _close_run(line, end, end - pos)
-            if (close is not None and _TABLE_PIPE_RE.search(line, pos, close) is None
+            if (close is not None and not (table and _TABLE_PIPE_RE.search(line, pos, close))
                     and not tails.holds(offset + pos) and not tails.holds(offset + close - 1)):
                 spans.append((pos, close))
                 pos = close
@@ -496,6 +499,11 @@ def _plain_spans(line: str, text: str, offset: int, tails: _Tails,
             continue
         pos += 1
     return spans, other, simple
+
+
+def _may_hold_table(lines: list[str], seg: list[int]) -> bool:
+    """Some line of the segment may be a table's header row."""
+    return any(_header_row(lines, i) for i in seg[:-1])
 
 
 def _strict_inert(lines: list[str], walk: _Walk) -> tuple[list[Ranges], list[Ranges]]:
@@ -512,8 +520,9 @@ def _strict_inert(lines: list[str], walk: _Walk) -> tuple[list[Ranges], list[Ran
     other: list[Ranges] = [[] for _ in lines]
     for seg in _segments(lines, walk):
         text, offsets = _paragraph_text(lines, seg)
-        tails = _Tails(text)
-        found = [_plain_spans(lines[i], text, offsets[k], tails) for k, i in enumerate(seg)]
+        tails, table = _Tails(text), _may_hold_table(lines, seg)
+        found = [_plain_spans(lines[i], text, offsets[k], tails, table)
+                 for k, i in enumerate(seg)]
         simple = all(ok for _s, _o, ok in found)
         for i, (line_spans, line_other, _ok) in zip(seg, found, strict=True):
             other[i] = line_other
@@ -531,8 +540,9 @@ def _lenient_inert(lines: list[str], walk: _Walk) -> list[Ranges]:
     out: list[Ranges] = [[] for _ in lines]
     for seg in _segments(lines, walk):
         text, offsets = _paragraph_text(lines, seg)
-        tails = _Tails(text)
-        found = [_plain_spans(lines[i], text, offsets[k], tails) for k, i in enumerate(seg)]
+        tails, table = _Tails(text), _may_hold_table(lines, seg)
+        found = [_plain_spans(lines[i], text, offsets[k], tails, table)
+                 for k, i in enumerate(seg)]
         if all(ok for _s, _o, ok in found):
             for i, (line_spans, line_other, _ok) in zip(seg, found, strict=True):
                 out[i] = line_spans + line_other
@@ -783,6 +793,16 @@ def _container_markers(line: str) -> tuple[str, ...]:
     return tuple(out)
 
 
+def _deep_container_code(line: str) -> bool:
+    """Indented 4 columns or more, then a container marker, then code: inside
+    a list item the marker may open a quote or sub-list (its indent counts
+    from the item's content, not column 0), whose content is code (I-A2)."""
+    stripped = line.lstrip(" \t")
+    if not _indented_code(line[:len(line) - len(stripped)] + "x"):
+        return False  # 1-3 columns: _container_markers sees the marker
+    return _ONE_MARKER_RE.match(stripped) is not None and _indented_code(stripped)
+
+
 def _starts_paragraph_text(line: str) -> bool:
     """Surely paragraph text: a letter after container markers and at most 3 spaces."""
     rest = line
@@ -809,7 +829,8 @@ def _read_before(lines: list[str]) -> tuple[list[Counter[str]], _Walk]:
         continues = para and own == markers and "-" not in own
         markers = own
         if walk.kind[i] != _TEXT or i in definitions or (
-                walk.block[i] is not True and not continues and _indented_code(line)):
+                walk.block[i] is not True and (
+                    (not continues and _indented_code(line)) or _deep_container_code(line))):
             texts.append(None)
         elif walk.block[i]:
             texts.append(line)
@@ -1100,6 +1121,14 @@ def markdown_findings(before: list[str] | None, after: list[str], added: list[in
     """What the change adds to a markdown note: ``SCRIPT``, ``HANDLER``,
     ``JS_URL`` and ``RAW``. ``added``: indices of after lines the change adds;
     ``kept``: after index -> before index of each line it keeps."""
+    try:
+        return _findings(before, after, added, kept)
+    finally:
+        _inline_html_end.cache_clear()  # keep no note text past this call
+
+
+def _findings(before: list[str] | None, after: list[str], added: list[int],
+              kept: dict[int, int]) -> set[str]:
     reads, walk = _read_after(after)
     found: set[str] = set()
     for j in added:  # R15: raw-HTML syntax outside code on an added line
