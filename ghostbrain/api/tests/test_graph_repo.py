@@ -112,3 +112,16 @@ def test_note_embed_produces_an_edge(tmp_vault: Path, monkeypatch, tmp_path):
     assert build_graph()["edges"] == [
         {"source": "20-contexts/work/a.md", "target": "20-contexts/work/b.md", "weight": 0.5, "kind": "wikilink"},
     ]
+
+
+def test_graph_nodes_carry_kind(tmp_vault: Path, monkeypatch, tmp_path):
+    monkeypatch.setenv("GHOSTBRAIN_SEMANTIC_INDEX_DIR", str(tmp_path / "sem"))
+    _note(tmp_vault, "20-contexts/work/d.md", title="D", type="artifact", artifactType="decision")
+    _note(tmp_vault, "20-contexts/work/j.md", title="J", source="manual")
+    _note(tmp_vault, "20-contexts/work/n.md", title="N")
+    kinds = {n["path"]: n["kind"] for n in build_graph()["nodes"]}
+    assert kinds == {
+        "20-contexts/work/d.md": "decision",
+        "20-contexts/work/j.md": "jot",
+        "20-contexts/work/n.md": "note",
+    }

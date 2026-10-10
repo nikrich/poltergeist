@@ -12,6 +12,7 @@ class GraphNode(BaseModel):
     y: float
     degree: int
     updated: str | None
+    kind: str = "note"  # person | meeting | decision | action | ticket | doc | jot | note
 
 
 class GraphEdge(BaseModel):

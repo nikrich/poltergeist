@@ -11,6 +11,7 @@ import hashlib
 from ghostbrain.paths import vault_path
 from ghostbrain.semantic.projection import load_layout
 from ghostbrain.semantic.regions import region_color, region_label
+from ghostbrain.vault_index.kinds import note_kind
 from ghostbrain.vault_index.links import get_link_index
 
 _GRAPH_ROOT = "20-contexts/"
@@ -53,6 +54,7 @@ def build_graph() -> dict:
             "y": float(y),
             "degree": 0,
             "updated": e.updated,
+            "kind": note_kind(e),
         }
 
     # Keep only edges whose endpoints both exist; dedup undirected pairs.
