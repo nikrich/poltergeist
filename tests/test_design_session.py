@@ -1302,3 +1302,27 @@ def test_spoken_update_runs_on_everything_since_the_last_run(tmp_path, fakes):
     s.on_segment(seg(6, "okay please do the update", t0=60, t1=62))
     s.run_pending()
     assert "summarise my vault and how I feel" in fakes.ui_calls[-1]["excerpt"]
+
+
+def test_a_backlog_costs_one_command_check_and_one_relevance_check(tmp_path, fakes):
+    s = make(tmp_path)
+    s.start("ui")
+    s.run_pending()
+    before_detect, before_rel = len(fakes.detect_calls), len(fakes.relevant_calls)
+    backlog = [seg(i, f"let's make part {i} of the dashboard", t0=40 + 3 * i, t1=42 + 3 * i) for i in range(5, 17)]
+    s._process(backlog)
+    assert len(fakes.detect_calls) - before_detect == 1
+    assert len(fakes.relevant_calls) - before_rel == 1
+    _window, new, _focus, _states = fakes.detect_calls[-1]
+    assert "part 5 of" in new and "part 16 of" in new        # the whole batch is judged
+    s.force_update("ui")
+    s.run_pending()
+    assert "part 5 of" in fakes.ui_calls[-1]["excerpt"] and "part 16 of" in fakes.ui_calls[-1]["excerpt"]
+
+
+def test_a_command_in_a_backlog_keeps_the_rest_as_design_talk(tmp_path, fakes):
+    s = make(tmp_path)
+    fakes.detect_answer = Command("start_ui", "ui", None)
+    s._process([seg(1, "we need a claims list", t0=0, t1=3),
+                seg(2, "let's kick off a frontend prototype", t0=40, t1=43)])
+    assert s.snapshot()["canvases"]["ui"]["state"] == "active"

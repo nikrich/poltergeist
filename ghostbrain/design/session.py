@@ -363,7 +363,12 @@ class DesignSession:
                 log.exception("design intake failed")
 
     def _process(self, batch: list[dict]) -> None:
-        candidates: list[Segment] = []
+        """Take in every queued segment, then make at most ONE command check
+        and ONE relevance check for the whole batch. Each check is a CLI
+        call of 6-10 s while speech arrives every 2-4 s: per-segment checks
+        fall further behind for as long as the meeting talks. Batching keeps
+        the lag at about one cycle however much piles up."""
+        new: list[Segment] = []
         for raw in batch:
             try:
                 seg: Segment = (int(raw.get("seq") or 0), str(raw.get("text") or "").strip(),
@@ -376,26 +381,34 @@ class DesignSession:
                 self._last_seq = seg[0]
                 self._window.append(seg)
                 self._window = [s for s in self._window if s[3] >= seg[3] - WINDOW_S]
-                tail = [s for s in self._window
-                        if s[0] > self._command_seq and s[3] >= seg[3] - UTTERANCE_S and s[1]]
-                before = "\n".join(s[1] for s in self._window if s not in tail)
-                utterance = "\n".join(s[1] for s in tail)
-                focus = self.focus
-                states = {c: cv.state for c, cv in self.canvases.items()}
-                listening = self.listening
-            if not seg[1]:
-                continue
-            if listening and commands.PREFILTER.search(utterance):
-                cmd = commands.detect(before, utterance, focus=focus, states=states)
-                if cmd is not None:
-                    with self._lock:
-                        self._command_seq = max(self._command_seq, seg[0])
-                    try:
-                        self.apply_command(cmd, spoken=True)
-                    except Exception:
-                        log.exception("could not apply spoken design command %s", cmd)
-                    continue
-            candidates.append(seg)
+            if seg[1]:
+                new.append(seg)
+        if not new:
+            return
+        with self._lock:
+            newest = new[-1]
+            # The utterance to judge: the batch itself plus the speech just
+            # before it (whisper splits sentences across segments).
+            since = min(new[0][3], newest[3] - UTTERANCE_S)
+            tail = [s for s in self._window if s[0] > self._command_seq and s[3] >= since and s[1]]
+            before = "\n".join(s[1] for s in self._window if s not in tail)
+            utterance = "\n".join(s[1] for s in tail)
+            focus = self.focus
+            states = {c: cv.state for c, cv in self.canvases.items()}
+            listening = self.listening
+        candidates = new
+        if listening and tail and commands.PREFILTER.search(utterance):
+            cmd = commands.detect(before, utterance, focus=focus, states=states)
+            if cmd is not None:
+                with self._lock:
+                    self._command_seq = max(self._command_seq, newest[0])
+                try:
+                    self.apply_command(cmd, spoken=True)
+                except Exception:
+                    log.exception("could not apply spoken design command %s", cmd)
+                # The command itself is not design talk.
+                spoken = {s[0] for s in tail}
+                candidates = [s for s in new if s[0] not in spoken]
         if candidates:
             self._classify(candidates)
 
