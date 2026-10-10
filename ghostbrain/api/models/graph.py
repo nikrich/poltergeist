@@ -36,3 +36,32 @@ class GraphResponse(BaseModel):
     nodes: list[GraphNode]
     edges: list[GraphEdge]
     regions: list[GraphRegion]
+
+
+class EgoNode(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    path: str  # vault path, or a ghost's link key ("someday idea.md")
+    title: str
+    context: str
+    kind: str  # person | meeting | decision | action | ticket | doc | jot | note
+    degree: int  # vault-wide link count
+    ghost: bool  # linked but not written yet
+    hop: int  # BFS distance from the focus
+
+
+class EgoEdge(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    source: str
+    target: str
+    weight: float
+    kind: str  # "related" | "wikilink"
+
+
+class EgoGraphResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    focus: str
+    depth: int
+    nodes: list[EgoNode]
+    edges: list[EgoEdge]
+    truncated: bool
+    indexing: bool

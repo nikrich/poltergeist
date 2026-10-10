@@ -1,15 +1,16 @@
-"""GET /v1/vault/stats, /graph, /contexts, /suggest and /backlinks."""
-from typing import Literal
+"""GET /v1/vault/stats, /graph, /contexts, /suggest, /backlinks and /resolve."""
+from typing import Literal, Union
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from ghostbrain import routing_config
-from ghostbrain.api.models.graph import GraphResponse
-from ghostbrain.api.models.linking import BacklinksResponse, SuggestResponse
+from ghostbrain.api.models.graph import EgoGraphResponse, GraphResponse
+from ghostbrain.api.models.linking import BacklinksResponse, ResolveResponse, SuggestResponse
 from ghostbrain.api.models.vault import VaultStats
+from ghostbrain.api.repo.ego_graph import FocusNotFound, ego_graph
 from ghostbrain.api.repo.graph import build_graph
-from ghostbrain.api.repo.linking import InvalidLinkPath, backlinks, suggest
+from ghostbrain.api.repo.linking import InvalidLinkPath, backlinks, resolve_link, suggest
 from ghostbrain.api.repo.vault import get_vault_stats
 
 router = APIRouter(prefix="/v1/vault", tags=["vault"])
@@ -55,9 +56,22 @@ def vault_stats() -> dict:
     return get_vault_stats()
 
 
-@router.get("/graph", response_model=GraphResponse)
-def vault_graph() -> dict:
-    return build_graph()
+@router.get("/graph", response_model=Union[EgoGraphResponse, GraphResponse])
+def vault_graph(
+    focus: str | None = Query(None, min_length=1, max_length=500),
+    depth: int = Query(2, ge=1, le=3),
+) -> dict:
+    """Without `focus`: the whole-vault graph (BrainConstellation, Graph tab's
+    whole-vault mode). With `focus`: its link neighbourhood up to `depth` hops,
+    ghosts included, capped at 300 nodes nearest first."""
+    if focus is None:
+        return build_graph()
+    try:
+        return ego_graph(focus, depth)
+    except InvalidLinkPath as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except FocusNotFound as e:
+        raise HTTPException(status_code=404, detail="note not found") from e
 
 
 @router.get("/suggest", response_model=SuggestResponse)
@@ -78,5 +92,14 @@ def vault_backlinks(
     """Notes linking to `path` (with or without `.md`), newest first."""
     try:
         return backlinks(path, limit)
+    except InvalidLinkPath as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.get("/resolve", response_model=ResolveResponse)
+def vault_resolve(target: str = Query(..., min_length=1, max_length=500)) -> dict:
+    """Where a click on `[[target]]` should go. `exists: false` = not written yet."""
+    try:
+        return resolve_link(target)
     except InvalidLinkPath as e:
         raise HTTPException(status_code=400, detail=str(e)) from e

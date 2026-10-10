@@ -32,3 +32,10 @@ class BacklinksResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     items: list[Backlink]
     indexing: bool
+
+
+class ResolveResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    path: str
+    exists: bool
+    indexing: bool
