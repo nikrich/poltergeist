@@ -6,6 +6,11 @@ one, write ``contradicts: [..]`` on the new note and ``reversed_by: [..]``
 on the old. Surfaces in the daily digest as a "Reversals" section so
 the user sees when their team is changing course.
 
+Both patches go through the vault write path as ``worker:reversal`` (spec B,
+slice B4): only the link keys' lines change, ``updated:`` is untouched, the
+previous version lands in page history, and the change is listed on the
+Changes screen with Revert.
+
 Conservative on confidence — silence is better than false positives.
 The LLM has to explicitly identify the contradicting decision; we
 don't infer.
@@ -24,11 +29,15 @@ import yaml
 
 from ghostbrain.llm import client as llm
 from ghostbrain.paths import vault_path
+from ghostbrain.vault_write import HistoryUnavailable, VaultWriteError, worker_actor
+from ghostbrain.vault_write.jobs import update_fields
 
 log = logging.getLogger("ghostbrain.worker.reversal")
 
 DEFAULT_LOOKBACK_DAYS = 90
 DEFAULT_MAX_CANDIDATES = 25  # cap LLM input size
+
+REVERSAL_ACTOR = worker_actor("reversal")
 
 REVERSAL_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -148,29 +157,31 @@ def check_for_reversals(
     if not contradicted:
         return empty
 
-    # Patch the new artifact with `contradicts:` pointers.
-    new_note.metadata["contradicts"] = rev_links
-    if reasonings:
-        new_note.metadata["reversalReasons"] = list(reasonings.values())
-    new_artifact_path.write_text(
-        frontmatter.dumps(new_note), encoding="utf-8",
-    )
+    new_rel = _vault_rel(new_artifact_path)
+    if new_rel is None:
+        log.warning("new artifact %s is outside the vault; not linking it", new_artifact_path)
+        return empty
+    new_link = _wikilink_for(new_artifact_path)
+    reasons = list(reasonings.values())
 
-    # Patch each contradicted artifact with `reversed_by:` pointer.
+    def _contradicts(_meta: dict[str, Any]) -> dict[str, Any]:
+        fields: dict[str, Any] = {"contradicts": rev_links}
+        if reasons:
+            fields["reversalReasons"] = reasons
+        return fields
+
+    # Patch the new artifact with `contradicts:` pointers.
+    if not _patch(new_rel, _contradicts,
+                  reason=f"reverses {len(contradicted)} earlier decision(s)"):
+        return empty
+
+    # Patch each contradicted artifact with a `reversed_by:` pointer.
     for cand in [by_id[k] for k in reasonings if k in by_id]:
-        try:
-            old = frontmatter.load(cand.path)
-        except Exception:  # noqa: BLE001
+        old_rel = _vault_rel(cand.path)
+        if old_rel is None:
             continue
-        existing = list(old.metadata.get("reversed_by") or [])
-        link = _wikilink_for(new_artifact_path)
-        if link not in existing:
-            existing.append(link)
-        old.metadata["reversed_by"] = existing
-        try:
-            cand.path.write_text(frontmatter.dumps(old), encoding="utf-8")
-        except Exception as e:  # noqa: BLE001
-            log.warning("could not patch reversed_by on %s: %s", cand.path, e)
+        _patch(old_rel, lambda meta: _add_backlink(meta, new_link),
+               reason=f"reversed by {new_link}")
 
     log.info("decision %s reverses %d earlier decision(s)",
              new_artifact_path.stem, len(contradicted))
@@ -181,6 +192,37 @@ def check_for_reversals(
 # ---------------------------------------------------------------------------
 # Internals
 # ---------------------------------------------------------------------------
+
+
+def _vault_rel(path: Path) -> str | None:
+    root = vault_path()
+    for candidate in (path, path.resolve()):
+        try:
+            return candidate.relative_to(root).as_posix()
+        except ValueError:
+            continue
+    return None
+
+
+def _add_backlink(meta: dict[str, Any], link: str) -> dict[str, Any]:
+    raw = meta.get("reversed_by")
+    existing = list(raw) if isinstance(raw, list) else ([raw] if raw else [])
+    if link in existing:
+        return {}
+    return {"reversed_by": [*existing, link]}
+
+
+def _patch(rel: str, compute, *, reason: str) -> bool:
+    """One frontmatter patch as worker:reversal. True when applied or held
+    for approval; False (logged) when it could not be written."""
+    try:
+        res = update_fields(rel, compute, actor=REVERSAL_ACTOR, reason=reason, bump_updated=False)
+    except (VaultWriteError, HistoryUnavailable, OSError) as e:
+        log.warning("could not link reversal on %s: %s", rel, e)
+        return False
+    if res is not None and res.status == "pending":
+        log.info("reversal link on %s waits for approval (change #%s)", rel, res.change_id)
+    return True
 
 
 def _gather_candidates(
