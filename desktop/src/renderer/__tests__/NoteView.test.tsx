@@ -276,4 +276,12 @@ describe('NoteView', () => {
     });
     expect(useNoteView.getState().path).toBe('20-contexts/work/notes/standup.md');
   });
+
+  it('offers page history in the header', async () => {
+    apiRequest.mockResolvedValue({ ok: true, data: manualNote });
+    render(withQuery(<NoteView />));
+    act(() => useNoteView.getState().open(manualNote.path));
+    await screen.findByText('hand-written');
+    expect(screen.getByRole('button', { name: 'history' })).toBeInTheDocument();
+  });
 });

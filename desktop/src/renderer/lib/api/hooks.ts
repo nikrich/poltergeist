@@ -29,14 +29,17 @@ import type {
   CreateProjectRequest,
   DailyPage,
   HeatmapResponse,
+  HistoryBlobResponse,
   JotsPage,
   LlmProvidersResponse,
   LlmSettings,
   MeetingsPage,
   Note,
+  NoteHistoryResponse,
   Prep,
   Project,
   CaptureHelperDiagnostics,
+  RestoreHistoryResponse,
   RecorderSettings,
   RecorderStatus,
   SearchResponse,
@@ -57,6 +60,7 @@ import type {
   McpServerWrite,
 } from '../../../shared/api-types';
 import { ApiError, del, get, patch, post, put } from './client';
+import { reportHistoryHealth } from '../history-health';
 
 export function useVaultStats() {
   return useQuery({
@@ -612,7 +616,8 @@ export function useUpdateJot() {
         { body: vars.body },
         { ifMatch: vars.ifMatch },
       ),
-    onSuccess: () => {
+    onSuccess: (res) => {
+      reportHistoryHealth(res);
       qc.invalidateQueries({ queryKey: JOTS_KEY });
       qc.invalidateQueries({ queryKey: ['note-by-path'] });
       qc.invalidateQueries({ queryKey: ['vault', 'backlinks'] });
@@ -684,11 +689,50 @@ export function useUpdateNoteByPath() {
         { path: vars.path, body: vars.body },
         { ifMatch: vars.ifMatch },
       ),
-    onSuccess: () => {
+    onSuccess: (res) => {
+      reportHistoryHealth(res);
       // Both caches read GET /v1/notes?path= — ['note'] (useNote/NoteView)
       // and ['note-by-path'] (useJot/jots screen).
       qc.invalidateQueries({ queryKey: ['note'] });
       qc.invalidateQueries({ queryKey: ['note-by-path'] });
+      qc.invalidateQueries({ queryKey: ['vault', 'backlinks'] });
+    },
+  });
+}
+
+export function useNoteHistory(path: string | null) {
+  return useQuery({
+    queryKey: ['note-history', path],
+    queryFn: () =>
+      get<NoteHistoryResponse>(`/v1/notes/history?path=${encodeURIComponent(path!)}`),
+    enabled: path !== null,
+    staleTime: 0,
+  });
+}
+
+export function useHistoryVersion(path: string | null, blob: string | null) {
+  return useQuery({
+    queryKey: ['note-history', path, blob],
+    queryFn: () =>
+      get<HistoryBlobResponse>(
+        `/v1/notes/history/blob?path=${encodeURIComponent(path!)}&blob=${encodeURIComponent(blob!)}`,
+      ),
+    enabled: path !== null && blob !== null,
+    staleTime: 0,
+  });
+}
+
+export function useRestoreVersion() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { path: string; blob: string }) =>
+      post<RestoreHistoryResponse>('/v1/notes/history/restore', vars),
+    onSuccess: (res) => {
+      reportHistoryHealth(res);
+      qc.invalidateQueries({ queryKey: ['note-history'] });
+      qc.invalidateQueries({ queryKey: ['note'] });
+      qc.invalidateQueries({ queryKey: ['note-by-path'] });
+      qc.invalidateQueries({ queryKey: JOTS_KEY });
       qc.invalidateQueries({ queryKey: ['vault', 'backlinks'] });
     },
   });

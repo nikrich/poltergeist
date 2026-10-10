@@ -1,10 +1,11 @@
 """The single vault write path: lock → etag check → minimal-diff bytes →
-atomic replace (spec B §1).
+history snapshot → atomic replace (spec B §1; snapshot from spec A3).
 
-B2 adds the history snapshot + change record and B3 the risk hold, both at
-the marked hook point inside ``_write`` (under the file lock; the public
-``write`` wrapper only re-indexes the A2 link index afterwards). That is why ``actor`` is required and
-``reason`` accepted now, though B1 stores neither.
+A3 snapshots the current bytes inside ``_write`` (``_snapshot``) before every
+write that changes a file, so every writer — routes, MCP, plugins, worker —
+gets page history without per-route code. B2 adds the change record and B3
+the risk hold at the marked hook points (under the file lock; the public
+``write`` wrapper only re-indexes the A2 link index afterwards).
 """
 from __future__ import annotations
 
@@ -20,7 +21,9 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Iterator, Literal, Mapping
 
 import ghostbrain.paths as _paths
-from ghostbrain.vault_write.actor import Actor, parse_actor
+from ghostbrain.history import store as _history_store
+from ghostbrain.history.store import HistoryUnavailable, Snapshot
+from ghostbrain.vault_write.actor import USER, Actor, parse_actor
 from ghostbrain.vault_write.errors import FileMissing, InvalidPath, MalformedNote, WriteConflict
 from ghostbrain.vault_write.etag import compute_etag
 from ghostbrain.vault_write.text import (
@@ -48,6 +51,9 @@ class WriteResult:
     etag: str | None
     path: str
     updated: str | None
+    # False only when a *user* write went through without its history
+    # snapshot (spec A3: the save proceeds, the renderer toasts once).
+    history_ok: bool = True
 
 
 @dataclass(frozen=True)
@@ -232,6 +238,31 @@ def _reindex(*rel_paths: str) -> None:
         log.exception("link index update failed after write")
 
 
+def _snapshot(
+    rel: str, before: bytes, *, actor: Actor, reason: str, after: bytes | None
+) -> tuple[Snapshot | None, bool]:
+    """Spec A3 / B §1 step 5. Returns (snapshot, or None when coalesced; ok).
+    A user save survives a history failure (ok=False). Any other actor's
+    write is refused, because it must stay revertible."""
+    try:
+        return _history_store.snapshot(rel, before, actor=actor, reason=reason, after=after), True
+    except Exception as e:  # noqa: BLE001
+        if actor == USER:
+            log.exception("history snapshot failed for %s; the user save proceeds", rel)
+            return None, False
+        raise HistoryUnavailable(f"history unavailable: {e}") from e
+
+
+def _move_history(src_rel: str, dst_rel: str) -> bool:
+    """The file already moved; history following it is best-effort."""
+    try:
+        _history_store.move_log(src_rel, dst_rel)
+        return True
+    except Exception:  # noqa: BLE001
+        log.exception("history did not follow %s -> %s", src_rel, dst_rel)
+        return False
+
+
 def _write(
     rel_path: str,
     *,
@@ -256,19 +287,22 @@ def _write(
         etag_now = compute_etag(current) if current is not None else None
         if base_etag is not None and base_etag != etag_now:
             raise WriteConflict(etag_now)
-        # B2/B3 hook point: risk check (→ pending), history snapshot, change row.
+        # B3 hook point: the risk check (→ pending) goes here, before any snapshot.
         if op == "create":
             if current is not None:
                 raise WriteConflict(etag_now)
             assert content is not None
             data = _content_bytes(src, content)
             _atomic_write(src, data)
+            # B2 hook point: change row for a create (no before-version).
             return WriteResult("applied", None, compute_etag(data), _rel(src), None)
         if current is None:
             raise FileMissing(rel_path)
+        src_rel = _rel(src)
         if op == "delete":
+            _, history_ok = _snapshot(src_rel, current, actor=actor, reason=reason, after=None)
             src.unlink()
-            return WriteResult("applied", None, None, _rel(src), None)
+            return WriteResult("applied", None, None, src_rel, None, history_ok)
         updated: str | None = None
         if content is not None:
             data = _content_bytes(src, content)
@@ -280,12 +314,18 @@ def _write(
             existing = _read_bytes(dst)
             if existing is not None:
                 raise WriteConflict(compute_etag(existing))
+            _, history_ok = _snapshot(src_rel, current, actor=actor, reason=reason, after=data)
             _atomic_write(dst, data)
             src.unlink()
-            return WriteResult("applied", None, compute_etag(data), _rel(dst), updated)
+            dst_rel = _rel(dst)
+            history_ok = _move_history(src_rel, dst_rel) and history_ok
+            return WriteResult("applied", None, compute_etag(data), dst_rel, updated, history_ok)
+        history_ok = True
         if data != current:
+            # B2 hook point: the snapshot's blob is the change row's before_blob.
+            _, history_ok = _snapshot(src_rel, current, actor=actor, reason=reason, after=data)
             _atomic_write(src, data)
-        return WriteResult("applied", None, compute_etag(data), _rel(src), updated)
+        return WriteResult("applied", None, compute_etag(data), src_rel, updated, history_ok)
 
 
 def write_new(

@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import FastAPI, Header, Request
 from fastapi.responses import JSONResponse
 
+from ghostbrain.history import HistoryUnavailable
 from ghostbrain.vault_write import (
     FileMissing,
     InvalidPath,
@@ -36,7 +37,13 @@ def install_vault_write_errors(app: FastAPI) -> None:
     async def _invalid(_req: Request, exc: Exception) -> JSONResponse:
         return JSONResponse(status_code=400, content={"detail": str(exc)})
 
+    async def _history(_req: Request, _exc: Exception) -> JSONResponse:
+        # Spec B error handling: a non-user write that cannot be snapshotted
+        # is refused; the file is untouched.
+        return JSONResponse(status_code=500, content={"detail": "history unavailable"})
+
     app.add_exception_handler(WriteConflict, _conflict)
     app.add_exception_handler(FileMissing, _missing)
     app.add_exception_handler(MalformedNote, _malformed)
     app.add_exception_handler(InvalidPath, _invalid)
+    app.add_exception_handler(HistoryUnavailable, _history)

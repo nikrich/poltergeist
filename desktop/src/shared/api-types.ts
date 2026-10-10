@@ -223,6 +223,8 @@ export interface UpdateNoteBodyResponse {
   path: string;
   updated: string | null;
   etag: string;
+  /** false: saved, but no history version was kept (spec A3). */
+  historyOk?: boolean;
 }
 
 export interface UpdateJotResponse {
@@ -230,6 +232,44 @@ export interface UpdateJotResponse {
   path: string;
   updated: string;
   etag: string;
+  historyOk?: boolean;
+}
+
+/** One page-history version: the note as it was just before a write by `actor`. */
+export interface HistoryEntry {
+  ts: string;
+  /** Vault-relative path at snapshot time. */
+  path: string;
+  /** sha256 of the stored file bytes. */
+  blob: string;
+  /** user | assistant | mcp | plugin:<id> | worker:<job> | restore */
+  actor: string;
+  reason: string;
+  size: number;
+}
+
+export interface NoteHistoryResponse {
+  path: string;
+  /** Newest first. */
+  items: HistoryEntry[];
+}
+
+export interface HistoryBlobResponse {
+  path: string;
+  blob: string;
+  /** Whole file (frontmatter included) of that version. */
+  content: string;
+  /** Whole current file; null when the note no longer exists. */
+  current: string | null;
+}
+
+export interface RestoreHistoryResponse {
+  path: string;
+  etag: string | null;
+  /** The restored note's body, as GET /v1/notes?path= returns it. */
+  body: string;
+  restored: string;
+  historyOk: boolean;
 }
 
 export type RecorderPhase = 'idle' | 'recording' | 'transcribing' | 'done';

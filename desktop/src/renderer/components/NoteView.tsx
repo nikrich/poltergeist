@@ -15,6 +15,7 @@ import { SkeletonRows } from './SkeletonRows';
 import { PanelError } from './PanelError';
 import { notePathFromTarget } from '../lib/editor/link-suggest';
 import { BacklinksPanel } from './BacklinksPanel';
+import { NoteHistoryButton } from './NoteHistory';
 
 interface Props {
   /** Test hook: receives the TipTap Editor instance once created. */
@@ -105,6 +106,7 @@ export function NoteView({ onEditorReady }: Props = {}) {
               synced note — edits may be overwritten by the next sync
             </Pill>
           )}
+          <NoteHistoryButton key={path} path={path} guardRef={guardRef} />
           <Btn
             variant="ghost"
             size="sm"

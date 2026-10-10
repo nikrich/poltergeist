@@ -17,6 +17,7 @@ from ghostbrain.api.routes import daily as daily_routes
 from ghostbrain.api.routes import docs as docs_routes
 from ghostbrain.api.routes import doctor as doctor_routes
 from ghostbrain.api.routes import health as health_routes
+from ghostbrain.api.routes import history as history_routes
 from ghostbrain.api.routes import import_atlassian as import_routes
 from ghostbrain.api.routes import library as library_routes
 from ghostbrain.api.routes import llm as llm_routes
@@ -96,6 +97,8 @@ def create_app(token: str) -> FastAPI:
     app.include_router(daily_routes.router)
     app.include_router(docs_routes.router)
     app.include_router(import_routes.router)
+    # Before notes: /v1/notes/history/* must never be read as a jot id.
+    app.include_router(history_routes.router)
     app.include_router(notes_routes.router)
     app.include_router(recorder_routes.router)
     app.include_router(scheduler_routes.router)

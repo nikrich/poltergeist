@@ -30,6 +30,7 @@ jobs:
             tests/test_conftest_isolation.py \
             tests/test_vault_write_text.py \
             tests/test_vault_write_writer.py \
+            tests/test_vault_write_history.py \
             tests/test_doctor_core.py \
             tests/test_doctor_app_checks.py \
             tests/test_doctor_recorder_checks.py \
@@ -68,6 +69,8 @@ jobs:
             tests/test_file_kinds.py \
             tests/test_doc_library_*.py \
             tests/test_library_routes.py \
+            tests/test_history_store.py \
+            tests/test_history_retention.py \
             -q
 
   desktop:

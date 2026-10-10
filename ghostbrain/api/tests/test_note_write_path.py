@@ -46,7 +46,8 @@ def test_hand_edited_frontmatter_survives_byte_for_byte(tmp_vault):
     assert p.read_text() == HAND_EDITED.replace(
         "2026-01-01T00:00:00+00:00", NOW
     ).replace("old body\n", "# edited\n\nnew body\n")
-    assert res == {"path": REL, "updated": NOW, "etag": compute_etag(p.read_bytes())}
+    assert res == {"path": REL, "updated": NOW, "etag": compute_etag(p.read_bytes()),
+                   "historyOk": True}
 
 
 def test_golden_canonical_file_matches_legacy_bytes(tmp_vault):
