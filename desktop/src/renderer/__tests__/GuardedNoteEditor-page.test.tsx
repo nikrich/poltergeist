@@ -266,6 +266,30 @@ describe('GuardedNoteEditor page mode: the editor handle (A7 R2)', () => {
     expect(send).toHaveBeenCalledTimes(1);
   });
 
+  it('an Accept that changes title and body keeps the assistant body in the assistant save, even if the user types', async () => {
+    const guardRef = { current: null as GuardHandle | null };
+    const { send, handleRef, getEditor } = withHandle('# Plan\n\nbody text', guardRef);
+    await waitFor(() => expect(getEditor()).toBeDefined());
+    await waitFor(() => expect(handleRef.current).not.toBeNull());
+    await waitFor(() => expect(guardRef.current).not.toBeNull());
+    act(() => {
+      handleRef.current!.replaceWith('# New plan\n\nnew body', 'doc');
+      guardRef.current!.attributeNext('assistant');
+      // The user types before the debounce runs out: the editor's timer restarts.
+      const ed = getEditor()!;
+      ed.commands.insertContentAt(ed.state.doc.content.size, 'typed');
+    });
+    await waitFor(() => expect(send).toHaveBeenCalled());
+    await settle();
+    const assistant = send.mock.calls.filter((c) => c[2] === 'assistant');
+    expect(assistant).toHaveLength(1);
+    expect(assistant[0]![0]).toContain('new body');
+    for (const [body] of send.mock.calls) {
+      expect(body as string).not.toContain('body text');
+      expect(titleLines(body as string)).toBe(1);
+    }
+  });
+
   it('getHTML puts the page title in front as an escaped h1', async () => {
     const { handleRef, getEditor } = withHandle('# A <b> & c\n\nbody text');
     await waitFor(() => expect(getEditor()).toBeDefined());
@@ -288,5 +312,42 @@ describe('GuardedNoteEditor page mode: the editor handle (A7 R2)', () => {
     await waitFor(() => expect(handleRef.current).not.toBeNull());
     expect(handleRef.current!.getMarkdown()).toBe('# Plan\n\nbody text');
     expect(handleRef.current!.getHTML()).not.toMatch(/^<h1>Plan<\/h1><h1>/);
+  });
+});
+
+describe('PageTitle height (A7)', () => {
+  it('re-measures when its width changes, without a draft change', () => {
+    let fire: (() => void) | undefined;
+    const RO = vi.fn((cb: () => void) => {
+      fire = cb;
+      return { observe: vi.fn(), disconnect: vi.fn(), unobserve: vi.fn() };
+    });
+    vi.stubGlobal('ResizeObserver', RO);
+    try {
+      setup('# A long plan title\n\nbody text', NOTE);
+      const el = title();
+      let width = 600;
+      let height = 40;
+      Object.defineProperty(el, 'clientWidth', { configurable: true, get: () => width });
+      Object.defineProperty(el, 'scrollHeight', { configurable: true, get: () => height });
+      expect(fire).toBeDefined();
+      width = 300;
+      height = 80;
+      act(() => fire!());
+      expect(el.style.height).toBe('80px');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('leaves sizing to CSS where field-sizing is supported', () => {
+    const supports = vi.fn((prop: string) => prop === 'field-sizing');
+    vi.stubGlobal('CSS', { supports });
+    try {
+      setup('# Plan\n\nbody text', NOTE);
+      expect(title().style.height).toBe('');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

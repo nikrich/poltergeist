@@ -332,6 +332,10 @@ body[data-theme='light'] {
   outline: none;
   resize: none;
   overflow: hidden;
+  /* Height follows the wrapped text at any width (PageTitle falls back to
+     measuring in JS where this is unsupported). */
+  field-sizing: content;
+  min-height: 1.15em;
   background: transparent;
   color: var(--ink-0);
   font-family: var(--font-display);

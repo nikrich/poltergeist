@@ -213,12 +213,18 @@ export function GuardedNoteEditor({
           setTitleVersion((v) => v + 1);
         }
       }
-      // The editor's own debounced save carries the new title when the body
-      // changed too; this one lands a title-only change. Both are deferred, so
-      // a synchronous attributeNext right after replaceWith still applies.
+      // When the body changed, the editor's own debounced save carries the
+      // new title (and the assistant's body) in one write. Only a title-only
+      // change needs its own save: arming it otherwise could send the new
+      // title with the pre-Accept body under 'assistant' while the user's
+      // typing holds the editor's timer back. Both saves are deferred, so a
+      // synchronous attributeNext right after replaceWith still applies.
+      const before = inner.getMarkdown();
       inner.replaceWith(rest, 'doc');
-      const delay = editorProps.debounceMs ?? 1000;
       if (titleSaveTimer.current) clearTimeout(titleSaveTimer.current);
+      titleSaveTimer.current = null;
+      if (inner.getMarkdown() !== before) return;
+      const delay = editorProps.debounceMs ?? 1000;
       titleSaveTimer.current = setTimeout(() => {
         titleSaveTimer.current = null;
         if (liveNonce.current !== mountNonce || !current.split) return;
