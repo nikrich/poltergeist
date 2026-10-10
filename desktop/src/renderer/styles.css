@@ -545,3 +545,27 @@ body[data-theme='light'] {
 .gb-query-error pre { margin: 6px 0 0; color: var(--ink-1); }
 .gb-query[data-editing='false'] > pre { display: none; }
 .gb-query > pre { margin: 0; border: 0; border-top: 1px solid var(--hairline); border-radius: 0 0 6px 6px; }
+
+/* A5 inline AI suggestion — decorations only, never in the document. */
+.gb-prose .gb-ai-del {
+  text-decoration: line-through;
+  text-decoration-color: var(--oxblood);
+  background: var(--oxblood-mist);
+}
+.gb-prose .gb-ai-del-block {
+  outline: 1px dashed var(--oxblood);
+  opacity: 0.6;
+}
+.gb-prose .gb-ai-ins {
+  text-decoration: underline;
+  text-decoration-color: var(--moss);
+  text-underline-offset: 3px;
+  background: var(--moss-mist);
+}
+.gb-prose .gb-ai-ins-block {
+  display: block;
+}
+.gb-prose .gb-ai-pending {
+  color: var(--ink-3);
+  background: none;
+}

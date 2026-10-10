@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, act, fireEvent, waitFor } from '@testing-library/react';
 import type { Editor } from '@tiptap/core';
 import type { EditorView } from '@tiptap/pm/view';
+import { CellSelection } from '@tiptap/pm/tables';
 import { RichMarkdownEditor } from '../components/RichMarkdownEditor';
 import type { EditorHandle } from '../components/RichMarkdownEditor';
 import { useToasts } from '../stores/toast';
@@ -539,6 +540,38 @@ describe('RichMarkdownEditor EditorHandle', () => {
       editor!.commands.setTextSelection(2);
     });
     expect(handleRef.current?.getSelectionMarkdown()).toBe('');
+  });
+
+  it('getSelectionMarkdown on a cell selection returns only the selected cells', () => {
+    const handleRef = { current: null as EditorHandle | null };
+    let editor: Editor | undefined;
+    render(
+      <RichMarkdownEditor
+        markdown={'| h1 | h2 | h3 |\n| --- | --- | --- |\n| a1 | a2 | a3 |\n| b1 | b2 | b3 |'}
+        onSave={() => {}}
+        jotId="test"
+        handleRef={handleRef}
+        onEditorReady={(e) => {
+          editor = e;
+        }}
+      />,
+    );
+    const cells: number[] = [];
+    editor!.state.doc.descendants((n, pos) => {
+      if (n.type.name === 'tableCell' || n.type.name === 'tableHeader') cells.push(pos);
+    });
+    // Column two of the body rows: a2 and b2. The document range between them
+    // also spans a3 and b1, which must not leak into the selection markdown.
+    act(() => {
+      editor!.view.dispatch(
+        editor!.state.tr.setSelection(CellSelection.create(editor!.state.doc, cells[4]!, cells[7]!)),
+      );
+    });
+    const md = handleRef.current!.getSelectionMarkdown();
+    expect(md).toContain('a2');
+    expect(md).toContain('b2');
+    expect(md).not.toContain('a3');
+    expect(md).not.toContain('b1');
   });
 
   it('replaceWith(md, doc) triggers onSave with new markdown after debounce', () => {

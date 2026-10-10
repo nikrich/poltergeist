@@ -393,6 +393,10 @@ export function JotsScreen() {
                     focus: focusActive,
                     onWikilinkClick: (target) => openWikilink(target, openNote),
                     handleRef: editorHandle,
+                    inlineAssist: {
+                      target: { jot_id: selectedId! },
+                      onAccept: () => guardRef.current?.attributeNext('assistant'),
+                    },
                     jotId: selectedId!,
                     openCameraSignal: cameraSignal,
                     onPhotoInserted: (jotId, assetPath) => {

@@ -1,6 +1,4 @@
 """Docs assistant: streamed writing turns + Confluence export."""
-import json
-
 import requests
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -15,6 +13,7 @@ from ghostbrain.api.models.docs import (
 from ghostbrain.api.repo import docs_assist, export_confluence, generated_docs
 from ghostbrain.api.repo.import_atlassian import ImportNotConfiguredError
 from ghostbrain.api.repo.notes_manual import JotNotFound
+from ghostbrain.api.sse import sse_stream
 from ghostbrain.api.vault_http import request_actor
 from ghostbrain.connectors.atlassian._base import AtlassianAuthError
 from ghostbrain.vault_write import MCP, USER, Actor
@@ -24,19 +23,26 @@ router = APIRouter(prefix="/v1/docs", tags=["docs"])
 
 @router.post("/assist")
 def assist(payload: DocsAssistRequest) -> StreamingResponse:
-    def gen():
-        # Sync generator: starlette threadpools it and closes it on client
-        # disconnect, which kills the claude subprocess (same as chat).
-        for event in docs_assist.run_assist(
-            payload.jot_id,
-            instruction=payload.instruction,
-            selection=payload.selection,
-            mode=payload.mode,
-        ):
-            yield f"data: {json.dumps(event)}\n\n"
-
+    key = payload.stream_key
+    gen = docs_assist.begin(key)
+    events = docs_assist.run_assist(
+        payload.jot_id,
+        path=payload.path,
+        stream_key=key,
+        instruction=payload.instruction,
+        selection=payload.selection,
+        mode=payload.mode,
+        target_language=payload.target_language,
+        before=payload.before,
+        placement=payload.placement,
+        generation=gen,
+    )
+    # Keepalive comments stop undici's 300 s body timeout during silent turns.
+    # A client disconnect closes the stream → on_close kills this request's
+    # turn, never a newer one on the same key (the sync generator is
+    # threadpooled by starlette, same as chat).
     return StreamingResponse(
-        gen(),
+        sse_stream(events, on_close=lambda: docs_assist.close(key, gen)),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -44,7 +50,7 @@ def assist(payload: DocsAssistRequest) -> StreamingResponse:
 
 @router.post("/assist/stop")
 def stop(payload: DocsAssistStopRequest) -> dict:
-    return {"stopped": docs_assist.cancel(payload.jot_id)}
+    return {"stopped": docs_assist.cancel(payload.key)}
 
 
 @router.post("/write", response_model=WriteDocResponse)

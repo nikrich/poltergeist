@@ -11,7 +11,7 @@ import { Sidecar } from './sidecar';
 import { forward, isAllowedMethod, requestHeadersFrom } from './api-forwarder';
 import { startChatStream, stopChatStream } from './chat-stream';
 import type { ChatStreamEvent } from '../shared/api-types';
-import { startDocsStream, stopDocsStream } from './docs-stream';
+import { docsStreamKey, isDocsAssistRequest, startDocsStream, stopDocsStream } from './docs-stream';
 import { startRecorderStream, stopRecorderStream } from './recorder-stream';
 import { exportPdf, renderVaultHtmlToPdf } from './pdf-export';
 import { installTray, type TrayController } from './tray';
@@ -473,40 +473,35 @@ for (const name of ['live', 'levels'] as const) {
   });
 }
 
-const stopDocsTurn = (jotId: string) => {
-  stopDocsStream(jotId);
+const stopDocsTurn = (key: string) => {
+  stopDocsStream(key);
   // Aborting the fetch alone leaves the sidecar generator blocked — tell the
-  // sidecar to kill the turn as well.
-  void forward(sidecar, 'POST', '/v1/docs/assist/stop', { jot_id: jotId });
+  // sidecar to kill the turn as well (turn key docs:<key>).
+  void forward(sidecar, 'POST', '/v1/docs/assist/stop', { stream_id: key });
 };
 
 ipcMain.handle('gb:docs:assist', async (e, req: unknown) => {
-  if (
-    typeof req !== 'object' ||
-    req === null ||
-    typeof (req as Record<string, unknown>).jot_id !== 'string' ||
-    typeof (req as Record<string, unknown>).mode !== 'string'
-  ) {
+  if (!isDocsAssistRequest(req)) {
     return { ok: false, error: 'Invalid request shape' };
   }
-  const docsReq = req as import('../shared/api-types').DocsAssistRequest;
+  const key = docsStreamKey(req);
   const wc = e.sender;
-  const onDestroyed = () => stopDocsTurn(docsReq.jot_id);
+  const onDestroyed = () => stopDocsTurn(key);
   wc.once('destroyed', onDestroyed);
   try {
-    return await startDocsStream(sidecar, docsReq, (event) => {
-      if (!wc.isDestroyed()) wc.send('gb:docs:event', { jotId: docsReq.jot_id, event });
+    return await startDocsStream(sidecar, req, (event) => {
+      if (!wc.isDestroyed()) wc.send('gb:docs:event', { key, jotId: key, event });
     });
   } finally {
     wc.removeListener('destroyed', onDestroyed);
   }
 });
 
-ipcMain.handle('gb:docs:assist-stop', (_e, jotId: unknown) => {
-  if (typeof jotId !== 'string') {
+ipcMain.handle('gb:docs:assist-stop', (_e, key: unknown) => {
+  if (typeof key !== 'string' || key === '') {
     return { ok: false, error: 'Invalid request shape' };
   }
-  stopDocsTurn(jotId);
+  stopDocsTurn(key);
   return { ok: true };
 });
 

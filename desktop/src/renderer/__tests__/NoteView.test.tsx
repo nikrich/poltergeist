@@ -9,7 +9,17 @@ import { useSettings } from '../stores/settings';
 import { useFocusModeShortcuts, useFocusSurfaces } from '../lib/focus-mode';
 import { useGraphView } from '../stores/graph-view';
 import { useNavigation } from '../stores/navigation';
-import type { Note } from '../../shared/api-types';
+import type { DocsAssistEvent, DocsAssistRequest, Note } from '../../shared/api-types';
+import { isMac } from '../lib/platform';
+import { textPos } from './helpers/editor';
+
+// jsdom has no layout: the accept transaction's scrollIntoView reaches
+// ProseMirror's coordsAtPos, which needs Range rects.
+const emptyRect = { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 } as DOMRect;
+if (!Range.prototype.getClientRects) {
+  Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
+  Range.prototype.getBoundingClientRect = () => ({ ...emptyRect, toJSON: () => emptyRect });
+}
 
 const apiRequest = vi.fn();
 
@@ -373,6 +383,48 @@ describe('NoteView', () => {
     expect(useNoteView.getState().path).toBeNull();
     expect(useGraphView.getState()).toMatchObject({ tab: 'graph', focus: manualNote.path });
     expect(useNavigation.getState().active).toBe('vault');
+  });
+
+  it('inline ai in the viewer targets the note path and saves as the assistant', async () => {
+    apiRequest.mockResolvedValue({ ok: true, data: { ...manualNote, etag: '0123456789abcdef' } });
+    // A holder object, not a `let`: TS would narrow a local `let` to null here.
+    const bus: { listener: ((p: { key?: string; jotId: string; event: DocsAssistEvent }) => void) | null } = {
+      listener: null,
+    };
+    const assist = vi.fn().mockResolvedValue({ ok: true });
+    window.gb = {
+      ...window.gb,
+      api: { request: apiRequest },
+      docs: { ...window.gb.docs, assist, assistStop: vi.fn().mockResolvedValue({ ok: true }) },
+      on: ((channel: string, l: NonNullable<typeof bus.listener>) => {
+        if (channel === 'docs:event') bus.listener = l;
+        return () => undefined;
+      }) as typeof window.gb.on,
+    };
+    let editor: Editor | undefined;
+    render(withQuery(<NoteView onEditorReady={(e) => { editor = e; }} />));
+    act(() => useNoteView.getState().open(manualNote.path));
+    await waitFor(() => expect(editor).toBeDefined());
+    expect(screen.getByRole('button', { name: 'inline ai' })).toBeInTheDocument();
+    const from = textPos(editor!, 'hand');
+    act(() => {
+      editor!.commands.setTextSelection({ from, to: from + 4 });
+    });
+    fireEvent.keyDown(editor!.view.dom, { key: 'j', ...(isMac ? { metaKey: true } : { ctrlKey: true }) });
+    fireEvent.click(await screen.findByRole('button', { name: 'polish' }));
+    const req = assist.mock.calls[0]![0] as DocsAssistRequest;
+    expect(req.path).toBe(manualNote.path);
+    expect(req.jot_id).toBeUndefined();
+    act(() => bus.listener?.({ key: req.stream_id!, jotId: req.stream_id!, event: { type: 'done', text: 'Hand' } }));
+    fireEvent.click(screen.getByRole('button', { name: /accept/ }));
+    await waitFor(() =>
+      expect(apiRequest).toHaveBeenCalledWith(
+        'PATCH',
+        '/v1/notes/body',
+        { path: manualNote.path, body: expect.stringContaining('Hand-written') },
+        { ifMatch: '0123456789abcdef', actor: 'assistant' },
+      ),
+    );
   });
 });
 

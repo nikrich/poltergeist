@@ -324,4 +324,28 @@ describe('DocsAssistPanel', () => {
     expect(handle.current?.replaceWith).toHaveBeenCalled();
     expect(onAccept).not.toHaveBeenCalled();
   });
+
+  it('hands a selection-level action to inline ai when the editor offers it', () => {
+    captureDocsListener();
+    const assist = vi.fn().mockResolvedValue({ ok: true });
+    window.gb = { ...window.gb, docs: { ...window.gb.docs, assist } };
+    const startInlineAssist = vi.fn(() => true);
+    const handle = makeHandle({ getSelectionMarkdown: vi.fn(() => 'picked'), startInlineAssist });
+    render(<DocsAssistPanel jotId={JOTID} editorHandle={handle} />);
+    fireEvent.click(screen.getByRole('button', { name: 'polish' }));
+    expect(startInlineAssist).toHaveBeenCalledWith({ mode: 'polish', instruction: undefined });
+    expect(assist).not.toHaveBeenCalled();
+    expect(useDocsAssist.getState().phase).toBe('idle');
+  });
+
+  it('keeps its own flow when inline ai declines or there is no selection', () => {
+    captureDocsListener();
+    const assist = vi.fn().mockResolvedValue({ ok: true });
+    window.gb = { ...window.gb, docs: { ...window.gb.docs, assist } };
+    const startInlineAssist = vi.fn(() => false);
+    const handle = makeHandle({ getSelectionMarkdown: vi.fn(() => 'picked'), startInlineAssist });
+    render(<DocsAssistPanel jotId={JOTID} editorHandle={handle} />);
+    fireEvent.click(screen.getByRole('button', { name: 'polish' }));
+    expect(assist).toHaveBeenCalledWith(expect.objectContaining({ jot_id: JOTID, selection: 'picked' }));
+  });
 });

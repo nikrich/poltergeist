@@ -187,7 +187,7 @@ export function NoteView({ onEditorReady }: Props = {}) {
                   key={path}
                   initialBody={initial.body}
                   initialEtag={initial.etag}
-                  send={(body, ifMatch) => updateNote.mutateAsync({ path, body, ifMatch })}
+                  send={(body, ifMatch, actor) => updateNote.mutateAsync({ path, body, ifMatch, actor })}
                   fetchLatest={() => get<Note>(`/v1/notes?path=${encodeURIComponent(path)}`)}
                   onSaveError={(err) => toast.error(`save failed: ${err.message}`)}
                   guardRef={guardRef}
@@ -197,6 +197,11 @@ export function NoteView({ onEditorReady }: Props = {}) {
                     jotId: path,
                     onEditorReady,
                     onWikilinkClick: (target) => openWikilink(target, openView),
+                    inlineAssist: {
+                      target: { path },
+                      // spec A5 + B §2: the accepted suggestion's save is the assistant's
+                      onAccept: () => guardRef.current?.attributeNext('assistant'),
+                    },
                   }}
                 />
               </div>

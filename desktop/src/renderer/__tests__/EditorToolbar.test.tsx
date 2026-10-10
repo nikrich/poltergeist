@@ -26,4 +26,15 @@ describe('EditorToolbar', () => {
     expect(onPhoto).toHaveBeenCalledOnce();
     editor.destroy();
   });
+
+  it('shows the inline ai button only with onAssist', () => {
+    const editor = makeEditor();
+    const onAssist = vi.fn();
+    const { rerender } = render(<EditorToolbar editor={editor} onPhoto={() => {}} />);
+    expect(screen.queryByRole('button', { name: 'inline ai' })).toBeNull();
+    rerender(<EditorToolbar editor={editor} onPhoto={() => {}} onAssist={onAssist} />);
+    fireEvent.click(screen.getByRole('button', { name: 'inline ai' }));
+    expect(onAssist).toHaveBeenCalledOnce();
+    editor.destroy();
+  });
 });
