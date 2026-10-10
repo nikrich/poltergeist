@@ -2,7 +2,7 @@ import type { Editor } from '@tiptap/core';
 import type { Node as PMNode } from 'prosemirror-model';
 import type { NodeView } from '@tiptap/pm/view';
 import { toDisplaySrc } from './image';
-import { blockedRemoteImageText, createRemoteImagePlaceholder } from '../remote-images';
+import { blockedRemoteImageText, createRemoteImagePlaceholder, normalizeImageSrc } from '../remote-images';
 
 export const SNAP_FRACTIONS = [0.25, 0.5, 0.75, 1] as const;
 export const MIN_IMAGE_WIDTH = 48;
@@ -50,7 +50,7 @@ export function createImageView(node: PMNode, editor: Editor, getPos: () => numb
     placeholder?.remove();
     placeholder = null;
     if (img.parentNode !== dom) dom.prepend(img);
-    img.src = toDisplaySrc(a.src ?? '');
+    img.src = toDisplaySrc(normalizeImageSrc(a.src));
     img.alt = a.alt ?? '';
     if (a.title) img.title = a.title;
     else img.removeAttribute('title');

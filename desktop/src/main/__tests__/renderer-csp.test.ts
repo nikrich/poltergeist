@@ -57,6 +57,42 @@ describe('rendererCsp', () => {
   });
 });
 
+describe('OFF policy is the authoritative block', () => {
+  const tokens = (policy: string, name: string) => {
+    const d = policy.split(';').map((x) => x.trim()).find((x) => x.startsWith(`${name} `));
+    if (!d) throw new Error(`no ${name}`);
+    return d.split(/\s+/).slice(1);
+  };
+
+  it('img-src has no network source: no http:, https:, wildcard or host', () => {
+    const img = tokens(rendererCsp({ remoteImages: false }), 'img-src');
+    for (const t of img) {
+      expect(t).not.toMatch(/^(https?:|\*|wss?:)/i);
+      expect(t).not.toContain('*');
+      expect(t).not.toContain('.');
+      expect(t).not.toContain('//');
+    }
+    expect(img).toEqual(["'self'", 'data:', 'gbasset:', 'gbdoc:', 'plugin:']);
+  });
+
+  it('ON adds https: to img-src and nothing to default-src/connect-src/frame-src/media', () => {
+    const on = rendererCsp({ remoteImages: true });
+    expect(tokens(on, 'default-src')).toEqual(["'self'"]);
+    expect(tokens(on, 'connect-src')).toEqual(["'self'", 'gbdoc:', 'plugin:']);
+    expect(on).not.toMatch(/media-src|object-src \*|https:\/\/\*/);
+    expect(on.match(/https:(?!\/\/)/g)).toEqual(['https:']);
+  });
+
+  it('the document main loads with the setting off (dev and prod) carries the OFF policy', () => {
+    const prod = rendererLoadTarget({ remoteImages: false, rendererDir: 'r' });
+    expect(prod.kind === 'file' && prod.path.endsWith('index.html')).toBe(true);
+    const dev = rendererLoadTarget({ remoteImages: false, rendererDir: 'r', devServerUrl: 'http://localhost:5173' });
+    // The dev server root serves src/renderer/index.html.
+    expect(dev).toEqual({ kind: 'url', url: 'http://localhost:5173/' });
+    expect(metaCsp('index.html')).toBe(LEGACY_POLICY);
+  });
+});
+
 describe('renderer HTML entries carry the generated policy', () => {
   it('index.html blocks remote images (legacy policy)', () => {
     expect(metaCsp('index.html')).toBe(rendererCsp({ remoteImages: false }));

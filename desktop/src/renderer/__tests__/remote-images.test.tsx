@@ -4,7 +4,8 @@ import { rendererCsp } from '../../shared/renderer-csp';
 import {
   INSECURE_IMAGE_BLOCKED_TEXT,
   REMOTE_IMAGE_BLOCKED_TEXT,
-  isRemoteImageSrc,
+  blockedRemoteImageText,
+  isLocalImageSrc,
   remoteImagesAllowed,
 } from '../lib/remote-images';
 import { MarkdownBody } from '../components/MarkdownBody';
@@ -22,15 +23,64 @@ afterEach(() => {
   document.head.querySelectorAll('meta[data-test-csp]').forEach((m) => m.remove());
 });
 
-describe('isRemoteImageSrc', () => {
-  it('is true for http and https URLs only', () => {
-    expect(isRemoteImageSrc('https://example.com/a.png')).toBe(true);
-    expect(isRemoteImageSrc('HTTP://example.com/a.png')).toBe(true);
-    expect(isRemoteImageSrc('//example.com/a.png')).toBe(true);
-    expect(isRemoteImageSrc('gbasset://asset/x.jpg')).toBe(false);
-    expect(isRemoteImageSrc('data:image/png;base64,AAAA')).toBe(false);
-    expect(isRemoteImageSrc('90-meta/assets/x.jpg')).toBe(false);
-    expect(isRemoteImageSrc('')).toBe(false);
+describe('isLocalImageSrc (fail-closed allowlist)', () => {
+  const local = [
+    'gbasset://asset/x.jpg',
+    'GBASSET://asset/x.jpg',
+    'gbdoc://doc/x.png',
+    'plugin://p/icon.png',
+    'data:image/png;base64,AAAA',
+    'DATA:IMAGE/png;base64,AAAA',
+    '90-meta/assets/x.jpg',
+    './x.png',
+    '/abs/x.png',
+    '', // nothing to load
+  ];
+  const remote = [
+    'https://example.com/a.png',
+    'HTTPS://example.com/a.png',
+    'http://example.com/a.png',
+    'http:example.com/a.png',
+    '//example.com/a.png',
+    '\\\\host\\share\\a.png',
+    '/\\example.com/a.png',
+    '\\/example.com/a.png',
+    '  https://example.com/a.png',
+    '\u0001https://example.com/a.png',
+    'ht\ttps://example.com/a.png',
+    'ht\nttps://example.com/a.png',
+    '&#104;ttps://example.com/a.png',
+    'https&colon;//example.com/a.png',
+    'ftp://example.com/a.png',
+    'file:///etc/passwd',
+    'data:text/html,<b>x</b>',
+    'javascript:alert(1)',
+    'blob:https://example.com/x',
+    'c:\\\\x.png',
+  ];
+  for (const src of local) it(`local: ${JSON.stringify(src)}`, () => expect(isLocalImageSrc(src)).toBe(true));
+  for (const src of remote) it(`not local: ${JSON.stringify(src)}`, () => expect(isLocalImageSrc(src)).toBe(false));
+});
+
+describe('blockedRemoteImageText', () => {
+  it('blocks every non-local src while the setting is off', () => {
+    installCsp(false);
+    for (const src of ['https://x.test/a.png', 'HTTPS://x.test/a.png', '//x.test/a.png', ' \u0000https://x.test/a.png', 'ftp://x.test/a'])
+      expect(blockedRemoteImageText(src)).toBe(REMOTE_IMAGE_BLOCKED_TEXT);
+  });
+
+  it('allows only https (any case, after normalisation) while the setting is on', () => {
+    installCsp(true);
+    expect(blockedRemoteImageText('https://x.test/a.png')).toBeNull();
+    expect(blockedRemoteImageText('HTTPS://x.test/a.png')).toBeNull();
+    for (const src of ['http://x.test/a.png', '//x.test/a.png', 'ftp://x.test/a', 'file:///etc/passwd'])
+      expect(blockedRemoteImageText(src)).toBe(INSECURE_IMAGE_BLOCKED_TEXT);
+  });
+
+  it('never blocks local sources', () => {
+    installCsp(false);
+    for (const src of ['gbasset://asset/x.jpg', 'data:image/png;base64,AAAA', '90-meta/a.jpg'])
+      expect(blockedRemoteImageText(src)).toBeNull();
   });
 });
 
@@ -76,6 +126,26 @@ describe('MarkdownBody remote images', () => {
     expect(screen.getByText(INSECURE_IMAGE_BLOCKED_TEXT)).toBeInTheDocument();
   });
 
+  it('renders no element for raw HTML images, srcset or <picture> sources', () => {
+    installCsp(true);
+    const { container } = render(
+      <MarkdownBody>
+        {'<img src="https://example.com/a.png" srcset="https://example.com/b.png 2x">\n\n<picture><source srcset="https://example.com/c.png"><img src="https://example.com/d.png"></picture>\n\n<div style="background-image:url(https://example.com/e.png)">x</div>'}
+      </MarkdownBody>,
+    );
+    // react-markdown has no rehype-raw: raw HTML stays inert escaped text.
+    expect(container.querySelector('img, source, picture, [srcset], [style]')).toBeNull();
+  });
+
+  it('blocks entity-encoded and mixed-case remote srcs while off', () => {
+    installCsp(false);
+    const { container } = render(
+      <MarkdownBody>{'![a](&#104;ttps://example.com/a.png) ![b](HTTPS://example.com/b.png)'}</MarkdownBody>,
+    );
+    expect(container.querySelector('img')).toBeNull();
+    expect(screen.getAllByText(REMOTE_IMAGE_BLOCKED_TEXT)).toHaveLength(2);
+  });
+
   it('leaves data: images alone', () => {
     installCsp(false);
     const { container } = render(
@@ -116,6 +186,21 @@ describe('editor image node remote images', () => {
     const editor = makeEditor('![x](http://example.com/c.png)');
     expect(editor.view.dom.querySelector('img')).toBeNull();
     expect(editor.view.dom.textContent).toContain(INSECURE_IMAGE_BLOCKED_TEXT);
+  });
+
+  it('drops raw HTML images (no img, srcset or remote URL in the DOM)', () => {
+    installCsp(true);
+    const editor = makeEditor(
+      '<img src="https://example.com/a.png" srcset="https://example.com/b.png 2x">\n\n<picture><source srcset="https://example.com/c.png"></picture>',
+    );
+    expect(editor.view.dom.querySelector('img, source, [srcset]')).toBeNull();
+  });
+
+  it('blocks a protocol-relative src while off', () => {
+    installCsp(false);
+    const editor = makeEditor('![a](//example.com/a.png)');
+    expect(editor.view.dom.querySelector('img')).toBeNull();
+    expect(editor.view.dom.textContent).toContain(REMOTE_IMAGE_BLOCKED_TEXT);
   });
 
   it('vault and gbasset images still render when remote images are blocked', () => {

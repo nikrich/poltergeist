@@ -17,6 +17,11 @@ describe('PrivacySettings — load remote images', () => {
   it('is off by default and says it takes effect immediately', () => {
     render(<PrivacySettings />);
     expect(toggle()).toHaveAttribute('aria-pressed', 'false');
+    expect(
+      screen.getByText(
+        /Images from the web will load when you open a note\. A note can use this to tell a website you opened it\./,
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByText(/takes effect immediately/i)).toBeInTheDocument();
   });
 

@@ -396,7 +396,7 @@ export function PrivacySettings() {
       />
       <SettingRow
         label="load remote images"
-        sub="show https images from the web in notes. off: they're blocked and never requested. takes effect immediately (the window reloads)."
+        sub="Images from the web will load when you open a note. A note can use this to tell a website you opened it. Off: they're blocked and never requested. Takes effect immediately (the window reloads)."
         control={
           <Toggle
             ariaLabel="load remote images"
