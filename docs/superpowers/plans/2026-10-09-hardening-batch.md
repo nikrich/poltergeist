@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- EVERY shell command starts with `cd /Users/jannik/development/nikrich/ghost-brain-hardening && `. Verify `git branch --show-current` == `fix/hardening-batch` and `git rev-parse --show-toplevel` == `/Users/jannik/development/nikrich/ghost-brain-hardening` before every commit. Never touch `/Users/jannik/development/nikrich/ghost-brain` or any other `ghost-brain-*` worktree.
+- EVERY shell command starts with `cd <repo> && `. Verify `git branch --show-current` == `fix/hardening-batch` and `git rev-parse --show-toplevel` == `<repo>` before every commit. Never touch `<main checkout>` or any other `ghost-brain-*` worktree.
 - Never push, open PRs or merge.
 - Never read/write `~/ghostbrain`, `~/.ghostbrain` or the vault; never launch the app. Tests must sandbox HOME / `GHOSTBRAIN_STATE_DIR` / `VAULT_PATH` (tmp_path).
 - Before ANY pytest run: `pgrep -x ghostbrain-capture` — if it prints a pid, wait 5 min and re-check.
@@ -27,8 +27,8 @@
 - Task 1: the fix must hold for both the frozen binary and `python -m ghostbrain.api mcp`; a smoke failure must print the binary's stderr so the next flake is diagnosable.
 - Task 2: a sidecar whose parent died mid-recording must stop capture via the normal recorder stop path (SIGINT to capture, manual.state updated) — not be hard-killed before shutdown hooks run.
 - Task 2: running `python -m ghostbrain.api` from a terminal (no Electron parent, stdin a TTY or /dev/null) must NOT self-terminate.
-- Task 4: the discard confirm must not fire when no conflict is pending (plain navigation stays frictionless), and cancelling the confirm must keep both the route and the paused text.
-- Task 5: invalidation must cover the backlinks of every affected note (prefix key `['vault','backlinks']`), not just the path of the mutated note.
+- Task 5: the discard confirm must not fire when no conflict is pending (plain navigation stays frictionless), and cancelling the confirm must keep both the route and the paused text.
+- Task 6: invalidation must cover the backlinks of every affected note (prefix key `['vault','backlinks']`), not just the path of the mutated note.
 
 ---
 
