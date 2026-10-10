@@ -46,6 +46,7 @@ Rule                   Vector it covers
 """
 from __future__ import annotations
 
+import functools
 import html
 import re
 import sys
@@ -160,12 +161,22 @@ def _mermaid_codes(text: str) -> str:
     """Mermaid ``#NN;`` codes decoded left to right; a code right after an
     ``&`` it produced is left for the next HTML decode (``#amp;#58;`` reads
     ``&#58;``)."""
-    out, end = "", 0
+    parts, last, end = [], "", 0
     for m in _MERMAID_ENTITY_RE.finditer(text):
-        out += text[end:m.start()]
-        out += m.group() if out.endswith("&") else html.unescape(_mermaid_entity(m))
+        if m.start() > end:
+            parts.append(text[end:m.start()])
+            last = text[m.start() - 1]
+        code = m.group() if last == "&" else _mermaid_char(m.group(1))
+        parts.append(code)
+        last = code[-1:] or last
         end = m.end()
-    return out + text[end:]
+    parts.append(text[end:])
+    return "".join(parts)
+
+
+@functools.lru_cache(maxsize=1024)
+def _mermaid_char(code: str) -> str:
+    return html.unescape(f"&#{code};" if code.isdigit() else f"&{code};")
 
 
 def _html_stable(text: str) -> str:
@@ -185,37 +196,58 @@ def _mermaid_then_html(text: str) -> str:
     return html.unescape(_MERMAID_ENTITY_RE.sub(_mermaid_entity, text))
 
 
-_COMMON = (
-    lambda t: unicodedata.normalize("NFKC", t),
-    lambda t: _INVISIBLE_RE.sub("", t),
-    lambda t: _BACKSLASH_RE.sub(_unescape, t),
-)
-# Two chains, both read: HTML entities and mermaid codes as separate
-# stages (so &amp;#58; and #amp;#58; read as :), and mermaid's own
-# all-at-once reading (so #amp;#sol;#sol; reads as &//).
-_CHAINS = (
-    (*_COMMON, _html_stable, _mermaid_codes, _html_stable, unquote),
-    (*_COMMON, _mermaid_then_html, unquote),
-)
+def _strip_invisible(text: str) -> str:
+    return _INVISIBLE_RE.sub("", text)
 
 
-def _chain(text: str, decoders: tuple) -> list[str]:
+def _nfkc(text: str) -> str:
+    return unicodedata.normalize("NFKC", text)
+
+
+def _escapes(text: str) -> str:
+    return _BACKSLASH_RE.sub(_unescape, text)
+
+
+# Two orders of decoding, both read: HTML entities (once, then until
+# stable) and mermaid codes as separate stages, so &amp;#58; and #amp;#58;
+# read as :, and mermaid's own all-at-once reading, so #amp;#sol;#sol;
+# reads as &//.
+_SPLIT = (_nfkc, _escapes, html.unescape, _html_stable, _mermaid_codes, _html_stable, unquote)
+_MERMAID = (_nfkc, _escapes, _mermaid_then_html, unquote)
+
+
+def _chain(text: str, decoders: tuple, memo: dict) -> list[str]:
+    """``text`` and each distinct stage of decoding it, up to stable
+    (bounded). ``memo`` holds stage results the other chains share."""
     out = [text]
     for _ in range(_MAX_DECODE_ROUNDS):
         before = out[-1]
         for decoder in decoders:
-            decoded = decoder(out[-1])
-            if decoded != out[-1]:
-                out.append(decoded)
+            key = (decoder, out[-1])
+            if key not in memo:
+                memo[key] = decoder(out[-1])
+            if memo[key] != out[-1]:
+                out.append(memo[key])
         if out[-1] == before:
             break
     return out
 
 
 def _readings(text: str) -> list[str]:
-    """``text`` and every distinct stage of decoding it along each chain,
-    up to stable (bounded)."""
-    return list(dict.fromkeys(r for chain in _CHAINS for r in _chain(text, chain)))
+    """Every distinct reading along both decoding orders, invisible
+    characters dropped at the start of each round. Where any reading holds
+    an invisible character (a line break or tab too), also with them
+    dropped after every stage and with them kept: one is a boundary, so
+    a\u200bhttps&#58; reads https:. Otherwise those give the same
+    readings."""
+    memo: dict = {}
+    out = [r for chain in (_SPLIT, _MERMAID)
+           for r in _chain(text, (_strip_invisible, *chain), memo)]
+    if any(_INVISIBLE_RE.search(r) for r in out):
+        for chain in (_SPLIT, _MERMAID):
+            out += _chain(text, tuple(s for d in chain for s in (_strip_invisible, d)), memo)
+            out += _chain(text, chain, memo)
+    return list(dict.fromkeys(out))
 
 
 def _hit(readings: list[str]) -> re.Match[str] | None:

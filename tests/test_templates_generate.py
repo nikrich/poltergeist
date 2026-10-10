@@ -1066,6 +1066,15 @@ def test_format_and_control_characters_hide_nothing(char):
         # entities nested three and five deep
         "https&amp;amp;#58;evil",
         "https&amp;amp;amp;amp;amp;#58;evil",
+        # the single-decode reading markdown itself gives
+        "&amp;#104;https&colon;evil",
+        "&amp;#104;https&#58;evil",
+        "[a](&amp;#104;https&colon;evil)",
+        "x&amp;#120;www&period;evil.com",
+        # an invisible character kept while the colon is decoded
+        "https\u200bhttps#58;evil",
+        "https&#8203;https#58;evil",
+        "a\u200bhttps&#58;evil",
         "ｈｔｔｐｓ：evil.com",
         "https\uff1a\uff0f\uff0fevil.com",
     ],
