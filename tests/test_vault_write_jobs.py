@@ -136,3 +136,57 @@ def test_an_unlisted_job_still_gets_page_history(vault):
     assert res.change_id is None and changes.list_changes() == []
     [snap] = store.list_snapshots(REL)
     assert snap.actor == "worker:semantic-refresh" and store.get_blob(snap.blob) == V1
+
+
+def test_rewrite_text_retries_on_a_user_save_and_keeps_it(vault):
+    rel = "80-profile/current-projects.md"
+    (vault / rel).parent.mkdir(parents=True)
+    (vault / rel).write_bytes(b"# Current projects\n")
+    user_version = b"# Current projects\n\nmy own line\n"
+    seen: list[str | None] = []
+
+    def transform(text):
+        seen.append(text)
+        if len(seen) == 1:
+            (vault / rel).write_bytes(user_version)  # the user saves mid-job
+        return text + "- ship it\n"
+
+    res = jobs.rewrite_text(rel, transform, actor=worker_actor("profile-apply"), reason="added")
+    assert res is not None and res.status == "applied"
+    assert seen == ["# Current projects\n", user_version.decode()]
+    assert (vault / rel).read_bytes() == user_version + b"- ship it\n"
+
+
+def test_rewrite_text_create_race_becomes_a_guarded_modify_of_the_users_file(vault):
+    rel = "80-profile/_review.md"
+    user_version = b"# Review\n\nwritten by me\n"
+    seen: list[str | None] = []
+
+    def transform(text):
+        seen.append(text)
+        if text is None:
+            (vault / rel).parent.mkdir(parents=True, exist_ok=True)
+            (vault / rel).write_bytes(user_version)  # the user creates it first
+            return "# Review\n"
+        return text + "- job line\n"
+
+    res = jobs.rewrite_text(rel, transform, actor=worker_actor("profile-apply"), reason="r")
+    assert seen == [None, user_version.decode()]
+    assert (vault / rel).read_bytes() == user_version + b"- job line\n"
+    assert res is not None and res.change_id is not None  # a worker modify is listed
+    row = changes.get(int(res.change_id))
+    assert (row.actor, row.op, row.rel_path) == ("worker:profile-apply", "modify", rel)
+
+
+def test_rewrite_text_gives_up_when_the_file_keeps_changing(vault):
+    n = {"i": 0}
+
+    def transform(text):
+        n["i"] += 1
+        (vault / REL).write_bytes(V1 + f"outside edit {n['i']}\n".encode())
+        return text + "job\n"
+
+    with pytest.raises(WriteConflict):
+        jobs.rewrite_text(REL, transform, actor=JOB, reason="r")
+    assert n["i"] == jobs.MAX_ATTEMPTS
+    assert (vault / REL).read_bytes() == V1 + f"outside edit {jobs.MAX_ATTEMPTS}\n".encode()
