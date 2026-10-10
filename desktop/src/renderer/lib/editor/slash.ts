@@ -5,6 +5,8 @@ import type { SuggestionProps, SuggestionKeyDownProps } from '@tiptap/suggestion
 import * as ReactDOM from 'react-dom/client';
 import { createElement } from 'react';
 import { SlashMenu } from '../../components/SlashMenu';
+import { emitGb } from './events';
+import { MERMAID_TEMPLATE } from './code-block';
 
 export interface SlashItem {
   key: string;
@@ -19,6 +21,40 @@ export const SLASH_ITEMS: SlashItem[] = [
   { key: 'bullet', title: 'Bullet list', run: (e, r) => e.chain().focus().deleteRange(r).toggleBulletList().run() },
   { key: 'task', title: 'Task list', run: (e, r) => e.chain().focus().deleteRange(r).toggleTaskList().run() },
   { key: 'quote', title: 'Quote', run: (e, r) => e.chain().focus().deleteRange(r).toggleBlockquote().run() },
+  { key: 'info', title: 'Info panel', run: (e, r) => e.chain().focus().deleteRange(r).setCallout({ kind: 'info' }).run() },
+  { key: 'note', title: 'Note panel', run: (e, r) => e.chain().focus().deleteRange(r).setCallout({ kind: 'note' }).run() },
+  { key: 'tip', title: 'Tip panel', run: (e, r) => e.chain().focus().deleteRange(r).setCallout({ kind: 'tip' }).run() },
+  { key: 'warning', title: 'Warning panel', run: (e, r) => e.chain().focus().deleteRange(r).setCallout({ kind: 'warning' }).run() },
+  {
+    key: 'expand',
+    title: 'Expand',
+    run: (e, r) =>
+      e.chain().focus().deleteRange(r).setCallout({ kind: 'note', title: 'Details', foldable: 'open' }).run(),
+  },
+  {
+    key: 'status',
+    title: 'Status',
+    run: (e, r) => {
+      e.chain().focus().deleteRange(r).insertStatus({ label: 'To do', color: 'grey' }).run();
+      emitGb(e, 'gb:status:edit', { pos: r.from });
+    },
+  },
+  { key: 'toc', title: 'Table of contents', run: (e, r) => e.chain().focus().deleteRange(r).insertToc().run() },
+  {
+    key: 'diagram',
+    title: 'Diagram',
+    run: (e, r) =>
+      e
+        .chain()
+        .focus()
+        .deleteRange(r)
+        .insertContent({
+          type: 'codeBlock',
+          attrs: { language: 'mermaid' },
+          content: [{ type: 'text', text: MERMAID_TEMPLATE }],
+        })
+        .run(),
+  },
   { key: 'code', title: 'Code block', run: (e, r) => e.chain().focus().deleteRange(r).toggleCodeBlock().run() },
   { key: 'divider', title: 'Divider', run: (e, r) => e.chain().focus().deleteRange(r).setHorizontalRule().run() },
   { key: 'table', title: 'Table', run: (e, r) => e.chain().focus().deleteRange(r).insertTable({ rows: 2, cols: 2, withHeaderRow: true }).run() },
