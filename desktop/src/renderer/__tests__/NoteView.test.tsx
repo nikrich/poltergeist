@@ -194,6 +194,59 @@ describe('NoteView', () => {
     expect(useNoteView.getState().path).toBeNull();
   });
 
+  it('opening another note from outside NoteView under the conflict banner asks first', async () => {
+    apiRequest.mockImplementation(async (method: string, path: string) => {
+      if (method === 'PATCH') return { ok: false, status: 409, error: 'note changed' };
+      if (path.startsWith('/v1/vault/backlinks')) {
+        return {
+          ok: true,
+          data: {
+            items: [{ path: '20-contexts/work/notes/standup.md', title: 'Standup', context: 'work', snippet: '' }],
+            indexing: false,
+          },
+        };
+      }
+      return { ok: true, data: { ...manualNote, body: 'their edit', etag: 'bbbbbbbbbbbbbbbb' } };
+    });
+    apiRequest.mockResolvedValueOnce({ ok: true, data: { ...manualNote, etag: 'aaaaaaaaaaaaaaaa' } });
+    let editor: Editor | undefined;
+    render(
+      withQuery(
+        <NoteView
+          onEditorReady={(e) => {
+            editor = e;
+          }}
+        />,
+      ),
+    );
+    act(() => useNoteView.getState().open(manualNote.path));
+    await waitFor(() => expect(editor).toBeDefined());
+    act(() => {
+      editor!.commands.insertContentAt(editor!.state.doc.content.size, 'my tail');
+    });
+    await screen.findByRole('alert', {}, { timeout: 3000 });
+
+    // A search result / backlink / chat link elsewhere calls the store directly.
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    act(() => useNoteView.getState().open(syncedNote.path));
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(confirm.mock.calls[0]![0]).toMatch(/Discard your text\?/);
+    expect(useNoteView.getState().path).toBe(manualNote.path);
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(screen.getByText(/my tail/)).toBeInTheDocument();
+
+    // In-view links ask exactly once too (no double prompt).
+    act(() => {
+      screen.getByText('Standup').click();
+    });
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(useNoteView.getState().path).toBe(manualNote.path);
+
+    confirm.mockReturnValue(true);
+    act(() => useNoteView.getState().open(syncedNote.path));
+    expect(useNoteView.getState().path).toBe(syncedNote.path);
+  });
+
   it('shows backlinks for the open note and opens one on click', async () => {
     apiRequest.mockImplementation(async (_method: string, path: string) => {
       if (path.startsWith('/v1/vault/backlinks')) {

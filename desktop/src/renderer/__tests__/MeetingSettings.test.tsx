@@ -47,6 +47,7 @@ const RECORDER: RecorderSettings = {
   live_transcription: true,
   transcription_model: 'ggml-large-v3-turbo-q5_0.bin',
   multilingual_model: true,
+  transcription_model_source: 'default',
 };
 
 function renderSection(opts?: {
@@ -274,5 +275,19 @@ describe('MeetingSettings · transcription', () => {
     const select = (await screen.findByLabelText('transcription language')) as HTMLSelectElement;
     expect(select.disabled).toBe(true);
     expect(screen.getByText(/poltergeist setup fetch-model/)).toBeInTheDocument();
+  });
+
+  it('names GHOSTBRAIN_WHISPER_MODEL instead of fetch-model when the env var pins the model', async () => {
+    renderSection({
+      recorder: {
+        transcription_model: 'ggml-base.en.bin',
+        multilingual_model: false,
+        transcription_model_source: 'env',
+      },
+    });
+    const select = (await screen.findByLabelText('transcription language')) as HTMLSelectElement;
+    expect(select.disabled).toBe(true);
+    expect(screen.getByText(/GHOSTBRAIN_WHISPER_MODEL/)).toBeInTheDocument();
+    expect(screen.queryByText(/fetch-model/)).not.toBeInTheDocument();
   });
 });

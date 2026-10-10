@@ -294,6 +294,8 @@ export interface RecorderSettings {
   transcription_model: string | null;
   /** Read-only: false for English-only `.en` models. */
   multilingual_model: boolean;
+  /** Read-only: `env` when GHOSTBRAIN_WHISPER_MODEL pins the model. */
+  transcription_model_source: 'env' | 'default';
 }
 
 export type TranscriptionLanguage = 'auto' | 'en' | 'af';
