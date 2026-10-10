@@ -793,10 +793,20 @@ export function useUpdateProject() {
         archived: vars.archived,
       }),
     // A rename moves the project's folder, re-stamps its notes and rewrites
-    // chat/jot/library paths, so every surface that lists them is stale.
+    // chat/jot/library paths, so every surface that lists them is stale —
+    // page history too (it follows the moved notes to their new paths).
     onSuccess: () =>
       Promise.all(
-        [['projects'], ['library'], ['jots'], ['note'], ['note-by-path'], ['vault'], ['chat']].map(
+        [
+          ['projects'],
+          ['library'],
+          ['jots'],
+          ['note'],
+          ['note-by-path'],
+          ['note-history'],
+          ['vault'],
+          ['chat'],
+        ].map(
           (queryKey) => qc.invalidateQueries({ queryKey }),
         ),
       ),

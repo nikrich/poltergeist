@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useToasts } from '../stores/toast';
 
 import * as client from '../lib/api/client';
+import { useUpdateProject } from '../lib/api/hooks';
 import { ProjectsSettings } from '../screens/settings';
 import type { Project } from '../../shared/api-types';
 
@@ -227,5 +228,20 @@ describe('ProjectsSettings', () => {
     expect(vi.mocked(client.patch)).toHaveBeenCalledTimes(1);
     resolve({ ...projects[1], slug: 'payments', id: 'work/payments', name: 'Payments' });
     await waitFor(() => expect(screen.queryByLabelText('project name work/paymnets')).toBeNull());
+  });
+});
+
+describe('useUpdateProject', () => {
+  it('invalidates page history along with the other moved surfaces', async () => {
+    vi.mocked(client.patch).mockResolvedValue(projects[1] as never);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const spy = vi.spyOn(qc, 'invalidateQueries');
+    const { result } = renderHook(() => useUpdateProject(), {
+      wrapper: ({ children }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>,
+    });
+    await result.current.mutateAsync({ context: 'work', slug: 'paymnets', name: 'Payments' });
+    const keys = spy.mock.calls.map(([f]) => JSON.stringify(f?.queryKey));
+    expect(keys).toContain('["note-history"]');
+    expect(keys).toContain('["projects"]');
   });
 });
