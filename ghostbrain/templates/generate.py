@@ -149,18 +149,25 @@ def repair_prompt(description: str, draft: str, problems: tuple[Diagnostic, ...]
     )
 
 
+_WRAPPER_OPEN_RE = re.compile(r"(`{3,}|~{3,})[ \t]*(?:markdown|md|yaml)?[ \t]*")
+
+
 def extract_draft(text: str) -> str:
-    """The template file inside a model answer: strips a fence wrapped around
-    the whole answer and any chatter before the opening `---`."""
-    t = text.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n").strip()
-    lines = t.split("\n")
-    if len(lines) >= 2 and re.fullmatch(r"`{3,}\s*(markdown|md|yaml)?\s*", lines[0]) and lines[-1].strip() == "```":
-        t = "\n".join(lines[1:-1]).strip()
-    if not t.startswith("---"):
-        at = t.find("\n---\n")
-        if at >= 0:
-            t = t[at + 1:]
-    return t + "\n"
+    """The template file inside a model answer: a leading BOM dropped, line
+    endings made LF, chatter before the opening `---` dropped, and a fence
+    wrapped around the file unwrapped, with or without chatter around it."""
+    lines = text.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n").strip().split("\n")
+    start = next((i for i, line in enumerate(lines) if line.rstrip() == "---"), None)
+    if start is None:
+        return "\n".join(lines).strip() + "\n"
+    end = len(lines)
+    wrapper = _WRAPPER_OPEN_RE.fullmatch(lines[start - 1]) if start else None
+    if wrapper:
+        fence = wrapper.group(1)
+        # The wrapper's closer is the last bare fence line of its kind.
+        end = next((i for i in range(len(lines) - 1, start, -1)
+                    if lines[i].rstrip() == fence), end)
+    return "\n".join(lines[start:end]).strip() + "\n"
 
 
 def sample_answers(template: Template) -> dict[str, str]:

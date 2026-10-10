@@ -2,13 +2,36 @@
 
 A draft is untrusted text, and the notes it creates are written as the user,
 so B3's approval hold never sees them. These rules keep anything live out of
-both the template and what it renders: no HTML, no code blocks except query
-and mermaid (and nothing inside a fence that loads or links anywhere), no
-images that load from outside the vault, and no link whose URL is built from
-placeholders, since an answer in a URL leaves the vault when it is opened.
-
-Where a rule cannot tell how a reader would see a line, it rejects the line:
+both the template and what it renders. Every rule reads every line of the
+whole text, decoded first (backslash escapes, HTML entities, mermaid
+``#NN;`` codes): nothing is exempt for sitting in a code fence, inline code
+or a comment, so no reader's idea of where code starts or ends matters.
+Where a rule cannot tell how a reader would see a line it rejects the line:
 a false alarm costs one repair turn, a miss leaks an answer.
+
+=====================  ========================================================
+Rule                   Vector it covers
+=====================  ========================================================
+``_HTML_RULES``        script/iframe/… tags, ``on…=`` handlers, ``javascript:``
+``_RAW_TAG_RE``        any raw HTML (``<`` + letter, ``/``, ``!``, ``?``), so
+                       ``<img>``, ``<a href>``, comments; URI autolinks without
+                       a placeholder are the one exception
+``_BAD_SCHEME_RE``     ``data:``/``vbscript:`` URLs, ``//host`` (protocol-
+                       relative), CSS ``url(…)`` and ``click … href/call`` in
+                       mermaid
+``_images``            images: no scheme or ``//`` after ``![``, alt text or
+                       destination not split over lines, no use of a remote
+                       reference definition
+``_definitions``       reference definitions: URL on the same line; a ``]:``
+                       whose label started on an earlier line can't be remote
+``_URL_SPANS``, …     any link, image, autolink, bare URL, email or definition
+                       URL holding a ``{{placeholder}}`` (answers leave the vault)
+``literal_problems``   ``format``/``default`` literals holding markup characters
+``prompt_value_…``     prompt defaults / choice options holding markup or URLs
+``structure_…``        duplicate keys, ``<<`` merge keys, a second ``---`` block
+``control_problems``   CR, BOM, NUL, U+2028/9: text parsers split differently
+``dynamic_url_…``      rendered URLs the template doesn't spell out literally
+=====================  ========================================================
 """
 from __future__ import annotations
 
@@ -24,48 +47,52 @@ from ghostbrain.vault_write import html_live
 from ghostbrain.vault_write.text import parse_note
 
 ALLOWED_FENCES = frozenset({"", "query", "mermaid", "text", "markdown", "md"})
-# CommonMark link labels are at most 999 characters.
-MAX_LABEL_CHARS = 999
 
-# Container markers (blockquote, list) and indentation in front of a line.
-_PREFIX_RE = re.compile(r"(?:[ \t]*(?:>|(?:[-+*]|\d{1,9}[.)])(?=[ \t])))*[ \t]*")
-_FENCE_OPEN_RE = re.compile(r"(`{3,}|~{3,})[ \t]*([^\s`]*)(.*)$")
-_FENCE_CLOSE_RE = re.compile(r"(`{3,}|~{3,})[ \t]*$")
+_FENCE_OPEN_RE = re.compile(r"(?:`{3,}|~{3,})[ \t]*([^\s`]*)")
 _HTML_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"<\s*(script|iframe|object|embed|style|link|meta|form)\b", re.IGNORECASE),
      "HTML <{0}> tags are not allowed in a template"),
-    (re.compile(r"<[^>]*\son[a-z]+\s*=", re.IGNORECASE), "HTML event handlers (on…=) are not allowed"),
+    # [^<>] keeps the scan linear; a "<" inside a tag is raw HTML anyway.
+    (re.compile(r"<[^<>]*\son[a-z]+\s*=", re.IGNORECASE), "HTML event handlers (on…=) are not allowed"),
     (re.compile(r"javascript\s*:", re.IGNORECASE), "javascript: links are not allowed"),
+)
+_RAW_TAG_RE = re.compile(r"<[A-Za-z!/?]")
+# A CommonMark URI autolink, as html_live reads one.
+_URI_AUTOLINK_RE = re.compile(r"<[A-Za-z][A-Za-z0-9+.\-]{1,31}:[^\x00-\x20<>]*>")
+_BAD_SCHEME_RE = re.compile(
+    r"(?<![a-z0-9+.\-])(?:data:(?=\S)|vbscript\s*:)"
+    r"|(?<![:/\w])//(?=[^\s/])"
+    r"|\burl\s*\("
+    r"|^\s*click\s+\S+\s+(?:href\b|call\b|callback\b|[\"'])",  # mermaid click actions
+    re.IGNORECASE,
 )
 # Anything that names a scheme, or a scheme-relative //host.
 _SCHEME_RE = re.compile(r"(?<![a-z0-9+.\-])[a-z][a-z0-9+.\-]*:(?=\S)|//", re.IGNORECASE)
 # What readers turn into a link or a fetch: these schemes (with or without
-# slashes, as the WHATWG parser reads https:host), //host, www., autolinks.
+# slashes, as the WHATWG parser reads https:host), //host and www.
 _LINKABLE = r"(?:(?<![a-z0-9+.\-])(?:https?|ftp|file|mailto|data|javascript|vbscript):|//|(?<![\w.])www\.)"
 _URL_RE = re.compile(_LINKABLE + r"[^\s<>()\[\]\"'`]*", re.IGNORECASE)
-_AUTOLINK_RE = re.compile(r"<[a-z][a-z0-9+.\-]*:[^<>\s]*>", re.IGNORECASE)
-_PLACEHOLDER_URL_RES = (
-    re.compile(r"\]\([^)]*?\{\{"),  # [text](…{{x}}…) and ![alt](…{{x}}…)
-    re.compile(_LINKABLE + r"[^\s<>\"]*?\{\{", re.IGNORECASE),  # bare URLs
-    re.compile(r"<[a-z][a-z0-9+.\-]*:[^<>]*?\{\{", re.IGNORECASE),  # <scheme:…{{x}}…>
+# Each pattern matches greedily (linear time); a match holding "{{" is a
+# URL built from a placeholder.
+_URL_SPANS = (
+    re.compile(r"\]\([^)]*"),  # [text](…) and ![alt](…) destinations
+    re.compile(_LINKABLE + r"[^\s<>\"]*", re.IGNORECASE),  # bare URLs
+    re.compile(r"<[a-z][a-z0-9+.\-]*:[^<>]*", re.IGNORECASE),  # <scheme:…> autolinks
 )
+_PLACEHOLDER_EMAIL_RE = re.compile(r"\}\}[\w.+\-]*@[\w\-{]|[\w.+\-]@[\w.\-]*\{\{")  # GFM emails
 _DEFINITION_RE = re.compile(r" {0,3}\[((?:\\.|[^\]\\]){1,999})\]:(.*)$")
+# A "]:" whose "[" is on an earlier line: the tail of a multi-line label.
+_LABEL_TAIL_RE = re.compile(r"[^\[]*\]:(.*)$")
 _LINK_OPEN_AT_END_RE = re.compile(r"\]\(\s*<?\s*$")
-_FENCED_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
-    (re.compile(r"<\s*img\b", re.IGNORECASE), "images are not allowed in a diagram"),
-    (re.compile(r"\b(?:src|href|xlink:href)\s*=", re.IGNORECASE), "links are not allowed in a diagram"),
-    (re.compile(r"^\s*click\b", re.IGNORECASE), "click actions are not allowed in a diagram"),
-    (re.compile(r"\bhref\b", re.IGNORECASE), "links are not allowed in a diagram"),
-    (re.compile(_LINKABLE + "|[a-z][a-z0-9+.\\-]*://", re.IGNORECASE),
-     "URLs are not allowed inside a code block"),
-)
+# Mermaid's entity codes: #60; and #lt; mean "<".
+_MERMAID_ENTITY_RE = re.compile(r"(?<!&)#(\d{1,7}|[a-z][a-z0-9]{1,31});", re.IGNORECASE)
 # Characters that turn a filter's literal text into markup or an entity.
 _MARKUP_CHARS = frozenset("<>&`\\")
 _LITERAL_FILTERS = frozenset({"format", "default"})
 # In prompt values a lone "&" (R&D) is text; an entity is not.
 _VALUE_MARKUP_RE = re.compile(r"[<>`\\]|&#?[a-z0-9]+;", re.IGNORECASE)
 # Characters other parsers split lines on, or that change how a file is read.
-_CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f\x85﻿  ]")
+_CONTROL_RE = re.compile("[\\x00-\\x08\\x0b-\\x1f\\x7f\\x85\\ufeff\\u2028\\u2029]")
 
 REMOTE_IMAGE = "remote images are not allowed in a template"
 PLACEHOLDER_URL = "links can't be built from placeholders (answers would leave the vault)"
@@ -75,10 +102,17 @@ def _problem(line: int, col: int, message: str, code: str = "forbidden") -> Diag
     return Diagnostic(max(line, 1), max(col, 1), "error", message, code)
 
 
+def _mermaid_entity(m: re.Match[str]) -> str:
+    code = m.group(1)
+    return f"&#{code};" if code.isdigit() else f"&{code};"
+
+
 def decode(text: str) -> str:
-    """Text as a markdown reader sees a URL in it: backslash escapes and
-    HTML entities resolved."""
-    return html.unescape(html_live.MD_ESCAPE_RE.sub("", text))
+    """Text as some reader may see it: backslash escapes, HTML entities and
+    mermaid entity codes resolved, and the tab/CR/LF browsers drop from URLs
+    removed."""
+    text = _MERMAID_ENTITY_RE.sub(_mermaid_entity, html_live.MD_ESCAPE_RE.sub("", text))
+    return re.sub(r"[\t\r\n]", "", html.unescape(text))
 
 
 def _label(text: str) -> str:
@@ -87,93 +121,67 @@ def _label(text: str) -> str:
 
 def _content(line: str) -> str:
     """The line without its blockquote/list markers and indentation."""
-    return line[_PREFIX_RE.match(line).end():]
+    return line[html_live._PREFIX_RE.match(line).end():]
 
 
-def _fences(lines: list[str]) -> tuple[list[Diagnostic], set[int]]:
-    """Fence-language and unclosed-fence problems, and the indices of the
-    lines inside a fence. Any fence-shaped line counts, whatever container
-    it sits in, so a fence can only make more lines subject to the stricter
-    in-fence rules; image and link rules run on every line regardless."""
-    out: list[Diagnostic] = []
-    inside: set[int] = set()
-    fence = ""
-    opened_at = 0
-    for i, line in enumerate(lines):
-        content = _content(line)
-        m = _FENCE_OPEN_RE.match(content)
-        if m and m.group(2).lower() not in ALLOWED_FENCES:
-            out.append(_problem(i + 1, 1, f"```{m.group(2)} code blocks are not allowed in a template"))
-        if fence:
-            close = _FENCE_CLOSE_RE.match(content)
-            if close and close.group(1)[0] == fence[0] and len(close.group(1)) >= len(fence):
-                fence = ""
-            else:
-                inside.add(i)
-        elif m and not (m.group(1)[0] == "`" and "`" in m.group(3)):
-            fence, opened_at = m.group(1), i
-    if fence:
-        out.append(_problem(opened_at + 1, 1, "this code block is never closed"))
-    return out, inside
+def _line_rules(i: int, line: str, decoded: str) -> list[Diagnostic]:
+    out = []
+    for pattern, message in _HTML_RULES:
+        m = pattern.search(decoded)
+        if m:
+            out.append(_problem(i + 1, m.start() + 1,
+                                message.format(*(g.lower() for g in m.groups()))))
+    if not out and html_live.js_url(line):
+        out.append(_problem(i + 1, 1, "javascript: links are not allowed"))
+    tag = next((m for m in _RAW_TAG_RE.finditer(decoded)
+                if not ((a := _URI_AUTOLINK_RE.match(decoded, m.start())) and "{{" not in a.group())),
+               None)
+    if tag and not out:
+        out.append(_problem(i + 1, tag.start() + 1, "raw HTML is not allowed in a template"))
+    bad = _BAD_SCHEME_RE.search(decoded)
+    if bad:
+        out.append(_problem(i + 1, bad.start() + 1,
+                            "data:, vbscript:, url(…), //host URLs and diagram click actions are not allowed"))
+    fence = _FENCE_OPEN_RE.match(_content(line))
+    if fence and fence.group(1).lower() not in ALLOWED_FENCES:
+        out.append(_problem(i + 1, 1, f"```{fence.group(1)} code blocks are not allowed in a template"))
+    return out
 
 
-def _html_rules(lines: list[str]) -> tuple[list[Diagnostic], set[int]]:
-    out: list[Diagnostic] = []
-    flagged: set[int] = set()
-    for n, line in enumerate(lines, start=1):
-        for pattern, message in _HTML_RULES:
-            m = pattern.search(line)
-            if m:
-                flagged.add(n)
-                out.append(_problem(n, m.start() + 1,
-                                    message.format(*(g.lower() for g in m.groups()))))
-    return out, flagged
-
-
-def _raw_html(lines: list[str], inside: set[int], flagged: set[int]) -> list[Diagnostic]:
-    """Raw HTML that B3's markdown reader finds live, located best-effort
-    to the lines outside fences that look like HTML."""
-    if not html_live.markdown_findings(None, lines, list(range(len(lines))), {}):
-        return []
-    located: list[tuple[int, int]] = []
-    for fenced in (False, True):  # B3 may read a fence this scan trusts as live
-        for i, line in enumerate(lines):
-            if (i in inside) != fenced:
-                continue
-            m = html_live.RAW_TAG_RE.search(line) or html_live.HANDLER_RE.search(line)
-            if m or html_live.js_url(line):
-                located.append((i + 1, m.start() + 1 if m else 1))
-        if located:
-            break
-    if not located and flagged:
-        return []
-    return [_problem(n, col, "raw HTML is not allowed in a template")
-            for n, col in located or [(1, 1)] if n not in flagged]
-
-
-def _remote_definitions(lines: list[str]) -> tuple[set[str], list[Diagnostic]]:
+def _definitions(lines: list[str]) -> tuple[set[str], list[Diagnostic]]:
     """Labels of reference definitions that point outside the vault, and a
-    problem for each definition whose destination is not on its line."""
+    problem for each definition whose URL is not on its line or whose label
+    started on an earlier line and points outside the vault."""
     remote: set[str] = set()
     out: list[Diagnostic] = []
     for i, line in enumerate(lines):
-        m = _DEFINITION_RE.match(_content(line))
-        if not m:
+        content = _content(line)
+        m = _DEFINITION_RE.match(content)
+        tail = None if m else _LABEL_TAIL_RE.match(content)
+        if m:
+            raw_dest = m.group(2)
+        elif tail:
+            raw_dest = tail.group(1)
+        else:
             continue
-        dest = decode(m.group(2)).strip().lstrip("<").strip()
+        dest = decode(raw_dest).strip().lstrip("<").strip()
         if not dest:
             out.append(_problem(i + 1, 1, "a link definition must have its URL on the same line"))
         elif _SCHEME_RE.match(dest):
-            remote.add(_label(m.group(1)))
+            if m:
+                remote.add(_label(m.group(1)))
+            else:
+                out.append(_problem(i + 1, 1, "a link label split over lines can't point "
+                                              "outside the vault"))
     return remote, out
 
 
-def _images(lines: list[str]) -> list[Diagnostic]:
-    """Images may only point inside the vault. Fails closed: a line with
-    ``![`` is rejected when anything after it names a scheme or //, when the
-    alt text or destination runs onto the next line, or when it could use a
-    remote reference definition."""
-    remote, out = _remote_definitions(lines)
+def _images(lines: list[str], remote: set[str]) -> list[Diagnostic]:
+    """Images may only point inside the vault. A line with ``![`` is rejected
+    when anything after it names a scheme or //, when the alt text or
+    destination runs onto the next line, or when it could use a remote
+    reference definition."""
+    out = []
     for i, line in enumerate(lines):
         start = line.find("![")
         if start < 0:
@@ -191,42 +199,28 @@ def _images(lines: list[str]) -> list[Diagnostic]:
     return out
 
 
-def _placeholder_urls(lines: list[str]) -> list[Diagnostic]:
-    out = []
-    for i, line in enumerate(lines):
-        decoded = decode(line)
-        content = _content(decoded)
-        definition = _DEFINITION_RE.match(content)
-        m = next((r for pattern in _PLACEHOLDER_URL_RES if (r := pattern.search(decoded))), None)
-        if m or (definition and "{{" in definition.group(2)):
-            out.append(_problem(i + 1, m.start() + 1 if m else 1, PLACEHOLDER_URL))
-        elif _LINK_OPEN_AT_END_RE.search(decoded):
-            out.append(_problem(i + 1, 1, "a link must have its URL on the same line"))
-    return out
-
-
-def _fenced(lines: list[str], inside: set[int]) -> list[Diagnostic]:
-    out = []
-    for i in sorted(inside):
-        decoded = decode(lines[i])
-        for pattern, message in _FENCED_RULES:
-            m = pattern.search(decoded)
-            if m:
-                out.append(_problem(i + 1, m.start() + 1, message))
-                break
-    return out
+def _placeholder_urls(i: int, line: str, decoded: str) -> list[Diagnostic]:
+    definition = _DEFINITION_RE.match(_content(decoded))
+    m = next((r for pattern in _URL_SPANS for r in pattern.finditer(decoded) if "{{" in r.group()),
+             None) or _PLACEHOLDER_EMAIL_RE.search(decoded)
+    if m or (definition and "{{" in definition.group(2)):
+        return [_problem(i + 1, m.start() + 1 if m else 1, PLACEHOLDER_URL)]
+    if _LINK_OPEN_AT_END_RE.search(decoded):
+        return [_problem(i + 1, 1, "a link must have its URL on the same line")]
+    return []
 
 
 def content_problems(text: str) -> list[Diagnostic]:
     """Everything live in a markdown text (a draft, or a note it renders)."""
     lines = text.split("\n")
-    out, flagged = _html_rules(lines)
-    fence_problems, inside = _fences(lines)
-    out += fence_problems
-    out += _raw_html(lines, inside, flagged)
-    out += _images(lines)
-    out += _fenced(lines, inside)
-    out += _placeholder_urls(lines)
+    out: list[Diagnostic] = []
+    for i, line in enumerate(lines):
+        decoded = decode(line)
+        out += _line_rules(i, line, decoded)
+        out += _placeholder_urls(i, line, decoded)
+    remote, definition_problems = _definitions(lines)
+    out += definition_problems
+    out += _images(lines, remote)
     return out
 
 
@@ -279,8 +273,9 @@ def prompt_value_problems(template: Template, lines: list[str]) -> list[Diagnost
 
 def structure_problems(draft: str) -> list[Diagnostic]:
     """Frontmatter other readers could see differently from C1's parser:
-    duplicate keys (last one wins in PyYAML, first or error elsewhere) and a
-    second ``---`` block right after the first."""
+    duplicate keys (last one wins in PyYAML, first or error elsewhere),
+    ``<<`` merge keys (applied by PyYAML, not by every reader) and a second
+    ``---`` block right after the first."""
     parsed = parse_note(draft)
     if not parsed.has_frontmatter:
         return []
@@ -297,9 +292,12 @@ def structure_problems(draft: str) -> list[Diagnostic]:
             seen: set[str] = set()
             for key, value in node.value:
                 if isinstance(key, yaml.ScalarNode):
-                    if key.value in seen:
-                        out.append(_problem(fm_line + key.start_mark.line,
-                                            key.start_mark.column + 1,
+                    mark = key.start_mark
+                    if key.value == "<<" or key.tag == "tag:yaml.org,2002:merge":
+                        out.append(_problem(fm_line + mark.line, mark.column + 1,
+                                            "YAML merge keys (<<) are not allowed", "yaml"))
+                    elif key.value in seen:
+                        out.append(_problem(fm_line + mark.line, mark.column + 1,
                                             f"duplicate key `{key.value}`", "yaml"))
                     seen.add(key.value)
                 stack.append(value)
@@ -313,9 +311,12 @@ def structure_problems(draft: str) -> list[Diagnostic]:
 
 
 def urls(text: str) -> set[str]:
-    decoded = decode(text)
-    return {*(m.group() for m in _URL_RE.finditer(decoded)),
-            *(m.group() for m in _AUTOLINK_RE.finditer(decoded))}
+    out: set[str] = set()
+    for line in text.split("\n"):
+        decoded = decode(line)
+        out.update(m.group() for m in _URL_RE.finditer(decoded))
+        out.update(m.group() for m in _URI_AUTOLINK_RE.finditer(decoded))
+    return out
 
 
 def dynamic_url_problems(text: str, static: Iterable[str]) -> list[Diagnostic]:
@@ -325,7 +326,7 @@ def dynamic_url_problems(text: str, static: Iterable[str]) -> list[Diagnostic]:
     out = []
     for i, line in enumerate(text.split("\n")):
         decoded = decode(line)
-        for m in (*_URL_RE.finditer(decoded), *_AUTOLINK_RE.finditer(decoded)):
+        for m in (*_URL_RE.finditer(decoded), *_URI_AUTOLINK_RE.finditer(decoded)):
             if m.group() not in known:
                 out.append(_problem(i + 1, m.start() + 1, PLACEHOLDER_URL))
                 break

