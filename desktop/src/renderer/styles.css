@@ -327,7 +327,7 @@ body[data-theme='light'] {
 .gb-prose .gb-callout {
   --callout-accent: var(--pill-water-fg);
   border-left: 3px solid var(--callout-accent);
-  background: var(--vellum);
+  background: var(--bg-vellum);
   border-radius: 0 6px 6px 0;
   padding: 6px 12px 2px;
   margin: 0 0 1em;
@@ -411,7 +411,7 @@ body[data-theme='light'] {
   border-radius: 6px;
   padding: 8px 12px;
   margin: 0 0 1em;
-  background: var(--vellum);
+  background: var(--bg-vellum);
 }
 .gb-toc-title {
   font-family: var(--font-mono, monospace);
@@ -437,7 +437,7 @@ body[data-theme='light'] {
   border: 1px solid var(--hairline);
   border-radius: 6px;
   margin: 0 0 1em;
-  background: var(--vellum);
+  background: var(--bg-vellum);
 }
 .gb-mermaid-bar {
   display: flex;
