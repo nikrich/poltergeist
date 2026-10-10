@@ -7,6 +7,21 @@ import { useNavigation, type NavigationScope } from '../stores/navigation';
 import { useNoteView } from '../stores/note-view';
 import { RESTORE_BLOCKED } from '../lib/use-guarded-save';
 
+// Pass-through wrapper that records every onSave the editor is rendered with,
+// so a test can call a replaced instance's handler after a remount.
+const editorSaves = vi.hoisted(() => [] as Array<(body: string) => void>);
+vi.mock('../components/RichMarkdownEditor', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../components/RichMarkdownEditor')>();
+  const { createElement } = await import('react');
+  return {
+    ...mod,
+    RichMarkdownEditor: (props: Parameters<typeof mod.RichMarkdownEditor>[0]) => {
+      editorSaves.push(props.onSave);
+      return createElement(mod.RichMarkdownEditor, props);
+    },
+  };
+});
+
 const E1 = 'aaaaaaaaaaaaaaaa';
 const E2 = 'cccccccccccccccc';
 
@@ -169,6 +184,25 @@ describe('GuardedNoteEditor', () => {
     });
     // Nothing based on the pre-restore text may be sent on the restored etag.
     expect(send.mock.calls.filter(([, ifMatch]) => ifMatch === E2)).toEqual([]);
+  });
+
+  it("a replaced editor instance's save after a restore sends nothing", async () => {
+    // The window liveNonce covers: the old instance's debounce fires after
+    // runExclusive released but before React committed the remount.
+    const send = vi.fn().mockResolvedValue({ etag: 'eeeeeeeeeeeeeeee' });
+    const guardRef = { current: null } as React.MutableRefObject<GuardHandle | null>;
+    const getEditor = setup(send, vi.fn(), guardRef);
+    await waitFor(() => expect(getEditor()).toBeDefined());
+    const staleSave = editorSaves[editorSaves.length - 1]!;
+    await act(async () => {
+      await guardRef.current!.restore(async () => ({ body: 'restored text', etag: E2 }));
+    });
+    await screen.findByText('restored text');
+    await act(async () => {
+      staleSave('pre-restore text');
+      await new Promise((r) => setTimeout(r, 60));
+    });
+    expect(send).not.toHaveBeenCalled();
   });
 
   it('restore is refused while the conflict banner is up', async () => {
