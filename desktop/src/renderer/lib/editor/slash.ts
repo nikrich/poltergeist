@@ -91,6 +91,7 @@ export const SLASH_ITEMS: SlashItem[] = [
   {
     key: 'template',
     title: 'Template',
+    blockOnly: true, // inserts the template's parsed markdown, which can hold headings and lists
     run: (e, r) => {
       e.chain().focus().deleteRange(r).run();
       // EditorEvents is a closed interface; gb:slash:template is a custom event

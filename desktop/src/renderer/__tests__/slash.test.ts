@@ -77,7 +77,7 @@ describe('A1 slash items', () => {
 });
 
 describe('slash items inside a table', () => {
-  const BLOCK_ONLY = ['info', 'note', 'tip', 'warning', 'expand', 'toc', 'diagram', 'divider', 'table'];
+  const BLOCK_ONLY = ['info', 'note', 'tip', 'warning', 'expand', 'toc', 'diagram', 'divider', 'table', 'template'];
 
   it('hides block-only items while the cursor is in a table cell', () => {
     const editor = makeEditor('| a | b |\n| --- | --- |\n| alpha | 1 |');
@@ -89,6 +89,8 @@ describe('slash items inside a table', () => {
     }
     expect(slashItemsFor(editor, 'panel')).toEqual([]);
     expect(slashItemsFor(editor, 'stat').map((i) => i.key)).toEqual(['status']);
+    // Templates insert parsed block markdown (headings, lists) a GFM cell cannot hold.
+    expect(slashItemsFor(editor, 'templ')).toEqual([]);
   });
 
   it('lists every item outside a table', () => {
