@@ -5,6 +5,7 @@ import type { Editor } from '@tiptap/core';
 import { JotsScreen } from '../screens/jots';
 import { Sidebar } from '../components/Sidebar';
 import { useNavigation } from '../stores/navigation';
+import { useGraphView } from '../stores/graph-view';
 import { toast } from '../stores/toast';
 import { useSettings } from '../stores/settings';
 import { useFocusSurfaces } from '../lib/focus-mode';
@@ -416,6 +417,22 @@ describe('JotsScreen', () => {
     await waitFor(() =>
       expect(useNoteView.getState().path).toBe('20-contexts/work/meetings/2026-10-09-planning.md'),
     );
+  });
+
+  it('"show in graph" centres the vault graph on the selected jot', async () => {
+    apiRequest.mockImplementation(withConnectors(async (_m, path) => {
+      if (path.includes('source=manual')) return { ok: true, status: 200, data: page };
+      return { ok: true, status: 200, data: detail };
+    }));
+    useGraphView.getState().reset();
+    render(withQuery(<JotsScreen />));
+    await waitFor(() => expect(screen.getByText(/full body here/)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /show in graph/ }));
+    expect(useGraphView.getState()).toMatchObject({
+      tab: 'graph',
+      focus: '20-contexts/work/notes/manual-20260514T093015-a.md',
+    });
+    expect(useNavigation.getState().active).toBe('vault');
   });
 });
 

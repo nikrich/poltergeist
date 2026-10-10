@@ -5,6 +5,7 @@ import { get } from '../lib/api/client';
 import { useNote, useUpdateNoteByPath } from '../lib/api/hooks';
 import type { Note } from '../../shared/api-types';
 import { useNoteView } from '../stores/note-view';
+import { useGraphView } from '../stores/graph-view';
 import { useSettings } from '../stores/settings';
 import { toast } from '../stores/toast';
 import { Lucide } from './Lucide';
@@ -13,7 +14,7 @@ import { Pill } from './Pill';
 import { GuardedNoteEditor, confirmLeave, type GuardHandle } from './GuardedNoteEditor';
 import { SkeletonRows } from './SkeletonRows';
 import { PanelError } from './PanelError';
-import { notePathFromTarget } from '../lib/editor/link-suggest';
+import { openWikilink } from '../lib/open-wikilink';
 import { BacklinksPanel } from './BacklinksPanel';
 import { NoteHistoryButton } from './NoteHistory';
 import { FocusBar } from './FocusBar';
@@ -41,6 +42,7 @@ export function NoteView({ onEditorReady }: Props = {}) {
   const note = useNote(path);
   const vaultPath = useSettings((s) => s.vaultPath);
   const updateNote = useUpdateNoteByPath();
+  const showInGraph = useGraphView((s) => s.showInGraph);
 
   useEffect(() => {
     if (path === null) return;
@@ -87,6 +89,12 @@ export function NoteView({ onEditorReady }: Props = {}) {
     if (!result.ok) toast.error(result.error);
   };
 
+  const openInGraph = () => {
+    if (!path || !confirmLeave(guardRef)) return;
+    closeView();
+    showInGraph(path);
+  };
+
   // Closing the dialog mid-debounce cancels the pending save (editor unmount
   // clears its timer) — deliberate: a flush-on-close could write a half-edited
   // doc. Edits within the last ~1s of closing are lost.
@@ -130,6 +138,14 @@ export function NoteView({ onEditorReady }: Props = {}) {
               onClick={() => void setFocusMode(true)}
               ariaLabel={`focus mode (${shortcutLabel('focus')})`}
             />
+            <Btn
+              variant="ghost"
+              size="sm"
+              icon={<Lucide name="network" size={13} />}
+              onClick={openInGraph}
+            >
+              show in graph
+            </Btn>
             <Btn
               variant="ghost"
               size="sm"
@@ -180,7 +196,7 @@ export function NoteView({ onEditorReady }: Props = {}) {
                     focus: focusActive,
                     jotId: path,
                     onEditorReady,
-                    onWikilinkClick: (target) => openView(notePathFromTarget(target)),
+                    onWikilinkClick: (target) => openWikilink(target, openView),
                   }}
                 />
               </div>

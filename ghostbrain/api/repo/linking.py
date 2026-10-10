@@ -7,7 +7,7 @@ from pathlib import PurePosixPath
 from typing import Iterable, Iterator, TypeVar
 
 from ghostbrain.vault_index.links import PEOPLE_DIR, LinkIndex, get_link_index
-from ghostbrain.vault_index.parse import NoteEntry
+from ghostbrain.vault_index.parse import NoteEntry, normalize_target
 
 T = TypeVar("T")
 
@@ -146,3 +146,18 @@ def backlinks(path: str, limit: int = 100, *, index: LinkIndex | None = None) ->
         }))
     rows.sort(key=lambda r: (-r[0], r[1]["path"]))
     return {"items": [row for _, row in rows[:limit]], "indexing": False}
+
+
+def resolve_link(raw: str, *, index: LinkIndex | None = None) -> dict:
+    """A wikilink target as written -> the note a click should open. Bare names
+    resolve case-insensitively when unique. ``exists: False`` is an unwritten
+    (or ambiguous) page; ``indexing: True`` means the index is still cold."""
+    target = normalize_target(raw)
+    if target is None:
+        raise InvalidLinkPath("not a note link")
+    target = normalize_note_path(target)
+    index = index or get_link_index()
+    if not index.ensure_fresh(wait=0.1):
+        return {"path": target, "exists": False, "indexing": True}
+    path = index.resolve(target)
+    return {"path": path, "exists": index.exists(path), "indexing": False}

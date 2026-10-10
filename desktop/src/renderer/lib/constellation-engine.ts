@@ -2,6 +2,19 @@ import type { VaultGraph, VaultGraphNode } from '../../shared/api-types';
 
 export type Camera = { x: number; y: number; scale: number };
 
+/** Node radius from degree (link count). The constellation's size formula,
+ * shared with the Graph tab (spec: "radius from nodeRadius(degree)"). */
+export function nodeRadius(degree: number): number {
+  return 2.7 + Math.min(degree, 14) * 0.62;
+}
+
+export interface ZoomBounds {
+  min: number;
+  max: number;
+}
+
+export const CONSTELLATION_ZOOM: ZoomBounds = { min: 0.7, max: 1.5 };
+
 export function toScreen(cam: Camera, w: number, h: number, wx: number, wy: number): [number, number] {
   return [(wx - cam.x) * cam.scale + w / 2, (wy - cam.y) * cam.scale + h / 2];
 }
@@ -10,7 +23,12 @@ export function toWorld(cam: Camera, w: number, h: number, sx: number, sy: numbe
   return [(sx - w / 2) / cam.scale + cam.x, (sy - h / 2) / cam.scale + cam.y];
 }
 
-export function fitCamera(nodes: VaultGraphNode[], w: number, h: number): Camera {
+export function fitCamera(
+  nodes: ReadonlyArray<{ x: number; y: number }>,
+  w: number,
+  h: number,
+  bounds: ZoomBounds = CONSTELLATION_ZOOM,
+): Camera {
   if (nodes.length === 0) return { x: 0, y: 0, scale: 1 };
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const n of nodes) {
@@ -18,7 +36,7 @@ export function fitCamera(nodes: VaultGraphNode[], w: number, h: number): Camera
     maxX = Math.max(maxX, n.x); maxY = Math.max(maxY, n.y);
   }
   const pad = 70;
-  const scale = Math.max(0.7, Math.min(1.5,
+  const scale = Math.max(bounds.min, Math.min(bounds.max,
     Math.min(w / (maxX - minX + pad * 2), h / (maxY - minY + pad * 2)) * 1.04));
   return { x: (minX + maxX) / 2, y: (minY + maxY) / 2, scale };
 }
@@ -30,7 +48,7 @@ export function hitTest(cam: Camera, w: number, h: number, nodes: VaultGraphNode
     if (!n) continue;
     const [x, y] = toScreen(cam, w, h, n.x, n.y);
     const d = (x - sx) ** 2 + (y - sy) ** 2;
-    const r = Math.max(9, (2.7 + Math.min(n.degree, 14) * 0.62) * cam.scale + 7);
+    const r = Math.max(9, nodeRadius(n.degree) * cam.scale + 7);
     if (d < r * r && d < bestD) { bestD = d; best = i; }
   }
   return best;

@@ -17,8 +17,10 @@ _LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)  # C loader: ~10x faster
 _OPEN_RE = re.compile(r"\A---[ \t]*\r?\n")
 _CLOSE_RE = re.compile(r"^---[ \t]*\r?$", re.MULTILINE)
 
-# [[target]], [[target|alias]], [[target#heading|alias]] — but not ![[embeds]].
-WIKILINK_RE = re.compile(r"(?<!!)\[\[([^\[\]|#\n]*)(?:#[^\[\]|\n]*)?(?:\|[^\[\]\n]*)?\]\]")
+# [[target]], [[target|alias]], [[target#heading|alias]], and the [[…]] inside
+# an ![[embed]]: an embedded note is a reference too. Attachment embeds
+# (![[x.png]]) drop out in normalize_target.
+WIKILINK_RE = re.compile(r"\[\[([^\[\]|#\n]*)(?:#[^\[\]|\n]*)?(?:\|[^\[\]\n]*)?\]\]")
 # Same pattern as notes_manual._TAG_RE (a test asserts they stay identical).
 # Duplicated so this module doesn't import notes_manual's LLM/worker deps.
 HASHTAG_RE = re.compile(r"(?:^|\s)#([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)", re.IGNORECASE)
