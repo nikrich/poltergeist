@@ -18,7 +18,7 @@ import re
 import unicodedata
 
 from ghostbrain.changes import log as _changes
-from ghostbrain.vault_write.writer import ProposedChange
+from ghostbrain.vault_write.writer import ProposedChange, _rel, resolve_safe
 
 log = logging.getLogger("ghostbrain.vault_write.risk")
 
@@ -31,6 +31,9 @@ ROUTINE_MOVERS = frozenset({"worker:jot-router"})
 REASON_META = "changes app settings (90-meta)"
 REASON_TEMPLATE = "edits a template"
 REASON_STABLE = "changes your stable profile"
+# A ``..`` segment, or a path that does not resolve to a writable file inside
+# the vault: where it lands can't be judged by its name, so it waits.
+REASON_PATH = "uses an unusual path (..)"
 REASON_SCRIPT = "adds a <script> tag"
 REASON_HANDLER = "adds an HTML event handler (on…=)"
 REASON_JS_URL = "adds a javascript: link"
@@ -75,12 +78,31 @@ def _fold(name: str) -> str:
     return unicodedata.normalize("NFKC", name).casefold()
 
 
+def _segments(path: str) -> list[str]:
+    return _fold(path).replace("\\", "/").split("/")
+
+
 def _norm(path: str) -> str:
     """The path as the filesystem would match it: folded, ``/``-separated,
     no empty or ``.`` segments, and no trailing dots or spaces on a segment
     (Windows ignores them: ``90-meta./x.md`` is ``90-meta/x.md``)."""
-    parts = (seg.rstrip(". ") for seg in _fold(path).replace("\\", "/").split("/"))
+    parts = (seg.rstrip(". ") for seg in _segments(path))
     return "/".join(seg for seg in parts if seg)
+
+
+def _traverses(path: str) -> bool:
+    """A ``..`` segment, however spelt (``..``, ``.. ``, fullwidth dots, ``\\``).
+    ``_norm`` would drop it, so it is caught here and never resolved by name."""
+    return any(seg.count(".") >= 2 and not seg.rstrip(". ") for seg in _segments(path))
+
+
+def _canonical(path: str) -> str | None:
+    """Where the write really lands, vault-relative (symlinks followed), or
+    ``None`` when that can't be placed in the vault (fail closed)."""
+    try:
+        return _rel(resolve_safe(path))
+    except Exception:  # noqa: BLE001 — InvalidPath, outside the vault, OSError
+        return None
 
 
 _META_FOLDED = _fold(META_DIR)
@@ -88,8 +110,24 @@ _TEMPLATES_FOLDED = _fold(TEMPLATES_DIR)
 _STABLE_FOLDED = frozenset(_fold(p) for p in STABLE_PROFILE_FILES)
 
 
-def _paths(change: ProposedChange) -> list[str]:
-    return [_norm(p) for p in (change.rel_path, change.dest_path) if p]
+def _paths(change: ProposedChange) -> tuple[list[str], bool]:
+    """Every spelling of the change's paths to judge, folded: as the caller
+    asked for them and where they really land. A hold on either counts. The
+    flag says some path has ``..`` or could not be placed in the vault."""
+    raw = [p for p in (change.rel_path, change.dest_path, *change.requested) if p]
+    out: list[str] = []
+    odd = False
+    for path in raw:
+        if _traverses(path):
+            odd = True
+            continue
+        out.append(_norm(path))
+        canonical = _canonical(path)
+        if canonical is None:
+            odd = True
+        else:
+            out.append(_norm(canonical))
+    return out, odd
 
 
 def _add(reasons: list[str], reason: str) -> None:
@@ -97,15 +135,17 @@ def _add(reasons: list[str], reason: str) -> None:
         reasons.append(reason)
 
 
-def _path_reasons(change: ProposedChange) -> list[str]:
+def _path_reasons(paths: list[str], odd: bool) -> list[str]:
     reasons: list[str] = []
-    for path in _paths(change):
+    for path in paths:
         if path.startswith(_TEMPLATES_FOLDED):
             _add(reasons, REASON_TEMPLATE)
         elif path.startswith(_META_FOLDED):
             _add(reasons, REASON_META)
         elif path in _STABLE_FOLDED:
             _add(reasons, REASON_STABLE)
+    if odd and not reasons:  # already held by name: one reason is enough
+        reasons.append(REASON_PATH)
     return reasons
 
 
@@ -140,10 +180,10 @@ def _js_url(text: str) -> bool:
     return _JS_URL_RE.search(_URL_IGNORED_RE.sub("", html.unescape(text))) is not None
 
 
-def _content_reasons(change: ProposedChange) -> list[str]:
+def _content_reasons(change: ProposedChange, paths: list[str]) -> list[str]:
     if change.after is None:
         return []
-    in_template = any(p.startswith(_TEMPLATES_FOLDED) for p in _paths(change))
+    in_template = any(p.startswith(_TEMPLATES_FOLDED) for p in paths)
     new = _lines(change.after)
     added = _added_indices(change.before, change.after)
     added_set = set(added)
@@ -201,8 +241,12 @@ def _ownership_reasons(change: ProposedChange) -> list[str]:
 
 def evaluate(change: ProposedChange) -> list[str]:
     """Spec B §3. Reasons in rule order, each once. Empty: apply now."""
+    paths, odd = _paths(change)
     reasons: list[str] = []
-    for found in (_path_reasons(change), _content_reasons(change), _ownership_reasons(change)):
+    found_by_rule = (
+        _path_reasons(paths, odd), _content_reasons(change, paths), _ownership_reasons(change),
+    )
+    for found in found_by_rule:
         for reason in found:
             _add(reasons, reason)
     return reasons

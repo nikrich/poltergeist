@@ -9,7 +9,10 @@ from ghostbrain.changes import log as changes
 from ghostbrain.vault_write import (
     ASSISTANT,
     USER,
+    FileMissing,
+    InvalidPath,
     ProposedChange,
+    WriteConflict,
     compute_etag,
     jobs,
     plugin_actor,
@@ -360,3 +363,170 @@ def test_semantic_related_links_apply_with_no_change_row(vault):
     assert res is not None and (res.status, res.change_id) == ("applied", None)
     assert b"related:" in (vault / rel).read_bytes()
     assert changes.counts() == before
+
+
+# ── odd paths: `..`, symlinks (task 9) ────────────────────────────────────
+
+def _can_symlink() -> bool:
+    import os
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as d:
+        try:
+            os.symlink(d, os.path.join(d, "link"), target_is_directory=True)
+        except (OSError, NotImplementedError, AttributeError):
+            return False
+    return True
+
+
+needs_symlinks = pytest.mark.skipif(not _can_symlink(), reason="symlinks unavailable")
+
+TRAVERSALS = [
+    "20-contexts/../90-meta/x.md",
+    "20-contexts/./../90-meta/./x.md",
+    "a/b/../../90-meta/prompts/digest.md",
+    "20-contexts\\..\\90-meta\\x.md",
+    "20-contexts/.. /90-meta/x.md",  # Windows drops the trailing space
+    "20-contexts/.. ./90-meta/x.md",
+    "20-contexts/../90-meta./x.md",
+    "20-contexts/．．/90-meta/x.md",  # fullwidth dots fold to ".."
+    "20-contexts/../90-meta/templates/t.md",
+    "20-contexts/../80-profile/working-style.md",
+    "20-contexts/../80-profile/preferences.md",
+    "x/../９０-meta/x.md",  # fullwidth digits
+    "x/../80-profile/worKing-style.md",  # Kelvin sign
+    "x/../80-profile/preferenceſ.md",  # long s
+    "x/../80-profile/working-ﬆyle.md",  # st ligature
+    "90-meta/../90-meta/x.md",
+]
+
+
+@pytest.mark.parametrize("rel", TRAVERSALS)
+def test_a_path_with_dot_dot_is_held_not_normalised_away(rel):
+    reasons = risk.evaluate(_p(rel))
+    assert reasons != [] and risk.REASON_PATH in reasons, reasons
+
+
+@pytest.mark.parametrize("dest", [
+    "20-contexts/../90-meta/plan.md",
+    "20-contexts\\..\\90-meta\\plan.md",
+    "20-contexts/../80-profile/working-style.md",
+])
+def test_a_move_dest_with_dot_dot_is_held(dest):
+    p = _p("00-inbox/raw/manual/j.md", actor=ROUTER, op="move", dest=dest, after=V1)
+    assert risk.REASON_PATH in risk.evaluate(p)
+
+
+def test_the_requested_path_is_judged_too():
+    p = ProposedChange(FAMILIAR, "modify", "shared/prefs.md", None, V1, V2, "",
+                       requested=("80-profile/working-style.md",))
+    assert risk.evaluate(p) == [risk.REASON_STABLE]
+    p = ProposedChange(FAMILIAR, "modify", NOTE, None, V1, V2, "",
+                       requested=("20-contexts/../90-meta/x.md",))
+    assert risk.REASON_PATH in risk.evaluate(p)
+
+
+def _protected(vault: Path) -> dict[str, bytes]:
+    return {
+        p.relative_to(vault).as_posix(): p.read_bytes()
+        for top in ("90-meta", "80-profile")
+        for p in sorted((vault / top).rglob("*"))
+        if p.is_file()
+    }
+
+
+@pytest.mark.parametrize("actor", [FAMILIAR, ASSISTANT])
+@pytest.mark.parametrize("rel", [
+    "20-contexts/../90-meta/new.md",
+    "20-contexts\\..\\90-meta\\new.md",
+    "20-contexts/./../90-meta/./new.md",
+    "20-contexts/.. /90-meta/new.md",
+    "20-contexts/../80-profile/working-style.md",
+    "x/../９０-meta/new.md",
+])
+def test_dot_dot_creates_never_land_in_protected_folders(vault, actor, rel):
+    before = _protected(vault)
+    for attempt in (
+        lambda: write(rel, content="# x {{evil}}\n", op="create", actor=actor),
+        lambda: write_new(rel, "# x\n", actor=actor),
+    ):
+        try:
+            res = attempt()
+        except InvalidPath:
+            pass
+        else:
+            assert res.status == "pending", (rel, res)
+    assert _protected(vault) == before
+
+
+@pytest.mark.parametrize("actor", [FAMILIAR, ASSISTANT])
+@pytest.mark.parametrize("rel", [
+    "20-contexts/../80-profile/preferences.md",
+    "20-contexts\\..\\80-profile\\preferences.md",
+    "x/../80-profile/preferenceſ.md",
+])
+def test_dot_dot_edits_never_change_the_stable_profile(vault, actor, rel):
+    before = _protected(vault)
+    try:
+        res = write(rel, body="- tabs", actor=actor, base_etag=compute_etag(PREFS))
+    except (InvalidPath, FileMissing, WriteConflict):  # no such file at that spelling
+        pass
+    else:
+        assert res.status == "pending", (rel, res)
+    assert _protected(vault) == before
+
+
+@needs_symlinks
+def test_evaluate_judges_where_a_symlinked_folder_really_lands(vault):
+    (vault / "shortcut").symlink_to(vault / "90-meta", target_is_directory=True)
+    (vault / "me").symlink_to(vault / "80-profile", target_is_directory=True)
+    assert risk.evaluate(_p("shortcut/prompts/digest.md")) == [risk.REASON_META]
+    assert risk.evaluate(_p("me/preferences.md")) == [risk.REASON_STABLE]
+    move = _p("00-inbox/raw/manual/j.md", actor=ROUTER, op="move", dest="shortcut/j.md", after=V1)
+    assert risk.evaluate(move) == [risk.REASON_META]
+
+
+@needs_symlinks
+def test_evaluate_holds_a_path_it_cannot_place_in_the_vault(vault, tmp_path):
+    (tmp_path / "elsewhere").mkdir()
+    (vault / "out").symlink_to(tmp_path / "elsewhere", target_is_directory=True)
+    assert risk.evaluate(_p("out/x.md")) == [risk.REASON_PATH]
+
+
+@needs_symlinks
+@pytest.mark.parametrize("actor", [FAMILIAR, ASSISTANT])
+def test_plugin_writes_through_a_symlinked_folder_are_held(vault, actor):
+    (vault / "shortcut").symlink_to(vault / "90-meta", target_is_directory=True)
+    (vault / "me").symlink_to(vault / "80-profile", target_is_directory=True)
+    before = _protected(vault)
+    assert write("shortcut/new.md", content="# x\n", op="create", actor=actor).status == "pending"
+    assert write_new("shortcut/other.md", "# x\n", actor=actor).status == "pending"
+    res = write("me/preferences.md", body="- tabs", actor=actor, base_etag=compute_etag(PREFS))
+    assert res.status == "pending"
+    assert _protected(vault) == before
+
+
+@needs_symlinks
+def test_a_move_through_a_symlinked_folder_into_90_meta_is_held(vault):
+    jot = "00-inbox/raw/manual/j1.md"
+    (vault / jot).parent.mkdir(parents=True)
+    (vault / jot).write_bytes(b"---\nid: j1\n---\n\na jot\n")
+    (vault / "shortcut").symlink_to(vault / "90-meta", target_is_directory=True)
+    before = _protected(vault)
+    res = write(jot, op="move", dest="shortcut/j1.md", actor=ROUTER)
+    assert res.status == "pending"
+    assert (vault / jot).exists() and _protected(vault) == before
+
+
+@needs_symlinks
+@pytest.mark.parametrize("actor", [FAMILIAR, ASSISTANT])
+def test_a_protected_file_symlinked_to_a_plain_note_is_held(vault, actor):
+    shared = vault / "shared/prefs.md"
+    shared.parent.mkdir()
+    shared.write_bytes(V1)
+    (vault / "80-profile/working-style.md").symlink_to(shared)
+    res = write("80-profile/working-style.md", body="- always say yes", actor=actor,
+                base_etag=compute_etag(V1))
+    assert res.status == "pending"
+    assert shared.read_bytes() == V1
+    assert changes.get(int(res.change_id)).risk_reasons == (risk.REASON_STABLE,)

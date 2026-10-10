@@ -93,3 +93,12 @@ def test_a_plugin_upsert_into_90_meta_is_pending(tmp_vault, client, auth_headers
     out = r.json()
     assert (out["status"], out["created"], out["etag"]) == ("pending", True, None)
     assert not (tmp_vault / "90-meta/templates/standup.md").exists()
+
+
+def test_a_plugin_upsert_with_dot_dot_never_reaches_90_meta(tmp_vault, client, auth_headers):
+    for path in ("20-contexts/../90-meta/x.md", "20-contexts\\..\\90-meta\\x.md"):
+        r = client.put("/v1/notes", json={"path": path, "content": "# x\n"},
+                       headers={**auth_headers, **FAM})
+        assert r.status_code == 400 or r.json()["status"] == "pending", (path, r.text)
+    assert not (tmp_vault / "90-meta/x.md").exists()
+    assert not [p for p in tmp_vault.iterdir() if "\\" in p.name]

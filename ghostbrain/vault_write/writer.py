@@ -266,6 +266,9 @@ class ProposedChange:
     before: bytes | None
     after: bytes | None
     reason: str
+    # The caller's own spelling of the paths, before symlinks are resolved: a
+    # protected name that is a symlink to a plain note is still judged by it.
+    requested: tuple[str, ...] = ()
 
 
 HoldPolicy = Callable[[ProposedChange], list[str]]
@@ -491,7 +494,10 @@ def _write(
                 raise WriteConflict(compute_etag(existing))
         if op == "modify" and data == current:
             return WriteResult("applied", None, etag_now, src_rel, updated)
-        proposed = ProposedChange(actor, op, src_rel, dst_rel, current, data, reason)
+        proposed = ProposedChange(
+            actor, op, src_rel, dst_rel, current, data, reason,
+            requested=(rel_path, *([dest] if dest is not None else [])),
+        )
         recorded = records_change(actor, op)
         if recorded and approved_change is None:
             reasons = _hold_reasons(proposed)
