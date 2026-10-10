@@ -34,6 +34,8 @@ jobs:
             tests/test_changes_log.py \
             tests/test_vault_write_changes.py \
             tests/test_changes_revert.py \
+            tests/test_changes_maintenance.py \
+            tests/test_scheduler_history_prune_job.py \
             tests/test_doctor_core.py \
             tests/test_doctor_app_checks.py \
             tests/test_doctor_recorder_checks.py \

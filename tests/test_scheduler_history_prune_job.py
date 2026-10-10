@@ -19,7 +19,7 @@ def test_history_prune_job_reports_counts():
     assert result.connector == "history-prune"
     assert result.ok is True
     assert result.details == {"notes": 0, "kept": 0, "dropped": 0, "blobsDeleted": 0,
-                              "gcSkipped": False}
+                              "gcSkipped": False, "changesPruned": 0}
 
 
 def test_history_prune_job_never_raises(monkeypatch):
