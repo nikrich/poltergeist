@@ -170,13 +170,19 @@ def _content_bytes(path: Path, content: str, *, verbatim: bool = False) -> bytes
 
 
 def _edit_bytes(
-    current: bytes, *, body: str | None, fields: Mapping[str, Any] | None, suffix: str
+    current: bytes,
+    *,
+    body: str | None,
+    fields: Mapping[str, Any] | None,
+    suffix: str,
+    bump_updated: bool = True,
 ) -> tuple[bytes, str | None]:
     parsed = parse_note(_decode(current))
     edits = dict(fields or {})
     updated = edits["updated"] if isinstance(edits.get("updated"), str) else None
     if (
-        "updated" not in edits
+        bump_updated
+        and "updated" not in edits
         and parsed.has_frontmatter
         and find_key_block(lines_of(parsed.fm_inner), "updated") is not None
     ):
@@ -223,10 +229,12 @@ def write(
     reason: str = "",
     base_etag: str | None = None,
     verbatim: bool = False,
+    bump_updated: bool = True,
 ) -> WriteResult:
     result = _write(
         rel_path, actor=actor, content=content, body=body, fields=fields,
         op=op, dest=dest, reason=reason, base_etag=base_etag, verbatim=verbatim,
+        bump_updated=bump_updated,
     )
     _reindex(result.path, *([rel_path] if dest is not None else []))
     return result
@@ -274,10 +282,17 @@ def set_hold_policy(policy: HoldPolicy | None) -> None:
     _hold_policy = policy or _never_hold
 
 
+# Derived metadata refreshed in bulk (semantic `related:` links, every 15
+# minutes). Listing each would bury the Changes screen, the same reason
+# connector ingest is unlisted (decision 1); page history still keeps them.
+UNLISTED_ACTORS: frozenset[str] = frozenset({"worker:semantic-refresh"})
+
+
 def records_change(actor: Actor, op: Op) -> bool:
     """Spec B §1 step 7: user (and restore) writes get no row. A worker
-    *creating* a note is connector ingest: audit log only (decision 1)."""
-    if actor in (USER, RESTORE):
+    *creating* a note is connector ingest: audit log only (decision 1).
+    Unlisted derived-metadata jobs get page history only (slice B4)."""
+    if actor in (USER, RESTORE) or actor in UNLISTED_ACTORS:
         return False
     return not (actor.startswith("worker:") and op == "create")
 
@@ -388,6 +403,7 @@ def _write(
     reason: str = "",
     base_etag: str | None = None,
     verbatim: bool = False,
+    bump_updated: bool = True,
 ) -> WriteResult:
     actor = parse_actor(actor)
     _check_args(op, content, body, fields, dest)
@@ -420,7 +436,9 @@ def _write(
             elif content is not None:
                 data = _content_bytes(dst or src, content, verbatim=verbatim)
             elif body is not None or fields:
-                data, updated = _edit_bytes(current, body=body, fields=fields, suffix=src.suffix)
+                data, updated = _edit_bytes(
+                    current, body=body, fields=fields, suffix=src.suffix, bump_updated=bump_updated,
+                )
             else:
                 data = current  # plain move
         if dst is not None:

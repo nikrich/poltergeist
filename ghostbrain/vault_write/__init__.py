@@ -30,6 +30,7 @@ from ghostbrain.vault_write.text import (
     splice_body,
 )
 from ghostbrain.vault_write.writer import (
+    UNLISTED_ACTORS,
     WRITABLE_SUFFIXES,
     HoldPolicy,
     NoteSnapshot,
@@ -47,7 +48,7 @@ from ghostbrain.vault_write.writer import (
 )
 
 __all__ = [
-    "ASSISTANT", "DELETE_FIELD", "MCP", "RESTORE", "USER", "WRITABLE_SUFFIXES",
+    "ASSISTANT", "DELETE_FIELD", "MCP", "RESTORE", "USER", "UNLISTED_ACTORS", "WRITABLE_SUFFIXES",
     "Actor", "EtagRequired", "FileMissing", "HistoryUnavailable", "HoldPolicy",
     "InvalidPath", "MalformedNote", "NoteSnapshot", "Op", "ParsedNote", "ProposedChange",
     "VaultWriteError", "WriteConflict", "WriteResult",

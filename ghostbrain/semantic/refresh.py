@@ -6,6 +6,11 @@ Walks ``vault/20-contexts/`` for every ``.md`` note. For each:
 - After all embeddings, compute pairwise cosine similarities and set the
   top-K (excluding the note itself, optionally cross-context) into the
   note's ``related:`` frontmatter.
+
+``related:`` is written through the vault write path as
+``worker:semantic-refresh`` (spec B, slice B4): only that key's lines change,
+``updated:`` is untouched, and the previous version lands in page history. The
+job is unlisted on the Changes screen (bulk derived metadata, like ingest).
 """
 
 from __future__ import annotations
@@ -28,6 +33,8 @@ from ghostbrain.semantic.index import (
     DEFAULT_MODEL_NAME,
 )
 from ghostbrain.semantic.projection import build_layout, load_layout, save_layout
+from ghostbrain.vault_write import HistoryUnavailable, VaultWriteError, worker_actor
+from ghostbrain.vault_write.jobs import update_fields
 
 log = logging.getLogger("ghostbrain.semantic.refresh")
 
@@ -37,6 +44,8 @@ DEFAULT_MIN_SIMILARITY = 0.45
 # longer dominate; we index them so meeting content participates in
 # cross-context linking. Audio files and other non-markdown live elsewhere.
 SKIP_DIR_PARTS: tuple[str, ...] = ()
+
+SEMANTIC_ACTOR = worker_actor("semantic-refresh")
 
 
 def _refresh_layout(index: Index, embedded: int) -> None:
@@ -311,22 +320,33 @@ def _write_related_frontmatter(
         if not related:
             continue
 
-        full_path = vault_path() / rel
-        if not full_path.exists():
-            continue
-        try:
-            note = frontmatter.load(full_path)
-        except Exception:  # noqa: BLE001
-            continue
-
         wikilinks = [_wikilink_for(p) for p, _ in related]
-        if note.metadata.get("related") == wikilinks:
-            continue
-        note.metadata["related"] = wikilinks
-        full_path.write_text(frontmatter.dumps(note), encoding="utf-8")
-        written += 1
+        if _apply_related(rel, wikilinks):
+            written += 1
 
     return written
+
+
+def _apply_related(rel: str, wikilinks: list[str]) -> bool:
+    """Set ``related:`` on one note through the write path (slice B4).
+
+    True only when the note was written. Never raises: a missing, malformed
+    or unwritable note is logged and skipped, so one bad note can't stop a
+    refresh that runs every 15 minutes."""
+    rel_posix = Path(rel).as_posix()
+
+    def compute(meta: dict) -> dict:
+        return {} if meta.get("related") == wikilinks else {"related": wikilinks}
+
+    try:
+        res = update_fields(
+            rel_posix, compute, actor=SEMANTIC_ACTOR, reason="updated related notes",
+            bump_updated=False,
+        )
+    except (VaultWriteError, HistoryUnavailable, OSError) as e:
+        log.warning("could not update related: on %s: %s", rel_posix, e)
+        return False
+    return res is not None and res.status == "applied"
 
 
 def _row_to_path(index: Index, row: int) -> str | None:
