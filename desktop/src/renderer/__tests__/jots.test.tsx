@@ -417,6 +417,8 @@ describe('JotsScreen', () => {
     await waitFor(() =>
       expect(useNoteView.getState().path).toBe('20-contexts/work/meetings/2026-10-09-planning.md'),
     );
+  });
+
   it('"show in graph" centres the vault graph on the selected jot', async () => {
     apiRequest.mockImplementation(withConnectors(async (_m, path) => {
       if (path.includes('source=manual')) return { ok: true, status: 200, data: page };
