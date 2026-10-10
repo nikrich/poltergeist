@@ -49,14 +49,18 @@ MAX_SEGMENT_CHARS = 120
 FILENAME_SLUG_MAX = 80
 # 90-meta is the system area (templates, config); 80-profile feeds CLAUDE.md.
 PROTECTED_TOP_LEVEL = frozenset({"90-meta", "80-profile"})
-_BAD_SEGMENT_CHARS = frozenset('<>:"|?*\\')
+# `~` blocks Windows 8.3 short names (80-PRO~1 → 80-profile, OBSIDI~1 → .obsidian).
+_BAD_SEGMENT_CHARS = frozenset('<>:"|?*\\~\x7f\x85\u2028\u2029')
 _WINDOWS_RESERVED = frozenset(
-    {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+    {"CON", "PRN", "AUX", "NUL",
+     *(f"{dev}{n}" for dev in ("COM", "LPT") for n in (*"123456789", "\u00b9", "\u00b2", "\u00b3"))}
 )
+RESERVED_FILENAME_SUFFIX = "-note"
 _PERCENT_ESCAPE_RE = re.compile(r"%[0-9A-Fa-f]{2}")
 _DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
-# Wikilink / heading / table markup and line breaks, banned in typed names and note paths alike.
-_PERSON_MARKUP_RE = re.compile(r"[\[\]|#\r\n]")
+# Wikilink / heading / table markup, control characters and every Unicode
+# line break (NEL, LS, PS), banned in typed names and note paths alike.
+_PERSON_MARKUP_RE = re.compile("[\\[\\]|#\x00-\x1f\x7f\x85\u2028\u2029]")
 _VARIABLE_TYPES: Mapping[str, str] = {s.name: s.type for s in VARIABLES}
 _FIELD_TYPES: Mapping[tuple[str | None, str], str] = {(s.owner, s.name): s.type for s in FIELDS}
 
@@ -133,13 +137,12 @@ def _humanize(stem: str) -> str:
 
 def _coerce_person(field_id: str, raw: str, env: RenderEnv) -> PersonValue:
     if _PERSON_MARKUP_RE.search(raw):
-        raise AnswerError(field_id, "a person can't contain [ ] | # or line breaks")
+        raise AnswerError(field_id, "a person can't contain [ ] | #, control characters or line breaks")
     if "/" in raw or "\\" in raw or raw.lower().endswith(".md"):
         parts = raw.split("/")
         if (
             "\\" in raw
             or raw.startswith("/")
-            or any(ord(c) < 32 for c in raw)
             or any(p in ("", ".", "..") or p.startswith(".") or ":" in p for p in parts)
         ):
             raise AnswerError(field_id, "a person must be a vault note path or a name")
@@ -213,6 +216,8 @@ def build_scope(
 
     ``types`` are the answers' declared value types (prompt id → value type);
     they let ``evaluate`` check fields of an empty answer against the registry.
+    An empty answer with no declared type is a TypeError, never a silent
+    literal; ``scope_for`` derives the types from the template.
     """
     scope: dict[str, Value] = {
         "date": DateValue(env.now.date()),
@@ -224,30 +229,42 @@ def build_scope(
     }
     declared = {**_VARIABLE_TYPES, **(types or {})}
     for key, value in values.items():
-        if value is EMPTY and key in ("date", "context"):
-            continue  # an unanswered optional date/context prompt keeps the builtin
+        if value is EMPTY:
+            if key not in declared:
+                raise TypeError(f"empty answer `{key}` has no declared type; use scope_for()")
+            if key in ("date", "context"):
+                continue  # an unanswered optional date/context prompt keeps the builtin
+        else:
+            declared[key] = value_type(value)
         scope[key] = value
     return Scope(scope, declared)
 
 
-def evaluate(ph: Placeholder, scope: Mapping[str, Value]) -> Value | None:
+def scope_for(template: Template, answers: Mapping[str, str], env: RenderEnv) -> Scope:
+    """Coerce ``answers`` and build the scope with the template's prompt types."""
+    types = {p.id: PROMPT_VALUE_TYPES[p.type] for p in template.prompts}
+    return build_scope(coerce_answers(template, answers, env), env, types)
+
+
+def evaluate(ph: Placeholder, scope: Scope) -> Value | None:
     """The placeholder's value, or None to render it literally."""
     if ph.path is None or ph.path[0] not in scope:
         return None
     value = scope[ph.path[0]]
-    declared = scope.types.get(ph.path[0]) if isinstance(scope, Scope) else None
+    declared = scope.types.get(ph.path[0])
     for name in ph.path[1:]:
-        if value is EMPTY:
-            # No value to read, but the field must still exist for the declared
-            # type; an unknown field (or an untyped empty) stays literal.
-            declared = _FIELD_TYPES.get((declared, name))
-            if declared is None:
+        if value is not EMPTY:
+            declared = value_type(value)
+            impl = FIELD_IMPLS.get((declared, name))
+            if impl is None:
                 return None
-            continue
-        impl = FIELD_IMPLS.get((value_type(value), name))
-        if impl is None:
+            value = impl(value)
+        # Track the declared type on every step, so a field of an empty value
+        # (anywhere in the chain) is still checked against the registry and an
+        # unknown field stays literal.
+        declared = _FIELD_TYPES.get((declared, name))
+        if declared is None:
             return None
-        value = impl(value)
     for call in ph.filters:
         spec = FILTERS_BY_NAME.get(call.name)
         if spec is None or (spec.arg_required and call.arg is None) or (spec.arg is None and call.arg is not None):
@@ -256,7 +273,7 @@ def evaluate(ph: Placeholder, scope: Mapping[str, Value]) -> Value | None:
     return value
 
 
-def render_string(text: str, scope: Mapping[str, Value], budget: Budget | None = None) -> str:
+def render_string(text: str, scope: Scope, budget: Budget | None = None) -> str:
     budget = budget or Budget(MAX_OUTPUT_CHARS)
     out: list[str] = []
     for seg in tokenize(text):
@@ -299,7 +316,7 @@ def validate_folder(folder: str) -> str:
     return "/".join(parts)
 
 
-def _render_tree(value: Any, scope: Mapping[str, Value], budget: Budget, depth: int, nodes: list[int]) -> Any:
+def _render_tree(value: Any, scope: Scope, budget: Budget, depth: int, nodes: list[int]) -> Any:
     nodes[0] += 1
     if nodes[0] > MAX_TREE_NODES or depth > MAX_TREE_DEPTH:
         raise RenderError("template frontmatter is too large or too deeply nested")
@@ -316,10 +333,15 @@ def _render_tree(value: Any, scope: Mapping[str, Value], budget: Budget, depth: 
     return str(value)
 
 
+def _filename_stem(title: str) -> str:
+    """The title's slug, suffixed when it is a Windows device name (con, nul, com1…)."""
+    stem = slugify(title, FILENAME_SLUG_MAX)
+    return stem + RESERVED_FILENAME_SUFFIX if stem.upper() in _WINDOWS_RESERVED else stem
+
+
 def render(template: Template, answers: Mapping[str, str], env: RenderEnv) -> RenderedNote:
     budget = Budget(MAX_OUTPUT_CHARS)
-    types = {p.id: PROMPT_VALUE_TYPES[p.type] for p in template.prompts}
-    scope = build_scope(coerce_answers(template, answers, env), env, types)
+    scope = scope_for(template, answers, env)
     raw_title = render_string(template.file.name, scope, budget)
     title = " ".join(raw_title.split())[:MAX_TITLE_CHARS] or template.name
     folder = validate_folder(render_string(template.file.folder, scope, budget))
@@ -329,5 +351,5 @@ def render(template: Template, answers: Mapping[str, str], env: RenderEnv) -> Re
     stamp = env.now.isoformat(timespec="seconds")
     frontmatter = {"title": title, "created": stamp, "updated": stamp, **rendered_fm,
                    "fromTemplate": template.id}
-    filename = slugify(title, FILENAME_SLUG_MAX) + ".md"
+    filename = _filename_stem(title) + ".md"
     return RenderedNote(template.id, folder, filename, title, frontmatter, body)

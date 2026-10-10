@@ -6,15 +6,20 @@ from datetime import datetime, timedelta, timezone
 import pytest
 import yaml
 
+from ghostbrain.templates import render as render_mod
 from ghostbrain.templates.functions import VARIABLES
+from ghostbrain.templates.lang import tokenize
 from ghostbrain.templates.parse import parse_template
 from ghostbrain.templates.render import (
     AnswerError,
     RenderEnv,
     build_scope,
+    evaluate,
     render,
+    render_string,
+    scope_for,
 )
-from ghostbrain.templates.values import ProjectValue
+from ghostbrain.templates.values import EMPTY, ProjectValue
 
 NOW = datetime(2026, 10, 9, 14, 30, tzinfo=timezone(timedelta(hours=2)))
 ENV = RenderEnv(
@@ -200,3 +205,29 @@ def test_placeholders_inside_query_fences_are_resolved():
     assert render(tpl(body), ALEX, ENV).body == (
         '```query\ntype: action_item\nmentions: "[[30-cross-context/people/alex]]"\nstatus: open\n```\n'
     )
+
+
+def test_scope_for_types_empty_prompts_from_the_template():
+    prompts = "  prompts:\n    - id: who\n      ask: W\n      type: person\n      optional: true\n"
+    t = tpl("x", prompts=prompts)
+    scope = scope_for(t, {}, ENV)
+    assert scope["who"] is EMPTY and scope.types["who"] == "person"
+    assert render_string("[{{who.name}}] {{who.bogus}}", scope) == "[] {{who.bogus}}"
+
+
+def test_build_scope_refuses_an_untyped_empty_answer():
+    with pytest.raises(TypeError):
+        build_scope({"who": EMPTY}, ENV)
+    assert build_scope({"who": EMPTY}, ENV, {"who": "person"}).types["who"] == "person"
+
+
+def test_field_types_are_tracked_through_the_whole_chain(monkeypatch):
+    # A field that yields an empty value mid-chain: later fields are still
+    # checked against the registry (now.date is a date, which has .iso only).
+    impls = {**render_mod.FIELD_IMPLS, ("datetime", "date"): lambda v: EMPTY}
+    monkeypatch.setattr(render_mod, "FIELD_IMPLS", impls)
+    scope = build_scope({}, ENV)
+    [ok] = tokenize("{{now.date.iso}}")
+    [bad] = tokenize("{{now.date.name}}")
+    assert evaluate(ok, scope) is EMPTY
+    assert evaluate(bad, scope) is None

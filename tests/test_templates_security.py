@@ -297,6 +297,17 @@ def _t(folder: str, body: str = "x", name: str = "n"):
         ("20-contexts/{{focus}}", "a\x00b"),
         ("20-contexts/.hidden", ""),
         (".obsidian/plugins", ""),
+        # Windows 8.3 short names resolve to protected or hidden folders.
+        ("80-PRO~1/x", ""),
+        ("{{focus}}", "OBSIDI~1"),
+        # Trailing dots / spaces are dropped by Windows, so 90-meta. == 90-meta.
+        ("90-meta.", ""),
+        ("90-meta ", ""),
+        ("90-meta./x", ""),
+        ("90-meta /x", ""),
+        ("20-contexts/COM\u00b9", ""),
+        ("20-contexts/{{focus}}", "lpt\u00b2.txt"),
+        ("20-contexts/{{focus}}", "a\u2028b"),
     ],
 )
 def test_sec_rendered_folder_cannot_escape_or_hit_system_areas(folder, answer):
@@ -361,6 +372,11 @@ def test_sec_person_path_answers_cannot_traverse():
         "30-cross-context/people/a\nb",
         "30-cross-context/people/a\rb.md",
         "alex]]evil.md",
+        "30-cross-context/people/a\tb",
+        "30-cross-context/people/a\x85b",
+        "30-cross-context/people/a\u2028b",
+        "Al\u2029ex",
+        "Al\x00ex",
     ],
 )
 def test_sec_person_path_answers_cannot_inject_markup(bad):
@@ -380,3 +396,37 @@ def test_sec_person_lookup_uses_the_env_lookup():
     t = parse_template(src, "p").template
     assert render(t, {"person": "30-cross-context/people/alex"}, env).body == "Alex"
     assert seen == ["30-cross-context/people/alex.md"]
+
+
+def test_sec_person_path_into_system_area_is_only_a_link(monkeypatch):
+    """A person answer naming 90-meta/config yields a link; no file is opened."""
+    import builtins
+    import pathlib
+
+    def no_io(*_a, **_k):
+        raise AssertionError("render must not touch the filesystem")
+
+    monkeypatch.setattr(builtins, "open", no_io)
+    monkeypatch.setattr(pathlib.Path, "open", no_io)
+    monkeypatch.setattr(pathlib.Path, "read_text", no_io)
+    monkeypatch.setattr(pathlib.Path, "read_bytes", no_io)
+    seen: list[str] = []
+    env = RenderEnv(now=_ENV.now, default_context="work", contexts=("work",),
+                    person_title=lambda p: seen.append(p) or None)
+    t = parse_template(
+        "---\ntemplate:\n  name: P\n  prompts:\n    - id: person\n      ask: W\n      type: person\n"
+        "---\n{{person.link}} {{person.name}}", "p").template
+    assert render(t, {"person": "90-meta/config"}, env).body == "[[90-meta/config]] Config"
+    assert seen == ["90-meta/config.md"]
+
+
+@pytest.mark.parametrize("title", ["con", "NUL", "Aux", "com1", "LPT9", "prn"])
+def test_sec_filename_is_never_a_windows_device_name(title):
+    note = render(_t("20-contexts/work", name="{{focus}}"), {"focus": title}, _ENV)
+    assert note.filename == f"{title.lower()}-note.md"
+    assert note.title == title
+
+
+def test_sec_device_like_titles_that_are_not_devices_keep_their_slug():
+    for title, filename in (("console", "console.md"), ("com10", "com10.md"), ("con x", "con-x.md")):
+        assert render(_t("20-contexts/work", name="{{focus}}"), {"focus": title}, _ENV).filename == filename
