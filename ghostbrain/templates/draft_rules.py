@@ -168,32 +168,54 @@ def _mermaid_codes(text: str) -> str:
     return out + text[end:]
 
 
-# Mermaid codes and HTML entities are separate stages, so one reading is
-# HTML entities alone, decoded twice (&amp;#58; then :).
-_DECODERS = (
+def _html_stable(text: str) -> str:
+    """HTML entities decoded until stable (bounded): ``&amp;amp;#58;`` is
+    ``:``."""
+    for _ in range(_MAX_DECODE_ROUNDS):
+        decoded = html.unescape(text)
+        if decoded == text:
+            break
+        text = decoded
+    return text
+
+
+def _mermaid_then_html(text: str) -> str:
+    """Mermaid's own reading: every ``#NN;`` code made an entity at once,
+    then one HTML decode."""
+    return html.unescape(_MERMAID_ENTITY_RE.sub(_mermaid_entity, text))
+
+
+_COMMON = (
     lambda t: unicodedata.normalize("NFKC", t),
     lambda t: _INVISIBLE_RE.sub("", t),
     lambda t: _BACKSLASH_RE.sub(_unescape, t),
-    html.unescape,
-    _mermaid_codes,
-    html.unescape,
-    unquote,
+)
+# Two chains, both read: HTML entities and mermaid codes as separate
+# stages (so &amp;#58; and #amp;#58; read as :), and mermaid's own
+# all-at-once reading (so #amp;#sol;#sol; reads as &//).
+_CHAINS = (
+    (*_COMMON, _html_stable, _mermaid_codes, _html_stable, unquote),
+    (*_COMMON, _mermaid_then_html, unquote),
 )
 
 
-def _readings(text: str) -> list[str]:
-    """``text`` and every distinct stage of decoding it, up to stable
-    (bounded)."""
+def _chain(text: str, decoders: tuple) -> list[str]:
     out = [text]
     for _ in range(_MAX_DECODE_ROUNDS):
         before = out[-1]
-        for decoder in _DECODERS:
+        for decoder in decoders:
             decoded = decoder(out[-1])
             if decoded != out[-1]:
                 out.append(decoded)
         if out[-1] == before:
             break
     return out
+
+
+def _readings(text: str) -> list[str]:
+    """``text`` and every distinct stage of decoding it along each chain,
+    up to stable (bounded)."""
+    return list(dict.fromkeys(r for chain in _CHAINS for r in _chain(text, chain)))
 
 
 def _hit(readings: list[str]) -> re.Match[str] | None:

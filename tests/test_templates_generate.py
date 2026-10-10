@@ -1057,6 +1057,15 @@ def test_format_and_control_characters_hide_nothing(char):
         "%23104;ttps#58;evil.com",
         "https&amp;#58;evil",  # read as decoded twice
         "https#amp;#58;evil",
+        # mermaid's own reading: every code at once, then one HTML decode
+        "x#amp;#sol;#sol;evil.com",
+        "x#amp;#colon;#sol;evil",
+        "x#amp;#sol;/evil.com",
+        "xa#amp;#104;ttps:evil.com",
+        "```mermaid\ngraph TD\nA[\"x#amp;#sol;#sol;evil.com\"]\n```",
+        # entities nested three and five deep
+        "https&amp;amp;#58;evil",
+        "https&amp;amp;amp;amp;amp;#58;evil",
         "ｈｔｔｐｓ：evil.com",
         "https\uff1a\uff0f\uff0fevil.com",
     ],
