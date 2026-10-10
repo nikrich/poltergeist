@@ -956,3 +956,51 @@ export interface ChangeActionResponse {
   path: string;
   etag: string | null;
 }
+
+// ── Template editor (C3) ──────────────────────────────────────────────────
+
+/** GET /v1/templates/functions. `queryKeys` exists once C2 is on the branch;
+ * the editor treats it as optional so query completions switch off without it. */
+export type TemplateRegistry = TemplateFunctionsResponse & { queryKeys?: TemplateFunctionSpec[] };
+
+export interface TemplateLintResponse {
+  diagnostics: TemplateDiagnostic[];
+}
+
+export interface TemplateSourceResponse {
+  id: string;
+  path: string;
+  source: string;
+  etag: string;
+}
+
+export interface TemplateSaveResponse {
+  id: string;
+  path: string;
+  etag: string | null;
+  status: 'applied' | 'pending';
+  changeId: string | null;
+}
+
+export interface TemplateQueryValues {
+  types: string[];
+  statuses: string[];
+  indexing: boolean;
+}
+
+export interface TemplateDryRunRequest {
+  source: string;
+  answers: Record<string, string>;
+  id?: string;
+  dry_run: true;
+}
+
+export interface TemplateDryRunResponse {
+  ok: boolean;
+  prompts: TemplatePrompt[];
+  answers: Record<string, string>;
+  rendered: (TemplateRenderResponse & { markdown: string }) | null;
+  wouldBeFiledAt: string | null;
+  diagnostics: TemplateDiagnostic[];
+  error: string | null;
+}
