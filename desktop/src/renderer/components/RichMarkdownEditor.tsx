@@ -22,6 +22,7 @@ import {
 } from '../lib/editor/inline-assist';
 import { matchesShortcut } from '../lib/editor-shortcuts';
 import { isMac } from '../lib/platform';
+import { useSettings } from '../stores/settings';
 import { toast } from '../stores/toast';
 import { Btn } from './Btn';
 import { DiagramModal } from './DiagramModal';
@@ -101,6 +102,9 @@ export interface RichMarkdownEditorProps {
    * points (e.g. an Insert-menu "Ask AI") go through
    * `EditorHandle.startInlineAssist`; they work only while this is set. */
   inlineAssist?: { target: InlineAssistTarget; onAccept?: () => void };
+  /** A7: page header (breadcrumb, title, byline) shown above the document
+   * inside the page canvas. GuardedNoteEditor supplies it in page mode. */
+  pageHeader?: React.ReactNode;
 }
 
 type Mode = 'rich' | 'source';
@@ -131,11 +135,13 @@ export function RichMarkdownEditor({
   openCameraSignal,
   focus = false,
   inlineAssist,
+  pageHeader,
 }: RichMarkdownEditorProps) {
   // Evaluated once per mount; parents remount per note via key={...}.
   const [parseFailed] = useState(() => !parsesAsRich(markdown));
   const [mode, setMode] = useState<Mode>(parseFailed ? 'source' : 'rich');
   const [camOpen, setCamOpen] = useState(false);
+  const pageWidth = useSettings((s) => s.pageWidth);
   const [templateOpen, setTemplateOpen] = useState(false);
   const [statusPos, setStatusPos] = useState<number | null>(null);
   const closeStatus = useCallback(() => setStatusPos(null), []);
@@ -527,6 +533,13 @@ export function RichMarkdownEditor({
     };
   }, []);
 
+  function insertPickedImage(file: File) {
+    if (!editorRef.current || !editorRef.current.isEditable) return;
+    void insertImageFile(editorRef.current, jotIdRef.current, file).catch((e: Error) =>
+      toast.error(`image insert failed: ${e.message}`),
+    );
+  }
+
   function switchMode(next: Mode) {
     if (next === mode) return;
     setStatusPos(null);
@@ -555,28 +568,40 @@ export function RichMarkdownEditor({
       {mode === 'rich' && editor && !focus && !readOnly && (
         <EditorToolbar
           editor={editor}
+          onImageFile={insertPickedImage}
           onAssist={inlineAssist ? () => void openInline() : undefined}
         />
       )}
+      {/* One scroll container: the page header and body scroll together as a
+          single document while the toolbar above stays put. */}
       <div className="flex-1 overflow-auto">
-        {mode === 'rich' && editor && !readOnly && <TableToolbar editor={editor} />}
-        {mode === 'rich' ? (
-          <EditorContent
-            editor={editor}
-            className="gb-prose h-full px-4 py-3 text-14 leading-[1.65] text-ink-0 [&_.ProseMirror]:min-h-full [&_.ProseMirror]:outline-none"
-          />
-        ) : (
-          <JotEditor
-            body={current.current}
-            debounceMs={debounceMs}
-            readOnly={readOnly}
-            onSave={(next) => {
-              current.current = next;
-              lastSaved.current = next;
-              onSave(next);
-            }}
-          />
-        )}
+        {mode === 'rich' && editor && !readOnly && !focus && <TableToolbar editor={editor} />}
+        <div
+          className="gb-page"
+          data-testid="page-canvas"
+          data-width={focus ? 'fixed' : pageWidth}
+        >
+          {pageHeader}
+          {mode === 'rich' ? (
+            <EditorContent
+              editor={editor}
+              className="gb-prose gb-page-body text-ink-0 [&_.ProseMirror]:min-h-[40vh] [&_.ProseMirror]:outline-none"
+            />
+          ) : (
+            <div className="gb-page-body gb-page-source">
+              <JotEditor
+                body={current.current}
+                debounceMs={debounceMs}
+                readOnly={readOnly}
+                onSave={(next) => {
+                  current.current = next;
+                  lastSaved.current = next;
+                  onSave(next);
+                }}
+              />
+            </div>
+          )}
+        </div>
       </div>
       <div className="flex flex-shrink-0 items-center gap-2 border-t border-hairline px-3 py-[6px]">
         {mode === 'rich' && (

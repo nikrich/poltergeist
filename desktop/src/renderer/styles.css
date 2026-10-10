@@ -302,14 +302,103 @@ body[data-theme='light'] {
 .gb-prose strong { color: var(--ink-0); }
 .gb-jot-img { max-width: 100%; border-radius: 8px; border: 1px solid var(--hairline-2); margin: 6px 0; }
 
-/* A4 focus mode: the page alone, centred at a reading measure. */
-[data-focus='on'] .ProseMirror {
-  max-width: 72ch;
-  margin-left: auto;
-  margin-right: auto;
-  padding-top: 24px;
-  padding-bottom: 30vh;
+/* ── A7 page canvas ───────────────────────────────────────────────────
+   A centred document column on bg-paper: no card, border or shadow. Width
+   is the global `pageWidth` setting; focus mode (A4) always uses the fixed
+   measure. The canvas sits inside the editor's one scroll container, so
+   header and body scroll together as one document. */
+.gb-page {
+  --gb-page-measure: 44rem; /* ≈80 characters of 16px body text */
+  --gb-page-gutter: clamp(20px, 6%, 56px);
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0 auto;
+  padding: 40px var(--gb-page-gutter) 0;
 }
+.gb-page[data-width='fixed'] {
+  max-width: calc(var(--gb-page-measure) + 2 * var(--gb-page-gutter));
+}
+.gb-page[data-width='full'] { max-width: none; }
+[data-focus='on'] .gb-page { padding-top: 56px; }
+
+.gb-page-header { margin-bottom: 28px; }
+/* The page's one bold element (Task 7's title textarea). */
+.gb-page-title {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  color: var(--ink-0);
+  font-family: var(--font-display);
+  font-size: 34px;
+  line-height: 1.15;
+  font-weight: 640;
+  letter-spacing: -0.025em;
+  font-variation-settings: 'opsz' 48;
+}
+.gb-page-title::placeholder { color: var(--ink-3); }
+.gb-page-title:focus-visible { box-shadow: 0 2px 0 0 var(--hairline-3); }
+
+/* Body: 16px / 1.7. These rules follow the `.gb-prose` ones above and
+   share their specificity, so they win and rescale the 14px rhythm. */
+.gb-page-body { font-size: 16px; line-height: 1.7; }
+/* The editor's own bottom padding is the "click below to keep writing"
+   area: clicks there land in ProseMirror and put the caret at the end. */
+.gb-page-body .ProseMirror { padding-bottom: 30vh; }
+.gb-page-body .ProseMirror > :first-child { margin-top: 0; }
+.gb-page-body h1,
+.gb-page-body h2,
+.gb-page-body h3,
+.gb-page-body h4 {
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 1.6em 0 0.45em;
+}
+.gb-page-body h1 { font-size: 26px; letter-spacing: -0.02em; }
+.gb-page-body h2 { font-size: 21px; letter-spacing: -0.015em; }
+.gb-page-body h3 { font-size: 18px; letter-spacing: -0.01em; }
+.gb-page-body h4 { font-size: 16px; letter-spacing: 0; }
+.gb-page-body p { margin: 0 0 0.85em; }
+.gb-page-body ul,
+.gb-page-body ol { margin: 0 0 0.85em 1.5em; }
+.gb-page-body li { margin: 0.25em 0; }
+.gb-page-body li > p { margin: 0; }
+.gb-page-body ul[data-type='taskList'] { margin-left: 0.2em; }
+.gb-page-body ul[data-type='taskList'] li { gap: 8px; }
+.gb-page-body code { font-size: 0.875em; }
+.gb-page-body pre { padding: 14px 16px; margin: 0 0 1.1em; line-height: 1.55; }
+.gb-page-body pre code { font-size: 13px; }
+.gb-page-body blockquote { margin: 0 0 1.1em; padding: 0.1em 1.1em; }
+.gb-page-body hr { margin: 2em 0; }
+.gb-page-body table { font-size: 14px; line-height: 1.5; margin: 0 0 1.1em; }
+.gb-page-body th,
+.gb-page-body td { padding: 8px 12px; vertical-align: top; }
+.gb-page-body th > p,
+.gb-page-body td > p { margin: 0; }
+.gb-page-body .gb-jot-img { margin: 8px 0; }
+/* A1 blocks keep their look; only their insides breathe at 16px. */
+.gb-page-body .gb-callout { padding: 10px 16px 4px; margin: 0 0 1.1em; }
+.gb-page-body .gb-callout-header { font-size: 13px; }
+.gb-page-body .gb-toc { padding: 10px 16px; margin: 0 0 1.1em; }
+.gb-page-body .gb-toc-list { font-size: 14px; line-height: 1.6; }
+.gb-page-body .gb-mermaid { margin: 0 0 1.1em; }
+
+/* Source mode (CodeMirror) inside the canvas: the same column, framed as
+   one block so its own theme background reads as intentional. */
+.gb-page-source { padding-bottom: 48px; }
+.gb-page-source .cm-editor {
+  min-height: 40vh;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.gb-page-source .cm-editor.cm-focused { outline: none; border-color: var(--hairline-3); }
+.gb-page-source .cm-content { padding: 14px 4px; }
 
 /* A4 read-aloud: the sentence being spoken. */
 .gb-read-aloud-current {
