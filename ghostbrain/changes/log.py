@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS changes (
 CREATE INDEX IF NOT EXISTS changes_ts ON changes(ts);
 CREATE INDEX IF NOT EXISTS changes_status ON changes(status);
 CREATE INDEX IF NOT EXISTS changes_rel_path ON changes(rel_path);
+CREATE INDEX IF NOT EXISTS changes_dest_path ON changes(dest_path);
 """
 
 
@@ -242,26 +243,35 @@ def last_after_blob(path: str, actor: str) -> str | None:
 
 def created_by(path: str, actor: str) -> bool:
     """Spec B §3 ownership: did ``actor`` create the file now at ``path``?
-    Yes when it has an applied create there, or its own applied moves lead
-    back to one. Moving someone else's note never makes it yours."""
+    Walks back in time: the newest applied row that put a file at the path
+    must be ``actor``'s create, or ``actor``'s move from a path it owned at
+    that moment, and nothing may have deleted or moved the file away since.
+    Moving someone else's note never makes it yours. Fails closed."""
     current = path
+    bound: int | None = None  # the hop must predate this row id
     with _connect() as conn:
         for _ in range(MAX_OWNERSHIP_HOPS):
-            hit = conn.execute(
-                "SELECT 1 FROM changes WHERE actor = ? AND status = 'applied'"
-                " AND op = 'create' AND rel_path = ? LIMIT 1",
-                (actor, current),
+            before = "" if bound is None else " AND id < ?"
+            limit = () if bound is None else (bound,)
+            placed = conn.execute(
+                "SELECT id, actor, op, rel_path FROM changes WHERE status = 'applied'"
+                " AND ((op = 'create' AND rel_path = ?) OR (op = 'move' AND dest_path = ?))"
+                + before + " ORDER BY id DESC LIMIT 1",
+                (current, current, *limit),
             ).fetchone()
-            if hit is not None:
-                return True
-            moved = conn.execute(
-                "SELECT rel_path FROM changes WHERE actor = ? AND status = 'applied'"
-                " AND op = 'move' AND dest_path = ? ORDER BY id DESC LIMIT 1",
-                (actor, current),
-            ).fetchone()
-            if moved is None:
+            if placed is None or placed["actor"] != actor:
                 return False
-            current = moved["rel_path"]
+            vacated = conn.execute(
+                "SELECT 1 FROM changes WHERE status = 'applied'"
+                " AND op IN ('delete', 'move') AND rel_path = ? AND id > ?"
+                + before + " LIMIT 1",
+                (current, placed["id"], *limit),
+            ).fetchone()
+            if vacated is not None:
+                return False
+            if placed["op"] == "create":
+                return True
+            current, bound = placed["rel_path"], int(placed["id"])
     return False
 
 

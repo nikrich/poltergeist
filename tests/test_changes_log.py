@@ -222,3 +222,33 @@ def test_apply_pending_fills_the_blobs_once():
             row.resolved_ts) == ("applied", D, C, C, None)
     assert row.risk_reasons == ("edits a template",)
     assert changes.apply_pending(cid, before_blob=D, after_blob=C) is False
+
+
+def test_a_path_vacated_by_the_actors_own_move_is_not_owned():
+    changes.record(actor="plugin:p", rel_path="F/a.md", op="create", after_blob=B)
+    changes.record(actor="plugin:p", rel_path="F/a.md", dest_path="F/b.md", op="move",
+                   before_blob=B, after_blob=B)
+    assert changes.created_by("F/a.md", "plugin:p") is False
+    assert changes.created_by("F/b.md", "plugin:p") is True
+
+
+def test_an_own_delete_ends_ownership_even_if_someone_else_recreates():
+    changes.record(actor="plugin:p", rel_path="G/x.md", op="create", after_blob=B)
+    changes.record(actor="plugin:p", rel_path="G/x.md", op="delete", before_blob=B)
+    assert changes.created_by("G/x.md", "plugin:p") is False
+    changes.record(actor="user", rel_path="G/x.md", op="create", after_blob=C)
+    assert changes.created_by("G/x.md", "plugin:p") is False
+
+
+def test_a_move_recorded_before_the_create_does_not_chain():
+    changes.record(actor="plugin:p", rel_path="notes/u.md", dest_path="F/u.md", op="move",
+                   before_blob=B, after_blob=B)
+    changes.record(actor="plugin:p", rel_path="notes/u.md", op="create", after_blob=C)
+    assert changes.created_by("F/u.md", "plugin:p") is False
+
+
+def test_another_actors_later_move_into_the_path_breaks_ownership():
+    changes.record(actor="plugin:p", rel_path="F/a.md", op="create", after_blob=B)
+    changes.record(actor="user", rel_path="notes/z.md", dest_path="F/a.md", op="move",
+                   before_blob=C, after_blob=C)
+    assert changes.created_by("F/a.md", "plugin:p") is False
