@@ -113,12 +113,20 @@ def _finish_index(doc_id: str) -> dict:
     return index.summary(index.get(doc_id))
 
 
+def _safe_enqueue(doc_id: str) -> None:
+    """Queue a summary; a summary bug must never fail the surrounding operation."""
+    try:
+        ai_summary.enqueue(doc_id)
+    except Exception:  # noqa: BLE001
+        log.exception("could not enqueue summary for %s", doc_id)
+
+
 def _finish_and_enqueue(doc_id: str) -> dict:
     """_finish_index, then queue an AI summary if indexing succeeded. Returns a
     fresh summary so the response shows summary_state "pending"."""
     s = _finish_index(doc_id)
     if s.get("index_status") == "ok":
-        ai_summary.enqueue(doc_id)
+        _safe_enqueue(doc_id)
         s = index.summary(index.get(doc_id))
     return s
 
@@ -236,10 +244,12 @@ def reindex(doc_id: str) -> dict:
     front = {**e.front, "index_status": status}
     if pages:
         front["pages"] = pages
+    if status != "ok" or body.strip() != e.body.strip():
+        front.pop("summary", None)  # a summary of the old text would be stale
     notes.write_atomic(e.note, notes.render(front, body))
     index.invalidate()
     if status == "ok":
-        ai_summary.enqueue(doc_id)
+        _safe_enqueue(doc_id)
     return index.summary(index.get(doc_id))
 
 

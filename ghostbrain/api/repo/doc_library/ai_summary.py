@@ -72,7 +72,8 @@ def should_summarise(front: dict, body: str) -> bool:
 
 
 def _prompt(title: str, body: str) -> str:
-    return f"Title: {title}\n\nDocument (truncated):\n{body[:MAX_INPUT_CHARS]}"
+    label = "Document (truncated)" if len(body) > MAX_INPUT_CHARS else "Document"
+    return f"Title: {title}\n\n{label}:\n{body[:MAX_INPUT_CHARS]}"
 
 
 def _generate(doc_id: str) -> bool:

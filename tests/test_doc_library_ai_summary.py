@@ -175,3 +175,109 @@ def test_summary_is_capped_at_word_boundary(lib_vault: Path, calls, monkeypatch)
     assert ai_summary.run_now(s["doc_id"]) is True
     got = notes.read_note(lib_vault / s["note_path"])[0]["summary"]
     assert len(got) <= ai_summary.MAX_SUMMARY_CHARS + 1 and got.endswith("word…")
+
+
+def _wait_idle(doc_id, timeout=5.0):
+    import time
+
+    end = time.time() + timeout
+    while ai_summary.is_summarising(doc_id) and time.time() < end:
+        time.sleep(0.01)
+    assert not ai_summary.is_summarising(doc_id), "worker did not finish"
+
+
+def test_real_enqueue_worker_writes_summary(lib_vault: Path, calls):
+    s = _upload()  # llm_client.run stays mocked (calls fixture) for the whole test
+    assert REAL_ENQUEUE(s["doc_id"]) is True
+    _wait_idle(s["doc_id"])
+    assert notes.read_note(lib_vault / s["note_path"])[0]["summary"] == "It defines the v2 payments API."
+    assert len(calls) == 1
+
+
+def test_real_enqueue_worker_llm_failure_clears_inflight(lib_vault: Path, calls, monkeypatch):
+    s = _upload()
+
+    def boom(*a, **k):
+        raise RuntimeError("provider down")
+
+    monkeypatch.setattr(ai_summary.llm_client, "run", boom)
+    assert REAL_ENQUEUE(s["doc_id"]) is True
+    _wait_idle(s["doc_id"])
+    assert "summary" not in notes.read_note(lib_vault / s["note_path"])[0]
+
+
+@pytest.fixture
+def real_enqueue_spy(lib_vault: Path, calls, monkeypatch):
+    submitted: list[str] = []
+    monkeypatch.setattr(ai_summary, "_submit", lambda doc_id: submitted.append(doc_id))
+    monkeypatch.setattr(ai_summary, "enqueue", REAL_ENQUEUE)
+    yield submitted
+    for d in submitted:
+        ai_summary._inflight.discard(d)  # the recording _submit never runs the job
+
+
+def test_normal_upload_submits_exactly_once(real_enqueue_spy):
+    ops.upload("work", None, "", "n.pdf", "", b"%PDF-n")
+    assert len(real_enqueue_spy) == 1
+
+
+def test_duplicate_upload_does_not_resubmit(real_enqueue_spy):
+    ops.upload("work", None, "", "n.pdf", "", b"%PDF-n")
+    ops.upload("work", None, "", "n2.pdf", "", b"%PDF-n")
+    assert len(real_enqueue_spy) == 1
+
+
+def test_opaque_upload_submits_nothing(real_enqueue_spy):
+    ops.upload("work", None, "", "bundle.zip", "application/zip", b"PK")
+    assert real_enqueue_spy == []
+
+
+def test_failed_extraction_submits_nothing(real_enqueue_spy, monkeypatch):
+    def boom(*a):
+        raise RuntimeError("corrupt")
+
+    monkeypatch.setattr(ops.attachment_extract, "extract_text", boom)
+    ops.upload("work", None, "", "bad.pdf", "", b"%PDF-bad")
+    assert real_enqueue_spy == []
+
+
+def test_enqueue_raising_does_not_fail_upload(lib_vault: Path, calls, monkeypatch):
+    def boom(doc_id):
+        raise RuntimeError("enqueue bug")
+
+    monkeypatch.setattr(ai_summary, "enqueue", boom)
+    s = _upload()
+    assert s["index_status"] == "ok" and s["duplicate"] is False
+    assert ops.reindex(s["doc_id"])["index_status"] == "ok"  # reindex is protected too
+
+
+def test_reindex_drops_stale_summary_when_body_changes(lib_vault: Path, calls, monkeypatch):
+    s = _upload()
+    assert ai_summary.run_now(s["doc_id"]) is True
+    path = lib_vault / s["note_path"]
+    assert "summary" in notes.read_note(path)[0]
+    ops.reindex(s["doc_id"])  # same extracted body: summary kept
+    assert "summary" in notes.read_note(path)[0]
+    monkeypatch.setattr(ops.attachment_extract, "extract_text", lambda *a: "new content")
+    ops.reindex(s["doc_id"])
+    assert "summary" not in notes.read_note(path)[0]
+
+
+def test_reindex_drops_summary_when_status_not_ok(lib_vault: Path, calls, monkeypatch):
+    s = _upload()
+    assert ai_summary.run_now(s["doc_id"]) is True
+
+    def boom(*a):
+        raise RuntimeError("corrupt")
+
+    monkeypatch.setattr(ops.attachment_extract, "extract_text", boom)
+    ops.reindex(s["doc_id"])
+    front = notes.read_note(lib_vault / s["note_path"])[0]
+    assert front["index_status"] == "failed" and "summary" not in front
+
+
+def test_prompt_label_truncated_only_when_over_cap():
+    short = ai_summary._prompt("t", "x" * 10)
+    long = ai_summary._prompt("t", "x" * (ai_summary.MAX_INPUT_CHARS + 1))
+    assert "Document:" in short and "truncated" not in short
+    assert "Document (truncated):" in long
