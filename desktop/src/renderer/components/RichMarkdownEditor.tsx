@@ -264,6 +264,18 @@ export function RichMarkdownEditor({
     return onGb(editor, 'gb:status:edit', ({ pos }) => setStatusPos(pos));
   }, [editor]);
 
+  // Any document edit can move the lozenge — close the popover rather than act on a stale position.
+  useEffect(() => {
+    if (!editor) return;
+    const onTransaction = ({ transaction }: { transaction: { docChanged: boolean } }): void => {
+      if (transaction.docChanged) setStatusPos(null);
+    };
+    editor.on('transaction', onTransaction);
+    return () => {
+      editor.off('transaction', onTransaction);
+    };
+  }, [editor]);
+
   useEffect(() => {
     if (!editor) return;
     return onGb(editor, 'gb:diagram:open', ({ source }) => setDiagramSource(source));
@@ -397,6 +409,7 @@ export function RichMarkdownEditor({
 
   function switchMode(next: Mode) {
     if (next === mode) return;
+    setStatusPos(null);
     if (next === 'source') {
       if (editor && !editor.isDestroyed) current.current = getMarkdown(editor);
       setMode('source');

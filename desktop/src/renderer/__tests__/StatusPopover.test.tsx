@@ -2,8 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, act, fireEvent } from '@testing-library/react';
 import type { Editor } from '@tiptap/core';
 import { RichMarkdownEditor } from '../components/RichMarkdownEditor';
+import { StatusPopover } from '../components/StatusPopover';
 import { emitGb } from '../lib/editor/events';
-import { findNodePos } from './helpers/editor';
+import { findNodePos, makeEditor, markdownOf } from './helpers/editor';
 
 vi.useFakeTimers();
 
@@ -69,5 +70,43 @@ describe('StatusPopover', () => {
     act(() => { vi.advanceTimersByTime(1000); });
     expect(onSave).not.toHaveBeenCalled();
     expect(screen.queryByRole('dialog', { name: 'edit status' })).toBeNull();
+  });
+
+  it('an unrelated document edit closes the popover', () => {
+    const { editor } = setup('x `status:To do/grey`');
+    openFor(editor());
+    expect(screen.getByRole('dialog', { name: 'edit status' })).toBeInTheDocument();
+    // Typed after the lozenge, so its position (and the popover's) stays valid.
+    act(() => {
+      editor().commands.insertContentAt(editor().state.doc.content.size - 1, ' more');
+    });
+    expect(editor().state.doc.nodeAt(findNodePos(editor(), (n) => n.type.name === 'status'))?.attrs.label).toBe(
+      'To do',
+    );
+    expect(screen.queryByRole('dialog', { name: 'edit status' })).toBeNull();
+  });
+
+  it('switching to source and back does not re-open the popover', () => {
+    const { editor } = setup('x `status:To do/grey`');
+    openFor(editor());
+    fireEvent.click(screen.getByRole('button', { name: 'src' }));
+    fireEvent.click(screen.getByRole('button', { name: 'rich' }));
+    expect(screen.queryByRole('dialog', { name: 'edit status' })).toBeNull();
+  });
+
+  it('saving after the lozenge moved does not edit a different node', () => {
+    const editor = makeEditor('x `status:A/grey` `status:B/grey`');
+    const pos = findNodePos(editor, (n) => n.type.name === 'status');
+    const onClose = vi.fn();
+    render(<StatusPopover editor={editor} pos={pos} onClose={onClose} />);
+    // Delete the leading "x " — lozenge B now sits at the popover's stale position.
+    act(() => {
+      editor.commands.deleteRange({ from: 1, to: pos });
+    });
+    expect(editor.state.doc.nodeAt(pos)?.attrs.label).toBe('B');
+    fireEvent.change(screen.getByLabelText('status label'), { target: { value: 'Done' } });
+    fireEvent.click(screen.getByRole('button', { name: 'save' }));
+    expect(markdownOf(editor)).toBe('`status:A/grey` `status:B/grey`');
+    expect(onClose).toHaveBeenCalled();
   });
 });

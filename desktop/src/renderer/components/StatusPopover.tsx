@@ -23,8 +23,9 @@ function anchor(editor: Editor, pos: number): { top: number; left: number } {
 }
 
 export function StatusPopover({ editor, pos, onClose }: Props) {
-  const node = editor.state.doc.nodeAt(pos);
-  const initial = node?.type.name === 'status' ? (node.attrs as StatusAttrs) : null;
+  // The node this popover was opened for; nodes are immutable, so identity tells us it is still at `pos`.
+  const [target] = useState(() => editor.state.doc.nodeAt(pos));
+  const initial = target?.type.name === 'status' ? (target.attrs as StatusAttrs) : null;
   const [label, setLabel] = useState(initial?.label ?? '');
   const [color, setColor] = useState<StatusColor>(initial?.color ?? 'grey');
 
@@ -34,6 +35,11 @@ export function StatusPopover({ editor, pos, onClose }: Props) {
   function save(): void {
     const clean = sanitizeStatusLabel(label.replace(/`/g, ''));
     if (!clean) return;
+    const now = editor.state.doc.nodeAt(pos);
+    if (now !== target || now?.type.name !== 'status') {
+      onClose();
+      return;
+    }
     editor.chain().focus().updateStatusAt(pos, { label: clean, color }).run();
     onClose();
   }
