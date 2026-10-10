@@ -814,7 +814,24 @@ export function useUpdateProject() {
         description: vars.description,
         archived: vars.archived,
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['projects'] }),
+    // A rename moves the project's folder, re-stamps its notes and rewrites
+    // chat/jot/library paths, so every surface that lists them is stale —
+    // page history too (it follows the moved notes to their new paths).
+    onSuccess: () =>
+      Promise.all(
+        [
+          ['projects'],
+          ['library'],
+          ['jots'],
+          ['note'],
+          ['note-by-path'],
+          ['note-history'],
+          ['vault'],
+          ['chat'],
+        ].map(
+          (queryKey) => qc.invalidateQueries({ queryKey }),
+        ),
+      ),
   });
 }
 
