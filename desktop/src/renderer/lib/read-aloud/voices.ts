@@ -12,11 +12,38 @@ export function isSpeechSupported(): boolean {
   );
 }
 
-/** Offline voices only: the user approved OS voices, never a network TTS. */
+/** macOS novelty/character voices (singing, robotic, croaking). Chromium even
+ * flags Albert as the default voice, so they must never be offered or picked. */
+const NOVELTY = new Set([
+  'albert', 'bad news', 'bahh', 'bells', 'boing', 'bubbles', 'cellos', 'fred',
+  'good news', 'grandma', 'grandpa', 'jester', 'junior', 'kathy', 'organ', 'ralph',
+  'rocko', 'superstar', 'trinoids', 'whisper', 'wobble', 'zarvox',
+]);
+
+function baseName(v: SpeechSynthesisVoice): string {
+  // "Eddy (English (United Kingdom))" → "eddy"; "Samantha (Premium)" → "samantha".
+  return v.name.split(' (')[0]!.trim().toLowerCase();
+}
+
+function isNovelty(v: SpeechSynthesisVoice): boolean {
+  return NOVELTY.has(baseName(v));
+}
+
+/** Offline voices only (the user approved OS voices, never a network TTS),
+ * minus the novelty voices. */
 export function localVoices(all: readonly SpeechSynthesisVoice[]): SpeechSynthesisVoice[] {
   return all
-    .filter((v) => v.localService)
+    .filter((v) => v.localService && !isNovelty(v))
     .sort((a, b) => a.lang.localeCompare(b.lang) || a.name.localeCompare(b.name));
+}
+
+/** Natural-sounding voices, best first. Tessa is South African English. */
+const PREFERRED = ['tessa', 'samantha', 'daniel', 'karen', 'moira', 'rishi'];
+
+function quality(v: SpeechSynthesisVoice): number {
+  const premium = /\((premium|enhanced)\)/i.test(v.name) ? 0 : 100;
+  const rank = PREFERRED.indexOf(baseName(v));
+  return premium + (rank === -1 ? PREFERRED.length : rank);
 }
 
 /** Local voices, refreshed on `voiceschanged` (Chromium loads them async). */
@@ -40,22 +67,24 @@ function baseLang(v: SpeechSynthesisVoice): string {
 }
 
 /** Explicit, installed choice → that voice. Otherwise (auto, or the chosen
- * voice was uninstalled): a voice for the note's language, preferring the OS
- * default among them; else the OS default voice; else null (engine default). */
+ * voice was uninstalled): the best-sounding English voice. Notes are always
+ * read in English (the user doesn't want Afrikaans reading), so `_lang` is
+ * ignored. Chromium's `default` flag is NOT trusted: on macOS it marks the
+ * novelty voice Albert. Null → the engine's default. */
 export function pickVoice(
   voices: readonly SpeechSynthesisVoice[],
   preferredUri: string,
-  lang: NoteLanguage | null,
+  _lang: NoteLanguage | null,
 ): SpeechSynthesisVoice | null {
   if (preferredUri) {
     const chosen = voices.find((v) => v.voiceURI === preferredUri);
     if (chosen) return chosen;
   }
-  if (lang) {
-    const matches = voices.filter((v) => baseLang(v) === lang);
-    if (matches.length > 0) return matches.find((v) => v.default) ?? matches[0]!;
-  }
-  return voices.find((v) => v.default) ?? null;
+  const usable = voices.filter((v) => !isNovelty(v));
+  const english = usable.filter((v) => baseLang(v) === 'en');
+  const pool = english.length > 0 ? english : usable;
+  if (pool.length === 0) return null;
+  return [...pool].sort((a, b) => quality(a) - quality(b))[0]!;
 }
 
 export function makeUtterance(text: string): SpeechSynthesisUtterance {
