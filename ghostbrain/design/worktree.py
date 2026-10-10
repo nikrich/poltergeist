@@ -312,9 +312,20 @@ def _version_key(bin_dir: str) -> tuple[int, ...]:
     return tuple(int(n) for n in re.findall(r"\d+", Path(bin_dir).parent.name))
 
 
+# Install runs the repo's lifecycle scripts outside any sandbox, so it gets
+# only what a package manager needs: no API keys, tokens or app settings.
+_INSTALL_ENV_KEYS = {
+    "PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR", "TERM", "TZ",
+    "NVM_DIR", "VOLTA_HOME", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy",
+    "no_proxy", "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "COREPACK_HOME",
+}
+_INSTALL_ENV_PREFIXES = ("npm_config_", "NPM_CONFIG_", "YARN_", "PNPM_HOME")
+
+
 def install_env() -> dict[str, str]:
-    """The environment with node's usual homes appended to PATH."""
-    env = dict(os.environ)
+    """A minimal environment with node's usual homes appended to PATH."""
+    env = {k: v for k, v in os.environ.items()
+           if k in _INSTALL_ENV_KEYS or k.startswith(_INSTALL_ENV_PREFIXES)}
     nvm = sorted(glob.glob(os.path.expanduser(NVM_GLOB)), key=_version_key, reverse=True)
     extra = [os.path.expanduser(p) for p in EXTRA_PATH] + nvm
     env["PATH"] = os.pathsep.join([p for p in [env.get("PATH", "")] if p] + extra)
@@ -338,10 +349,25 @@ def _run_install(argv: list[str], *, cwd: Path, timeout_s: float, log_file: IO[s
         raise
 
 
+def _require_pristine(wt: Worktree) -> None:
+    """Install runs lifecycle scripts unsandboxed: only ever on the tree as
+    created from the repo, before any agent edit (scripts it calls could
+    otherwise be agent-written)."""
+    head = _wt_git(wt, "rev-parse", "HEAD").strip()
+    base = _wt_git(wt, "rev-parse", f"{wt.base}^{{commit}}").strip()
+    dirty = [line for line in _wt_git(wt, "status", "--porcelain", "--untracked-files=all").splitlines()
+             if not line[3:].startswith("node_modules/") and "/node_modules/" not in line[3:]]
+    if head != base or dirty:
+        raise WorktreeError(
+            "the worktree changed since it was created; dependencies are only installed on a fresh "
+            "worktree — start a new session to reinstall")
+
+
 def install(wt: Worktree, *, log_path: Path, timeout_s: int = INSTALL_TIMEOUT_S,
             runner: Runner | None = None) -> None:
     """Install the app's dependencies. A workspace without a lockfile in the app
     dir installs at the worktree root, where its lockfile is."""
+    _require_pristine(wt)
     cwd = wt.app_dir
     if not any((cwd / f).exists() for f in LOCKFILES) and any((wt.path / f).exists() for f in LOCKFILES):
         cwd = wt.path
