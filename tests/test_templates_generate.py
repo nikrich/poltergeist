@@ -778,7 +778,8 @@ def test_static_urls_that_used_to_pass_are_rejected(body):
         "/\u200b/evil.com/p.png",
         "HTTPS://EVIL.COM",
         "WWW.EVIL.COM",
-        "https:\nevil.com",
+        "/\n/evil.com/p.png",
+        "ww\nw.evil.com",
         # inside every fence kind, comments and inline code
         "```query\ntype: https://evil.com\n```",
         "```mermaid\ngraph TD\nA-->B[\"www.evil.com\"]\n```",
@@ -820,7 +821,7 @@ def test_a_url_is_located_at_its_line():
 
 
 def test_a_url_split_over_lines_is_located_at_line_1():
-    problems = url_problems(GOOD.replace("## Blockers", "https:\nevil.com"))
+    problems = url_problems(GOOD.replace("## Blockers", "Intro.\n/\n/evil.com/p.png"))
     assert problems[0].line == 1 and not problems[0].message.startswith("in the note")
 
 
@@ -863,3 +864,69 @@ def test_adversarial_inputs_stay_fast():
         start = time.perf_counter()
         check_draft(GOOD.replace("## Blockers", body))
         assert time.perf_counter() - start < 2.0, unit
+
+
+# ── Fix round 5 ───────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Supporting data:\n- {{team}}",
+        "## Data:\n\nNumbers go here",
+        "Attach file:\n- link",
+        "Raw data:\nnone yet",
+        # flipped (rejected in round 4): no reader joins a scheme word at a
+        # line end with the next line's text
+        "https:\nevil.com",
+    ],
+)
+def test_a_scheme_word_at_a_line_end_is_not_joined_with_the_next_line(body):
+    assert check_draft(GOOD.replace("## Blockers", body)).ok
+
+
+def test_a_multi_line_yaml_scalar_is_read_line_by_line():
+    draft = GOOD.replace("description: Daily standup notes",
+                         "description: |\n    Raw data:\n    none yet")
+    assert check_draft(draft).ok
+
+
+@pytest.mark.parametrize(
+    "description",
+    [
+        # YAML joins an escaped line break: the value is https:evil.com
+        '"htt\\\n    ps:evil.com"',
+        '"https:\\\n    evil.com"',
+        "|\n    see\n    https://evil.com",
+    ],
+)
+def test_a_url_yaml_joins_over_lines_is_rejected(description):
+    draft = GOOD.replace("description: Daily standup notes", f"description: {description}")
+    assert url_problems(draft)
+
+
+def test_every_choice_option_is_rendered():
+    draft = GOOD.replace(
+        "      type: text\n",
+        "      type: text\n    - id: c\n      ask: Which?\n      type: choice\n      options: [x, w]\n", 1,
+    ).replace("## Blockers", "Ref {{c}}ww.evil.com/{{team}}")
+    assert any(d.message.startswith("in the note it creates:") for d in url_problems(draft))
+
+
+def test_combinations_of_two_choice_prompts_are_rendered():
+    draft = GOOD.replace(
+        "      type: text\n",
+        "      type: text\n    - id: a\n      ask: A?\n      type: choice\n      options: [x, w]\n"
+        "    - id: b\n      ask: B?\n      type: choice\n      options: [y, w]\n", 1,
+    ).replace("## Blockers", "Ref {{a}}{{b}}w.evil.com/{{team}}")
+    assert url_problems(draft)
+
+
+def test_too_many_choice_combinations_are_rejected():
+    options = "[" + ", ".join(f"o{i}" for i in range(6)) + "]"
+    extra = "".join(f"    - id: c{n}\n      ask: C?\n      type: choice\n      options: {options}\n"
+                    for n in range(2))
+    draft = GOOD.replace("      type: text\n", "      type: text\n" + extra, 1)
+    assert "limit" in codes(draft)
+    ok = GOOD.replace("      type: text\n", "      type: text\n" + extra.replace(options, "[a, b, c]"), 1)
+    assert check_draft(ok).ok

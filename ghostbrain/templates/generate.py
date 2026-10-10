@@ -12,6 +12,8 @@ after ``verify_exact`` re-checks the exact text it writes.
 """
 from __future__ import annotations
 
+import itertools
+import math
 import re
 import uuid
 from collections.abc import Callable
@@ -38,6 +40,9 @@ from ghostbrain.templates.values import ProjectValue
 MAX_DESCRIPTION_CHARS = 2_000
 MAX_DRAFT_CHARS = 20_000
 MAX_PROBLEMS = 20
+# Every combination of choice options is rendered and checked; past this
+# many the draft is rejected rather than checked in part.
+MAX_CHOICE_RENDERS = 32
 GENERATE_TIER = "balanced"
 GENERATE_TIMEOUT_S = 180
 # Search only: its snippets are bounded, so little vault text reaches the draft.
@@ -125,7 +130,8 @@ def system_prompt() -> str:
          "and ```mermaid."),
         ("5. You may search the user's notes to see how they structure similar notes; "
          "never copy text from them."),
-        "6. Keep it short: at most 4 prompts.",
+        (f"6. Keep it short: at most 4 prompts, and at most {MAX_CHOICE_RENDERS} combinations "
+         "of choice options in all."),
         "",
         "Format reference (a complete, valid template):",
         ONE_ON_ONE,
@@ -204,14 +210,31 @@ def blank_answers(template: Template) -> dict[str, str]:
     }
 
 
+def _answer_sets(template: Template) -> list[dict[str, str]] | None:
+    """Sample answers once per combination of choice options, then the
+    blank-optional answers; None past MAX_CHOICE_RENDERS combinations."""
+    choices = [p for p in template.prompts if p.type == "choice"]
+    if math.prod(len(p.options) for p in choices) > MAX_CHOICE_RENDERS:
+        return None
+    sample = sample_answers(template)
+    combos = itertools.product(*(p.options for p in choices))
+    return [{**sample, **{p.id: o for p, o in zip(choices, combo, strict=True)}} for combo in combos] \
+        + [blank_answers(template)]
+
+
 def _rendered_problems(draft: str, template: Template) -> list[Diagnostic]:
     """The content rules over each note the template renders: body,
     frontmatter, title, folder and filename. Body problems are mapped back to
     the template's body lines; the rest are reported on line 1."""
     out: list[Diagnostic] = []
+    answer_sets = _answer_sets(template)
+    if answer_sets is None:
+        return [Diagnostic(1, 1, "error",
+                           f"choice prompts allow more than {MAX_CHOICE_RENDERS} combinations of "
+                           "options; use fewer options", "limit")]
     render_errors: set[str] = set()
     checked: set[str] = set()
-    for answers in (sample_answers(template), blank_answers(template)):
+    for answers in answer_sets:
         try:
             note: RenderedNote = render(template, answers, SAMPLE_ENV)
         except (AnswerError, RenderError) as e:

@@ -12,13 +12,16 @@ The one URL rule: a draft may hold no URL or web address at all, in any
 syntax. ``url_problems`` reads the text as every reader might decode it
 (NFKC, backslash/CSS/JS escapes, HTML entities and mermaid ``#NN;`` codes,
 percent-encoding, invisible characters dropped; each stage up to stable
-is checked, both per line and over the whole text with line breaks
-dropped) and rejects a scheme ``http: https: ftp: ws: wss: data: file:
+is checked per line) and rejects a scheme ``http: https: ftp: ws: wss: data: file:
 javascript: vbscript:`` not preceded by a letter or digit (so ``metadata:``
 passes; ``xhttps:`` passes too, since no reader links it), a ``//`` or
 ``\\`` starting a host, and ``www.``. ``http:``/``ftp:``/``ws:`` need a
 character after the colon, and ``data:``/``file:`` one that isn't ``*``,
-so the ``file:`` key and a ``**Data:**`` label pass.
+so the ``file:`` key and a ``**Data:**`` label pass. The whole text is
+also read with line breaks dropped, to catch a ``//``, ``www.`` or
+``scheme:/`` split over lines; there a scheme alone is not a hit, since no
+reader joins ``Raw data:`` and the next line into a URL. YAML values are
+read as YAML resolves them (escaped line breaks joined), the same way.
 
 =====================  ========================================================
 Rule                   Vector it covers
@@ -87,6 +90,12 @@ _MERMAID_ENTITY_RE = re.compile(r"(?<!&)#(\d{1,7}|[a-z][a-z0-9]{1,31});", re.IGN
 # must start the run, so a long run of slashes is scanned once.
 _URL_HIT_RE = re.compile(
     r"(?<![a-z0-9])(?:(?:https?|ftp|wss?):(?=\S)|(?:data|file):(?=[^\s*])|(?:java|vb)script:)"
+    r"|(?<![a-z0-9/])/{2,}+(?=[^\s/])"
+    r"|(?<![a-z0-9])www\.(?=[^\s.])"
+)
+# Over joined lines: a scheme counts only when a slash follows it.
+_JOINED_HIT_RE = re.compile(
+    r"(?<![a-z0-9])(?:https?|ftp|wss?|data|file|(?:java|vb)script):(?=[/\\])"
     r"|(?<![a-z0-9/])/{2,}+(?=[^\s/])"
     r"|(?<![a-z0-9])www\.(?=[^\s.])"
 )
@@ -163,11 +172,11 @@ def _readings(text: str) -> list[str]:
     return out
 
 
-def url_hit(text: str) -> re.Match[str] | None:
+def url_hit(text: str, pattern: re.Pattern[str] = _URL_HIT_RE) -> re.Match[str] | None:
     """The first URL or web address in any reading of ``text``."""
     for reading in _readings(text):
         folded = reading.casefold()
-        m = _URL_HIT_RE.search(folded) or _URL_HIT_RE.search(folded.replace("\\", "/"))
+        m = pattern.search(folded) or pattern.search(folded.replace("\\", "/"))
         if m:
             return m
     return None
@@ -178,8 +187,8 @@ def _url_problem(line: int, col: int, m: re.Match[str]) -> Diagnostic:
 
 
 def url_problems(text: str) -> list[Diagnostic]:
-    """One problem per line holding a URL, or one at line 1 for a URL only
-    the whole text spells (a token split over lines)."""
+    """One problem per line holding a URL, or one at line 1 for a ``//``,
+    ``www.`` or ``scheme:/`` only the whole text spells (split over lines)."""
     out = []
     for i, line in enumerate(text.split("\n")):
         m = url_hit(line)
@@ -187,7 +196,7 @@ def url_problems(text: str) -> list[Diagnostic]:
             raw = _URL_HIT_RE.search(line.casefold())
             out.append(_url_problem(i + 1, raw.start() + 1 if raw else 1, m))
     if not out:
-        m = url_hit(text)
+        m = url_hit(text, _JOINED_HIT_RE)
         if m:
             out.append(_url_problem(1, 1, m))
     return out
@@ -346,9 +355,9 @@ def structure_problems(draft: str) -> list[Diagnostic]:
                 stack.append(value)
         elif isinstance(node, yaml.SequenceNode):
             stack.extend(node.value)
-        elif isinstance(node, yaml.ScalarNode) and (m := url_hit(node.value)):
+        elif isinstance(node, yaml.ScalarNode) and (hits := url_problems(node.value)):
             mark = node.start_mark
-            out.append(_url_problem(fm_line + mark.line, mark.column + 1, m))
+            out.append(_problem(fm_line + mark.line, mark.column + 1, hits[0].message))
     first = parsed.body.split("\n", 1)[0]
     if re.fullmatch(r"\s*(?:-{3,}|\.{3})\s*", first):
         body_line = (parsed.fm_head + parsed.fm_inner + parsed.fm_close + parsed.gap).count("\n") + 1
