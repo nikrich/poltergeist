@@ -46,8 +46,10 @@ def test_hand_edited_frontmatter_survives_byte_for_byte(tmp_vault):
     assert p.read_text() == HAND_EDITED.replace(
         "2026-01-01T00:00:00+00:00", NOW
     ).replace("old body\n", "# edited\n\nnew body\n")
-    assert res == {"path": REL, "updated": NOW, "etag": compute_etag(p.read_bytes()),
-                   "historyOk": True}
+    assert {k: res[k] for k in ("path", "updated", "etag", "status", "changeId")} == {
+        "path": REL, "updated": NOW, "etag": compute_etag(p.read_bytes()),
+        "status": "applied", "changeId": None,
+    }
 
 
 def test_golden_canonical_file_matches_legacy_bytes(tmp_vault):
@@ -128,4 +130,5 @@ def test_upsert_returns_etag_and_honours_if_match(client, tmp_vault, auth_header
 
 def test_save_note_at_path_repo_contract(tmp_vault):
     res = save_note_at_path("Familiar/x.md", "body")
-    assert res == {"path": "Familiar/x.md", "created": True, "etag": compute_etag(b"body\n")}
+    assert res == {"path": "Familiar/x.md", "created": True, "etag": compute_etag(b"body\n"),
+                   "status": "applied", "changeId": None}

@@ -9,7 +9,10 @@ def test_upsert_creates_nested_note(client, tmp_vault, auth_headers):
         headers=auth_headers,
     )
     assert r.status_code == 200
-    assert {k: v for k, v in r.json().items() if k != "etag"} == {"path": "Familiar/briefings/2026-07-08.md", "created": True}
+    out = r.json()
+    assert (out["path"], out["created"], out["status"]) == (
+        "Familiar/briefings/2026-07-08.md", True, "applied")
+    assert out["changeId"] is not None  # a plugin create is on the Changes screen (B2)
     assert len(r.json()["etag"]) == 16
     on_disk = (tmp_vault / "Familiar" / "briefings" / "2026-07-08.md").read_text()
     assert on_disk.startswith("---\ntype: familiar-briefing")

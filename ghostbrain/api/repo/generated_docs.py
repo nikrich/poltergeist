@@ -37,4 +37,4 @@ def write_doc(title: str, html: str, *, actor: Actor = MCP) -> dict:
         actor=actor,
         reason=f"generated doc: {title}",
     )
-    return {"path": res.path, "title": title}
+    return {"path": res.path, "title": title, "status": res.status, "changeId": res.change_id}

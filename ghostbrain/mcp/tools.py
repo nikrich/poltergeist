@@ -74,4 +74,10 @@ def write_doc(client: _Client, title: str, html: str) -> str:
         data = client.write_doc(title, html)
     except Exception as e:  # noqa: BLE001 — surface failure as text, never raise
         return f"Poltergeist could not save the document: {e}"
-    return str(data.get("path") or "")
+    path = str(data.get("path") or "")
+    if data.get("status") == "pending":
+        return (
+            f"{path} is waiting for the user's approval on the Changes screen "
+            f"(change #{data.get('changeId')}); it is not in the vault until they approve it."
+        )
+    return path

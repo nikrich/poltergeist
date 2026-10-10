@@ -3,7 +3,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi import Path as PathParam
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 
 from ghostbrain import routing_config
 from ghostbrain.api.models.note import (
@@ -260,9 +260,11 @@ def delete_note(
     base_etag: str | None = Depends(if_match),
     actor: Actor = Depends(request_actor),
 ) -> Response:
-    """Delete a jot permanently."""
+    """Delete a jot permanently. 202 when the delete waits for approval (B3)."""
     try:
-        delete_jot(jot_id, actor=actor, base_etag=base_etag)
+        res = delete_jot(jot_id, actor=actor, base_etag=base_etag)
     except JotNotFound:
         raise HTTPException(status_code=404, detail=f"Jot not found: {jot_id}")
+    if res.status == "pending":
+        return JSONResponse(status_code=202, content={"status": "pending", "changeId": res.change_id})
     return Response(status_code=204)

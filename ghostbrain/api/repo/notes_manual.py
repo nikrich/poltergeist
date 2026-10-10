@@ -263,7 +263,7 @@ def update_jot_body(
         reason=reason,
     )
     return {"id": jot_id, "path": res.path, "updated": now, "etag": res.etag,
-            "historyOk": res.history_ok}
+            "historyOk": res.history_ok, "status": res.status, "changeId": res.change_id}
 
 
 def move_jot(
@@ -319,7 +319,7 @@ def move_jot(
     log.info("moved jot id=%s -> %s (project=%s)", jot_id, to_context, to_project)
     return {
         "id": jot_id, "path": res.path, "context": to_context, "project": to_project,
-        "etag": res.etag,
+        "etag": res.etag, "status": res.status, "changeId": res.change_id,
     }
 
 
@@ -345,9 +345,11 @@ def set_frontmatter_fields(jot_id: str, fields: dict[str, Any], *, actor: Actor 
     return {"id": jot_id, "path": res.path, "etag": res.etag}
 
 
-def delete_jot(jot_id: str, *, actor: Actor = USER, base_etag: str | None = None) -> None:
+def delete_jot(
+    jot_id: str, *, actor: Actor = USER, base_etag: str | None = None
+) -> vault_write.WriteResult:
     path = _find_file(jot_id)
-    vault_write.write(
+    return vault_write.write(
         _vault_rel(path), op="delete", actor=actor, reason="deleted jot", base_etag=base_etag,
     )
 

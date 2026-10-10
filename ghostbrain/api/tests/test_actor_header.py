@@ -117,7 +117,8 @@ def test_a_plugin_deleting_a_users_jot_needs_its_etag(tmp_vault, client, auth_he
     assert path.exists()
     etag = compute_etag(path.read_bytes())
     r = client.delete(f"/v1/notes/{rec['id']}", headers={**h, "If-Match": f'"{etag}"'})
-    assert r.status_code == 204
+    assert r.status_code == 202  # B3: held, it is not the plugin's jot
+    assert path.exists()
     [row] = changes.list_changes()
     assert (row.actor, row.op) == ("plugin:familiar", "delete")
 
