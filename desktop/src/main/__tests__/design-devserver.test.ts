@@ -5,6 +5,10 @@ import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// Worktree dev servers are macOS-only (they run under sandbox-exec and fail
+// closed elsewhere); these tests use POSIX paths, symlinks and process groups.
+const describePosix = describe.skipIf(process.platform === 'win32');
+
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => '/tmp' } }));
 
 import {
@@ -62,7 +66,7 @@ afterAll(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-describe('readRunConfig', () => {
+describePosix('readRunConfig', () => {
   it('reads a valid config', () => {
     const wt = makeWorktree('app-poltergeist-2026-10-10-ok');
     expect(readRunConfig(wt)).toEqual({ script: 'dev', port_flag: '--port', url_path: '/' });
@@ -105,7 +109,7 @@ describe('readRunConfig', () => {
   });
 });
 
-describe('devServerArgv / packageManager', () => {
+describePosix('devServerArgv / packageManager', () => {
   const cfg = { script: 'dev', port_flag: '--port' as const, url_path: '/' };
   it('npm and pnpm pass the port after --', () => {
     expect(devServerArgv('npm', cfg, 5555)).toEqual(['npm', 'run', 'dev', '--', '--port', '5555']);
@@ -130,7 +134,7 @@ describe('devServerArgv / packageManager', () => {
   });
 });
 
-describe('isAllowedWorktree', () => {
+describePosix('isAllowedWorktree', () => {
   it('accepts a Poltergeist worktree and a nested app dir', () => {
     const wt = makeWorktree('shop-poltergeist-2026-10-10-login');
     expect(isAllowedWorktree(wt, wt)).toBe(true);
@@ -163,7 +167,7 @@ describe('isAllowedWorktree', () => {
   });
 });
 
-describe('DevServers', () => {
+describePosix('DevServers', () => {
   let wt: string;
   let children: FakeChild[];
   let spawn: ReturnType<typeof vi.fn>;
@@ -398,7 +402,7 @@ describe('DevServers', () => {
 });
 
 
-describe('dev server sandboxing', () => {
+describePosix('dev server sandboxing', () => {
   it('passes only an allowlisted environment', () => {
     const env = devServerBaseEnv({
       HOME: '/Users/me',
@@ -419,7 +423,7 @@ describe('dev server sandboxing', () => {
   });
 });
 
-describe('dev server sandbox', () => {
+describePosix('dev server sandbox', () => {
   it('wraps the argv in sandbox-exec with the worktree and vault as parameters', () => {
     const argv = sandboxArgv(['npm', 'run', 'dev'], {
       worktree: '/code/web-poltergeist-2026-10-10-x',
