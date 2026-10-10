@@ -399,3 +399,34 @@ def test_install_refuses_after_commits_on_the_branch(repo: Path, tmp_path: Path)
     worktree.commit(wt, "rev 1: one")
     with pytest.raises(worktree.WorktreeError, match="changed since it was created"):
         worktree.install(wt, log_path=tmp_path / "i.log", runner=lambda *a, **k: 0)
+
+
+def test_install_refuses_ignored_files_the_agent_planted(repo: Path, tmp_path: Path) -> None:
+    (repo / ".gitignore").write_text("node_modules/\n.env.local\n")
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "ignore"], check=True)
+    subprocess.run(["git", "-C", str(repo), "push", "-q", "origin", "main"], check=True)
+    wt = _wt(repo, "ignored")
+    (wt.path / ".env.local").write_text("NODE_OPTIONS=--require ./evil.js")
+    with pytest.raises(worktree.WorktreeError, match="changed since it was created"):
+        worktree.install(wt, log_path=tmp_path / "i.log", runner=lambda *a, **k: 0)
+
+
+def test_install_wipes_existing_node_modules_first(repo: Path, tmp_path: Path) -> None:
+    wt = _wt(repo, "nm")
+    outside = tmp_path / "outside-keep"
+    outside.mkdir()
+    (outside / "keep.txt").write_text("x")
+    (wt.path / "node_modules/evil").mkdir(parents=True)
+    (wt.path / "node_modules/evil/install.js").write_text("evil()")
+    (wt.path / "src/node_modules").mkdir()
+    (wt.path / "src/node_modules/x.js").write_text("evil()")
+    (wt.path / "packages").mkdir()
+    (wt.path / "packages/node_modules").symlink_to(outside, target_is_directory=True)
+    seen = []
+    worktree.install(wt, log_path=tmp_path / "i.log",
+                     runner=lambda argv, **k: seen.append(argv) or 0)
+    assert seen
+    assert not (wt.path / "node_modules").exists() and not (wt.path / "src/node_modules").exists()
+    assert not (wt.path / "packages/node_modules").exists()
+    assert (outside / "keep.txt").exists()

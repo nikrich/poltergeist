@@ -17,6 +17,7 @@ import glob
 import logging
 import os
 import re
+import shutil
 import signal
 import subprocess
 from collections.abc import Callable
@@ -349,15 +350,38 @@ def _run_install(argv: list[str], *, cwd: Path, timeout_s: float, log_file: IO[s
         raise
 
 
+def _wipe_node_modules(root: Path) -> None:
+    """Remove every node_modules folder in the worktree (they are reinstalled):
+    anything an agent left there must not run. Symlinks are unlinked, never
+    followed; each entry is renamed before it is deleted so a swap can't
+    redirect the delete."""
+    for dirpath, dirnames, _ in os.walk(root, followlinks=False):
+        if ".git" in dirnames:
+            dirnames.remove(".git")
+        if "node_modules" in dirnames:
+            dirnames.remove("node_modules")
+            target = Path(dirpath) / "node_modules"
+            doomed = target.with_name(f"node_modules.gb-wipe-{os.getpid()}")
+            try:
+                os.rename(target, doomed)
+            except OSError:
+                continue
+            if doomed.is_symlink() or not doomed.is_dir():
+                doomed.unlink(missing_ok=True)
+            else:
+                shutil.rmtree(doomed, ignore_errors=True)
+
+
 def _require_pristine(wt: Worktree) -> None:
     """Install runs lifecycle scripts unsandboxed: only ever on the tree as
     created from the repo, before any agent edit (scripts it calls could
-    otherwise be agent-written)."""
+    otherwise be agent-written). Ignored files count too — a fresh worktree
+    has none once node_modules is gone."""
+    _wipe_node_modules(wt.path)
     head = _wt_git(wt, "rev-parse", "HEAD").strip()
     base = _wt_git(wt, "rev-parse", f"{wt.base}^{{commit}}").strip()
-    dirty = [line for line in _wt_git(wt, "status", "--porcelain", "--untracked-files=all").splitlines()
-             if not line[3:].startswith("node_modules/") and "/node_modules/" not in line[3:]]
-    if head != base or dirty:
+    status = _wt_git(wt, "status", "--porcelain", "-z", "--ignored", "--untracked-files=all")
+    if head != base or status.strip("\0"):
         raise WorktreeError(
             "the worktree changed since it was created; dependencies are only installed on a fresh "
             "worktree — start a new session to reinstall")
