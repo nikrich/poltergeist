@@ -62,6 +62,9 @@ import type {
   TemplateCreateResponse,
   TemplateRenderResponse,
   TemplatesResponse,
+  ChangeActionResponse,
+  ChangeDetailResponse,
+  ChangesListResponse,
 } from '../../../shared/api-types';
 import { ApiError, del, get, patch, post, put } from './client';
 import { reportHistoryHealth } from '../history-health';
@@ -1207,5 +1210,71 @@ export function useRenderTemplate() {
   return useMutation({
     mutationFn: ({ id, answers }: TemplateAnswersVars) =>
       post<TemplateRenderResponse>(`/v1/templates/${encodeURIComponent(id)}/render`, { answers }),
+  });
+}
+
+// ── Change log (spec B, slice B2) ────────────────────────────────────────────
+
+export interface ChangesFilter {
+  /** assistant | mcp | plugin | worker | an exact actor; null = all */
+  actor: string | null;
+  /** Path substring; null = no filter. */
+  q: string | null;
+}
+
+export function changesQueryPath(f: ChangesFilter): string {
+  const params = new URLSearchParams({ limit: '200' });
+  if (f.actor) params.set('actor', f.actor);
+  if (f.q) params.set('q', f.q);
+  return `/v1/changes?${params.toString()}`;
+}
+
+export function useChanges(f: ChangesFilter) {
+  return useQuery({
+    queryKey: ['changes', f.actor, f.q],
+    queryFn: () => get<ChangesListResponse>(changesQueryPath(f)),
+    refetchInterval: 30_000,
+  });
+}
+
+export function useChange(id: number | null) {
+  return useQuery({
+    queryKey: ['change', id],
+    queryFn: () => get<ChangeDetailResponse>(`/v1/changes/${id}`),
+    enabled: id !== null,
+    staleTime: 0,
+  });
+}
+
+function useChangeAction(action: 'revert' | 'undo') {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { id: number; force?: boolean }) =>
+      post<ChangeActionResponse>(`/v1/changes/${vars.id}/${action}`, { force: vars.force ?? false }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['changes'] });
+      qc.invalidateQueries({ queryKey: ['change'] });
+      qc.invalidateQueries({ queryKey: ['note'] });
+      qc.invalidateQueries({ queryKey: ['note-by-path'] });
+      qc.invalidateQueries({ queryKey: ['note-history'] });
+      qc.invalidateQueries({ queryKey: JOTS_KEY });
+      qc.invalidateQueries({ queryKey: ['vault', 'backlinks'] });
+    },
+  });
+}
+
+export function useRevertChange() {
+  return useChangeAction('revert');
+}
+
+export function useUndoRevert() {
+  return useChangeAction('undo');
+}
+
+export function useDismissChangesWarning() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => del('/v1/changes/degraded'),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['changes'] }),
   });
 }

@@ -903,3 +903,53 @@ export interface TemplateFunctionsResponse {
   filters: TemplateFunctionSpec[];
   promptTypes: TemplateFunctionSpec[];
 }
+
+export type ChangeStatus = 'applied' | 'pending' | 'reverted' | 'rejected' | 'conflicted';
+export type ChangeOp = 'create' | 'modify' | 'delete' | 'move';
+
+/** One row of the change log (spec B §4): a non-user write to the vault. */
+export interface ChangeSummary {
+  id: number;
+  ts: string;
+  /** assistant | mcp | plugin:<id> | worker:<job> */
+  actor: string;
+  /** Vault-relative path before the change. */
+  path: string;
+  /** Destination of a move; null otherwise. */
+  destPath: string | null;
+  op: ChangeOp;
+  reason: string;
+  status: ChangeStatus;
+  /** Why the change was held (B3); empty otherwise. */
+  riskReasons: string[];
+  /** When it was reverted / rejected; null while applied or pending. */
+  resolvedTs: string | null;
+}
+
+export interface ChangesListResponse {
+  /** Newest first. */
+  items: ChangeSummary[];
+  pendingCount: number;
+  /** A change-log insert failed after a write: some changes may be missing. */
+  degraded: boolean;
+}
+
+export interface ChangeDetailResponse extends ChangeSummary {
+  /** Whole file before the change; null for a create (or a GC'd version). */
+  before: string | null;
+  /** Whole file after (pending bytes for a pending change); null for a delete. */
+  after: string | null;
+  /** Whole file on disk now at the path a revert / undo acts on. */
+  current: string | null;
+  /** The file no longer holds what a revert (or undo) expects. */
+  changedSince: boolean;
+  /** Unified diff before → after. */
+  diff: string;
+}
+
+export interface ChangeActionResponse {
+  id: number;
+  status: ChangeStatus;
+  path: string;
+  etag: string | null;
+}
