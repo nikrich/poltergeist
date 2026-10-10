@@ -890,7 +890,7 @@ export interface TemplateRenderResponse {
 
 export interface TemplateFunctionSpec {
   name: string;
-  kind: 'variable' | 'field' | 'filter' | 'prompt_type';
+  kind: 'variable' | 'field' | 'filter' | 'prompt_type' | 'query_key';
   type: string;
   doc: string;
   example: string;
@@ -905,6 +905,7 @@ export interface TemplateFunctionsResponse {
   fields: TemplateFunctionSpec[];
   filters: TemplateFunctionSpec[];
   promptTypes: TemplateFunctionSpec[];
+  queryKeys: TemplateFunctionSpec[];
 }
 
 export type ChangeStatus = 'applied' | 'pending' | 'reverted' | 'rejected' | 'conflicted';
@@ -1003,4 +1004,34 @@ export interface TemplateDryRunResponse {
   wouldBeFiledAt: string | null;
   diagnostics: TemplateDiagnostic[];
   error: string | null;
+}
+
+// ── Live queries (C2) ─────────────────────────────────────────────────────
+
+export interface VaultQueryRow {
+  path: string;
+  title: string;
+  context: string;
+  status: string | null;
+  created: string | null;
+  snippet: string;
+  /** sha256(file bytes)[:16] at query time — sent as If-Match when ticking. */
+  etag: string | null;
+}
+
+export interface VaultQueryResponse {
+  results: VaultQueryRow[];
+  diagnostics: TemplateDiagnostic[];
+  /** Cold link index: no results yet, retry shortly. */
+  indexing: boolean;
+  /** A scan bound was hit: the list may be incomplete. */
+  partial: boolean;
+}
+
+export type NoteStatusValue = 'done' | 'open';
+
+export interface NoteStatusResponse {
+  path: string;
+  status: NoteStatusValue;
+  etag: string | null;
 }
