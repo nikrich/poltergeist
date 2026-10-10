@@ -73,6 +73,24 @@ describe('ActivityHeatmap', () => {
     ).toHaveAttribute('data-level', '0');
   });
 
+  it('colours each level from its theme token, and outlines the selected day', () => {
+    render(
+      <ActivityHeatmap
+        days={indexHeatmapDays(days)}
+        weeks={2}
+        maxCount={23}
+        endDate="2026-06-10"
+        selectedDate="2026-06-04"
+      />,
+    );
+    const busy = screen.getByRole('button', { name: '2026-06-04 — 23 events' });
+    expect(busy.style.background).toBe('var(--heat-4)');
+    expect(busy.style.outline).toBe('1px solid var(--heat-outline)');
+    expect(
+      screen.getByRole('button', { name: '2026-06-01 — 0 events' }).style.background,
+    ).toBe('var(--heat-0)');
+  });
+
   it('fires onSelectDay with the ISO date', () => {
     const onSelectDay = vi.fn();
     render(

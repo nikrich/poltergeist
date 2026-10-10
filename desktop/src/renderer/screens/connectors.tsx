@@ -597,7 +597,7 @@ function ConnectorDetailPanel({ c }: ConnectorDetailProps) {
                 key={s}
                 className="flex items-center gap-2 font-mono text-11 text-ink-1"
               >
-                <Lucide name="check" size={12} color="var(--neon)" />
+                <Lucide name="check" size={12} color="var(--neon-glyph)" />
                 <span>{s}</span>
               </div>
             ))}

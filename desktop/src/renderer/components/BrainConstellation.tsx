@@ -827,7 +827,7 @@ export function BrainConstellation() {
               onClick={() => openNote(card.node.path)}
               className="flex shrink-0 items-center gap-[6px] whitespace-nowrap border-0 bg-transparent p-0 text-neon"
             >
-              <Lucide name="eye" size={11} color="var(--neon)" />
+              <Lucide name="eye" size={11} color="var(--neon-glyph)" />
               view note
             </button>
             <button
@@ -835,7 +835,7 @@ export function BrainConstellation() {
               onClick={() => onOpenPath(card.node.path)}
               className="flex shrink-0 items-center gap-[6px] whitespace-nowrap border-0 bg-transparent p-0 text-neon"
             >
-              <Lucide name="external-link" size={11} color="var(--neon)" />
+              <Lucide name="external-link" size={11} color="var(--neon-glyph)" />
               open in vault
             </button>
           </div>
