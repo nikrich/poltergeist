@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react';
 import type { Editor } from '@tiptap/core';
 import { Lucide } from './Lucide';
+import { shortcutLabel } from '../lib/editor-shortcuts';
 
 interface Props {
   editor: Editor | null;
   onPhoto: () => void;
+  /** Opens inline AI (A5); the button is hidden when absent. */
+  onAssist?: () => void;
 }
 
-export function EditorToolbar({ editor, onPhoto }: Props) {
+export function EditorToolbar({ editor, onPhoto, onAssist }: Props) {
   // Re-render on selection/content changes so active states stay accurate.
   const [, force] = useState(0);
   useEffect(() => {
@@ -51,6 +54,18 @@ export function EditorToolbar({ editor, onPhoto }: Props) {
           <Lucide name={it.icon} size={13} />
         </button>
       ))}
+      {onAssist && (
+        <button
+          type="button"
+          aria-label="inline ai"
+          title={`inline ai (${shortcutLabel('inlineAi')})`}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={onAssist}
+          className="ml-auto flex h-6 items-center gap-1 rounded-sm px-2 text-11 text-ink-2 hover:bg-fog"
+        >
+          <Lucide name="sparkles" size={13} />✦
+        </button>
+      )}
       <button
         type="button"
         aria-label="photo"

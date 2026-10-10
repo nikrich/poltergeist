@@ -1,15 +1,31 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Editor } from '@tiptap/core';
 import { EditorContent, useEditor } from '@tiptap/react';
+import { CellSelection } from '@tiptap/pm/tables';
 import { buildEditorExtensions } from '../lib/editor/extensions';
 import { onGb } from '../lib/editor/events';
 import { clipboardPayload, getMarkdown, rangeMarkdown } from '../lib/editor/markdown';
 import { insertImageFile } from '../lib/editor/insert-image';
 import { noteTarget } from '../lib/editor/link-suggest';
+import {
+  acceptAiSuggestion,
+  attachAiSuggestion,
+  clearAiSuggestion,
+  type SuggestionKey,
+} from '../lib/editor/ai-suggestion';
+import {
+  captureInlineContext,
+  type InlineAction,
+  type InlineAssistTarget,
+  type InlineContext,
+} from '../lib/editor/inline-assist';
+import { matchesShortcut } from '../lib/editor-shortcuts';
+import { isMac } from '../lib/platform';
 import { toast } from '../stores/toast';
 import { Btn } from './Btn';
 import { DiagramModal } from './DiagramModal';
 import { EditorToolbar } from './EditorToolbar';
+import { InlineAssistPopover } from './InlineAssistPopover';
 import { JotEditor } from './JotEditor';
 import { Lucide } from './Lucide';
 import { ReadAloudControls } from './ReadAloudControls';
@@ -27,6 +43,11 @@ export interface EditorHandle {
   getHTML: () => string;
   /** Full document as markdown. */
   getMarkdown: () => string;
+  /** Open inline AI on the current selection and run `action` at once (the
+   * docs panel hands selection-level actions here). False when inline AI is
+   * unavailable: source mode, read-only, no target, or a cell selection.
+   * This is the entry point other UI (e.g. an Insert-menu "Ask AI") calls. */
+  startInlineAssist?: (action: InlineAction) => boolean;
 }
 
 // Regex matching Obsidian-style wikilinks: [[path]] or [[path|alias]]
@@ -71,6 +92,12 @@ export interface RichMarkdownEditorProps {
   openCameraSignal?: number;
   /** Focus mode (A4): hide the formatting toolbar and centre the page. */
   focus?: boolean;
+  /** Enables inline AI (⌘J / ✦, spec A5): the note the assist reads, and a
+   * hook called right before an accepted suggestion is saved (the caller
+   * marks that save as the assistant's — B2 attributeNext). Other entry
+   * points (e.g. an Insert-menu "Ask AI") go through
+   * `EditorHandle.startInlineAssist`; they work only while this is set. */
+  inlineAssist?: { target: InlineAssistTarget; onAccept?: () => void };
 }
 
 type Mode = 'rich' | 'source';
@@ -100,6 +127,7 @@ export function RichMarkdownEditor({
   onPhotoInserted,
   openCameraSignal,
   focus = false,
+  inlineAssist,
 }: RichMarkdownEditorProps) {
   // Evaluated once per mount; parents remount per note via key={...}.
   const [parseFailed] = useState(() => !parsesAsRich(markdown));
@@ -110,6 +138,10 @@ export function RichMarkdownEditor({
   const closeStatus = useCallback(() => setStatusPos(null), []);
   const [diagramSource, setDiagramSource] = useState<string | null>(null);
   const closeDiagram = useCallback(() => setDiagramSource(null), []);
+  const [inline, setInline] = useState<{ ctx: InlineContext; initial?: InlineAction; n: number } | null>(null);
+  const inlineKeyRef = useRef<((key: SuggestionKey) => boolean) | null>(null);
+  // editorProps.handleKeyDown is captured once — route ⌘J through a ref.
+  const openInlineRef = useRef<(initial?: InlineAction) => boolean>(() => false);
   // Track previous openCameraSignal to skip the initial mount value.
   const prevCameraSignalRef = useRef(openCameraSignal);
 
@@ -150,6 +182,21 @@ export function RichMarkdownEditor({
     }, debounceMs);
   }
 
+  /** Save now instead of after the debounce. `beforeSave` runs only when a
+   * save is actually sent (inline accept: attribute exactly that save). */
+  function flushSave(beforeSave?: () => void): boolean {
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
+    const next = current.current;
+    if (next === lastSaved.current) return false;
+    beforeSave?.();
+    lastSaved.current = next;
+    onSave(next);
+    return true;
+  }
+
   const editor = useEditor({
     extensions: buildEditorExtensions(),
     content: parseFailed ? '' : markdown,
@@ -163,6 +210,11 @@ export function RichMarkdownEditor({
         ) {
           event.preventDefault();
           handleCopyRef.current();
+          return true;
+        }
+        if (matchesShortcut(event, 'inlineAi', isMac)) {
+          event.preventDefault();
+          openInlineRef.current();
           return true;
         }
         return false;
@@ -240,6 +292,12 @@ export function RichMarkdownEditor({
   }, [editor]);
   /* eslint-enable react-hooks/exhaustive-deps */
 
+  // Inline AI's decoration diff (runtime plugin; the schema is untouched).
+  useEffect(() => {
+    if (!editor) return;
+    return attachAiSuggestion(editor, { onKey: (key) => inlineKeyRef.current?.(key) ?? false });
+  }, [editor]);
+
   // Subscribe to slash-command photo event emitted by the editor extensions.
   useEffect(() => {
     if (!editor) return;
@@ -296,6 +354,38 @@ export function RichMarkdownEditor({
     setCamOpen(!readOnly);
   }, [openCameraSignal, readOnly]);
 
+  function openInline(initial?: InlineAction): boolean {
+    if (!editor || editor.isDestroyed || mode !== 'rich' || readOnly || !inlineAssist) return false;
+    if (editor.state.selection instanceof CellSelection) {
+      toast.error('select text inside one table cell for inline ai');
+      return false;
+    }
+    if (inline) return true;
+    // Keystrokes typed before ⌘J are the user's: save them unattributed first.
+    flushSave();
+    const ctx = captureInlineContext(editor);
+    setInline((prev) => ({ ctx, initial, n: (prev?.n ?? 0) + 1 }));
+    return true;
+  }
+
+  function closeInline() {
+    setInline(null);
+    if (editor && !editor.isDestroyed) {
+      clearAiSuggestion(editor);
+      editor.commands.focus();
+    }
+  }
+
+  function acceptInline() {
+    if (!editor || editor.isDestroyed) return;
+    const changed = acceptAiSuggestion(editor);
+    setInline(null);
+    // One immediate save carrying exactly the accepted text, marked as the
+    // assistant's; nothing is marked when the accept changed nothing.
+    if (changed) flushSave(inlineAssist?.onAccept);
+    editor.commands.focus();
+  }
+
   // Populate the imperative handle so docs-assist panel and PDF export can
   // programmatically read/replace editor content without prop drilling.
   // Keyed on editor + mode + handleRef so the handle stays fresh when mode
@@ -310,6 +400,8 @@ export function RichMarkdownEditor({
         return empty ? '' : rangeMarkdown(editor, from, to);
       },
       replaceWith(md: string, target: 'selection' | 'doc'): void {
+        if (editor && !editor.isDestroyed) clearAiSuggestion(editor);
+        setInline(null);
         if (mode === 'rich' && editor && !editor.isDestroyed) {
           if (target === 'selection') {
             // tiptap-markdown@0.8.10 overrides insertContentAt (and setContent)
@@ -341,6 +433,9 @@ export function RichMarkdownEditor({
       getMarkdown(): string {
         return current.current;
       },
+      startInlineAssist(action: InlineAction): boolean {
+        return openInlineRef.current(action);
+      },
     };
     return () => {
       if (handleRef) handleRef.current = null;
@@ -371,6 +466,7 @@ export function RichMarkdownEditor({
   useEffect(() => {
     handleCopyRef.current = () => void handleCopy();
     onWikilinkClickRef.current = onWikilinkClick;
+    openInlineRef.current = openInline;
   });
 
   // Cross-write guard (mirrors JotEditor): if the markdown prop switches
@@ -384,6 +480,8 @@ export function RichMarkdownEditor({
       try {
         // tiptap-markdown overrides setContent to parse markdown strings;
         // emitUpdate=false so the resync never schedules a save.
+        clearAiSuggestion(editor);
+        setInline(null);
         editor.commands.setContent(markdown, false);
       } catch {
         setMode('source');
@@ -405,6 +503,8 @@ export function RichMarkdownEditor({
     if (next === mode) return;
     setStatusPos(null);
     if (next === 'source') {
+      setInline(null);
+      if (editor && !editor.isDestroyed) clearAiSuggestion(editor);
       if (editor && !editor.isDestroyed) current.current = getMarkdown(editor);
       setMode('source');
       return;
@@ -425,7 +525,11 @@ export function RichMarkdownEditor({
       data-focus={focus ? 'on' : undefined}
     >
       {mode === 'rich' && editor && !focus && !readOnly && (
-        <EditorToolbar editor={editor} onPhoto={() => setCamOpen(true)} />
+        <EditorToolbar
+          editor={editor}
+          onPhoto={() => setCamOpen(true)}
+          onAssist={inlineAssist ? () => void openInline() : undefined}
+        />
       )}
       <div className="flex-1 overflow-auto">
         {mode === 'rich' && editor && !readOnly && <TableToolbar editor={editor} />}
@@ -488,6 +592,18 @@ export function RichMarkdownEditor({
         <StatusPopover key={statusPos} editor={editor} pos={statusPos} onClose={closeStatus} />
       )}
       {diagramSource !== null && <DiagramModal source={diagramSource} onClose={closeDiagram} />}
+      {mode === 'rich' && editor && inline && inlineAssist && (
+        <InlineAssistPopover
+          key={inline.n}
+          editor={editor}
+          target={inlineAssist.target}
+          context={inline.ctx}
+          initial={inline.initial}
+          keyRef={inlineKeyRef}
+          onAccept={acceptInline}
+          onClose={closeInline}
+        />
+      )}
       <WebcamCaptureModal
         open={camOpen && !readOnly}
         onClose={() => setCamOpen(false)}
