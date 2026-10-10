@@ -138,7 +138,6 @@ def check_for_reversals(
     by_id = {c.artifact_id: c for c in candidates}
     contradicted: list[Path] = []
     rev_links: list[str] = []
-    new_links: list[str] = []
     reasonings: dict[str, str] = {}
 
     for entry in reversals:
@@ -151,7 +150,6 @@ def check_for_reversals(
             continue
         contradicted.append(cand.path)
         rev_links.append(_wikilink_for(cand.path))
-        new_links.append(_wikilink_for(new_artifact_path))
         reasonings[cid] = reason
 
     if not contradicted:
@@ -164,10 +162,18 @@ def check_for_reversals(
     new_link = _wikilink_for(new_artifact_path)
     reasons = list(reasonings.values())
 
-    def _contradicts(_meta: dict[str, Any]) -> dict[str, Any]:
-        fields: dict[str, Any] = {"contradicts": rev_links}
-        if reasons:
-            fields["reversalReasons"] = reasons
+    def _contradicts(meta: dict[str, Any]) -> dict[str, Any]:
+        # Merge into the note's current values (a retry after a user save
+        # must keep what the user added), like _add_backlink.
+        fields: dict[str, Any] = {}
+        for key, additions in (("contradicts", rev_links), ("reversalReasons", reasons)):
+            existing = _as_list(meta.get(key))
+            merged = list(existing)
+            for item in additions:
+                if item not in merged:
+                    merged.append(item)
+            if merged != existing:
+                fields[key] = merged
         return fields
 
     # Patch the new artifact with `contradicts:` pointers.
@@ -204,9 +210,12 @@ def _vault_rel(path: Path) -> str | None:
     return None
 
 
+def _as_list(raw: Any) -> list[Any]:
+    return list(raw) if isinstance(raw, list) else ([raw] if raw else [])
+
+
 def _add_backlink(meta: dict[str, Any], link: str) -> dict[str, Any]:
-    raw = meta.get("reversed_by")
-    existing = list(raw) if isinstance(raw, list) else ([raw] if raw else [])
+    existing = _as_list(meta.get("reversed_by"))
     if link in existing:
         return {}
     return {"reversed_by": [*existing, link]}

@@ -128,3 +128,16 @@ def test_a_history_failure_is_logged_not_raised(vault: Path, monkeypatch) -> Non
     result = _run(new, RULING)
     assert result.contradicted_paths == []
     assert (old.read_bytes(), new.read_bytes()) == before
+
+
+def test_a_hand_added_contradicts_entry_is_kept(vault: Path) -> None:
+    from ghostbrain.vault_write import read
+    from ghostbrain.worker import reversal
+
+    old = _decision(vault, "old-1", "Use DynamoDB", NOW - timedelta(days=10))
+    new = _decision(vault, "new-1", "Use Postgres", NOW,
+                    extra="contradicts:\n- '[[mine]]'\n")
+    _run(new, RULING)
+    meta = read(f"{DECISIONS}/new-1.md").metadata()
+    assert meta["contradicts"] == ["[[mine]]", reversal._wikilink_for(old)]
+    assert meta["reversalReasons"] == [RULING[0]["reasoning"]]
