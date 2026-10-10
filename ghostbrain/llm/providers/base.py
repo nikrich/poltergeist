@@ -56,6 +56,9 @@ class ChatRequest:
     history: list[dict] | None = None
     timeout_s: int = 300
     allowed_tools: str | None = None
+    # True: the turn gets no built-in agent tools (shell, file reads, web),
+    # only the allowed vault MCP tools.
+    no_builtin_tools: bool = False
 
 
 @dataclass

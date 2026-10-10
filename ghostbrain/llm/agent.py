@@ -198,6 +198,15 @@ def _user_allowed_tools(server: dict) -> list[str]:
     return [f"mcp__{server['name']}__{t}" for t in tools]
 
 
+# Every Claude Code built-in tool, denied for turns that must reach nothing
+# but the vault MCP tools (ChatRequest.no_builtin_tools).
+BUILTIN_TOOLS = (
+    "Bash", "BashOutput", "KillShell", "KillBash", "Read", "Glob", "Grep", "LS", "Edit", "MultiEdit",
+    "Write", "NotebookEdit", "NotebookRead", "WebFetch", "WebSearch", "Task", "TodoWrite",
+    "SlashCommand", "ExitPlanMode",
+)
+
+
 def build_chat_command(
     binary: str,
     prompt: str,
@@ -208,6 +217,7 @@ def build_chat_command(
     system_prompt: str | None = None,
     allowed_tools: str | None = None,
     user_servers: list[dict] | None = None,
+    no_builtin_tools: bool = False,
 ) -> list[str]:
     cmd = [
         binary,
@@ -251,6 +261,9 @@ def build_chat_command(
     ]
     if grants:
         cmd += ["--allowedTools", ",".join(grants)]
+    if no_builtin_tools:
+        # --allowedTools only pre-approves; it does not remove the built-ins.
+        cmd += ["--disallowedTools", ",".join(BUILTIN_TOOLS)]
     if session_id:
         cmd += ["--resume", session_id]
     # `--` terminates option parsing — without it a variadic flag like

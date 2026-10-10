@@ -117,6 +117,7 @@ class ClaudeCli:
             system_prompt=req.system_prompt,
             allowed_tools=req.allowed_tools,
             user_servers=user_servers,
+            no_builtin_tools=req.no_builtin_tools,
         )
         log.info(
             "chat turn: resume=%s mcp=%s user_servers=%d",

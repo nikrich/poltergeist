@@ -13,8 +13,10 @@ after ``verify_exact`` re-checks the exact text it writes.
 from __future__ import annotations
 
 import itertools
+import logging
 import math
 import re
+import unicodedata
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -37,6 +39,8 @@ from ghostbrain.templates.render import (
 from ghostbrain.templates.starters import ONE_ON_ONE
 from ghostbrain.templates.values import ProjectValue
 
+log = logging.getLogger("ghostbrain.templates.generate")
+
 MAX_DESCRIPTION_CHARS = 2_000
 MAX_DRAFT_CHARS = 20_000
 MAX_PROBLEMS = 20
@@ -47,6 +51,7 @@ MAX_CHOICE_RENDERS = 32
 # draft is rejected rather than checked in part.
 MAX_RENDERED_CHARS = 2_000_000
 GENERATE_TIER = "balanced"
+PROVIDER_FAILED = "check the AI provider in settings"
 GENERATE_TIMEOUT_S = 180
 # Search only: its snippets are bounded, so little vault text reaches the draft.
 TEMPLATE_TOOLS = "mcp__poltergeist__poltergeist_search"
@@ -143,6 +148,13 @@ def system_prompt() -> str:
         ONE_ON_ONE,
         *_registry_lines(),
     ])
+
+
+def clean_description(description: str) -> str:
+    """The request without control or format characters (bidi overrides,
+    zero-width marks); newlines and tabs stay."""
+    return "".join(ch for ch in description
+                   if ch in "\n\t" or unicodedata.category(ch) not in ("Cc", "Cf")).strip()
 
 
 def build_prompt(description: str) -> str:
@@ -326,6 +338,7 @@ def run_turn(prompt: str, *, turn_key: str) -> str:
         history=None,
         timeout_s=GENERATE_TIMEOUT_S,
         allowed_tools=TEMPLATE_TOOLS,
+        no_builtin_tools=True,
     )
     deltas: list[str] = []
     final: str | None = None
@@ -345,7 +358,9 @@ def run_turn(prompt: str, *, turn_key: str) -> str:
     except Exception as e:
         # Any other provider failure (bad config, a dead socket mid-stream)
         # is a failed turn too: callers see only GenerateError or DraftInvalid.
-        raise GenerateError(str(e) or type(e).__name__) from e
+        # Its text can name local paths, so it is logged, not returned.
+        log.warning("template generation: provider failed: %r", e)
+        raise GenerateError(PROVIDER_FAILED) from e
     text = final if final else "".join(deltas)
     if not text.strip():
         raise GenerateError("the model returned nothing")

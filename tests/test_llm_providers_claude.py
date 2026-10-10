@@ -69,3 +69,20 @@ def test_probe_detail_names_the_tier_map_under_tiers(monkeypatch):
     assert probe.ok is True
     assert "models" not in probe.detail
     assert probe.detail["tiers"] == {"fast": "haiku", "balanced": "sonnet", "quality": "opus"}
+
+
+def test_chat_forwards_no_builtin_tools(monkeypatch):
+    from ghostbrain.llm.providers import claude_cli
+
+    seen: list[list[str]] = []
+
+    def fake_stream(cmd, **kw):
+        seen.append(cmd)
+        return iter(())
+
+    monkeypatch.setattr(claude_cli, "stream_subprocess", fake_stream)
+    p = ClaudeCli(binary="/c", mcp_binary="/m")
+    for flag in (False, True):
+        list(p.chat(base.ChatRequest(prompt="q", tier="balanced", session_id=None, turn_key="k",
+                                     no_builtin_tools=flag)))
+    assert "--disallowedTools" not in seen[0] and "--disallowedTools" in seen[1]

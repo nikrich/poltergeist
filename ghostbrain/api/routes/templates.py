@@ -33,6 +33,7 @@ from ghostbrain.templates.generate import (
     MAX_DESCRIPTION_CHARS,
     DraftInvalid,
     GenerateError,
+    clean_description,
     draft_template,
 )
 from ghostbrain.templates.lang import MAX_TEMPLATE_CHARS
@@ -48,7 +49,7 @@ from ghostbrain.templates.source import (
     save_source,
 )
 from ghostbrain.templates.testrun import dry_run
-from ghostbrain.vault_write import Actor, InvalidPath, NotHeldError, WriteConflict
+from ghostbrain.vault_write import USER, Actor, InvalidPath, NotHeldError, WriteConflict
 
 router = APIRouter(prefix="/v1/templates", tags=["templates"])
 _ERRORS = (TemplateNotFound, TemplateInvalid, AnswerError, RenderError)
@@ -173,16 +174,19 @@ class GenerateBody(BaseModel):
 
 
 @router.post("/generate")
-def generate_template(body: GenerateBody) -> dict[str, Any]:
+def generate_template(body: GenerateBody, actor: Actor = Depends(request_actor)) -> dict[str, Any]:
     """Draft a template with the AI. 200 with ``status: "pending"`` (saved as
     an assistant change that waits for approval) or ``status: "invalid"``
     (failed validation twice; the draft comes back, nothing is saved).
 
-    Always proposed as the assistant, whoever calls: no actor header is read,
-    and nothing here approves the change."""
+    User-only: the change is recorded as the assistant's, so only the user
+    may ask for it (a plugin proposes as itself through the write path).
+    Nothing here approves the change."""
     from ghostbrain.templates.ai_save import NotHeld, save_ai_template
 
-    description = body.description.strip()
+    if actor != USER:
+        raise HTTPException(status_code=403, detail="only you can ask the assistant to draft a template")
+    description = clean_description(body.description)
     if not description:
         raise HTTPException(status_code=422, detail="describe the template you want")
     try:
@@ -192,7 +196,7 @@ def generate_template(body: GenerateBody) -> dict[str, Any]:
     try:
         draft = draft_template(description)
     except GenerateError as e:
-        raise HTTPException(status_code=502, detail=f"template generation failed: {e}") from e
+        raise HTTPException(status_code=502, detail=f"template generation failed — {e}") from e
     except DraftInvalid as e:
         return {"status": "invalid", "message": str(e), "draft": e.draft,
                 "diagnostics": [d.to_json() for d in e.problems]}
@@ -203,7 +207,7 @@ def generate_template(body: GenerateBody) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"the AI template was not saved: {e}") from e
     except NotHeld as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
-    except NotHeldError as e:
+    except NotHeldError as e:  # unreachable defence in depth: ai_save turns it into NotHeld
         raise HTTPException(status_code=500, detail="the AI template was not held for approval; "
                                                     "nothing was saved") from e
     except WriteConflict as e:

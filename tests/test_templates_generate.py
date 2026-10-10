@@ -175,6 +175,7 @@ def test_run_turn_is_read_only_and_uses_no_user_servers(monkeypatch):
     for tool in ("poltergeist_get_note", "poltergeist_write_doc", "poltergeist_ask"):
         assert tool not in req.allowed_tools
     assert req.system_prompt == system_prompt()
+    assert req.no_builtin_tools is True
 
 
 def test_run_turn_falls_back_to_deltas_and_reports_errors(monkeypatch):
@@ -1115,8 +1116,10 @@ def test_run_turn_turns_any_provider_failure_into_a_generate_error(monkeypatch):
         raise RuntimeError("provider config is broken")
 
     monkeypatch.setattr("ghostbrain.llm.providers.get_provider", no_provider)
-    with pytest.raises(GenerateError, match="provider config is broken"):
+    with pytest.raises(GenerateError) as e:
         run_turn("p", turn_key="k")
+    assert str(e.value) == generate.PROVIDER_FAILED and "broken" not in str(e.value)
     monkeypatch.setattr("ghostbrain.llm.providers.get_provider", lambda cfg=None: _Broken())
-    with pytest.raises(GenerateError, match="connection reset"):
+    with pytest.raises(GenerateError) as e:
         run_turn("p", turn_key="k")
+    assert str(e.value) == generate.PROVIDER_FAILED and "reset" not in str(e.value)

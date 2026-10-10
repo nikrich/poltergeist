@@ -211,3 +211,17 @@ def test_run_chat_turn_errors_when_mcp_binary_missing(monkeypatch):
     events = list(run_chat_turn("what's new?"))
 
     assert events == [{"type": "error", "message": MCP_BINARY_MISSING_MESSAGE}]
+
+
+def test_build_chat_command_can_disallow_every_builtin_tool():
+    plain = build_chat_command("/bin/claude", "hi", mcp_binary="/m")
+    assert "--disallowedTools" not in plain
+    cmd = build_chat_command("/bin/claude", "hi", mcp_binary="/m", no_builtin_tools=True)
+    i = cmd.index("--disallowedTools")
+    denied = cmd[i + 1].split(",")
+    for tool in ("Bash", "Read", "Glob", "Grep", "LS", "Edit", "MultiEdit", "Write", "NotebookEdit",
+                 "NotebookRead", "WebFetch", "WebSearch", "Task", "TodoWrite", "BashOutput",
+                 "KillShell", "KillBash", "SlashCommand", "ExitPlanMode"):
+        assert tool in denied
+    assert not any(t.startswith("mcp__") for t in denied)
+    assert i < cmd.index("--") and cmd[-2:] == ["--", "hi"]

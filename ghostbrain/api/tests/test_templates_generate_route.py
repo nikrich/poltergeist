@@ -114,7 +114,8 @@ def test_any_provider_failure_is_502(client, auth_headers, monkeypatch, get_prov
     monkeypatch.setattr("ghostbrain.llm.providers.get_provider", get_provider)
     r = _post(client, auth_headers)
     assert r.status_code == 502
-    assert r.json()["detail"].startswith("template generation failed") and message in r.json()["detail"]
+    assert r.json()["detail"] == "template generation failed — check the AI provider in settings"
+    assert message not in r.json()["detail"]
     assert change_log.list_changes() == []
 
 
@@ -162,14 +163,29 @@ def test_save_failures_map_to_clear_errors(client, auth_headers, monkeypatch, ex
     assert detail in r.json()["detail"]
 
 
-def test_the_change_is_always_proposed_by_the_assistant(client, auth_headers, tmp_vault, monkeypatch):
-    _model(monkeypatch, GOOD)
+def test_only_the_user_can_ask_for_a_draft(client, auth_headers, tmp_vault, monkeypatch):
+    prompts = _model(monkeypatch, GOOD)
     r = client.post("/v1/templates/generate", json={"description": "a daily standup"},
                     headers={**auth_headers, "X-Poltergeist-Actor": "plugin:familiar"})
+    assert r.status_code == 403
+    assert r.json()["detail"] == "only you can ask the assistant to draft a template"
+    assert prompts == [] and change_log.list_changes() == []
+
+
+def test_control_and_format_characters_are_stripped_from_the_request(client, auth_headers, tmp_vault,
+                                                                      monkeypatch):
+    prompts = _model(monkeypatch, GOOD)
+    r = _post(client, auth_headers, "a daily\u202e stand\u200bup\x07\nfor the team")
     assert r.status_code == 200, r.text
     [row] = change_log.list_changes(status="pending")
-    assert row.actor == "assistant"
-    assert not (tmp_vault / r.json()["path"]).exists()
+    assert row.reason == "AI template: a daily standup for the team"
+    assert "a daily standup\nfor the team" in prompts[0]
+    for ch in ("\u202e", "\u200b", "\x07"):
+        assert ch not in prompts[0]
+
+
+def test_only_format_characters_is_a_bad_description(client, auth_headers):
+    assert _post(client, auth_headers, "\u202e\u200b").status_code == 422
 
 
 def test_approving_the_change_on_the_changes_screen_makes_it_usable(client, auth_headers, tmp_vault, monkeypatch):

@@ -172,3 +172,26 @@ def test_chat_clean_exit_with_no_text_is_still_an_error(monkeypatch, tmp_path: P
     monkeypatch.setattr(cx, "_real_codex_home", lambda: tmp_path / "nohome")
     events = list(cx.CodexCli(M).chat(base.ChatRequest(prompt="q", tier="fast", session_id=None, turn_key=None)))
     assert events[-1]["type"] == "error"
+
+
+def test_chat_without_builtin_tools_runs_in_an_empty_scratch_dir(monkeypatch, tmp_path: Path):
+    captured: list[dict] = []
+
+    def fake_stream(cmd, **kw):
+        cwd = kw.get("cwd")
+        captured.append({"cwd": cwd, "listing": sorted(Path(cwd).iterdir()) if cwd else None})
+        for line in (FIX / "codex-exec-chat.jsonl").read_text().splitlines():
+            yield from kw["parse"](line)
+
+    monkeypatch.setattr(cx, "stream_subprocess", fake_stream)
+    monkeypatch.setattr(cx, "find_codex_binary", lambda: "/c")
+    monkeypatch.setattr(cx, "find_mcp_binary", lambda: ["/app/ghostbrain-api", "mcp"])
+    monkeypatch.setattr(cx, "_run_root", lambda: tmp_path / "run")
+    monkeypatch.setattr(cx, "_real_codex_home", lambda: tmp_path / "nohome")
+    p = cx.CodexCli(M)
+    for flag in (False, True):
+        list(p.chat(base.ChatRequest(prompt="q", tier="balanced", session_id=None, turn_key="c",
+                                     no_builtin_tools=flag)))
+    assert captured[0]["cwd"] is None
+    assert captured[1]["cwd"] and captured[1]["listing"] == []
+    assert not Path(captured[1]["cwd"]).exists()  # removed after the turn

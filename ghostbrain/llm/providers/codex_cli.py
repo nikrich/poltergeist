@@ -303,9 +303,23 @@ class CodexCli:
                 return [{"type": "done", "text": "".join(text_parts), "session_id": session}]
             return [{"type": "error", "message": _error_message(err, f"codex exited {rc}: {err[-300:]}")}]
 
-        for ev in stream_subprocess(cmd, timeout_s=req.timeout_s, turn_key=req.turn_key, parse=parser.feed,
-                                    on_exit=_on_exit,
-                                    env={"CODEX_HOME": str(home)}, stdin_text=stdin):
+        def _events(cwd: str | None) -> Iterator[dict]:
+            yield from stream_subprocess(cmd, timeout_s=req.timeout_s, turn_key=req.turn_key,
+                                         parse=parser.feed, on_exit=_on_exit,
+                                         env={"CODEX_HOME": str(home)}, stdin_text=stdin, cwd=cwd)
+
+        def _turn() -> Iterator[dict]:
+            if not req.no_builtin_tools:
+                yield from _events(None)
+                return
+            # codex has no config switch for its shell tool that this adapter
+            # knows of, so a no-built-in-tools turn starts in an empty scratch
+            # dir with the read-only sandbox. Residual risk: the shell can
+            # still read files by absolute path.
+            with tempfile.TemporaryDirectory(prefix="ghostbrain-codex-turn-") as d:
+                yield from _events(d)
+
+        for ev in _turn():
             if ev["type"] == "session":
                 session = ev["session_id"]
             elif ev["type"] == "delta":
