@@ -218,6 +218,17 @@ describe('TemplateSourceEditor', () => {
     expect(patchMock).toHaveBeenLastCalledWith('/v1/templates/one-on-one/source', { source: 'second\n' }, { ifMatch: 'e1' });
   });
 
+  it('a pending save leaves the cached source as the file on disk', async () => {
+    const ed = setup();
+    await screen.findByText('90-meta/templates/one-on-one.md');
+    ed.edit('held for approval\n');
+    patchMock.mockResolvedValueOnce({ id: 'one-on-one', path: SOURCE.path, etag: null, status: 'pending', changeId: 'c1' });
+    fireEvent.click(screen.getByRole('button', { name: 'save' }));
+    await waitFor(() => expect(screen.queryByText('unsaved')).not.toBeInTheDocument());
+    expect(ed.qc.getQueryData(['templates', 'source', 'one-on-one'])).toMatchObject({ source: TEMPLATE, etag: 'e1' });
+    expect(ed.text()).toBe('held for approval\n');
+  });
+
   it('asks before leaving the screen with unsaved changes', async () => {
     const ed = setup();
     await screen.findByText('90-meta/templates/one-on-one.md');

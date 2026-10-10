@@ -90,10 +90,13 @@ export function TemplateSourceEditor({ templateId, onDirtyChange, onCreateEditor
       setEtag(nextEtag);
       setConflict(false);
       // Update the open source in place rather than refetching it, and only
-      // refresh the template list.
-      qc.setQueryData<TemplateSourceResponse>(['templates', 'source', templateId], (old) =>
-        old ? { ...old, source: value, etag: nextEtag ?? old.etag } : old,
-      );
+      // refresh the template list. A pending save left the file unchanged, so
+      // the cache keeps the text on disk.
+      if (res.status !== 'pending') {
+        qc.setQueryData<TemplateSourceResponse>(['templates', 'source', templateId], (old) =>
+          old ? { ...old, source: value, etag: nextEtag ?? old.etag } : old,
+        );
+      }
       void qc.invalidateQueries({ queryKey: ['templates'], exact: true });
       toast.success(res.status === 'pending' ? 'template saved for approval' : 'template saved');
     } catch (e) {
