@@ -387,6 +387,29 @@ describe('JotsScreen', () => {
     );
   });
 
+  it('backlinks collapse again when another jot is selected', async () => {
+    apiRequest.mockImplementation(withConnectors(async (_m, path) => {
+      if (path.includes('source=manual')) return { ok: true, status: 200, data: twoJotPage };
+      if (path.includes('manual-20260514T120000-b')) return { ok: true, status: 200, data: detailB };
+      return { ok: true, status: 200, data: detailA };
+    }));
+
+    render(withQuery(<JotsScreen />));
+    await waitFor(() => expect(screen.getByText(/full body here/)).toBeInTheDocument());
+    fireEvent.click(await screen.findByRole('button', { name: '1 backlink' }));
+    expect(await screen.findByText('Standup')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('second jot'));
+    await waitFor(() => expect(screen.getByText(/pending content here/)).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^backlinks/i })).toHaveAttribute(
+        'aria-expanded',
+        'false',
+      ),
+    );
+    expect(screen.queryByText('Standup')).toBeNull();
+  });
+
   it('"template" menu creates a note from a template and opens it', async () => {
     const MEETING: TemplateSummary = {
       id: 'meeting-notes',

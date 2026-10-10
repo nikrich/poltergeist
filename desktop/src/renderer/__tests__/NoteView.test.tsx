@@ -331,9 +331,17 @@ describe('NoteView', () => {
       screen.getByText('Standup').click();
     });
     expect(useNoteView.getState().path).toBe('20-contexts/work/notes/standup.md');
+    // A7 spec: backlinks start collapsed on every page, not just the first.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^backlinks/i })).toHaveAttribute(
+        'aria-expanded',
+        'false',
+      ),
+    );
+    expect(screen.queryByText('see manual note')).toBeNull();
   });
 
-  it('offers page history in the header', async () => {
+  it('offers page history in the byline', async () => {
     apiRequest.mockResolvedValue({ ok: true, data: manualNote });
     render(withQuery(<NoteView />));
     act(() => useNoteView.getState().open(manualNote.path));

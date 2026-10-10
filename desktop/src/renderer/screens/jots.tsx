@@ -50,6 +50,8 @@ export function JotsScreen() {
   // A7: backlinks recede — collapsed until the byline (or their header) opens them.
   const [backlinksOpen, setBacklinksOpen] = useState(false);
   const backlinksRef = useRef<HTMLDivElement | null>(null);
+  // ...and every page starts that way: switching jots collapses them again.
+  useEffect(() => setBacklinksOpen(false), [selectedId]);
   const showBacklinks = () => {
     setBacklinksOpen(true);
     backlinksRef.current?.scrollIntoView?.({ block: 'nearest' });

@@ -47,6 +47,8 @@ export function NoteView({ onEditorReady }: Props = {}) {
   const [backlinksOpen, setBacklinksOpen] = useState(false);
   const backlinksRef = useRef<HTMLDivElement | null>(null);
   const showInGraph = useGraphView((s) => s.showInGraph);
+  // ...and every page starts that way: opening another note collapses them again.
+  useEffect(() => setBacklinksOpen(false), [path]);
 
   useEffect(() => {
     if (path === null) return;
@@ -127,12 +129,15 @@ export function NoteView({ onEditorReady }: Props = {}) {
         {focusActive ? (
           <FocusBar />
         ) : (
-          <header className="flex items-center justify-end gap-2 border-b border-hairline px-4 py-2">
-            {isSynced && (
-              <Pill tone="oxblood">
-                synced note — edits may be overwritten by the next sync
-              </Pill>
-            )}
+          // No border: the page toolbar's hairline closes this chrome block.
+          <header className="flex h-10 flex-shrink-0 items-center gap-1 px-3">
+            <div className="mr-auto">
+              {isSynced && (
+                <Pill tone="oxblood">
+                  synced note — edits may be overwritten by the next sync
+                </Pill>
+              )}
+            </div>
             <Btn
               variant="ghost"
               size="sm"
