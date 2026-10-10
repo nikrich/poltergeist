@@ -789,3 +789,75 @@ export interface AttentionItem { kind: 'orphan_note' | 'unclaimed_original' | 'i
 export interface LibraryTree { scopes: DocScope[]; attention: AttentionItem[] }
 export interface FolderRef { context: string; project: string | null; path: string }
 export interface UploadDocRequest { context: string; project: string | null; folder: string; name: string; mime: string; content_b64: string }
+
+// ── Smart templates (C1) ──────────────────────────────────────────────────
+
+export type TemplatePromptType = 'person' | 'text' | 'date' | 'choice' | 'context' | 'project';
+
+export interface TemplatePrompt {
+  id: string;
+  ask: string;
+  type: TemplatePromptType;
+  optional: boolean;
+  default: string | null;
+  options: string[];
+}
+
+export interface TemplateDiagnostic {
+  line: number;
+  col: number;
+  severity: 'error' | 'warning' | 'info';
+  message: string;
+  code: string;
+}
+
+export interface TemplateSummary {
+  id: string;
+  path: string;
+  name: string;
+  description: string;
+  prompts: TemplatePrompt[];
+  /** Root names the template references, e.g. ['context', 'date', 'person']. */
+  variables: string[];
+  valid: boolean;
+  diagnostics: TemplateDiagnostic[];
+}
+
+export interface TemplatesResponse {
+  templates: TemplateSummary[];
+}
+
+export interface TemplateCreateResponse {
+  path: string;
+  title: string;
+  etag: string | null;
+  status: 'applied' | 'pending';
+}
+
+export interface TemplateRenderResponse {
+  path: string;
+  folder: string;
+  filename: string;
+  title: string;
+  frontmatter: Record<string, unknown>;
+  body: string;
+}
+
+export interface TemplateFunctionSpec {
+  name: string;
+  kind: 'variable' | 'field' | 'filter' | 'prompt_type';
+  type: string;
+  doc: string;
+  example: string;
+  owner: string | null;
+  accepts: string[];
+  arg: string | null;
+  argRequired: boolean;
+}
+
+export interface TemplateFunctionsResponse {
+  variables: TemplateFunctionSpec[];
+  fields: TemplateFunctionSpec[];
+  filters: TemplateFunctionSpec[];
+  promptTypes: TemplateFunctionSpec[];
+}
