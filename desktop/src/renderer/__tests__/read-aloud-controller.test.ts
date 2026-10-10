@@ -180,6 +180,21 @@ describe('ReadAloudController', () => {
     expect(b.highlights.at(-1)).toBeNull();
   });
 
+  it('stopping an idle controller leaves another controller speaking', () => {
+    const a = setup();
+    const b = setup(a.synth);
+    a.ctrl.start(SEGS, 0, OPTS);
+    a.synth.cancel.mockClear();
+    b.ctrl.stop();
+    expect(a.synth.cancel).not.toHaveBeenCalled();
+    expect(b.statuses).toEqual([]);
+    expect(b.highlights).toEqual([]);
+    expect(a.ctrl.status).toBe('playing');
+    end(a.synth.last);
+    expect(a.synth.texts()).toEqual(['One.', 'Two.']);
+    expect(a.ctrl.status).toBe('playing');
+  });
+
   it('an outside cancel of the current utterance goes idle quietly', () => {
     const { synth, ctrl, highlights, errors } = setup();
     ctrl.start(SEGS, 0, OPTS);

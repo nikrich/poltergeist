@@ -167,6 +167,19 @@ describe('ReadAloudControls', () => {
     expect(synth.spoken).toHaveLength(1);
   });
 
+  it('unmounting an idle editor does not stop another editor reading', () => {
+    renderEditor('One. Two.');
+    const idle = renderEditor('Other note.');
+    fireEvent.click(screen.getAllByRole('button', { name: /^read aloud/ })[0]!);
+    expect(synth.texts()).toEqual(['One.']);
+    synth.cancel.mockClear();
+    idle.unmount();
+    expect(synth.cancel).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'pause reading' })).toBeInTheDocument();
+    act(() => end(synth.last));
+    expect(synth.texts()).toEqual(['One.', 'Two.']);
+  });
+
   it('⌘⇧L in the editor toggles reading', () => {
     const h = renderEditor('One. Two.');
     const dom = h.editor().view.dom;

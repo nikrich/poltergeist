@@ -79,7 +79,10 @@ export class ReadAloudController {
     this.speakCurrent();
   }
 
+  /** No-op when idle: the engine is shared, so an idle controller (e.g. an
+   * unmounting editor that never read) must not cancel another one's speech. */
   stop(): void {
+    if (this._status === 'idle') return;
     this.gen++;
     this.engine.cancel();
     this.reset();
