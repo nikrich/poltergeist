@@ -159,6 +159,11 @@ export function createLinkSuggestExtension(
           allowSpaces: cfg.allowSpaces,
           allowedPrefixes: cfg.allowedPrefixes,
           startOfLine: false,
+          // Never inside code: a mermaid `A[[Sub]]` or a code span is source, not a link.
+          allow: ({ state }) => {
+            const { $from } = state.selection;
+            return !$from.parent.type.spec.code && !$from.marks().some((m) => m.type.name === 'code');
+          },
           items: async ({ query }) => {
             const mine = ++session.seq;
             if (query.length < cfg.minQueryLength || cfg.rejectQuery?.test(query)) {
