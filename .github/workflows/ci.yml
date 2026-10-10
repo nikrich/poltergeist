@@ -93,6 +93,7 @@ jobs:
             tests/test_templates_starters.py \
             tests/test_templates_registry.py \
             tests/test_templates_create.py \
+            tests/test_templates_lint.py \
             -q
 
   desktop:
