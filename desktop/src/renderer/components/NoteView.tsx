@@ -16,6 +16,9 @@ import { PanelError } from './PanelError';
 import { notePathFromTarget } from '../lib/editor/link-suggest';
 import { BacklinksPanel } from './BacklinksPanel';
 import { NoteHistoryButton } from './NoteHistory';
+import { FocusBar } from './FocusBar';
+import { focusActiveNow, setFocusMode, useFocusActive, useFocusSurface } from '../lib/focus-mode';
+import { shortcutLabel } from '../lib/editor-shortcuts';
 
 interface Props {
   /** Test hook: receives the TipTap Editor instance once created. */
@@ -42,7 +45,11 @@ export function NoteView({ onEditorReady }: Props = {}) {
   useEffect(() => {
     if (path === null) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeRef.current();
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      // In focus mode the first Esc belongs to focus mode (App's hook leaves
+      // it); only a later Esc closes the viewer.
+      if (focusActiveNow()) return;
+      closeRef.current();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -64,6 +71,8 @@ export function NoteView({ onEditorReady }: Props = {}) {
     initialBodyRef.current = null;
   }
   const initial = initialBodyRef.current?.path === path ? initialBodyRef.current : undefined;
+  useFocusSurface(initial !== undefined);
+  const focusActive = useFocusActive();
 
   if (path === null) return null;
 
@@ -90,39 +99,54 @@ export function NoteView({ onEditorReady }: Props = {}) {
       onClick={close}
     >
       <div
-        className="flex h-full w-[820px] max-w-[92vw] flex-col border-l border-hairline bg-paper shadow-xl"
+        className={
+          focusActive
+            ? 'flex h-full w-full flex-col bg-paper'
+            : 'flex h-full w-[820px] max-w-[92vw] flex-col border-l border-hairline bg-paper shadow-xl'
+        }
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="flex items-center gap-3 border-b border-hairline px-6 py-4">
-          <Lucide name="file-text" size={14} color="var(--ink-2)" />
-          <div className="min-w-0 flex-1 leading-[1.2]">
-            <div className="truncate text-13 font-medium text-ink-0">
-              {note.data?.title ?? path.split('/').pop()}
+        {focusActive ? (
+          <FocusBar />
+        ) : (
+          <header className="flex items-center gap-3 border-b border-hairline px-6 py-4">
+            <Lucide name="file-text" size={14} color="var(--ink-2)" />
+            <div className="min-w-0 flex-1 leading-[1.2]">
+              <div className="truncate text-13 font-medium text-ink-0">
+                {note.data?.title ?? path.split('/').pop()}
+              </div>
+              <div className="truncate font-mono text-10 text-ink-3">{path}</div>
             </div>
-            <div className="truncate font-mono text-10 text-ink-3">{path}</div>
-          </div>
-          {isSynced && (
-            <Pill tone="oxblood">
-              synced note — edits may be overwritten by the next sync
-            </Pill>
-          )}
-          <NoteHistoryButton key={path} path={path} guardRef={guardRef} />
-          <Btn
-            variant="ghost"
-            size="sm"
-            icon={<Lucide name="external-link" size={13} />}
-            onClick={openInEditor}
-          >
-            open in editor
-          </Btn>
-          <Btn
-            variant="ghost"
-            size="sm"
-            icon={<Lucide name="x" size={14} />}
-            onClick={close}
-            ariaLabel="close"
-          />
-        </header>
+            {isSynced && (
+              <Pill tone="oxblood">
+                synced note — edits may be overwritten by the next sync
+              </Pill>
+            )}
+            <NoteHistoryButton key={path} path={path} guardRef={guardRef} />
+            <Btn
+              variant="ghost"
+              size="sm"
+              icon={<Lucide name="maximize-2" size={13} />}
+              onClick={() => void setFocusMode(true)}
+              ariaLabel={`focus mode (${shortcutLabel('focus')})`}
+            />
+            <Btn
+              variant="ghost"
+              size="sm"
+              icon={<Lucide name="external-link" size={13} />}
+              onClick={openInEditor}
+            >
+              open in editor
+            </Btn>
+            <Btn
+              variant="ghost"
+              size="sm"
+              icon={<Lucide name="x" size={14} />}
+              onClick={close}
+              ariaLabel="close"
+            />
+          </header>
+        )}
 
         <div className="flex flex-1 flex-col overflow-hidden">
           {note.isLoading && (
@@ -153,13 +177,14 @@ export function NoteView({ onEditorReady }: Props = {}) {
                   guardRef={guardRef}
                   navigationScope="note"
                   editorProps={{
+                    focus: focusActive,
                     jotId: path,
                     onEditorReady,
                     onWikilinkClick: (target) => openView(notePathFromTarget(target)),
                   }}
                 />
               </div>
-              <BacklinksPanel path={path} onOpen={openView} />
+              {!focusActive && <BacklinksPanel path={path} onOpen={openView} />}
             </>
           )}
         </div>
