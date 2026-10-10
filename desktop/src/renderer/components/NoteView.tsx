@@ -26,12 +26,11 @@ export function NoteView({ onEditorReady }: Props = {}) {
   const closeView = useNoteView((s) => s.close);
   const openView = useNoteView((s) => s.open);
   // Leaving under the conflict banner would drop the unsaved text: ask first.
+  // Opening another note is guarded in the store (navigationScope="note"),
+  // which covers links from inside this view and from anywhere else.
   const guardRef = useRef<GuardHandle | null>(null);
   const close = () => {
     if (confirmLeave(guardRef)) closeView();
-  };
-  const openNote = (target: string) => {
-    if (confirmLeave(guardRef)) openView(target);
   };
   const closeRef = useRef(close);
   closeRef.current = close;
@@ -150,14 +149,15 @@ export function NoteView({ onEditorReady }: Props = {}) {
                   fetchLatest={() => get<Note>(`/v1/notes?path=${encodeURIComponent(path)}`)}
                   onSaveError={(err) => toast.error(`save failed: ${err.message}`)}
                   guardRef={guardRef}
+                  navigationScope="note"
                   editorProps={{
                     jotId: path,
                     onEditorReady,
-                    onWikilinkClick: (target) => openNote(notePathFromTarget(target)),
+                    onWikilinkClick: (target) => openView(notePathFromTarget(target)),
                   }}
                 />
               </div>
-              <BacklinksPanel path={path} onOpen={openNote} />
+              <BacklinksPanel path={path} onOpen={openView} />
             </>
           )}
         </div>
