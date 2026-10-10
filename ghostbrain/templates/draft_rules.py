@@ -8,28 +8,25 @@ comment, so no reader's idea of where code starts or ends matters. Where a
 rule cannot tell how a reader would see a line it rejects the line: a false
 alarm costs one repair turn, a miss leaks an answer.
 
-The one URL rule: a draft may hold no URL or web address at all, in any
-syntax. ``url_problems`` reads the text as every reader might decode it
-(NFKC, backslash/CSS/JS escapes, HTML entities and mermaid ``#NN;`` codes,
-percent-encoding, invisible characters dropped; each stage up to stable
-is checked per line) and rejects a scheme ``http: https: ftp: ws: wss: data: file:
-javascript: vbscript:`` not preceded by a letter or digit (so ``metadata:``
-passes; ``xhttps:`` passes too, since no reader links it), a ``//`` or
-``\\`` starting a host, and ``www.``. ``http:``/``ftp:``/``ws:`` need a
-character after the colon, and ``data:``/``file:`` one that isn't ``*``,
-so the ``file:`` key and a ``**Data:**`` label pass. The whole text is
-also read with line breaks dropped, to catch a ``//``, ``www.`` or
-``scheme:/`` split over lines; there a scheme alone is not a hit, since no
-reader joins ``Raw data:`` and the next line into a URL. A scheme ending a
-line is a hit when the next non-blank line starts (after spaces and quotes)
-with a host-like ``word.``: a quoted mermaid string spans the break, so
-``"https:`` + ``evil.com"`` is a link. YAML values are read as YAML
-resolves them (escaped line breaks joined), the same way.
+The one URL rule is syntax-blind: a draft may not hold ``//``, ``:/`` or
+a scheme word (``http https ftp ws wss data file javascript vbscript``)
+followed by optional whitespace and ``:``, unless a letter or digit comes
+before the word (so ``metadata:`` passes). Prose counts: ``Raw data:``,
+``**File:**``, ``// todo`` and ``C:\\Users`` (a backslash reads as a slash)
+are rejected too. ``www.`` stays a hit as well. ``url_problems`` checks
+every reading of the text: each stage of decoding it up to stable (NFKC,
+format and control characters dropped, backslash escapes, HTML entities
+and mermaid ``#NN;`` codes, percent-encoding; at most five rounds), each
+also with backslashes read as slashes and with all whitespace removed. It
+reads each line, then the whole text, so a hit only line breaks hide is
+found too. The one exemption is the ``file:`` key of the ``template:``
+mapping itself (see ``mask_file_key``).
 
 =====================  ========================================================
 Rule                   Vector it covers
 =====================  ========================================================
-``url_problems``       any URL or web address, anywhere, however encoded
+``url_problems``       ``//``, ``:/``, a scheme word and ``:``, ``www.``:
+                       anywhere, however encoded or split
 ``_HTML_RULES``        script/iframe/… tags, ``on…=`` handlers, ``javascript:``
 ``_RAW_TAG_RE``        any raw HTML or ``<…>`` link (``<`` + letter, ``/``,
                        ``!``, ``?``), so ``<img>``, ``<a href>``, comments
@@ -51,6 +48,7 @@ from __future__ import annotations
 
 import html
 import re
+import sys
 import unicodedata
 from urllib.parse import unquote
 
@@ -63,7 +61,7 @@ from ghostbrain.vault_write.text import parse_note
 
 ALLOWED_FENCES = frozenset({"", "query", "mermaid", "text", "markdown", "md"})
 
-URL_MESSAGE = "templates must not contain URLs or web addresses"
+URL_MESSAGE = "templates must not contain URLs, // or :/"
 PLACEHOLDER_URL = "links can't be built from placeholders (answers would leave the vault)"
 
 _FENCE_OPEN_RE = re.compile(r"(?:`{3,}|~{3,})[ \t]*([^\s`]*)")
@@ -92,32 +90,30 @@ _PLACEHOLDER_EMAIL_RE = re.compile(r"\}\}[\w.+\-]*@[\w\-{]|[\w.+\-]@[\w.\-]*\{\{
 # Mermaid's entity codes: #60; and #lt; mean "<".
 _MERMAID_ENTITY_RE = re.compile(r"(?<!&)#(\d{1,7}|[a-z][a-z0-9]{1,31});", re.IGNORECASE)
 
-# The URL rule, matched on casefolded text. "/" runs are possessive and
-# must start the run, so a long run of slashes is scanned once.
+# The URL rule, matched on casefolded text.
 _URL_HIT_RE = re.compile(
-    r"(?<![a-z0-9])(?:(?:https?|ftp|wss?):(?=\S)|(?:data|file):(?=[^\s*])|(?:java|vb)script:)"
-    r"|(?<![a-z0-9/])/{2,}+(?=[^\s/])"
-    r"|(?<![a-z0-9])www\.(?=[^\s.])"
+    r"//|:/|(?<![a-z0-9])(?:(?:https?|ftp|wss?|data|file|javascript|vbscript)\s*+:|www\.)"
 )
-# Over joined lines: a scheme counts only when a slash follows it.
-_JOINED_HIT_RE = re.compile(
-    r"(?<![a-z0-9])(?:https?|ftp|wss?|data|file|(?:java|vb)script):(?=[/\\])"
-    r"|(?<![a-z0-9/])/{2,}+(?=[^\s/])"
-    r"|(?<![a-z0-9])www\.(?=[^\s.])"
-)
-# A scheme ending a line, and a next line that starts like a host.
-_SCHEMES = r"(?:https?|ftp|wss?|data|file|(?:java|vb)script)"
-_LINE_END_SCHEME_RE = re.compile(rf"(?<![a-z0-9]){_SCHEMES}:$")
-_HOST_START_RE = re.compile(r"[\s\"'`\u2018\u2019\u201c\u201d\u00ab\u00bb]*+[a-z0-9-]++\.",
-                            re.IGNORECASE)
-# Invisible characters readers drop or ignore inside a token: C0/C1
-# controls (tab and line breaks too), soft hyphen, zero-width and bidi
-# marks, word joiners, BOM, interlinear annotations and tag characters.
-_INVISIBLE_RE = re.compile(
-    "[\x00-\x1f\x7f-\x9f\xad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f"
-    "\u200b-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0"
-    "\ufff0-\ufffb\U0001d173-\U0001d17a\U000e0000-\U000e0fff]"
-)
+_WHITESPACE_RE = re.compile(r"\s+")
+
+
+def _invisible_class() -> str:
+    """Format (Cf) and control (Cc) characters in this Python's Unicode
+    database, plus other characters readers show as nothing: the grapheme
+    joiner, Hangul fillers, Mongolian and other variation selectors."""
+    ranges: list[list[int]] = []
+    for c in range(sys.maxunicode + 1):
+        if unicodedata.category(chr(c)) in ("Cf", "Cc"):
+            if ranges and ranges[-1][1] == c - 1:
+                ranges[-1][1] = c
+            else:
+                ranges.append([c, c])
+    body = "".join(f"{re.escape(chr(a))}-{re.escape(chr(b))}" for a, b in ranges)
+    return (f"[{body}\u034f\u115f\u1160\u17b4\u17b5\u180b-\u180f\u3164\ufe00-\ufe0f"
+            "\uffa0\ufff0-\ufffb\U000e0100-\U000e01ef]")
+
+
+_INVISIBLE_RE = re.compile(_invisible_class())
 # JS (\x68, \u0068, \u{68}), CSS (\68 ) and markdown/YAML (\:) escapes.
 _BACKSLASH_RE = re.compile(
     r"\\(?:x([0-9a-f]{2})|u\{([0-9a-f]{1,6})\}|u([0-9a-f]{4})|([0-9a-f]{1,6}) ?|(.))",
@@ -183,57 +179,63 @@ def _readings(text: str) -> list[str]:
     return out
 
 
-def _hit_in(readings: list[str], pattern: re.Pattern[str]) -> re.Match[str] | None:
+def _hit(readings: list[str]) -> re.Match[str] | None:
+    """The first URL rule hit in any reading, also read with backslashes as
+    slashes and with all whitespace removed."""
     for reading in readings:
         folded = reading.casefold()
-        m = pattern.search(folded) or pattern.search(folded.replace("\\", "/"))
-        if m:
-            return m
+        slashed = folded.replace("\\", "/")
+        stripped = _WHITESPACE_RE.sub("", slashed)
+        for variant in (folded, slashed, stripped) if slashed != folded else (folded, stripped):
+            m = _URL_HIT_RE.search(variant)
+            if m:
+                return m
     return None
 
 
-def url_hit(text: str, pattern: re.Pattern[str] = _URL_HIT_RE) -> re.Match[str] | None:
-    """The first URL or web address in any reading of ``text``."""
-    return _hit_in(_readings(text), pattern)
-
-
 def _url_problem(line: int, col: int, m: re.Match[str]) -> Diagnostic:
-    return _problem(line, col, f"`{m.group()}` is a URL or web address; {URL_MESSAGE}")
+    return _problem(line, col, f"`{m.group()}` may be read as part of a URL; {URL_MESSAGE}")
 
 
 def url_problems(text: str) -> list[Diagnostic]:
-    """One problem per line holding a URL; else one per line ending in a
-    scheme whose host starts the next non-blank line; else one at line 1
-    for a ``//``, ``www.`` or ``scheme:/`` only the whole text spells
-    (split over lines)."""
+    """One problem per line with a hit in any of its readings; else one at
+    line 1 for a hit only the whole text has (split over lines)."""
     out = []
-    lines = text.split("\n")
-    ends_scheme: list[bool] = []
-    starts_host: list[bool] = []
-    for i, line in enumerate(lines):
-        readings = _readings(line)
-        m = _hit_in(readings, _URL_HIT_RE)
+    for i, line in enumerate(text.split("\n")):
+        m = _hit(_readings(line))
         if m:
             raw = _URL_HIT_RE.search(line.casefold())
             out.append(_url_problem(i + 1, raw.start() + 1 if raw else 1, m))
-        # Only the last few characters can end in a scheme: bounded work.
-        ends_scheme.append(any(_LINE_END_SCHEME_RE.search(r.rstrip()[-16:].casefold())
-                               for r in readings))
-        starts_host.append(any(_HOST_START_RE.match(r) for r in readings))
     if not out:
-        host_next = False  # does the next non-blank line start with a host?
-        for i in range(len(lines) - 1, -1, -1):
-            if ends_scheme[i] and host_next:
-                out.append(_problem(i + 1, 1, "a scheme at a line end joined to the host on the "
-                                              f"next line is a URL; {URL_MESSAGE}"))
-            if lines[i].strip():
-                host_next = starts_host[i]
-        out.reverse()
-    if not out:
-        m = url_hit(text, _JOINED_HIT_RE)
+        m = _hit(_readings(text))
         if m:
             out.append(_url_problem(1, 1, m))
     return out
+
+
+def mask_file_key(draft: str) -> str:
+    """``draft`` with the ``file`` key of its ``template:`` mapping written as
+    ``kkkk``: the only scheme word a template needs. Only a plain key whose
+    value is a mapping, at the exact place YAML reads it, is masked; the
+    letters only end a hit, never start one, and the value is still read."""
+    parsed = parse_note(draft)
+    if not parsed.has_frontmatter:
+        return draft
+    try:
+        root = yaml.compose(parsed.fm_inner, Loader=yaml.SafeLoader)
+    except yaml.YAMLError:
+        return draft
+    offset = len(parsed.bom) + len(parsed.fm_head)
+    for key, value in root.value if isinstance(root, yaml.MappingNode) else ():
+        if not (isinstance(key, yaml.ScalarNode) and key.value == "template"
+                and isinstance(value, yaml.MappingNode)):
+            continue
+        for k, v in value.value:
+            start = offset + k.start_mark.index
+            if (isinstance(k, yaml.ScalarNode) and isinstance(v, yaml.MappingNode)
+                    and draft[start:offset + k.end_mark.index] == "file"):
+                draft = draft[:start] + "kkkk" + draft[start + 4:]
+    return draft
 
 
 def _content(line: str) -> str:
@@ -311,7 +313,7 @@ def content_problems(text: str) -> list[Diagnostic]:
         out += _placeholder_links(i, decoded)
     out += _diagram_media(lines)
     out += _unclosed_fence(lines)
-    out += url_problems(text)
+    out += url_problems(mask_file_key(text))
     return out
 
 

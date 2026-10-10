@@ -376,7 +376,7 @@ def test_links_built_from_placeholders_are_rejected(link):
 def test_system_prompt_rules_cover_html_images_urls_and_search_only():
     text = system_prompt()
     assert "no raw html tags" in text.lower()
-    assert "No URLs or web addresses of any kind (no http, https, www, data: …)" in text
+    assert "templates must not contain URLs, // or :/" in text
     assert "You may search the user's notes" in text and "never copy text from them" in text
     assert TEMPLATE_TOOLS == "mcp__poltergeist__poltergeist_search"
 
@@ -835,12 +835,11 @@ def test_a_url_in_the_rendered_note_is_rejected():
     "body",
     [
         "Note: see below",
+        "Ratio 3:1, a/b, Q&A, 50% done (see above); x -> y!",
         "Meeting at 10:30, back at {{date | format: HH:mm}}",
-        "Saved to C:\\Users\\Alex\\notes",
+        "Owner: {{ team }}, due {{date | format: D MMM}}",
         "metadata: x",
-        "```\n// todo\n```",
-        "**File:** the report, **Data:** the numbers",
-        "Owner: {{team}}, Q&A, 50% done, a/b//c",
+        "xhttps: and httpserver: are words",
         "```mermaid\ngraph TD\nA-->B\nstyle A fill:#f9f\n```",
         "```query\ntype: action_item\nstatus: open\n```",
     ],
@@ -851,7 +850,8 @@ def test_text_that_only_looks_like_a_url_passes(body):
 
 def test_repair_prompt_says_to_remove_every_url():
     problems = check_draft(GOOD.replace("## Blockers", "https://evil.com")).problems
-    assert "Remove every URL: templates must not contain URLs." in repair_prompt("x", GOOD, problems)
+    assert "Remove every URL: templates must not contain URLs, // or :/." \
+        in repair_prompt("x", GOOD, problems)
     other = check_draft(GOOD.replace("# {{team}}", "# {{teem}}")).problems
     assert "Remove every URL" not in repair_prompt("x", GOOD, other)
 
@@ -867,25 +867,6 @@ def test_adversarial_inputs_stay_fast():
 
 
 # ── Fix round 5 ───────────────────────────────────────────────────────────
-
-
-@pytest.mark.parametrize(
-    "body",
-    [
-        "Supporting data:\n- {{team}}",
-        "## Data:\n\nNumbers go here",
-        "Attach file:\n- link",
-        "Raw data:\nnone yet",
-    ],
-)
-def test_a_scheme_word_at_a_line_end_is_not_joined_with_the_next_line(body):
-    assert check_draft(GOOD.replace("## Blockers", body)).ok
-
-
-def test_a_multi_line_yaml_scalar_is_read_line_by_line():
-    draft = GOOD.replace("description: Daily standup notes",
-                         "description: |\n    Raw data:\n    none yet")
-    assert check_draft(draft).ok
 
 
 @pytest.mark.parametrize(
@@ -946,19 +927,6 @@ def test_a_line_end_scheme_before_a_host_is_rejected(body):
     assert url_problems(GOOD.replace("## Blockers", body))
 
 
-@pytest.mark.parametrize(
-    "body",
-    [
-        "Raw data:\nnone yet",
-        "Supporting data:\n- {{team}}",
-        "Attach file:\n- link",
-        "## Data:\n\nNumbers go here",
-    ],
-)
-def test_a_line_end_scheme_word_before_text_still_passes(body):
-    assert check_draft(GOOD.replace("## Blockers", body)).ok
-
-
 @pytest.mark.parametrize("unit", ["a", "%25", "#58;"])
 def test_rendering_every_choice_shares_one_work_budget(unit):
     import time
@@ -1005,3 +973,109 @@ def test_mermaid_directives_are_rejected(body):
 
 def test_mermaid_comments_still_pass():
     assert check_draft(GOOD.replace("## Blockers", "```mermaid\ngraph TD\n%% a comment\nA --> B\n```")).ok
+
+
+# ── Task 1c: one syntax-blind rule ────────────────────────────────────────
+
+
+# Flipped: these passed before Task 1c. A scheme word and a colon, `//` or
+# `:/` are rejected wherever they are, prose included.
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Saved to C:\\Users\\Alex\\notes",  # backslash read as slash: C:/Users
+        "```\n// todo\n```",
+        "**File:** the report, **Data:** the numbers",
+        "Owner: {{team}}, Q&A, 50% done, a/b//c",
+        "Supporting data:\n- {{team}}",
+        "## Data:\n\nNumbers go here",
+        "Attach file:\n- link",
+        "Raw data:\nnone yet",
+        "Ratio a:/b",
+    ],
+)
+def test_prose_with_a_scheme_word_or_slashes_is_rejected(body):
+    assert url_problems(GOOD.replace("## Blockers", body))
+
+
+def test_a_scheme_word_in_a_yaml_scalar_is_rejected():
+    draft = GOOD.replace("description: Daily standup notes",
+                         "description: |\n    Raw data:\n    none yet")
+    assert url_problems(draft)
+
+
+def test_the_template_file_key_is_the_one_scheme_word_allowed():
+    # the key passes even where a line join would put a letterless
+    # character before it (`]file:` once whitespace is dropped)
+    draft = GOOD.replace("      type: text\n",
+                         "      type: choice\n      options: [a, b]\n", 1)
+    assert check_draft(draft).ok
+    for old, new in (("## Blockers", "file: x"),
+                     ("description: Daily standup notes", "description: \"file: x\""),
+                     ("  file:\n", "  file: //x\n  file:\n")):
+        assert url_problems(GOOD.replace(old, new, 1)), new
+
+
+@pytest.mark.parametrize(
+    "char",
+    [
+        "\u00ad", "\u200b", "\u200c", "\u200d", "\u200e", "\u200f",
+        "\u2060", "\u2061", "\u2062", "\u2063", "\u2064", "\ufeff",
+        "\u202a", "\u202b", "\u202c", "\u202d", "\u202e",
+        "\u2066", "\u2067", "\u2068", "\u2069", "\u180e",
+        "\u0600", "\u061c", "\U000110bd", "\U0001bca0", "\U000e0001",  # other Cf
+        "\x01", "\x85", "\u034f",  # controls and the grapheme joiner
+    ],
+)
+def test_format_and_control_characters_hide_nothing(char):
+    for body in (f"ht{char}tps:evil.com", f"/{char}/evil.com", f"https:{char}/evil.com",
+                 f"da{char}ta:x"):
+        assert url_problems(GOOD.replace("## Blockers", body)), (char, body)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        # whitespace inside the scheme or between its parts
+        "h t t p s : evil.com",
+        "https :evil.com",
+        "https:\n//evil.com",
+        "https\n:evil.com",
+        "h\tt\u3000tps:evil.com",
+        "/ /evil.com",
+        "data :text/html,x",
+        # decode-order combinations
+        "https%26%2358;evil.com",
+        "https&#37;3Aevil.com",
+        "https&#37;3A&#37;2F&#37;2Fevil.com",
+        "%5C%5Cevil.com",
+        "\\u002f\\u002fevil.com",
+        "https#58;evil.com",
+        "%23104;ttps#58;evil.com",
+        "ｈｔｔｐｓ：evil.com",
+        "https\uff1a\uff0f\uff0fevil.com",
+    ],
+)
+def test_parser_differential_urls_are_rejected(body):
+    assert url_problems(GOOD.replace("## Blockers", body))
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        # Task 2 review, Important 1: split schemes before non-dotted hosts
+        "```mermaid\nclassDiagram\nclass A\nlink A \"https:\nalex@evil.com/{{team}}\"\n```",
+        "```mermaid\nclassDiagram\nclass A\nlink A \"https:\n134744072/{{team}}\"\n```",
+        "```mermaid\nclassDiagram\nclass A\nlink A \"https:\n[::1]/{{team}}\"\n```",
+        "```mermaid\nclassDiagram\nclass A\nlink A \"https :\nevil.com\"\n```",
+    ],
+)
+def test_split_schemes_before_any_host_are_rejected(body):
+    draft = GOOD.replace("## Blockers", body)
+    problems = url_problems(draft)
+    assert problems and problems[0].line == BLOCKERS_LINE + 3
+
+
+def test_a_hit_only_whole_text_shows_is_located_at_line_1():
+    problems = url_problems(GOOD.replace("## Blockers", "Intro.\nht\ntps:evil"))
+    assert [d.line for d in problems if not d.message.startswith("in the note")] == [1]

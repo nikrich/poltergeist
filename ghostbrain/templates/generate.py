@@ -127,10 +127,12 @@ def system_prompt() -> str:
         "Nothing else may appear inside {{ }}. There are no loops, conditions or expressions."),
         ("3. `template.file.folder` must be under 20-contexts/{{context}}/… and never under "
         "90-meta or 80-profile."),
-        ("4. No URLs or web addresses of any kind (no http, https, www, data: …), not in "
-         "links, images, diagrams, code blocks or frontmatter. No raw HTML tags at all (not "
-         "even <b> or <!-- -->), no scripts, and no code blocks except ```query (live lists) "
-         "and ```mermaid."),
+        ("4. No URLs: templates must not contain URLs, // or :/ anywhere: not in links, "
+         "images, diagrams, code blocks, prose or frontmatter. Never write http, https, ftp, "
+         "ws, wss, data, file, javascript or vbscript followed by a colon, not even in a label "
+         "such as \"Raw data:\" (only the `file:` key of the frontmatter). No raw HTML tags "
+         "at all (not even <b> or <!-- -->), no scripts, and no code blocks except ```query "
+         "(live lists) and ```mermaid."),
         ("5. You may search the user's notes to see how they structure similar notes; "
          "never copy text from them."),
         (f"6. Keep it short: at most 4 prompts, and at most {MAX_CHOICE_RENDERS} combinations "
@@ -152,7 +154,7 @@ def build_prompt(description: str) -> str:
 def repair_prompt(description: str, draft: str, problems: tuple[Diagnostic, ...]) -> str:
     listed = "\n".join(f"- line {d.line}: {d.message}" for d in problems)
     if any(draft_rules.URL_MESSAGE in d.message for d in problems):
-        listed += "\nRemove every URL: templates must not contain URLs."
+        listed += f"\nRemove every URL: {draft_rules.URL_MESSAGE}."
     return (
         build_prompt(description)
         + "\n\nYour previous draft had these problems:\n" + listed
