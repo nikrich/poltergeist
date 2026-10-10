@@ -36,10 +36,16 @@ export function BacklinksPanel({ path, onOpen, open: openProp, onOpenChange }: P
         type="button"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        className="flex w-full items-center gap-2 px-4 py-2 font-mono text-10 uppercase tracking-wide text-ink-3 hover:text-ink-1"
+        className="flex w-full items-center gap-2 px-4 py-2 text-12 text-ink-2 hover:text-ink-0"
       >
         <Lucide name={open ? 'chevron-down' : 'chevron-right'} size={11} />
-        {`backlinks${settled ? ` · ${items.length}` : ''}`}
+        Backlinks
+        {settled && (
+          <>
+            {' '}
+            <span className="tabular-nums text-ink-3">{items.length}</span>
+          </>
+        )}
       </button>
       {open && (
         <div className="max-h-48 overflow-y-auto px-4 pb-3">

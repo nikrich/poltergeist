@@ -23,7 +23,7 @@ describe('BacklinksPanel controlled (A7)', () => {
   it('stays closed when the parent says so and reports toggles', async () => {
     const onOpenChange = vi.fn();
     render(withQuery(<BacklinksPanel path="n.md" onOpen={() => {}} open={false} onOpenChange={onOpenChange} />));
-    const header = await screen.findByRole('button', { name: /backlinks/ });
+    const header = await screen.findByRole('button', { name: /^backlinks/i });
     expect(header).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByText('Standup')).toBeNull();
     fireEvent.click(header);

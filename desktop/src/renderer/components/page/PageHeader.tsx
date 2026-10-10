@@ -6,7 +6,7 @@ function PageBreadcrumb({ items }: { items: string[] }) {
   if (items.length === 0) return null;
   return (
     <nav aria-label="breadcrumb" className="mb-2">
-      <ol className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-12 leading-5 text-ink-3">
+      <ol className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-12 leading-5 text-ink-2">
         {items.map((it, i) => (
           <li key={`${i}:${it}`} className="flex min-w-0 items-center gap-1">
             {i > 0 && (

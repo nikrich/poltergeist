@@ -38,7 +38,7 @@ export function PageByline({ author, updated, path, guardRef, onShowBacklinks }:
       <span className="flex min-w-0 items-center gap-2">
         <span
           aria-hidden
-          className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border border-hairline-2 bg-fog text-10 font-semibold leading-none text-ink-1"
+          className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-pill border border-hairline-2 bg-fog text-10 font-semibold leading-none text-ink-1"
         >
           {initial}
         </span>
@@ -49,7 +49,9 @@ export function PageByline({ author, updated, path, guardRef, onShowBacklinks }:
           {`updated ${formatRelativeTime(updated)}`}
         </time>
       )}
-      <span className="ml-auto flex items-center gap-1">
+      {/* History + backlinks stay as quiet as the byline text: the arbitrary
+          child variants (0,1,1) out-specify Btn's ghost/sm utilities (0,1,0). */}
+      <span className="ml-auto flex items-center gap-1 [&>button]:px-2 [&>button]:py-[3px] [&>button]:font-normal [&>button]:text-ink-2 [&>button:hover]:text-ink-0">
         <NoteHistoryButton key={path} path={path} guardRef={guardRef} />
         {count !== null && (
           <Btn
