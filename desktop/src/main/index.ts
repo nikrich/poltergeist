@@ -28,6 +28,7 @@ import { installClipboardBridge } from './clipboard';
 import { installCliShim } from './cli-shim';
 import { isAllowedExternalUrl } from './external-url';
 import { installNavigationGuard, prototypeRequestAllowed } from './navigation-guard';
+import { rendererLoadTarget } from './renderer-entry';
 import {
   registerGbAssetScheme,
   registerAssetProtocol,
@@ -180,11 +181,24 @@ function createWindow() {
       }
     });
   }
-  if (process.env.ELECTRON_RENDERER_URL) {
-    win.loadURL(process.env.ELECTRON_RENDERER_URL);
-  } else {
-    win.loadFile(join(__dirname, '../renderer/index.html'));
-  }
+  loadRenderer(win);
+}
+
+/**
+ * Load (or reload) the main renderer. The "load remote images" setting selects
+ * the HTML entry whose CSP <meta> allows https images; a meta policy can't be
+ * loosened in place and file:// gets no response headers, so toggling the
+ * setting swaps documents. `hash` carries the current route across the swap.
+ */
+function loadRenderer(win: BrowserWindow, hash?: string): void {
+  const target = rendererLoadTarget({
+    remoteImages: !DEMO && settings.getAll().loadRemoteImages === true,
+    rendererDir: join(__dirname, '../renderer'),
+    devServerUrl: process.env.ELECTRON_RENDERER_URL,
+    hash,
+  });
+  if (target.kind === 'url') void win.loadURL(target.url);
+  else void win.loadFile(target.path, target.hash ? { hash: target.hash } : undefined);
 }
 
 // Every webContents (main window, jot overlay, pdf-export, anything added
@@ -220,6 +234,22 @@ ipcMain.handle('gb:settings:set', async (_e, key: unknown, value: unknown) => {
     return { ok: false, error: `Invalid value for ${key}: ${issue}` };
   }
   settings.setKey(key as keyof Settings, parsed.data as Settings[keyof Settings]);
+  if (key === 'loadRemoteImages') {
+    // The CSP only changes with a new document: reload into the other entry
+    // once this IPC reply is on its way.
+    const win = mainWindow;
+    if (win && !win.isDestroyed()) {
+      let hash = '';
+      try {
+        hash = new URL(win.webContents.getURL()).hash;
+      } catch {
+        // no current URL — load the default route
+      }
+      setImmediate(() => {
+        if (!win.isDestroyed()) loadRenderer(win, hash);
+      });
+    }
+  }
   if (key === 'schedulerEnabled' || key === 'vaultPath') {
     // Both are read from the sidecar's launch env, so changing either needs a restart.
     if (key === 'schedulerEnabled') sidecar.setSchedulerEnabled(parsed.data as boolean);

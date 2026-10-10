@@ -50,6 +50,8 @@ export interface Settings {
   readAloudRate: number;
   /** A7 page width (toolbar toggle). Global: a reading preference, not page content. */
   pageWidth: PageWidth;
+  /** Allow remote https images in notes (relaxes the renderer CSP img-src). Default off. */
+  loadRemoteImages: boolean;
 
   hotkeys: {
     jotOverlay: string;

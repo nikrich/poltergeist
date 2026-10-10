@@ -51,6 +51,7 @@ export const DEFAULT_SETTINGS: Settings = {
   readAloudVoice: '',
   readAloudRate: 1,
   pageWidth: 'fixed',
+  loadRemoteImages: false,
 
   hotkeys: {
     jotOverlay: 'Alt+J',

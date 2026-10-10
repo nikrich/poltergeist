@@ -36,6 +36,10 @@ export const settingsSchema = z.object({
   // Page (A7): fixed reading measure or full editor width.
   pageWidth: z.enum(['fixed', 'full']),
 
+  // Privacy: allow https images from the web in notes. Off = the renderer CSP
+  // blocks them and notes show a placeholder. Switching reloads the window.
+  loadRemoteImages: z.boolean(),
+
   // Global hotkeys (Electron accelerator format).
   // Note: Electron uses 'Alt' rather than 'Option' even on macOS.
   hotkeys: z.object({

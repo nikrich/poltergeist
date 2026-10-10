@@ -9,3 +9,9 @@ describe('settings defaults', () => {
     expect(DEFAULT_SETTINGS.schedulerEnabled).toBe(true);
   });
 });
+
+describe('remote images default', () => {
+  it('blocks remote images until the user opts in', () => {
+    expect(DEFAULT_SETTINGS.loadRemoteImages).toBe(false);
+  });
+});
