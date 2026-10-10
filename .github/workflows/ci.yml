@@ -100,6 +100,7 @@ jobs:
             tests/test_templates_testrun.py \
             tests/test_templates_source.py \
             tests/test_templates_query.py \
+            tests/test_templates_generate.py \
             -q
 
   desktop:
