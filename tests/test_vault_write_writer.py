@@ -301,3 +301,13 @@ def test_package_reexports_everything_in_the_interface():
                  "NoteSnapshot", "WRITABLE_SUFFIXES", "Actor"):
         assert hasattr(vault_write, name), name
     assert os.path.basename(writer.__file__) == "writer.py"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX symlinks")
+def test_a_symlink_loop_is_an_invalid_path(vw_vault):
+    (vw_vault / "a.md").symlink_to("b.md")
+    (vw_vault / "b.md").symlink_to("a.md")
+    with pytest.raises(InvalidPath):
+        writer.resolve_safe("a.md")
+    with pytest.raises(InvalidPath):
+        write("a.md", content="x", op="modify", actor=USER)

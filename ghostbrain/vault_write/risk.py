@@ -16,6 +16,7 @@ import html
 import logging
 import re
 import unicodedata
+from collections.abc import Iterable
 
 from ghostbrain.changes import log as _changes
 from ghostbrain.vault_write.writer import ProposedChange, _rel, resolve_safe
@@ -31,8 +32,9 @@ ROUTINE_MOVERS = frozenset({"worker:jot-router"})
 REASON_META = "changes app settings (90-meta)"
 REASON_TEMPLATE = "edits a template"
 REASON_STABLE = "changes your stable profile"
-# A ``..`` segment, or a path that does not resolve to a writable file inside
-# the vault: where it lands can't be judged by its name, so it waits.
+# A ``..`` segment, a Windows stream or 8.3 short name (``x:y``, ``PRO~1``), or
+# a path that does not resolve to a writable file inside the vault: where it
+# lands can't be judged by its name, so it waits.
 REASON_PATH = "uses an unusual path (..)"
 REASON_SCRIPT = "adds a <script> tag"
 REASON_HANDLER = "adds an HTML event handler (on…=)"
@@ -46,10 +48,13 @@ _SCRIPT_RE = re.compile(r"<\s*script\b", re.IGNORECASE)
 # HTML parsers accept "/" as well as whitespace before an attribute.
 _HANDLER_RE = re.compile(r"<[a-z][^>]*[\s/]on[a-z]+\s*=", re.IGNORECASE)
 # A tag still open at the end of a line: the next line continues its attributes.
-# As in CommonMark raw HTML, the tag name ends at whitespace, "/" or the line
-# end (``a<b:`` and ``i<n;`` are prose), and a blank line or code fence ends it.
-_OPEN_TAG_RE = re.compile(r"<[a-z][a-z0-9-]*(?:[\s/][^>]*)?$", re.IGNORECASE)
-_FENCE_LINE_RE = re.compile(r"^\s*(?:`{3,}|~{3,})")
+# In markdown (CommonMark raw HTML) the tag name ends at whitespace, "/" or the
+# line end (``a<b:`` and ``i<n;`` are prose), and a blank line (spaces/tabs
+# only) or a code fence (at most 3 spaces in) ends it. HTML has neither: the
+# tokenizer reads any run up to whitespace, "/" or ">" as the name (``<b:x``).
+_OPEN_TAG_MD_RE = re.compile(r"<[a-z][a-z0-9-]*(?:[\s/][^>]*)?$", re.IGNORECASE)
+_OPEN_TAG_HTML_RE = re.compile(r"<[a-z][^\s/>]*(?:[\s/][^>]*)?$", re.IGNORECASE)
+_FENCE_LINE_RE = re.compile(r"^ {0,3}(?:`{3,}|~{3,})")
 _JS_URL_RE = re.compile(
     r"(?:href|src|action|formaction|xlink:href|data)\s*=\s*[\"']?\s*javascript\s*:"
     r"|\]\(\s*<?\s*javascript\s*:"
@@ -96,6 +101,15 @@ def _traverses(path: str) -> bool:
     return any(seg.count(".") >= 2 and not seg.rstrip(". ") for seg in _segments(path))
 
 
+# NTFS streams (``x.md::$DATA``, ``90-meta::$INDEX_ALLOCATION``) and 8.3 short
+# names (``80-PRO~1``) can reach a protected file under another name.
+_WINDOWS_ALIAS_RE = re.compile(r":|~\d")
+
+
+def _windows_alias(path: str) -> bool:
+    return any(_WINDOWS_ALIAS_RE.search(seg) for seg in _segments(path))
+
+
 def _canonical(path: str) -> str | None:
     """Where the write really lands, vault-relative (symlinks followed), or
     ``None`` when that can't be placed in the vault (fail closed)."""
@@ -113,14 +127,20 @@ _STABLE_FOLDED = frozenset(_fold(p) for p in STABLE_PROFILE_FILES)
 def _paths(change: ProposedChange) -> tuple[list[str], bool]:
     """Every spelling of the change's paths to judge, folded: as the caller
     asked for them and where they really land. A hold on either counts. The
-    flag says some path has ``..`` or could not be placed in the vault."""
-    raw = [p for p in (change.rel_path, change.dest_path, *change.requested) if p]
+    flag says some path has ``..``, a Windows alias, or could not be placed in
+    the vault."""
+    return _judged(p for p in (change.rel_path, change.dest_path, *change.requested) if p)
+
+
+def _judged(raw: Iterable[str]) -> tuple[list[str], bool]:
     out: list[str] = []
     odd = False
     for path in raw:
         if _traverses(path):
             odd = True
             continue
+        if _windows_alias(path):
+            odd = True
         out.append(_norm(path))
         canonical = _canonical(path)
         if canonical is None:
@@ -147,6 +167,14 @@ def _path_reasons(paths: list[str], odd: bool) -> list[str]:
     if odd and not reasons:  # already held by name: one reason is enough
         reasons.append(REASON_PATH)
     return reasons
+
+
+def protected_reasons(*paths: str) -> list[str]:
+    """The name rules alone (90-meta, templates, stable profile) for these
+    paths, judged as written and where they land. For writers no change row
+    can hold (``UNLISTED_ACTORS``): the writer refuses these outright."""
+    folded, _odd = _judged(p for p in paths if p)
+    return _path_reasons(folded, False)
 
 
 def _lines(data: bytes) -> list[str]:
@@ -184,6 +212,9 @@ def _content_reasons(change: ProposedChange, paths: list[str]) -> list[str]:
     if change.after is None:
         return []
     in_template = any(p.startswith(_TEMPLATES_FOLDED) for p in paths)
+    # Unknown or mixed suffix: judged as HTML, the stricter reading.
+    markdown = bool(paths) and all(p.endswith(".md") for p in paths)
+    open_tag_re = _OPEN_TAG_MD_RE if markdown else _OPEN_TAG_HTML_RE
     new = _lines(change.after)
     added = _added_indices(change.before, change.after)
     added_set = set(added)
@@ -191,9 +222,11 @@ def _content_reasons(change: ProposedChange, paths: list[str]) -> list[str]:
     tag_open = False  # tracked over the whole file: a kept line can open the tag
     for i, line in enumerate(new):
         # A line inside an unclosed tag is more of its attributes.
-        boundary = not line.strip() or _FENCE_LINE_RE.match(line) is not None
+        boundary = markdown and (
+            line.strip(" \t") == "" or _FENCE_LINE_RE.match(line) is not None
+        )
         scan = "<x " + line if tag_open and not boundary else line
-        tag_open = not boundary and _OPEN_TAG_RE.search(scan) is not None
+        tag_open = not boundary and open_tag_re.search(scan) is not None
         if i not in added_set:
             continue
         if _SCRIPT_RE.search(line):

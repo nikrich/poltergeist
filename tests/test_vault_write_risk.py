@@ -530,3 +530,99 @@ def test_a_protected_file_symlinked_to_a_plain_note_is_held(vault, actor):
     assert res.status == "pending"
     assert shared.read_bytes() == V1
     assert changes.get(int(res.change_id)).risk_reasons == (risk.REASON_STABLE,)
+
+
+# ── post-rebase fixes (R13) ───────────────────────────────────────────────
+
+HTML_DOC = "20-contexts/generated-docs/r.html"
+
+# In HTML a blank line, NBSP or code fence inside a tag means nothing, and the
+# tokenizer reads any non-space run after "<x" as the tag name.
+HTML_CONTINUATIONS = [
+    "<img src=x\n\nonerror=alert(1)>",
+    "<img src=x\n   \nonerror=alert(1)>",
+    "<img src=x\n \nonerror=alert(1)>",
+    "<img src=x\n```\nonerror=alert(1)>",
+    "<img src=x\n~~~\nonerror=alert(1)>",
+    "<b:x\nonclick=alert(1)>",
+    "<a.b\nonclick=alert(1)>",
+    "<svg\n\nonload=alert(1)>",
+]
+
+
+@pytest.mark.parametrize("payload", HTML_CONTINUATIONS)
+def test_html_tags_continue_across_blank_lines_and_fences(payload):
+    after = ("<!doctype html>\n<p>Report</p>\n" + payload + "\n").encode()
+    assert risk.evaluate(_p(HTML_DOC, op="create", before=None, after=after)) == [
+        risk.REASON_HANDLER]
+
+
+@pytest.mark.parametrize("payload", [
+    "<img src=x\n \nonerror=alert(1)>",  # NBSP is not a blank line in markdown
+    '<img src=x title="\n    ```\n" onerror=alert(1)>',  # 4+ spaces: not a fence
+])
+def test_markdown_tags_continue_unless_a_real_blank_line_or_fence(payload):
+    assert risk.evaluate(_p(after=V1 + payload.encode() + b"\n")) == [risk.REASON_HANDLER]
+
+
+@pytest.mark.parametrize("payload", [
+    "<img src=x\n\nonerror=alert(1)>",
+    "<svg\n\nonload=alert(1)>",
+])
+def test_a_generated_html_doc_with_a_split_handler_waits(vault, payload):
+    doc = "<!doctype html>\n<html><body>\n" + payload + "\n</body></html>\n"
+    res = write_new(HTML_DOC, doc, actor=ASSISTANT)
+    assert res.status == "pending"
+    assert not (vault / HTML_DOC).exists()
+
+
+@pytest.mark.parametrize("rel", [
+    "20-contexts/work/notes:x.md",
+    "80-profile/preferences.md::$DATA",
+    "90-meta::$INDEX_ALLOCATION/x.md",  # an NTFS folder stream
+    "80-PRO~1/preferences.md",  # an 8.3 short name
+    "20-contexts/WORK~2/plan.md",
+])
+def test_windows_stream_and_short_names_are_held(rel):
+    assert risk.evaluate(_p(rel)) == [risk.REASON_PATH]
+
+
+@pytest.mark.parametrize("rel", [
+    "20-contexts/work/~draft.md", "20-contexts/work/plan~.md", "20-contexts/work/a~b.md",
+])
+def test_a_tilde_without_a_digit_is_ordinary(rel):
+    assert risk.evaluate(_p(rel)) == []
+
+
+SEMANTIC = worker_actor("semantic-refresh")
+
+
+def _related(_meta):
+    return {"related": ["[[20-contexts/work/plan]]"]}
+
+
+@needs_symlinks
+def test_an_unlisted_worker_cannot_write_a_stable_file_through_a_leaf_symlink(vault):
+    (vault / "20-contexts/a.md").symlink_to("../80-profile/preferences.md")
+    before = _protected(vault)
+    with pytest.raises(InvalidPath):
+        jobs.update_fields("20-contexts/a.md", _related, actor=SEMANTIC, reason="related")
+    assert _protected(vault) == before
+
+
+@needs_symlinks
+def test_an_unlisted_worker_cannot_write_a_template_through_a_folder_link(vault):
+    (vault / "90-meta/templates").mkdir(parents=True)
+    (vault / "90-meta/templates/t.md").write_bytes(b"---\ntitle: T\n---\n\nbody\n")
+    (vault / "20-contexts/tpl").symlink_to(vault / "90-meta/templates", target_is_directory=True)
+    before = _protected(vault)
+    with pytest.raises(InvalidPath):
+        jobs.update_fields("20-contexts/tpl/t.md", _related, actor=SEMANTIC, reason="related")
+    assert _protected(vault) == before
+
+
+def test_an_unlisted_worker_cannot_name_a_protected_path(vault):
+    before = _protected(vault)
+    with pytest.raises(InvalidPath):
+        jobs.update_fields("80-profile/preferences.md", _related, actor=SEMANTIC, reason="r")
+    assert _protected(vault) == before

@@ -193,7 +193,12 @@ def refresh(
 
 
 def _iter_notes(root: Path) -> Iterable[Path]:
-    yield from sorted(root.rglob("*.md"))
+    """Every note under ``root``, never through a symlink: a link can point at
+    the stable profile or 90-meta, which this unlisted job must not touch."""
+    for path in sorted(root.rglob("*.md")):
+        rel = path.relative_to(root)
+        if not any((root / Path(*rel.parts[:i])).is_symlink() for i in range(1, len(rel.parts) + 1)):
+            yield path
 
 
 def _should_skip(path: Path) -> bool:

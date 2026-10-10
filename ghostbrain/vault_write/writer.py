@@ -95,7 +95,12 @@ def resolve_safe(rel_path: str, *, suffixes: tuple[str, ...] = WRITABLE_SUFFIXES
     if candidate.is_absolute() or any(part == ".." for part in candidate.parts):
         raise InvalidPath("path must not contain '..' or be absolute")
     root = _root()
-    target = (root / candidate).resolve()
+    try:
+        target = (root / candidate).resolve()
+    except (RuntimeError, OSError):  # a symlink loop (Python 3.11 raises RuntimeError)
+        raise InvalidPath("path is a symlink loop") from None
+    if target.is_symlink():  # 3.13+ returns a looping link unresolved
+        raise InvalidPath("path is a symlink loop")
     try:
         target.relative_to(root)
     except ValueError:
@@ -305,6 +310,17 @@ def records_change(actor: Actor, op: Op) -> bool:
     return not (actor.startswith("worker:") and op == "create")
 
 
+def _refuse_protected(*paths: str | None) -> None:
+    """An unlisted actor's write is never recorded, so it can never be held:
+    a protected path (90-meta, templates, stable profile, by name or by where
+    a symlink lands) is refused outright instead."""
+    from ghostbrain.vault_write.risk import protected_reasons  # risk imports this module
+
+    reasons = protected_reasons(*(p for p in paths if p))
+    if reasons:
+        raise InvalidPath(f"this job may not write there ({'; '.join(reasons)})")
+
+
 def needs_base_etag(actor: Actor) -> bool:
     """Spec B §1: base_etag is required for actor != worker when op != create.
     User writes keep it optional; restore checks its own expectations."""
@@ -455,6 +471,8 @@ def _write(
     dst = resolve_safe(dest) if dest is not None else None
     if dst is not None and dst == src:
         raise ValueError("move destination equals the source")
+    if actor in UNLISTED_ACTORS:
+        _refuse_protected(rel_path, dest, _rel(src), _rel(dst) if dst is not None else None)
     log.debug("vault write op=%s path=%s actor=%s reason=%s", op, rel_path, actor, reason)
     with _locked(src, *([dst] if dst is not None else [])):
         if approved_change is not None:
