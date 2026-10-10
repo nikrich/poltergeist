@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../components/docs/pdf', () => ({
@@ -260,5 +260,29 @@ describe('DocsScreen', () => {
     await waitFor(() => expect(useToasts.getState().toasts.some((t) => t.kind === 'error')).toBe(true));
     expect(input.value).toBe('keep me');
     expect(useChat.getState().pendingAsk).toBeNull();
+  });
+
+  it('survives a project rename that changes the slug while a folder in it is selected', async () => {
+    const tree = libraryFixture();
+    const renamed = {
+      ...tree,
+      scopes: tree.scopes.map((s) => (s.project === 'payments' ? { ...s, project: 'payments-2', name: 'Payments 2' } : s)),
+    };
+    renderScreen(tree);
+    fireEvent.click(within(await screen.findByTestId('folder-work/payments/specs')).getByText('specs'));
+    expect(useDocs.getState().selection?.type).toBe('folder');
+    vi.mocked(client.patch).mockImplementation((async () => {
+      vi.mocked(client.get).mockImplementation(((path: string) =>
+        Promise.resolve(path === '/v1/library/tree' ? renamed : [])) as never);
+      return { id: 'work/payments-2', context: 'work', slug: 'payments-2', name: 'Payments 2' };
+    }) as never);
+    fireEvent.click(screen.getByLabelText('rename work/payments'));
+    const input = screen.getByPlaceholderText('project name');
+    fireEvent.change(input, { target: { value: 'Payments 2' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(client.patch).toHaveBeenCalledWith('/v1/projects/work/payments', expect.objectContaining({ name: 'Payments 2' })));
+    // Tree refetches under the new slug; the dangling selection resets instead of crashing.
+    expect(await screen.findByTestId('folder-work/payments-2/')).toBeTruthy();
+    await waitFor(() => expect(useDocs.getState().selection).toBeNull());
   });
 });

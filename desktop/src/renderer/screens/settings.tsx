@@ -1228,7 +1228,15 @@ export function ProjectsSettings() {
         <div key={group.context} className="mb-5">
           <Eyebrow className="mb-2">{group.context}</Eyebrow>
           {group.items.map((p) => (
-            <ProjectRow key={p.id} project={p} onUpdate={updateProject.mutate} />
+            <ProjectRow
+              key={p.id}
+              project={p}
+              onUpdate={(vars) =>
+                updateProject.mutate(vars, {
+                  onError: (e) => toast.error(e instanceof Error ? e.message : 'update failed'),
+                })
+              }
+            />
           ))}
         </div>
       ))}
@@ -1239,6 +1247,14 @@ export function ProjectsSettings() {
   );
 }
 
+// Mirrors ghostbrain.api.repo.notes_manual.make_slug (_SLUG_MAX = 32).
+const SLUG_MAX = 32;
+function slugify(text: string): string {
+  const s = text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  if (!s) return 'untitled';
+  return s.slice(0, SLUG_MAX).replace(/-+$/, '') || 'untitled';
+}
+
 function ProjectRow({
   project,
   onUpdate,
@@ -1246,6 +1262,71 @@ function ProjectRow({
   project: Project;
   onUpdate: (vars: { context: string; slug: string } & UpdateProjectRequest) => void;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(project.name);
+  const [description, setDescription] = useState(project.description);
+  const label = `${project.context}/${project.slug}`;
+
+  const startEdit = () => {
+    setName(project.name);
+    setDescription(project.description);
+    setEditing(true);
+  };
+  const save = () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    onUpdate({
+      context: project.context,
+      slug: project.slug,
+      name: trimmed,
+      description: description.trim(),
+    });
+    setEditing(false);
+  };
+  const onKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') save();
+    if (e.key === 'Escape') setEditing(false);
+  };
+
+  if (editing) {
+    const renamesFolder = name.trim() !== '' && slugify(name) !== project.slug;
+    const inputCls =
+      'rounded-sm border border-hairline-2 bg-paper px-2 py-[6px] text-12 text-ink-0 focus:outline-none';
+    return (
+      <div className="flex flex-col gap-2 rounded-sm bg-vellum px-3 py-2">
+        <input
+          autoFocus
+          aria-label={`project name ${label}`}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={onKey}
+          className={inputCls}
+        />
+        <input
+          aria-label={`project description ${label}`}
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          onKeyDown={onKey}
+          placeholder="description (helps the router pick it)…"
+          className={`${inputCls} placeholder:text-ink-3`}
+        />
+        {renamesFolder && <div className="text-11 text-ink-2">renames the folder too</div>}
+        <div className="flex gap-3">
+          <button type="button" className="text-11 text-ink-0" disabled={!name.trim()} onClick={save}>
+            save
+          </button>
+          <button
+            type="button"
+            className="text-11 text-ink-2 hover:text-ink-0"
+            onClick={() => setEditing(false)}
+          >
+            cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={`flex items-center gap-3 rounded-sm px-3 py-2 hover:bg-vellum ${
@@ -1259,6 +1340,14 @@ function ProjectRow({
         )}
       </div>
       <span className="font-mono text-10 text-ink-3">{project.slug}</span>
+      <button
+        type="button"
+        aria-label={`edit ${label}`}
+        className="text-11 text-ink-2 hover:text-ink-0"
+        onClick={startEdit}
+      >
+        edit
+      </button>
       <button
         type="button"
         className="text-11 text-ink-2 hover:text-ink-0"

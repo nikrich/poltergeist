@@ -12,7 +12,7 @@ function dt(data: Record<string, string>, files: File[] = []) {
 function setup(over: Partial<React.ComponentProps<typeof DocTree>> = {}) {
   const props = {
     tree: libraryFixture(), selection: null, onSelect: vi.fn(), onMoveDoc: vi.fn(), onMoveFolder: vi.fn(),
-    onUploadFiles: vi.fn(), onCreateFolder: vi.fn(), onRenameFolder: vi.fn(), onDeleteFolder: vi.fn(), ...over,
+    onUploadFiles: vi.fn(), onCreateFolder: vi.fn(), onRenameFolder: vi.fn(), onRenameProject: vi.fn(), onDeleteFolder: vi.fn(), ...over,
   };
   render(<DocTree {...props} />);
   return props;
@@ -112,5 +112,33 @@ describe('DocTree', () => {
     fireEvent.change(input, { target: { value: 'a/b' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(p.onCreateFolder).not.toHaveBeenCalled();
+  });
+
+  it('renames a project inline from its row', () => {
+    const p = setup();
+    fireEvent.click(screen.getByLabelText('rename work/payments'));
+    const input = screen.getByPlaceholderText('project name') as HTMLInputElement;
+    expect(input.value).toBe('Payments');
+    fireEvent.change(input, { target: { value: 'Payments v2' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(p.onRenameProject).toHaveBeenCalledWith({ context: 'work', project: 'payments' }, 'Payments v2');
+  });
+
+  it('cancels a project rename on Escape and ignores an unchanged name', () => {
+    const p = setup();
+    fireEvent.click(screen.getByLabelText('rename work/payments'));
+    fireEvent.keyDown(screen.getByPlaceholderText('project name'), { key: 'Escape' });
+    expect(screen.queryByPlaceholderText('project name')).toBeNull();
+    fireEvent.click(screen.getByLabelText('rename work/payments'));
+    fireEvent.keyDown(screen.getByPlaceholderText('project name'), { key: 'Enter' });
+    expect(p.onRenameProject).not.toHaveBeenCalled();
+  });
+
+  it('offers no project rename for archived projects or the unfiled scope', () => {
+    const tree = libraryFixture();
+    tree.scopes = tree.scopes.map((s) => (s.project ? { ...s, archived: true } : s));
+    setup({ tree });
+    expect(screen.queryByLabelText('rename work/payments')).toBeNull();
+    expect(screen.queryByLabelText('rename work/_')).toBeNull();
   });
 });

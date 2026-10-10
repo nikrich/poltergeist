@@ -21,6 +21,7 @@ import {
   useMoveFolder,
   usePatchDoc,
   useReindexDoc,
+  useUpdateProject,
   useSummariseDoc,
   useRemoveOrphan,
   useUploadDoc,
@@ -49,6 +50,7 @@ export function DocsScreen() {
   const createConversation = useCreateConversation();
   const createFolder = useCreateFolder();
   const moveFolder = useMoveFolder();
+  const updateProject = useUpdateProject();
   const deleteFolder = useDeleteFolder();
   const adopt = useAdoptOriginal();
   const removeOrphan = useRemoveOrphan();
@@ -312,6 +314,7 @@ export function DocsScreen() {
             onUploadFiles={(files, to) => void uploadFiles(files, to)}
             onCreateFolder={(ref) => run(createFolder.mutateAsync(ref))}
             onRenameFolder={(from, to) => run(moveFolder.mutateAsync({ from, to }))}
+            onRenameProject={(ref, name) => run(updateProject.mutateAsync({ context: ref.context, slug: ref.project, name }))}
             onDeleteFolder={(ref) => run(deleteFolder.mutateAsync(ref))}
           />
         )}
