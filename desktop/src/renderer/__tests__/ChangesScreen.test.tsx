@@ -38,10 +38,13 @@ function list(over: Partial<ChangesListResponse> = {}): ChangesListResponse {
   return { items: [AI, PLUGIN], pendingCount: 0, degraded: false, ...over };
 }
 
-function setup(listResponse: ChangesListResponse = list()) {
+function setup(
+  listResponse: ChangesListResponse = list(),
+  detail: () => Promise<ChangeDetailResponse> = async () => DETAIL,
+) {
   getMock.mockImplementation(async (path: string) => {
     if (path.startsWith('/v1/changes?')) return listResponse;
-    if (path === '/v1/changes/2') return DETAIL;
+    if (path === '/v1/changes/2') return detail();
     throw new Error(`unexpected GET ${path}`);
   });
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -116,6 +119,32 @@ describe('ChangesScreen', () => {
     expect(drift).toHaveTextContent('+ typed since');
     fireEvent.click(within(row).getByRole('button', { name: 'revert anyway' }));
     await waitFor(() => expect(postMock).toHaveBeenLastCalledWith('/v1/changes/2/revert', { force: true }));
+  });
+
+  it('keeps "revert anyway" disabled until the drift has loaded', async () => {
+    postMock.mockRejectedValueOnce(new client.ApiError('the note changed since this change', 409));
+    let release: (d: ChangeDetailResponse) => void = () => {};
+    setup(list(), () => new Promise<ChangeDetailResponse>((resolve) => { release = resolve; }));
+    const row = await screen.findByTestId('change-2');
+    fireEvent.click(within(row).getByRole('button', { name: 'revert' }));
+    const prompt = await within(row).findByRole('alert');
+    expect(prompt).toHaveTextContent('loading…');
+    expect(within(row).getByRole('button', { name: 'revert anyway' })).toBeDisabled();
+    release(DETAIL);
+    expect(await screen.findByTestId('change-drift-2')).toHaveTextContent('+ typed since');
+    expect(within(row).getByRole('button', { name: 'revert anyway' })).toBeEnabled();
+  });
+
+  it('shows why the drift could not load and keeps "revert anyway" disabled', async () => {
+    postMock.mockRejectedValueOnce(new client.ApiError('the note changed since this change', 409));
+    setup(list(), async () => {
+      throw new client.ApiError('change log unavailable', 503);
+    });
+    const row = await screen.findByTestId('change-2');
+    fireEvent.click(within(row).getByRole('button', { name: 'revert' }));
+    const prompt = await within(row).findByRole('alert');
+    await waitFor(() => expect(prompt).toHaveTextContent('change log unavailable'));
+    expect(within(row).getByRole('button', { name: 'revert anyway' })).toBeDisabled();
   });
 
   it('a reverted row offers undo', async () => {

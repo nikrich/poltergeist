@@ -135,7 +135,7 @@ function ChangeRow({ change }: { change: ChangeSummary }) {
             This note changed since. {reverted ? 'Re-apply' : 'Revert'} anyway? The current version
             stays in page history.
           </p>
-          {detail.data && (
+          {detail.data ? (
             <LineDiffView
               testId={`change-drift-${change.id}`}
               className="mb-2 max-h-[240px]"
@@ -143,9 +143,21 @@ function ChangeRow({ change }: { change: ChangeSummary }) {
               newText={detail.data.current ?? ''}
               legend="- expected · + on disk now"
             />
+          ) : detail.isError ? (
+            <p className="m-0 mb-2 text-ink-2">
+              couldn&apos;t load what changed: {detail.error.message}
+            </p>
+          ) : (
+            <p className="m-0 mb-2 text-ink-2">loading…</p>
           )}
           <div className="flex gap-2">
-            <Btn variant="danger" size="sm" disabled={busy} onClick={() => void act(true)}>
+            {/* Forcing is only offered once the user can see what it replaces. */}
+            <Btn
+              variant="danger"
+              size="sm"
+              disabled={busy || !detail.data}
+              onClick={() => void act(true)}
+            >
               {reverted ? 'undo anyway' : 'revert anyway'}
             </Btn>
             <Btn variant="ghost" size="sm" onClick={() => setConflict(false)}>
