@@ -335,3 +335,14 @@ def test_in_flight_refresh_does_not_clobber_note_changed(tmp_path: Path):
     idx._read = racing_read  # type: ignore[method-assign]
     idx.refresh()
     assert [e.source for e in idx.backlinks("20-contexts/work/b.md")] == ["20-contexts/work/a.md"]
+
+
+def test_note_embed_is_a_backlink_but_attachment_embed_is_not(tmp_path: Path):
+    _write(tmp_path, "20-contexts/work/b.md", "b")
+    _write(tmp_path, "20-contexts/work/a.md", "![[20-contexts/work/b]]\n![[90-meta/assets/x.png]]")
+    idx = _idx(tmp_path)
+    idx.refresh()
+    assert [(e.source, e.snippet) for e in idx.backlinks("20-contexts/work/b.md")] == [
+        ("20-contexts/work/a.md", "![[20-contexts/work/b]]"),
+    ]
+    assert [e.target for e in idx.outgoing("20-contexts/work/a.md")] == ["20-contexts/work/b.md"]
