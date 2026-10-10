@@ -1,6 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type {
+  DocDetail,
+  DocSummary,
+  FolderRef,
+  LibraryTree,
+  UploadDocRequest,
+  UploadDocResponse,
   ImportSpace,
   ActivityRow,
   AgendaItem,
@@ -950,5 +956,115 @@ export function useSaveWhatsAppChats() {
       qc.invalidateQueries({ queryKey: ['connectors'] });
       qc.invalidateQueries({ queryKey: ['connector', 'whatsapp'] });
     },
+  });
+}
+
+// ── Docs library ─────────────────────────────────────────────────────────────
+
+const invalidateLibrary = (qc: ReturnType<typeof useQueryClient>) =>
+  qc.invalidateQueries({ queryKey: ['library'] });
+
+export function useLibraryTree() {
+  return useQuery({
+    queryKey: ['library', 'tree'],
+    queryFn: () => get<LibraryTree>('/v1/library/tree'),
+    staleTime: 5_000,
+  });
+}
+
+export function useDocDetail(docId: string | null) {
+  return useQuery({
+    queryKey: ['library', 'doc', docId],
+    queryFn: () => get<DocDetail>(`/v1/library/docs/${docId}`),
+    enabled: !!docId,
+  });
+}
+
+export function useLibrarySearch(q: string, project?: string | null) {
+  const params = new URLSearchParams({ q });
+  if (project) params.set('project', project);
+  return useQuery({
+    queryKey: ['library', 'search', q, project ?? null],
+    queryFn: () => get<DocSummary[]>(`/v1/library/search?${params.toString()}`),
+    enabled: q.trim().length > 0,
+    staleTime: 5_000,
+  });
+}
+
+export function useUploadDoc() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: UploadDocRequest) => post<UploadDocResponse>('/v1/library/docs', req),
+    onSuccess: () => invalidateLibrary(qc),
+  });
+}
+
+export function usePatchDoc() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ docId, ...body }: { docId: string; title?: string; context?: string; project?: string | null; folder?: string }) =>
+      patch<DocSummary>(`/v1/library/docs/${docId}`, body),
+    onSuccess: () => invalidateLibrary(qc),
+  });
+}
+
+export function useDeleteDoc() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (docId: string) => del(`/v1/library/docs/${docId}`),
+    onSuccess: () => invalidateLibrary(qc),
+  });
+}
+
+export function useReindexDoc() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (docId: string) => post<DocSummary>(`/v1/library/docs/${docId}/reindex`),
+    onSuccess: () => invalidateLibrary(qc),
+  });
+}
+
+export function useCreateFolder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ref: FolderRef) => post<FolderRef>('/v1/library/folders', ref),
+    onSuccess: () => invalidateLibrary(qc),
+  });
+}
+
+export function useMoveFolder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { from: FolderRef; to: FolderRef }) => patch<FolderRef>('/v1/library/folders', vars),
+    onSuccess: () => invalidateLibrary(qc),
+  });
+}
+
+export function useDeleteFolder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ref: FolderRef) => {
+      const params = new URLSearchParams({ context: ref.context, path: ref.path });
+      if (ref.project) params.set('project', ref.project);
+      return del(`/v1/library/folders?${params.toString()}`);
+    },
+    onSuccess: () => invalidateLibrary(qc),
+  });
+}
+
+export function useAdoptOriginal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { context: string; project: string | null; folder: string; name: string }) =>
+      post<DocSummary>('/v1/library/attention/adopt', vars),
+    onSuccess: () => invalidateLibrary(qc),
+  });
+}
+
+export function useRemoveOrphan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (docId: string) => post('/v1/library/attention/remove-orphan', { doc_id: docId }),
+    onSuccess: () => invalidateLibrary(qc),
   });
 }
