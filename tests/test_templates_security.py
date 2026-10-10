@@ -6,9 +6,13 @@ from __future__ import annotations
 
 import re
 import time
+from datetime import datetime as _dt
+from datetime import timedelta as _td
+from datetime import timezone as _tz
 from pathlib import Path
 
 import pytest
+import yaml as _yaml
 
 from ghostbrain.templates.lang import (
     MAX_PLACEHOLDERS,
@@ -19,6 +23,14 @@ from ghostbrain.templates.lang import (
     tokenize,
 )
 from ghostbrain.templates.parse import parse_template
+from ghostbrain.templates.render import (
+    MAX_OUTPUT_CHARS,
+    AnswerError,
+    RenderEnv,
+    RenderError,
+    render,
+    validate_folder,
+)
 
 PKG = Path(__file__).resolve().parents[1] / "ghostbrain" / "templates"
 FORBIDDEN = [
@@ -233,3 +245,138 @@ def test_sec_unconstructable_prompt_defaults_are_a_diagnostic(value):
     )
     r = parse_template(src, "x")
     assert not r.ok and r.diagnostics[0].code == "yaml"
+
+
+_ENV = RenderEnv(now=_dt(2026, 10, 9, 14, 30, tzinfo=_tz(_td(hours=2))),
+                 default_context="work", contexts=("work",))
+
+
+def _t(folder: str, body: str = "x", name: str = "n"):
+    src = (
+        "---\ntemplate:\n  name: Evil\n  prompts:\n    - id: focus\n      ask: F\n      type: text\n"
+        f"      optional: true\n  file:\n    folder: {_yaml.safe_dump(folder).splitlines()[0]}\n"
+        f"    name: {_yaml.safe_dump(name).splitlines()[0]}\n---\n{body}"
+    )
+    r = parse_template(src, "evil")
+    assert r.ok, r.diagnostics
+    return r.template
+
+
+@pytest.mark.parametrize(
+    "folder, answer",
+    [
+        ("../../etc", ""),
+        ("/etc", ""),
+        ("20-contexts/../../..", ""),
+        ("20-contexts/{{focus}}", "../../outside"),
+        ("20-contexts/{{focus}}", "a\\..\\..\\b"),
+        ("C:/Windows", ""),
+        ("20-contexts/x:stream", ""),
+        ("90-meta/templates", ""),
+        ("90-META/prompts", ""),
+        ("80-profile", ""),
+        ("80-Profile/about", ""),
+        ("{{focus}}/x", "80-PROFILE"),
+        ("20-contexts/.git", ""),
+        ("20-contexts/CON", ""),
+        ("20-contexts/{{nope}}", ""),
+        ("20-contexts/{{focus}}", "line\nbreak"),
+        ("{{focus}}", "   "),
+        ("a/b/c/d/e/f/g/h/i/j/k", ""),
+        # URL-encoded traversal and separators are rejected, not filed literally.
+        ("20-contexts/%2e%2e/%2e%2e", ""),
+        ("20-contexts/{{focus}}", "%2E%2E%2Fetc"),
+        ("20-contexts/a%2Fb", ""),
+        ("20-contexts/a%5cb", ""),
+        # Absolute, backslash, drive letter, dot segments, NUL, leading dots.
+        ("{{focus}}", "/etc/passwd"),
+        ("{{focus}}", "\\\\server\\share"),
+        ("{{focus}}", "D:relative"),
+        ("20-contexts/./x", ""),
+        ("20-contexts/{{focus}}", ".."),
+        ("20-contexts/{{focus}}", "a\x00b"),
+        ("20-contexts/.hidden", ""),
+        (".obsidian/plugins", ""),
+    ],
+)
+def test_sec_rendered_folder_cannot_escape_or_hit_system_areas(folder, answer):
+    with pytest.raises(RenderError):
+        render(_t(folder), {"focus": answer} if answer else {}, _ENV)
+
+
+def test_sec_validate_folder_keeps_safe_paths_and_a_lone_percent():
+    assert validate_folder("20-contexts/work/one-on-ones") == "20-contexts/work/one-on-ones"
+    assert validate_folder("20-contexts/work/100% done/") == "20-contexts/work/100% done"
+    assert validate_folder("30-cross-context/80-profile") == "30-cross-context/80-profile"
+
+
+def test_sec_file_name_cannot_carry_a_path():
+    note = render(_t("20-contexts/work", name="../../evil/{{focus}}"), {"focus": "../x"}, _ENV)
+    assert note.path == "20-contexts/work/evil-x.md"
+
+
+def test_sec_answers_are_never_re_expanded():
+    note = render(_t("20-contexts/work", body="{{focus}}"), {"focus": "{{user.name}} {{date}}"}, _ENV)
+    assert note.body == "{{user.name}} {{date}}"
+
+
+def test_sec_answers_cannot_inject_frontmatter_keys():
+    src = (
+        "---\ntemplate:\n  name: Inj\n  prompts:\n    - id: focus\n      ask: F\n      type: text\n"
+        "  frontmatter:\n    summary: \"{{focus}}\"\n---\nbody\n"
+    )
+    t = parse_template(src, "inj").template
+    from ghostbrain.vault_write.text import parse_note
+
+    note = render(t, {"focus": "x\nevil: true\n---\ninjected"}, _ENV)
+    parsed = parse_note(note.markdown())  # the same fence finder the write path uses
+    data = _yaml.safe_load(parsed.fm_inner)
+    assert "evil" not in data and data["summary"] == "x\nevil: true\n---\ninjected"
+    assert parsed.body == "body\n"
+
+
+def test_sec_output_size_is_capped():
+    body = "{{focus}}" * 200
+    with pytest.raises(RenderError):
+        render(_t("20-contexts/work", body=body), {"focus": "x" * 10_000}, _ENV)
+    assert 200 * 10_000 > MAX_OUTPUT_CHARS
+
+
+def test_sec_person_path_answers_cannot_traverse():
+    src = "---\ntemplate:\n  name: P\n  prompts:\n    - id: person\n      ask: W\n      type: person\n---\n{{person.link}}"
+    t = parse_template(src, "p").template
+    for bad in ("../../etc/passwd", "/etc/passwd", "30-cross-context/../../x", "C:/x", ".hidden/x", "a\\b",
+                "30-cross-context/people/a\x00b.md"):
+        with pytest.raises(AnswerError):
+            render(t, {"person": bad}, _ENV)
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "30-cross-context/people/alex]] [[evil",
+        "30-cross-context/people/[[x",
+        "30-cross-context/people/a|b",
+        "30-cross-context/people/a#heading",
+        "30-cross-context/people/a\nb",
+        "30-cross-context/people/a\rb.md",
+        "alex]]evil.md",
+    ],
+)
+def test_sec_person_path_answers_cannot_inject_markup(bad):
+    src = "---\ntemplate:\n  name: P\n  prompts:\n    - id: person\n      ask: W\n      type: person\n---\n{{person.link}}"
+    t = parse_template(src, "p").template
+    with pytest.raises(AnswerError) as e:
+        render(t, {"person": bad}, _ENV)
+    assert e.value.field == "person"
+
+
+def test_sec_person_lookup_uses_the_env_lookup():
+    """Person names come from the in-memory link index only."""
+    seen: list[str] = []
+    env = RenderEnv(now=_ENV.now, default_context="work", contexts=("work",),
+                    person_title=lambda p: seen.append(p) or None)
+    src = "---\ntemplate:\n  name: P\n  prompts:\n    - id: person\n      ask: W\n      type: person\n---\n{{person.name}}"
+    t = parse_template(src, "p").template
+    assert render(t, {"person": "30-cross-context/people/alex"}, env).body == "Alex"
+    assert seen == ["30-cross-context/people/alex.md"]
