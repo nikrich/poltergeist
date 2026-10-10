@@ -4,6 +4,7 @@ from __future__ import annotations
 import pytest
 
 from ghostbrain.templates import generate
+from ghostbrain.templates.draft_rules import URL_MESSAGE
 from ghostbrain.templates.functions import FIELDS, FILTERS, PROMPT_TYPES, VARIABLES
 from ghostbrain.templates.generate import (
     MAX_DRAFT_CHARS,
@@ -15,6 +16,7 @@ from ghostbrain.templates.generate import (
     check_draft,
     draft_template,
     extract_draft,
+    repair_prompt,
     run_turn,
     system_prompt,
     verify_exact,
@@ -233,15 +235,16 @@ def test_remote_images_are_rejected(image):
     assert not found.ok
     problems = [d for d in found.problems if d.code == "forbidden"]
     assert problems and all(d.severity == "error" for d in problems)
-    assert "remote images are not allowed" in problems[0].message
-    assert problems[0].line == GOOD.split("\n").index("## Blockers") + 1
+    # located at the line holding the URL
+    url_line = next(i for i, line in enumerate(image.split("\n")) if "//" in line)
+    assert problems[0].line == GOOD.split("\n").index("## Blockers") + 1 + url_line
 
 
-def test_links_and_local_images_are_allowed():
+def test_local_links_and_images_are_allowed():
     draft = GOOD.replace(
         "## Blockers",
-        "[docs](https://example.com)\n\n![local](attachments/x.png)\n\n"
-        "[ref]: https://example.com/page",
+        "[docs](notes/docs.md)\n\n![local](attachments/x.png)\n\n"
+        "[ref]: notes/page.md",
     )
     assert check_draft(draft).ok
 
@@ -373,8 +376,7 @@ def test_links_built_from_placeholders_are_rejected(link):
 def test_system_prompt_rules_cover_html_images_urls_and_search_only():
     text = system_prompt()
     assert "no raw html tags" in text.lower()
-    assert "no images from the web" in text
-    assert "no URLs built from placeholders" in text
+    assert "No URLs or web addresses of any kind (no http, https, www, data: …)" in text
     assert "You may search the user's notes" in text and "never copy text from them" in text
     assert TEMPLATE_TOOLS == "mcp__poltergeist__poltergeist_search"
 
@@ -535,11 +537,8 @@ def test_email_autolinks_with_placeholders_are_rejected(email):
     "body",
     [
         "cc @{{team}}",
-        "<https://example.com/docs>",
-        "See https://example.com/docs and [docs](https://example.com/docs).",
         "Intro\n\n---\n\nMore",
         "5 < 10 and a->b, Q&A",
-        "```mermaid\nA[\"x\"] --> B[\"https://example.com\"]\n```",
         "Click the link below.",
     ],
 )
@@ -648,10 +647,6 @@ def test_everything_e05d6def_rejected_is_still_rejected(case):
 @pytest.mark.parametrize(
     "body",
     [
-        # static text in a fence or diagram label: rendered as text, loads nothing
-        "```mermaid\ngraph TD;\nA[\"x\"] --> B[\"https://evil.com\"]\n```",
-        "```\nhttps://example.com/docs\n```",
-        "```\nftp://example.com/file\n```",
         # src=/href= words outside any tag: plain text to mermaid and markdown
         "```mermaid\ngraph TD;\nA[\"src=x\"]\n```",
         # prose that starts with "Click", not a mermaid click action
@@ -704,9 +699,167 @@ def test_a_bare_url_span_does_not_stop_at_a_quote():
 
 def test_an_ordinary_template_still_passes():
     body = (
-        "Intro with a [link](https://example.com/docs) and a [ref][d].\n\n---\n\n"
+        "Intro with a [link](notes/docs.md) and a [ref][d].\n\n---\n\n"
         "![diagram](attachments/d.png)\n\n"
         "```mermaid\ngraph TD\nA-->B\nstyle A fill:#f9f\n```\n\n"
-        "[d]: https://example.com/ref"
+        "[d]: notes/ref.md"
     )
     assert check_draft(GOOD.replace("## Blockers", body)).ok
+
+
+# ── Fix round 4: no URL anywhere (one blanket rule) ───────────────────────
+
+
+def url_problems(draft: str) -> list:
+    return [d for d in forbidden(draft) if URL_MESSAGE in d.message]
+
+
+# Flipped: these passed before round 4; a URL of any kind is now rejected.
+@pytest.mark.parametrize(
+    "body",
+    [
+        "[docs](https://example.com)",
+        "[x][ref]\n\n[ref]: https://example.com/page",
+        "<https://example.com/docs>",
+        "See https://example.com/docs and [docs](https://example.com/docs).",
+        "```mermaid\nA[\"x\"] --> B[\"https://example.com\"]\n```",
+        "```mermaid\ngraph TD;\nA[\"x\"] --> B[\"https://evil.com\"]\n```",
+        "```\nhttps://example.com/docs\n```",
+        "```\nftp://example.com/file\n```",
+    ],
+)
+def test_static_urls_that_used_to_pass_are_rejected(body):
+    assert url_problems(GOOD.replace("## Blockers", body))
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        # coordinator's vectors: mermaid image shapes, reference images
+        "```mermaid\nflowchart TD\nA@{ img: \"https://evil.com/p.png\" }\n```",
+        "```mermaid\nflowchart TD\nA@{ img: \"https://evil.com/p.png\", pos: \"t\", h: 60 }\n```",
+        "```mermaid\nflowchart TD\nA@{ shape: image, img: \"//evil.com/p.png\" }\n```",
+        "![x][ref]\n\n[ref]: https://evil.com/p.png",
+        # generic remote loads
+        "[x](https://evil.com)",
+        "https://evil.com",
+        "www.evil.com",
+        "//evil.com/p.png",
+        "[x](///evil.com/p.png)",
+        "[x](\\\\\\\\evil.com/p.png)",
+        "[x](/\\evil.com/p.png)",
+        "[x](https:evil.com)",
+        "```mermaid\nstyle A fill:url(https://evil.com/p.png)\n```",
+        "```mermaid\n%%{init: {\"themeCSS\": \"@import url(https://evil.com/x.css);\"}}%%\n```",
+        "x ws://evil.com/socket and wss://evil.com",
+        "file:///etc/passwd",
+        "data:text/html,x",
+        "javascript:alert(1)",
+        "vbscript:msgbox(1)",
+        # Unicode compatibility forms NFKC folds
+        "ｈｔｔｐｓ：／／evil．com",
+        "https\ufe55//evil.com",
+        "https:／／evil.com",
+        "ｗｗｗ．evil．com",
+        # percent-, entity- and escape-encoded
+        "https%3A%2F%2Fevil.com",
+        "https%253A%252F%252Fevil.com",
+        "https&#58;&#47;&#47;evil.com",
+        "https&colon;evil.com",
+        "&#x68;ttps:evil.com",
+        "java&Tab;script:alert(1)",
+        "```mermaid\nA[\"#104;ttps#58;evil.com\"]\n```",
+        "```mermaid\nstyle A fill:url(\\68ttps\\3a evil.com)\n```",
+        "\\x68ttps:evil.com",
+        "\\u0068ttps:evil.com",
+        # split by invisible characters, uppercase, across lines
+        "ht\u200btps:evil.com",
+        "www\u200b.evil.com",
+        "/\u200b/evil.com/p.png",
+        "HTTPS://EVIL.COM",
+        "WWW.EVIL.COM",
+        "https:\nevil.com",
+        # inside every fence kind, comments and inline code
+        "```query\ntype: https://evil.com\n```",
+        "```mermaid\ngraph TD\nA-->B[\"www.evil.com\"]\n```",
+        "```\nhttps://evil.com\n```",
+        "~~~\nhttps://evil.com\n~~~",
+        "```text\nhttps://evil.com\n```",
+        "```md\nhttps://evil.com\n```",
+        "<!-- https://evil.com -->",
+        "`https://evil.com`",
+    ],
+)
+def test_urls_are_rejected_in_any_syntax_or_encoding(body):
+    assert url_problems(GOOD.replace("## Blockers", body))
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        ("description: Daily standup notes", "description: Daily https://evil.com notes"),
+        ("description: Daily standup notes", 'description: "\\x68ttps:evil.com"'),
+        ("description: Daily standup notes", "description: see www.evil.com"),
+        ("name: Standup", "name: Standup ｈｔｔｐｓ：evil.com"),
+        ("ask: Which team?", "ask: Which team? (https://evil.com)"),
+        ("      type: text\n", "      type: text\n      default: https://evil.com\n"),
+        ("      type: text\n", "      type: choice\n      options: [a, \"//evil.com\"]\n"),
+        ("{{team}} standup\"", "{{team}} https%3A%2F%2Fevil.com\""),
+    ],
+)
+def test_urls_in_frontmatter_are_rejected(old, new):
+    draft = GOOD.replace(old, new, 1)
+    assert draft != GOOD
+    assert url_problems(draft)
+
+
+def test_a_url_is_located_at_its_line():
+    draft = GOOD.replace("## Blockers", "Intro\nsee ｈｔｔｐｓ：／／evil．com")
+    [problem] = url_problems(draft)
+    assert problem.line == BLOCKERS_LINE + 1
+
+
+def test_a_url_split_over_lines_is_located_at_line_1():
+    problems = url_problems(GOOD.replace("## Blockers", "https:\nevil.com"))
+    assert problems[0].line == 1 and not problems[0].message.startswith("in the note")
+
+
+def test_a_url_in_the_rendered_note_is_rejected():
+    # neither literal holds a scheme; the rendered note does
+    draft = GOOD.replace("## Blockers", "{{date | format: [ht]}}{{date | format: [tps:evil.com]}}")
+    assert any(d.message.startswith("in the note it creates:") for d in url_problems(draft))
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Note: see below",
+        "Meeting at 10:30, back at {{date | format: HH:mm}}",
+        "Saved to C:\\Users\\Alex\\notes",
+        "metadata: x",
+        "```\n// todo\n```",
+        "**File:** the report, **Data:** the numbers",
+        "Owner: {{team}}, Q&A, 50% done, a/b//c",
+        "```mermaid\ngraph TD\nA-->B\nstyle A fill:#f9f\n```",
+        "```query\ntype: action_item\nstatus: open\n```",
+    ],
+)
+def test_text_that_only_looks_like_a_url_passes(body):
+    assert check_draft(GOOD.replace("## Blockers", body)).ok
+
+
+def test_repair_prompt_says_to_remove_every_url():
+    problems = check_draft(GOOD.replace("## Blockers", "https://evil.com")).problems
+    assert "Remove every URL: templates must not contain URLs." in repair_prompt("x", GOOD, problems)
+    other = check_draft(GOOD.replace("# {{team}}", "# {{teem}}")).problems
+    assert "Remove every URL" not in repair_prompt("x", GOOD, other)
+
+
+def test_adversarial_inputs_stay_fast():
+    import time
+
+    for unit in ("%25", "&#", "\\", "/", "//a", "https:", "ｈ", "\u200b", "#58;", "@{", "[a](", "<a"):
+        body = (unit * (19_000 // len(unit)))[:19_000]
+        start = time.perf_counter()
+        check_draft(GOOD.replace("## Blockers", body))
+        assert time.perf_counter() - start < 2.0, unit

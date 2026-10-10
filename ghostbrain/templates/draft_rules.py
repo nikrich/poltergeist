@@ -3,47 +3,49 @@
 A draft is untrusted text, and the notes it creates are written as the user,
 so B3's approval hold never sees them. These rules keep anything live out of
 both the template and what it renders. Every rule reads every line of the
-whole text, decoded first (backslash escapes, HTML entities, mermaid
-``#NN;`` codes): nothing is exempt for sitting in a code fence, inline code
-or a comment, so no reader's idea of where code starts or ends matters.
-Where a rule cannot tell how a reader would see a line it rejects the line:
-a false alarm costs one repair turn, a miss leaks an answer.
+whole text: nothing is exempt for sitting in a code fence, inline code or a
+comment, so no reader's idea of where code starts or ends matters. Where a
+rule cannot tell how a reader would see a line it rejects the line: a false
+alarm costs one repair turn, a miss leaks an answer.
+
+The one URL rule: a draft may hold no URL or web address at all, in any
+syntax. ``url_problems`` reads the text as every reader might decode it
+(NFKC, backslash/CSS/JS escapes, HTML entities and mermaid ``#NN;`` codes,
+percent-encoding, invisible characters dropped; each stage up to stable
+is checked, both per line and over the whole text with line breaks
+dropped) and rejects a scheme ``http: https: ftp: ws: wss: data: file:
+javascript: vbscript:`` not preceded by a letter or digit (so ``metadata:``
+passes; ``xhttps:`` passes too, since no reader links it), a ``//`` or
+``\\`` starting a host, and ``www.``. ``http:``/``ftp:``/``ws:`` need a
+character after the colon, and ``data:``/``file:`` one that isn't ``*``,
+so the ``file:`` key and a ``**Data:**`` label pass.
 
 =====================  ========================================================
 Rule                   Vector it covers
 =====================  ========================================================
+``url_problems``       any URL or web address, anywhere, however encoded
 ``_HTML_RULES``        script/iframe/… tags, ``on…=`` handlers, ``javascript:``
-``_RAW_TAG_RE``        any raw HTML (``<`` + letter, ``/``, ``!``, ``?``), so
-                       ``<img>``, ``<a href>``, comments; URI autolinks without
-                       a placeholder are the one exception
-``_BAD_SCHEME_RE``     ``data:``/``vbscript:`` URLs, ``//host`` (protocol-
-                       relative), CSS ``url(``/``image-set(``/``@import`` and
-                       mermaid ``click`` actions
-``_remote_loads``      remote URLs inside any ``<…>`` (tag-agnostic), mermaid
-                       ``@{ img:/icon: … }`` shape metadata and any URL in
-                       ``@{…}`` or ``%%{…}%%`` (themeCSS) directives
-``_images``            images, per paragraph (alt text and destinations may
-                       span lines): no scheme or ``//`` after ``![``, no remote
-                       URL later in the paragraph, no ``[label]`` of a remote
-                       reference definition
-``_definitions``       reference definitions: URL on the same line; a ``]:``
-                       whose label started on an earlier line (escapes and
-                       all) can't be remote
-``_URL_SPANS``, …     any link, image, autolink, bare URL, email or definition
-                       URL holding a ``{{placeholder}}`` (answers leave the vault)
-``literal_problems``   ``format``/``default`` literals holding markup characters
-``prompt_value_…``     prompt defaults / choice options holding markup or URLs
-``structure_…``        duplicate keys, ``<<`` merge keys, a second ``---`` block
+``_RAW_TAG_RE``        any raw HTML or ``<…>`` link (``<`` + letter, ``/``,
+                       ``!``, ``?``), so ``<img>``, ``<a href>``, comments
+``_CLICK_RE``          mermaid ``click`` actions (callbacks run code)
+``_DIAGRAM_META_RE``   mermaid ``@{ img:/icon: … }`` shape images and icons
+``_placeholder_links`` link/definition destinations holding a placeholder or
+                       not on their line; emails built from placeholders
+``ALLOWED_FENCES``     code blocks other than query/mermaid/text/markdown
 ``_unclosed_fence``    a code block never closed (reject-only, skips nothing)
+``literal_problems``   ``format``/``default`` literals holding markup characters
+``prompt_value_…``     prompt defaults / choice options holding markup
+``structure_…``        duplicate keys, ``<<`` merge keys, a second ``---``
+                       block; URLs in any frontmatter value as YAML reads it
 ``control_problems``   CR, BOM, NUL, U+2028/9: text parsers split differently
-``dynamic_url_…``      rendered URLs the template doesn't spell out literally
 =====================  ========================================================
 """
 from __future__ import annotations
 
 import html
 import re
-from collections.abc import Iterable
+import unicodedata
+from urllib.parse import unquote
 
 import yaml
 
@@ -54,6 +56,9 @@ from ghostbrain.vault_write.text import parse_note
 
 ALLOWED_FENCES = frozenset({"", "query", "mermaid", "text", "markdown", "md"})
 
+URL_MESSAGE = "templates must not contain URLs or web addresses"
+PLACEHOLDER_URL = "links can't be built from placeholders (answers would leave the vault)"
+
 _FENCE_OPEN_RE = re.compile(r"(?:`{3,}|~{3,})[ \t]*([^\s`]*)")
 _HTML_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"<\s*(script|iframe|object|embed|style|link|meta|form)\b", re.IGNORECASE),
@@ -63,48 +68,42 @@ _HTML_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"javascript\s*:", re.IGNORECASE), "javascript: links are not allowed"),
 )
 _RAW_TAG_RE = re.compile(r"<[A-Za-z!/?]")
-# A CommonMark URI autolink, as html_live reads one.
-_URI_AUTOLINK_RE = re.compile(r"<[A-Za-z][A-Za-z0-9+.\-]{1,31}:[^\x00-\x20<>]*>")
-_BAD_SCHEME_RE = re.compile(
-    r"(?<![a-z0-9+.\-])(?:data:(?=\S)|vbscript\s*:)"
-    r"|(?<![:/\w])//(?=[^\s/])"
-    r"|\b(?:url|image-set)\s*\(|@import\b"  # CSS fetches (mermaid styles, themeCSS)
-    r"|^\s*click\s+\S+\s+(?:href\b|call\b|callback\b|[\"'])"  # mermaid click actions
+_CLICK_RE = re.compile(
+    r"^\s*click\s+\S+\s+(?:href\b|call\b|callback\b|[\"'])"
     r"|(?-i:^\s*click\s+\S+\s+[A-Za-z_$][\w$]*\s*(?:\"[^\"]*\"\s*)?$)",  # click A fn
     re.IGNORECASE,
 )
-# What a browser or mermaid fetches from: http(s) with or without slashes
-# (WHATWG reads https:host), ftp/file, any scheme://, and //host.
-_REMOTE_RE = re.compile(
-    r"(?<![a-z0-9+.\-])(?:https?|ftp|file|wss?):|[a-z][a-z0-9+.\-]*://|//", re.IGNORECASE
-)
-# A "<" span up to the next "<" or ">" (linear): tag-like text, whatever
-# the tag. "< " not closed on its line is a comparison, not a tag.
-_ANGLE_SPAN_RE = re.compile(r"<(?:[^<>\s][^<>]*>?|[^<>]*>)")
-# Mermaid shape metadata A@{ … } and %%{ … }%% directives, across lines.
-_MERMAID_META_RE = re.compile(r"@\{[^}]*")
-_MERMAID_DIRECTIVE_RE = re.compile(r"%%\{(?:[^}]|\}(?!%%))*")
+# Mermaid shape metadata A@{ … }, across lines, and the keys that load media.
+_DIAGRAM_META_RE = re.compile(r"@\{[^}]*")
 _RESOURCE_KEY_RE = re.compile(r"\b(?:img|icon)\s*:", re.IGNORECASE)
-# Anything that names a scheme, or a scheme-relative //host.
-_SCHEME_RE = re.compile(r"(?<![a-z0-9+.\-])[a-z][a-z0-9+.\-]*:(?=\S)|//", re.IGNORECASE)
-# What readers turn into a link or a fetch: these schemes (with or without
-# slashes, as the WHATWG parser reads https:host), //host and www.
-_LINKABLE = r"(?:(?<![a-z0-9+.\-])(?:https?|ftp|file|mailto|data|javascript|vbscript):|//|(?<![\w.])www\.)"
-_URL_RE = re.compile(_LINKABLE + r"[^\s<>()\[\]\"'`]*", re.IGNORECASE)
-# Each pattern matches greedily (linear time); a match holding "{{" is a
-# URL built from a placeholder.
-_URL_SPANS = (
-    re.compile(r"\]\([^)]*"),  # [text](…) and ![alt](…) destinations
-    re.compile(_LINKABLE + r"[^\s<]*", re.IGNORECASE),  # bare URLs, as GFM ends them
-    re.compile(r"<[a-z][a-z0-9+.\-]*:[^<>]*", re.IGNORECASE),  # <scheme:…> autolinks
-)
-_PLACEHOLDER_EMAIL_RE = re.compile(r"\}\}[\w.+\-]*@[\w\-{]|[\w.+\-]@[\w.\-]*\{\{")  # GFM emails
-_DEFINITION_RE = re.compile(r" {0,3}\[((?:\\.|[^\]\\]){1,999})\]:(.*)$")
-# A "]:" whose "[" is on an earlier line: the tail of a multi-line label.
-_LABEL_TAIL_RE = re.compile(r"(?:\\.|[^\[\\])*\]:(.*)$")
+_LINK_DEST_RE = re.compile(r"\]\([^)]*")  # [text](…) and ![alt](…) destinations
 _LINK_OPEN_AT_END_RE = re.compile(r"\]\(\s*<?\s*$")
+_DEFINITION_RE = re.compile(r" {0,3}\[((?:\\.|[^\]\\]){1,999})\]:(.*)$")
+_PLACEHOLDER_EMAIL_RE = re.compile(r"\}\}[\w.+\-]*@[\w\-{]|[\w.+\-]@[\w.\-]*\{\{")  # GFM emails
 # Mermaid's entity codes: #60; and #lt; mean "<".
 _MERMAID_ENTITY_RE = re.compile(r"(?<!&)#(\d{1,7}|[a-z][a-z0-9]{1,31});", re.IGNORECASE)
+
+# The URL rule, matched on casefolded text. "/" runs are possessive and
+# must start the run, so a long run of slashes is scanned once.
+_URL_HIT_RE = re.compile(
+    r"(?<![a-z0-9])(?:(?:https?|ftp|wss?):(?=\S)|(?:data|file):(?=[^\s*])|(?:java|vb)script:)"
+    r"|(?<![a-z0-9/])/{2,}+(?=[^\s/])"
+    r"|(?<![a-z0-9])www\.(?=[^\s.])"
+)
+# Invisible characters readers drop or ignore inside a token: C0/C1
+# controls (tab and line breaks too), soft hyphen, zero-width and bidi
+# marks, word joiners, BOM, interlinear annotations and tag characters.
+_INVISIBLE_RE = re.compile(
+    "[\x00-\x1f\x7f-\x9f\xad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f"
+    "\u200b-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0"
+    "\ufff0-\ufffb\U0001d173-\U0001d17a\U000e0000-\U000e0fff]"
+)
+# JS (\x68, \u0068, \u{68}), CSS (\68 ) and markdown/YAML (\:) escapes.
+_BACKSLASH_RE = re.compile(
+    r"\\(?:x([0-9a-f]{2})|u\{([0-9a-f]{1,6})\}|u([0-9a-f]{4})|([0-9a-f]{1,6}) ?|(.))",
+    re.IGNORECASE | re.DOTALL,
+)
+_MAX_DECODE_ROUNDS = 5
 # Characters that turn a filter's literal text into markup or an entity.
 _MARKUP_CHARS = frozenset("<>&`\\")
 _LITERAL_FILTERS = frozenset({"format", "default"})
@@ -112,9 +111,6 @@ _LITERAL_FILTERS = frozenset({"format", "default"})
 _VALUE_MARKUP_RE = re.compile(r"[<>`\\]|&#?[a-z0-9]+;", re.IGNORECASE)
 # Characters other parsers split lines on, or that change how a file is read.
 _CONTROL_RE = re.compile("[\\x00-\\x08\\x0b-\\x1f\\x7f\\x85\\ufeff\\u2028\\u2029]")
-
-REMOTE_IMAGE = "remote images are not allowed in a template"
-PLACEHOLDER_URL = "links can't be built from placeholders (answers would leave the vault)"
 
 
 def _problem(line: int, col: int, message: str, code: str = "forbidden") -> Diagnostic:
@@ -134,8 +130,67 @@ def decode(text: str) -> str:
     return re.sub(r"[\t\r\n]", "", html.unescape(text))
 
 
-def _label(text: str) -> str:
-    return " ".join(decode(text).split()).casefold()
+def _unescape(m: re.Match[str]) -> str:
+    hexa = next((g for g in m.groups()[:4] if g), None)
+    if hexa is None:
+        return m.group(5)
+    code = int(hexa, 16)
+    return chr(code) if code <= 0x10FFFF else ""
+
+
+def _entities(text: str) -> str:
+    return html.unescape(_MERMAID_ENTITY_RE.sub(_mermaid_entity, text))
+
+
+_DECODERS = (
+    lambda t: unicodedata.normalize("NFKC", t),
+    lambda t: _INVISIBLE_RE.sub("", t),
+    lambda t: _BACKSLASH_RE.sub(_unescape, t),
+    _entities,
+    unquote,
+)
+
+
+def _readings(text: str) -> list[str]:
+    """``text`` and every stage of decoding it, up to stable (bounded)."""
+    out = [text]
+    for _ in range(_MAX_DECODE_ROUNDS):
+        before = out[-1]
+        for decoder in _DECODERS:
+            out.append(decoder(out[-1]))
+        if out[-1] == before:
+            break
+    return out
+
+
+def url_hit(text: str) -> re.Match[str] | None:
+    """The first URL or web address in any reading of ``text``."""
+    for reading in _readings(text):
+        folded = reading.casefold()
+        m = _URL_HIT_RE.search(folded) or _URL_HIT_RE.search(folded.replace("\\", "/"))
+        if m:
+            return m
+    return None
+
+
+def _url_problem(line: int, col: int, m: re.Match[str]) -> Diagnostic:
+    return _problem(line, col, f"`{m.group()}` is a URL or web address; {URL_MESSAGE}")
+
+
+def url_problems(text: str) -> list[Diagnostic]:
+    """One problem per line holding a URL, or one at line 1 for a URL only
+    the whole text spells (a token split over lines)."""
+    out = []
+    for i, line in enumerate(text.split("\n")):
+        m = url_hit(line)
+        if m:
+            raw = _URL_HIT_RE.search(line.casefold())
+            out.append(_url_problem(i + 1, raw.start() + 1 if raw else 1, m))
+    if not out:
+        m = url_hit(text)
+        if m:
+            out.append(_url_problem(1, 1, m))
+    return out
 
 
 def _content(line: str) -> str:
@@ -150,114 +205,37 @@ def _line_rules(i: int, line: str, decoded: str) -> list[Diagnostic]:
         if m:
             out.append(_problem(i + 1, m.start() + 1,
                                 message.format(*(g.lower() for g in m.groups()))))
-    if not out and html_live.js_url(line):
-        out.append(_problem(i + 1, 1, "javascript: links are not allowed"))
-    tag = next((m for m in _RAW_TAG_RE.finditer(decoded)
-                if not ((a := _URI_AUTOLINK_RE.match(decoded, m.start())) and "{{" not in a.group())),
-               None)
+    tag = _RAW_TAG_RE.search(decoded)
     if tag and not out:
         out.append(_problem(i + 1, tag.start() + 1, "raw HTML is not allowed in a template"))
-    bad = _BAD_SCHEME_RE.search(decoded)
-    if bad:
-        out.append(_problem(i + 1, bad.start() + 1,
-                            "data:, vbscript:, url(…), //host URLs and diagram click actions are not allowed"))
+    click = _CLICK_RE.search(decoded)
+    if click:
+        out.append(_problem(i + 1, click.start() + 1, "diagram click actions are not allowed"))
     fence = _FENCE_OPEN_RE.match(_content(line))
     if fence and fence.group(1).lower() not in ALLOWED_FENCES:
         out.append(_problem(i + 1, 1, f"```{fence.group(1)} code blocks are not allowed in a template"))
     return out
 
 
-def _definitions(lines: list[str]) -> tuple[set[str], list[Diagnostic]]:
-    """Labels of reference definitions that point outside the vault, and a
-    problem for each definition whose URL is not on its line or whose label
-    started on an earlier line and points outside the vault."""
-    remote: set[str] = set()
-    out: list[Diagnostic] = []
-    for i, line in enumerate(lines):
-        content = _content(line)
-        m = _DEFINITION_RE.match(content)
-        tail = None if m else _LABEL_TAIL_RE.match(content)
-        if m:
-            raw_dest = m.group(2)
-        elif tail:
-            raw_dest = tail.group(1)
-        else:
-            continue
-        dest = decode(raw_dest).strip().lstrip("<").strip()
-        if not dest:
-            out.append(_problem(i + 1, 1, "a link definition must have its URL on the same line"))
-        elif _SCHEME_RE.match(dest):
-            if m:
-                remote.add(_label(m.group(1)))
-            else:
-                out.append(_problem(i + 1, 1, "a link label split over lines can't point "
-                                              "outside the vault"))
-    return remote, out
+def _placeholder_links(i: int, decoded: str) -> list[Diagnostic]:
+    """A link whose destination an answer fills, or whose destination is not
+    on its line (so this check could not see it)."""
+    definition = _DEFINITION_RE.match(_content(decoded))
+    m = next((r for r in _LINK_DEST_RE.finditer(decoded) if "{{" in r.group()), None) \
+        or _PLACEHOLDER_EMAIL_RE.search(decoded)
+    if m or (definition and "{{" in definition.group(2)):
+        return [_problem(i + 1, m.start() + 1 if m else 1, PLACEHOLDER_URL)]
+    if _LINK_OPEN_AT_END_RE.search(decoded) or (definition and not definition.group(2).strip()):
+        return [_problem(i + 1, 1, "a link must have its URL on the same line")]
+    return []
 
 
-def _paragraphs(lines: list[str]) -> list[tuple[int, list[str]]]:
-    """Runs of lines between whitespace-only lines, with the first index.
-    Container markers don't split a run, so a run is never smaller than the
-    paragraph a reader sees."""
-    out: list[tuple[int, list[str]]] = []
-    for i, line in enumerate(lines):
-        if not line.strip():
-            continue
-        if out and out[-1][0] + len(out[-1][1]) == i:
-            out[-1][1].append(line)
-        else:
-            out.append((i, [line]))
-    return out
-
-
-def _images(lines: list[str], remote: set[str]) -> list[Diagnostic]:
-    """Images may only point inside the vault. Alt text and destinations can
-    span lines within a paragraph, so the whole paragraph from the first
-    ``![`` on is read: rejected when the rest of that line names any scheme
-    or //, when any later line of the paragraph holds a remote URL, or when
-    it holds ``[label]`` for a remote reference definition."""
-    out = []
-    for first, block in _paragraphs(lines):
-        at = next(((j, line.find("![")) for j, line in enumerate(block) if "![" in line), None)
-        if at is None:
-            continue
-        j, col = at
-        head = decode(block[j][col:])
-        tail = [decode(line) for line in block[j + 1:]]
-        norm = " ".join(" ".join([head, *tail]).split()).casefold()
-        if (
-            _SCHEME_RE.search(head)
-            or any(_REMOTE_RE.search(line) for line in tail)
-            or any(label and f"[{label}]" in norm for label in remote)
-        ):
-            out.append(_problem(first + j + 1, col + 1, REMOTE_IMAGE))
-    return out
-
-
-def _remote_loads(text: str, lines: list[str]) -> list[Diagnostic]:
-    """Remote URLs where something fetches them, whatever the syntax: inside
-    any ``<…>`` (bar a plain URI autolink), and in mermaid shape metadata
-    (``@{ img: … }``, which mermaid loads while rendering) or ``%%{…}%%``
-    directives (themeCSS)."""
-    out = []
-    for i, line in enumerate(lines):
-        decoded = decode(line)
-        for m in _ANGLE_SPAN_RE.finditer(decoded):
-            autolink = _URI_AUTOLINK_RE.fullmatch(m.group())
-            if _REMOTE_RE.search(m.group()) and not (autolink and "{{" not in m.group()):
-                out.append(_problem(i + 1, m.start() + 1, "remote URLs are not allowed in HTML"))
-                break
-        if ("@{" in decoded or "%%{" in decoded) and (_REMOTE_RE.search(decoded)
-                                                       or _URL_RE.search(decoded)):
-            out.append(_problem(i + 1, 1, "URLs are not allowed in diagram metadata or directives"))
+def _diagram_media(lines: list[str]) -> list[Diagnostic]:
+    """Mermaid ``@{ img: … }`` / ``@{ icon: … }``: media mermaid loads."""
     joined = "\n".join(decode(line) for line in lines)
-    for pattern in (_MERMAID_META_RE, _MERMAID_DIRECTIVE_RE):
-        for m in pattern.finditer(joined):
-            span = m.group()
-            if _RESOURCE_KEY_RE.search(span) or _REMOTE_RE.search(span) or _URL_RE.search(span):
-                line = joined.count("\n", 0, m.start()) + 1
-                out.append(_problem(line, 1, "diagram images, icons and URLs are not allowed"))
-    return out
+    return [_problem(joined.count("\n", 0, m.start()) + 1, 1,
+                     "diagram images and icons are not allowed")
+            for m in _DIAGRAM_META_RE.finditer(joined) if _RESOURCE_KEY_RE.search(m.group())]
 
 
 def _unclosed_fence(lines: list[str]) -> list[Diagnostic]:
@@ -276,17 +254,6 @@ def _unclosed_fence(lines: list[str]) -> list[Diagnostic]:
     return [_problem(opened + 1, 1, "this code block is never closed")] if fence else []
 
 
-def _placeholder_urls(i: int, line: str, decoded: str) -> list[Diagnostic]:
-    definition = _DEFINITION_RE.match(_content(decoded))
-    m = next((r for pattern in _URL_SPANS for r in pattern.finditer(decoded) if "{{" in r.group()),
-             None) or _PLACEHOLDER_EMAIL_RE.search(decoded)
-    if m or (definition and "{{" in definition.group(2)):
-        return [_problem(i + 1, m.start() + 1 if m else 1, PLACEHOLDER_URL)]
-    if _LINK_OPEN_AT_END_RE.search(decoded):
-        return [_problem(i + 1, 1, "a link must have its URL on the same line")]
-    return []
-
-
 def content_problems(text: str) -> list[Diagnostic]:
     """Everything live in a markdown text (a draft, or a note it renders)."""
     lines = text.split("\n")
@@ -294,12 +261,10 @@ def content_problems(text: str) -> list[Diagnostic]:
     for i, line in enumerate(lines):
         decoded = decode(line)
         out += _line_rules(i, line, decoded)
-        out += _placeholder_urls(i, line, decoded)
-    remote, definition_problems = _definitions(lines)
-    out += definition_problems
-    out += _images(lines, remote)
-    out += _remote_loads(text, lines)
+        out += _placeholder_links(i, decoded)
+    out += _diagram_media(lines)
     out += _unclosed_fence(lines)
+    out += url_problems(text)
     return out
 
 
@@ -333,20 +298,17 @@ def literal_problems(text: str) -> list[Diagnostic]:
     return out
 
 
-def _is_live_value(value: str) -> bool:
-    return bool(_VALUE_MARKUP_RE.search(value) or _URL_RE.search(decode(value)))
-
-
 def prompt_value_problems(template: Template, lines: list[str]) -> list[Diagnostic]:
     """Prompt defaults and choice options are rendered verbatim, and only one
-    option is sampled, so each must be plain text."""
+    option is sampled, so each must be plain text (URLs in them are found by
+    ``structure_problems``)."""
     out = []
     for p in template.prompts:
         for value in (p.default, *p.options):
-            if value and _is_live_value(value):
+            if value and _VALUE_MARKUP_RE.search(value):
                 line = next((i + 1 for i, text in enumerate(lines) if value in text), 1)
                 out.append(_problem(line, 1, f"prompt `{p.id}`: defaults and options can't "
-                                             "contain HTML, markup characters or links"))
+                                             "contain HTML or markup characters"))
     return out
 
 
@@ -354,7 +316,8 @@ def structure_problems(draft: str) -> list[Diagnostic]:
     """Frontmatter other readers could see differently from C1's parser:
     duplicate keys (last one wins in PyYAML, first or error elsewhere),
     ``<<`` merge keys (applied by PyYAML, not by every reader) and a second
-    ``---`` block right after the first."""
+    ``---`` block right after the first. Also any URL in a key or value as
+    YAML reads it (escapes such as ``"\\x68ttps:"`` resolved)."""
     parsed = parse_note(draft)
     if not parsed.has_frontmatter:
         return []
@@ -371,6 +334,7 @@ def structure_problems(draft: str) -> list[Diagnostic]:
             seen: set[str] = set()
             for key, value in node.value:
                 if isinstance(key, yaml.ScalarNode):
+                    stack.append(key)
                     mark = key.start_mark
                     if key.value == "<<" or key.tag == "tag:yaml.org,2002:merge":
                         out.append(_problem(fm_line + mark.line, mark.column + 1,
@@ -382,31 +346,11 @@ def structure_problems(draft: str) -> list[Diagnostic]:
                 stack.append(value)
         elif isinstance(node, yaml.SequenceNode):
             stack.extend(node.value)
+        elif isinstance(node, yaml.ScalarNode) and (m := url_hit(node.value)):
+            mark = node.start_mark
+            out.append(_url_problem(fm_line + mark.line, mark.column + 1, m))
     first = parsed.body.split("\n", 1)[0]
     if re.fullmatch(r"\s*(?:-{3,}|\.{3})\s*", first):
         body_line = (parsed.fm_head + parsed.fm_inner + parsed.fm_close + parsed.gap).count("\n") + 1
         out.append(_problem(body_line, 1, "a second --- block after the frontmatter is not allowed"))
-    return out
-
-
-def urls(text: str) -> set[str]:
-    out: set[str] = set()
-    for line in text.split("\n"):
-        decoded = decode(line)
-        out.update(m.group() for m in _URL_RE.finditer(decoded))
-        out.update(m.group() for m in _URI_AUTOLINK_RE.finditer(decoded))
-    return out
-
-
-def dynamic_url_problems(text: str, static: Iterable[str]) -> list[Diagnostic]:
-    """URLs in rendered text that the template does not spell out literally,
-    i.e. URLs assembled by placeholders and filter literals."""
-    known = set(static)
-    out = []
-    for i, line in enumerate(text.split("\n")):
-        decoded = decode(line)
-        for m in (*_URL_RE.finditer(decoded), *_URI_AUTOLINK_RE.finditer(decoded)):
-            if m.group() not in known:
-                out.append(_problem(i + 1, m.start() + 1, PLACEHOLDER_URL))
-                break
     return out

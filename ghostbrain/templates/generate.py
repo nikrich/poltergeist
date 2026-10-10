@@ -119,9 +119,10 @@ def system_prompt() -> str:
         "Nothing else may appear inside {{ }}. There are no loops, conditions or expressions."),
         ("3. `template.file.folder` must be under 20-contexts/{{context}}/… and never under "
         "90-meta or 80-profile."),
-        ("4. No raw HTML tags at all (not even <b> or <!-- -->), no scripts, no images from "
-         "the web, no URLs built from placeholders, and no code blocks except ```query "
-         "(live lists) and ```mermaid (with no links or URLs)."),
+        ("4. No URLs or web addresses of any kind (no http, https, www, data: …), not in "
+         "links, images, diagrams, code blocks or frontmatter. No raw HTML tags at all (not "
+         "even <b> or <!-- -->), no scripts, and no code blocks except ```query (live lists) "
+         "and ```mermaid."),
         ("5. You may search the user's notes to see how they structure similar notes; "
          "never copy text from them."),
         "6. Keep it short: at most 4 prompts.",
@@ -141,6 +142,8 @@ def build_prompt(description: str) -> str:
 
 def repair_prompt(description: str, draft: str, problems: tuple[Diagnostic, ...]) -> str:
     listed = "\n".join(f"- line {d.line}: {d.message}" for d in problems)
+    if any(draft_rules.URL_MESSAGE in d.message for d in problems):
+        listed += "\nRemove every URL: templates must not contain URLs."
     return (
         build_prompt(description)
         + "\n\nYour previous draft had these problems:\n" + listed
@@ -206,7 +209,6 @@ def _rendered_problems(draft: str, template: Template) -> list[Diagnostic]:
     frontmatter, title, folder and filename. Body problems are mapped back to
     the template's body lines; the rest are reported on line 1."""
     out: list[Diagnostic] = []
-    static = draft_rules.urls(draft)
     render_errors: set[str] = set()
     checked: set[str] = set()
     for answers in (sample_answers(template), blank_answers(template)):
@@ -219,12 +221,12 @@ def _rendered_problems(draft: str, template: Template) -> list[Diagnostic]:
             continue
         full = note.markdown()
         head = full[: len(full) - len(note.body)]
-        for text, offset in ((note.body, template.body_line - 1), (head, None)):
+        for text, offset in ((note.body, template.body_line - 1), (head, None),
+                             (note.folder, None), (note.filename, None)):
             if text in checked:
                 continue
             checked.add(text)
-            for d in (*draft_rules.content_problems(text),
-                      *draft_rules.dynamic_url_problems(text, static)):
+            for d in draft_rules.content_problems(text):
                 line = 1 if offset is None else d.line + offset
                 out.append(Diagnostic(line, d.col, d.severity,
                                       f"in the note it creates: {d.message}", d.code))
