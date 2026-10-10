@@ -4,6 +4,7 @@ files outside the vault, recurse without bound, or produce a path that
 escapes the vault."""
 from __future__ import annotations
 
+import os
 import re
 import time
 from datetime import datetime as _dt
@@ -23,6 +24,12 @@ from ghostbrain.templates.lang import (
     tokenize,
 )
 from ghostbrain.templates.parse import parse_template
+from ghostbrain.templates.registry import (
+    TemplateNotFound,
+    list_templates,
+    load_template,
+    read_template_source,
+)
 from ghostbrain.templates.render import (
     MAX_OUTPUT_CHARS,
     AnswerError,
@@ -430,3 +437,47 @@ def test_sec_filename_is_never_a_windows_device_name(title):
 def test_sec_device_like_titles_that_are_not_devices_keep_their_slug():
     for title, filename in (("console", "console.md"), ("com10", "com10.md"), ("con x", "con-x.md")):
         assert render(_t("20-contexts/work", name="{{focus}}"), {"focus": title}, _ENV).filename == filename
+
+
+_OK_TPL = "---\ntemplate:\n  name: Outside\n---\nsecret body\n"
+
+
+def _symlink(target: Path, link: Path) -> None:
+    try:
+        os.symlink(target, link)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not permitted on this machine")
+
+
+@pytest.mark.parametrize("bad_id", ["../secret", "..", "a/b", "A", ".hidden", "x" * 65, "", "secret.md"])
+def test_sec_template_ids_cannot_traverse(tmp_path, bad_id):
+    vault = tmp_path / "vault"
+    (vault / "90-meta/templates").mkdir(parents=True)
+    (vault / "90-meta/secret.md").write_text(_OK_TPL, encoding="utf-8")
+    with pytest.raises(TemplateNotFound):
+        load_template(bad_id, vault)
+    with pytest.raises(TemplateNotFound):
+        read_template_source(bad_id, vault)
+
+
+def test_sec_symlinked_template_file_is_never_read(tmp_path):
+    vault = tmp_path / "vault"
+    (vault / "90-meta/templates").mkdir(parents=True)
+    outside = tmp_path / "outside.md"
+    outside.write_text(_OK_TPL, encoding="utf-8")
+    _symlink(outside, vault / "90-meta/templates/outside.md")
+    assert [i.id for i in list_templates(vault)] == []
+    with pytest.raises(TemplateNotFound):
+        read_template_source("outside", vault)
+
+
+def test_sec_symlinked_templates_folder_outside_vault_is_ignored(tmp_path):
+    vault = tmp_path / "vault"
+    (vault / "90-meta").mkdir(parents=True)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "outside.md").write_text(_OK_TPL, encoding="utf-8")
+    _symlink(elsewhere, vault / "90-meta/templates")
+    assert list_templates(vault) == []
+    with pytest.raises(TemplateNotFound):
+        load_template("outside", vault)
