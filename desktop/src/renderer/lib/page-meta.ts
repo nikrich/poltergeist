@@ -31,8 +31,14 @@ export function pageAuthor(fm: Frontmatter): string {
   return source === null || OWN_SOURCES.has(source) ? 'you' : source;
 }
 
+/** First of updated → created → ingestedAt that parses as a date (a free-text
+ * value like "tbd" would render "updated Invalid Date"). */
 export function pageUpdated(fm: Frontmatter): string | null {
-  return text(fm?.updated) ?? text(fm?.created) ?? text(fm?.ingestedAt);
+  for (const key of ['updated', 'created', 'ingestedAt'] as const) {
+    const v = text(fm?.[key]);
+    if (v !== null && !Number.isNaN(Date.parse(v))) return v;
+  }
+  return null;
 }
 
 /** Jots (and chat summaries) list their first line as the title. */

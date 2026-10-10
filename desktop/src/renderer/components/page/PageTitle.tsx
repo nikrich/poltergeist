@@ -111,7 +111,9 @@ export function PageTitle({
       }}
       onBlur={() => {
         commit(draft);
-        if (sanitizePageTitle(draft) === '') setDraft(committed.current);
+        // Show what was saved: collapsed whitespace, the 200-char cap, or the
+        // previous title when the field was emptied.
+        setDraft(committed.current);
       }}
       onKeyDown={(e) => {
         if (e.key === 'Enter' && !e.nativeEvent.isComposing) {

@@ -36,6 +36,15 @@ describe('pageUpdated', () => {
     expect(pageUpdated({})).toBeNull();
     expect(pageUpdated(undefined)).toBeNull();
   });
+
+  it.each([
+    [{ updated: 'last tuesday', created: '2026-10-01T08:00:00Z' }, '2026-10-01T08:00:00Z'],
+    [{ updated: 'tbd', created: 'soon', ingestedAt: '2026-09-01T08:00:00Z' }, '2026-09-01T08:00:00Z'],
+    [{ updated: 'n/a' }, null],
+    [{ updated: '2026-10-10' }, '2026-10-10'],
+  ] as const)('skips unparseable dates: %j → %s', (fm, expected) => {
+    expect(pageUpdated(fm)).toBe(expected);
+  });
 });
 
 describe('titleRuleFor', () => {
