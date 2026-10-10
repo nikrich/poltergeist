@@ -192,7 +192,9 @@ def check_ontology_selfcheck(binary: str, tmp: str) -> None:
 def main() -> None:
     if len(sys.argv) != 2:
         raise SystemExit("usage: smoke-sidecar.py <path-to-ghostbrain-api-binary>")
-    binary = sys.argv[1]
+    # Absolute: the ontology self-check runs with cwd=<tmp>, where a relative
+    # path to the binary no longer resolves.
+    binary = str(Path(sys.argv[1]).resolve())
     if not Path(binary).exists():
         raise SystemExit(f"binary not found: {binary}")
     with tempfile.TemporaryDirectory() as tmp:
