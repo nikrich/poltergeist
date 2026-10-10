@@ -351,4 +351,24 @@ describe('useGuardedSave', () => {
       ['ai text', 'e5'],
     ]);
   });
+
+  it('save() during a conflict consumes and discards a fresh mark', async () => {
+    const send = vi.fn().mockRejectedValueOnce(conflict()).mockResolvedValueOnce({ etag: 'e9' });
+    const fetchLatest = vi.fn().mockResolvedValue({ body: 'theirs', etag: 'e5' });
+    const { result } = renderHook(() =>
+      useGuardedSave({ body: 'a', etag: 'e1' }, { send, fetchLatest }),
+    );
+    act(() => result.current.save('mine'));
+    await waitFor(() => expect(result.current.conflict).not.toBeNull());
+    act(() => {
+      result.current.attributeNext('assistant');
+      result.current.save('ai text');
+    });
+    expect(result.current.conflict?.mine).toBe('ai text');
+    await act(async () => result.current.keepMine());
+    expect(send.mock.calls).toEqual([
+      ['mine', 'e1'],
+      ['ai text', 'e5'],
+    ]);
+  });
 });
