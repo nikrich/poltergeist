@@ -17,6 +17,7 @@ import { toast } from '../stores/toast';
 import { LinkEditor } from './editor-toolbar/LinkEditor';
 import { FOCUS_RING, ToolbarMenu, type ToolbarMenuItem } from './editor-toolbar/ToolbarMenu';
 import { Lucide } from './Lucide';
+import { shortcutLabel } from '../lib/editor-shortcuts';
 
 export interface EditorToolbarProps {
   editor: Editor | null;
@@ -130,6 +131,8 @@ export function EditorToolbar({ editor, onImageFile, onAssist }: EditorToolbarPr
     label: en.label,
     icon: en.icon,
     group: insertGroup(en),
+    // A5 binds ⌘J to the same inline AI; this row is its one toolbar entry.
+    hint: en.kind === 'assist' ? shortcutLabel('inlineAi') : undefined,
     onSelect: () => {
       if (en.kind === 'image') fileRef.current?.click();
       else if (en.kind === 'assist') onAssist?.();

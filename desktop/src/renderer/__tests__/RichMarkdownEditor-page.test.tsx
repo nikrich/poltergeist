@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Editor } from '@tiptap/core';
 import { RichMarkdownEditor } from '../components/RichMarkdownEditor';
 import { getMarkdown } from '../lib/editor/markdown';
@@ -7,6 +7,9 @@ import { useSettings } from '../stores/settings';
 import { textPos } from './helpers/editor';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+
+const { runVaultQuery } = vi.hoisted(() => ({ runVaultQuery: vi.fn() }));
+vi.mock('../lib/editor/query-api', () => ({ runVaultQuery, setNoteStatus: vi.fn() }));
 
 afterEach(() => useSettings.setState({ pageWidth: 'fixed' }));
 
@@ -154,6 +157,31 @@ describe('page body styles (A7)', () => {
     } finally {
       host.remove();
     }
+  });
+
+  it('mounts a real C2 query block inside the page body with its own look', async () => {
+    runVaultQuery.mockResolvedValue({
+      results: [
+        { path: 'a.md', title: 'Send Alex the budget', context: 'work', status: null, created: '2026-10-08', snippet: '', etag: 'aaaaaaaaaaaaaaaa' },
+      ],
+      diagnostics: [],
+      indexing: false,
+      partial: false,
+    });
+    render(<RichMarkdownEditor markdown={'```query\ntype: action_item\n```'} onSave={() => {}} jotId="t" />);
+    const body = screen.getByTestId('page-canvas').querySelector('.gb-prose.gb-page-body') as HTMLElement;
+    expect(body).not.toBeNull();
+    const query = body.querySelector('.ProseMirror .gb-query') as HTMLElement | null;
+    expect(query).not.toBeNull();
+    expect(query!.querySelector(':scope > .gb-query-bar')).not.toBeNull();
+    expect(query!.querySelector(':scope > .gb-query-results')).not.toBeNull();
+    await waitFor(() => expect(query!.querySelectorAll('li.gb-query-row')).toHaveLength(1));
+    // A7's page-body ul/li/pre rules must not reach the query view's chrome.
+    const list = getComputedStyle(query!.querySelector('.gb-query-list')!);
+    expect(list.marginLeft).toBe('0px');
+    expect(list.marginBottom).toBe('0px');
+    expect(getComputedStyle(query!.querySelector('.gb-query-row')!).marginTop).toBe('0px');
+    expect(getComputedStyle(query!.querySelector(':scope > pre')!).marginBottom).toBe('0px');
   });
 
   it('paints query blocks with a defined surface token', () => {

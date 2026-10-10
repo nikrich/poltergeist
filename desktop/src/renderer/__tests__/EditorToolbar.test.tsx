@@ -1,10 +1,11 @@
-import { createEvent, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { cleanup, createEvent, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Editor } from '@tiptap/core';
 import { EditorToolbar } from '../components/EditorToolbar';
 import { useAnchoredPanel } from '../components/editor-toolbar/ToolbarMenu';
 import { SLASH_ITEMS } from '../lib/editor/slash';
 import { useSettings } from '../stores/settings';
+import { shortcutLabel } from '../lib/editor-shortcuts';
 import { makeEditor, markdownOf } from './helpers/editor';
 
 let editor: Editor;
@@ -70,7 +71,7 @@ describe('EditorToolbar (A7)', () => {
     const onAssist = vi.fn();
     setup('word', { onAssist });
     openInsert();
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Ask AI' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^Ask AI/ }));
     expect(onAssist).toHaveBeenCalledOnce();
   });
 
@@ -208,15 +209,21 @@ describe('EditorToolbar (A7)', () => {
     expect(screen.getByRole('button', { name: 'full width' })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('shows the inline ai button only with onAssist', () => {
-    const editor = makeEditor();
+  it('shows the one Ask AI row (with the ⌘J hint) only with onAssist (A5)', () => {
     const onAssist = vi.fn();
-    const { rerender } = render(<EditorToolbar editor={editor} onPhoto={() => {}} />);
-    expect(screen.queryByRole('button', { name: 'inline ai' })).toBeNull();
-    rerender(<EditorToolbar editor={editor} onPhoto={() => {}} onAssist={onAssist} />);
-    fireEvent.click(screen.getByRole('button', { name: 'inline ai' }));
-    expect(onAssist).toHaveBeenCalledOnce();
+    setup('word');
+    openInsert();
+    expect(screen.queryByRole('menuitem', { name: /Ask AI/ })).toBeNull();
+    cleanup();
     editor.destroy();
+    setup('word', { onAssist });
+    expect(screen.queryByRole('button', { name: 'inline ai' })).toBeNull();
+    openInsert();
+    const rows = screen.getAllByRole('menuitem', { name: /Ask AI/ });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveTextContent(shortcutLabel('inlineAi'));
+    fireEvent.click(rows[0]!);
+    expect(onAssist).toHaveBeenCalledOnce();
   });
 
   // jsdom focuses hidden elements; Chromium does not. An opened panel must

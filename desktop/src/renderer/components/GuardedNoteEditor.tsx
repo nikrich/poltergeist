@@ -246,6 +246,9 @@ export function GuardedNoteEditor({
       return html && t ? `<h1>${escapeHtml(t)}</h1>${html}` : html;
     },
     getMarkdown: () => pageOps.current?.getMarkdown() ?? '',
+    // A5: inline AI runs inside ProseMirror, which holds only the body below
+    // the title, so its selection, diff and accept never reach the title line.
+    startInlineAssist: (action) => innerHandle.current?.startInlineAssist?.(action) ?? false,
   }));
   useEffect(() => {
     if (!outerHandleRef) return;

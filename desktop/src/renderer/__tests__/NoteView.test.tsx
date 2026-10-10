@@ -400,7 +400,12 @@ describe('NoteView', () => {
   });
 
   it('inline ai in the viewer targets the note path and saves as the assistant', async () => {
-    apiRequest.mockResolvedValue({ ok: true, data: { ...manualNote, etag: '0123456789abcdef' } });
+    // A7: a manual note's first line is its page title, so the editable body
+    // (where inline AI works) is the line below it.
+    apiRequest.mockResolvedValue({
+      ok: true,
+      data: { ...manualNote, body: 'manual note\n\nhand-written', etag: '0123456789abcdef' },
+    });
     // A holder object, not a `let`: TS would narrow a local `let` to null here.
     const bus: { listener: ((p: { key?: string; jotId: string; event: DocsAssistEvent }) => void) | null } = {
       listener: null,
@@ -419,7 +424,11 @@ describe('NoteView', () => {
     render(withQuery(<NoteView onEditorReady={(e) => { editor = e; }} />));
     act(() => useNoteView.getState().open(manualNote.path));
     await waitFor(() => expect(editor).toBeDefined());
-    expect(screen.getByRole('button', { name: 'inline ai' })).toBeInTheDocument();
+    // A7: the viewer's one inline AI entry is the Insert menu's Ask AI row.
+    fireEvent.click(screen.getByRole('button', { name: 'insert' }));
+    expect(screen.getByRole('menuitem', { name: /^Ask AI/ })).toBeInTheDocument();
+    fireEvent.keyDown(screen.getAllByRole('menuitem')[0]!, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
     const from = textPos(editor!, 'hand');
     act(() => {
       editor!.commands.setTextSelection({ from, to: from + 4 });
@@ -435,7 +444,7 @@ describe('NoteView', () => {
       expect(apiRequest).toHaveBeenCalledWith(
         'PATCH',
         '/v1/notes/body',
-        { path: manualNote.path, body: expect.stringContaining('Hand-written') },
+        { path: manualNote.path, body: expect.stringMatching(/^manual note\n\nHand-written/) },
         { ifMatch: '0123456789abcdef', actor: 'assistant' },
       ),
     );
