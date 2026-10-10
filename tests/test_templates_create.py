@@ -101,3 +101,22 @@ def test_person_title_uses_a_ready_index_only(tpl_vault: Path, monkeypatch):
     assert env_mod.build_env().person_title("30-cross-context/people/alex.md") == "Alex Smith"
     monkeypatch.setattr(env_mod, "get_link_index", lambda: Cold())
     assert env_mod.build_env().person_title("30-cross-context/people/alex.md") is None
+
+
+@pytest.mark.parametrize("raw", [
+    b"user:\n  name: \xff\xfe\n",
+    ("[" * 20000 + "]" * 20000).encode(),
+    b"user:\n  name: Sam\n" + b"#" * (70 * 1024),
+], ids=["bad-utf8", "deep-nesting", "oversize"])
+def test_build_env_bad_config_gives_empty_user(tpl_vault: Path, raw: bytes):
+    (tpl_vault / "90-meta/config.yaml").write_bytes(raw)
+    assert env_mod.build_env().user_name == ""
+
+
+@pytest.mark.parametrize("raw", [
+    json.dumps([1, {"id": "work/alpha", "context": "work", "slug": "alpha", "name": "Alpha"}]).encode(),
+    b"[\xff\xfe]",
+], ids=["non-dict-row", "invalid-bytes"])
+def test_build_env_broken_projects_registry_gives_no_projects(tpl_vault: Path, raw: bytes):
+    (tpl_vault / "90-meta/projects.json").write_bytes(raw)
+    assert env_mod.build_env().projects == {}

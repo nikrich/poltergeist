@@ -16,15 +16,31 @@ from ghostbrain.vault_index.links import get_link_index
 
 log = logging.getLogger("ghostbrain.templates")
 
+# config.yaml is a small settings file; anything bigger is not read.
+MAX_CONFIG_BYTES = 64 * 1024
+
 
 def _now() -> datetime:
     return datetime.now().astimezone()
 
 
 def _user_name() -> str:
+    path = vault_path() / "90-meta" / "config.yaml"
     try:
-        data = yaml.safe_load((vault_path() / "90-meta" / "config.yaml").read_text(encoding="utf-8"))
-    except (OSError, yaml.YAMLError):
+        with path.open("rb") as fh:
+            raw = fh.read(MAX_CONFIG_BYTES + 1)
+    except FileNotFoundError:
+        return ""
+    except OSError as exc:
+        log.warning("unreadable %s: %s", path, exc)
+        return ""
+    if len(raw) > MAX_CONFIG_BYTES:
+        log.warning("%s is over %d bytes; ignoring it for templates", path, MAX_CONFIG_BYTES)
+        return ""
+    try:
+        data = yaml.safe_load(raw.decode("utf-8"))
+    except (ValueError, yaml.YAMLError, RecursionError) as exc:
+        log.warning("could not parse %s: %s", path, exc)
         return ""
     user = data.get("user") if isinstance(data, dict) else None
     name = user.get("name") if isinstance(user, dict) else None
@@ -46,18 +62,27 @@ def _person_title(path: str) -> str | None:
         return None
 
 
-def build_env() -> RenderEnv:
-    contexts = tuple(routing_config.contexts())
-    projects = {
+def _projects() -> dict[str, ProjectValue]:
+    """Active projects by id; a broken registry gives none rather than failing a create."""
+    try:
+        rows = projects_repo.list_projects()
+    except (AttributeError, TypeError, ValueError, OSError) as exc:
+        log.warning("unreadable projects registry; templates see no projects: %s", exc)
+        return {}
+    return {
         p["id"]: ProjectValue(id=p["id"], name=p["name"], slug=p["slug"], context=p["context"])
-        for p in projects_repo.list_projects()
+        for p in rows
         if isinstance(p, dict) and all(isinstance(p.get(k), str) for k in ("id", "name", "slug", "context"))
     }
+
+
+def build_env() -> RenderEnv:
+    contexts = tuple(routing_config.contexts())
     return RenderEnv(
         now=_now(),
         default_context=contexts[0] if contexts else "personal",
         contexts=contexts,
-        projects=projects,
+        projects=_projects(),
         user_name=_user_name(),
         person_title=_person_title,
     )
