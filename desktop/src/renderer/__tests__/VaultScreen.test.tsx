@@ -1,12 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { VaultScreen } from '../screens/vault';
+import { useGraphView } from '../stores/graph-view';
 
 const request = vi.fn();
 beforeEach(() => {
   request.mockReset();
   request.mockResolvedValue({ ok: true, data: { nodes: [], edges: [], regions: [] } });
+  useGraphView.getState().reset();
   window.gb = {
     ...window.gb,
     api: { request },
@@ -24,5 +26,14 @@ describe('VaultScreen', () => {
     renderScreen();
     expect(await screen.findByText(/your vault is on disk/i)).toBeInTheDocument();
     expect(request).toHaveBeenCalledWith('GET', '/v1/vault/graph');
+    expect(screen.getByRole('tab', { name: 'constellation' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('switches to the graph tab', () => {
+    renderScreen();
+    fireEvent.click(screen.getByRole('tab', { name: 'graph' }));
+    expect(screen.getByRole('tab', { name: 'graph' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText(/pick a page to centre the graph on/)).toBeInTheDocument();
+    expect(useGraphView.getState().tab).toBe('graph');
   });
 });
