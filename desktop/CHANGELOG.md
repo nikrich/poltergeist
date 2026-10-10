@@ -1,5 +1,43 @@
 # Changelog
 
+## [1.13.0](https://github.com/nikrich/poltergeist/compare/v1.12.0...v1.13.0) (2026-10-10)
+
+
+### Features
+
+* feat(docs): AI summaries and ask-about-this-doc (docs library slice 2) (#149)
+* feat(settings): editor section with read-aloud voice, speed and preview
+* feat(editor): read-aloud controls with sentence highlight and ⌘⇧L
+* feat(read-aloud): offline voice list and language-aware voice choice
+* feat(read-aloud): per-sentence playback controller with stale-event guard
+* feat(read-aloud): decoration-only current-sentence highlight
+* feat(read-aloud): sentence segments from the editor doc + language guess
+* feat(jots): focus mode in the jots screen and note viewer
+* feat(editor): focus mode hides app chrome and the formatting toolbar
+* feat(editor): focus-mode state, ⌘. / Esc handling and focus bar
+* feat(settings): focusMode, readAloudVoice and readAloudRate keys
+* feat(desktop): HistoryDrawer with diff and restore in the note and jot editors (A3)
+* feat(desktop): restore through the guarded save chain; drop stale-instance autosaves (A3)
+* feat(desktop): page-history types, hooks, history-health toast, shared LineDiffView (A3)
+* feat(api): page history list/blob/restore routes; historyOk on saves (A3)
+* feat(vault-write): history snapshot before every changing write; restore actor (A3)
+* feat(history): retention pruning, blob GC with ref sources, log moves, daily job (A3)
+* feat(history): content-addressed page history store with user coalescing (A3)
+
+### Bug Fixes
+
+* fix(read-aloud): an idle controller's stop no longer cancels another editor's speech
+* fix(read-aloud): one active controller on the shared speech engine
+* fix(history): restore only the body of a version carried by a move
+* fix: refresh backlinks after auto-route and exit 3 when the sidecar never starts
+* fix(jots): refresh backlinks after re-route, delete and photo extract
+* fix(jots): confirm before navigation discards a pending conflict
+* fix(settings): say when the whisper model is pinned by GHOSTBRAIN_WHISPER_MODEL
+* fix(desktop): escalate sidecar stop and enable parent watch
+* fix(sidecar): stop an in-progress recording when the parent app dies
+* fix(sidecar): shut down gracefully when the parent app goes away
+* fix(release): make sidecar MCP smoke handshake wait for responses before closing stdin
+
 ## [1.12.0](https://github.com/nikrich/poltergeist/compare/v1.11.0...v1.12.0) (2026-10-10)
 
 
