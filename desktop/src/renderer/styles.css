@@ -477,3 +477,71 @@ body[data-theme='light'] {
 .gb-img-wrap:hover .gb-img-handle,
 .gb-img-wrap.ProseMirror-selectednode .gb-img-handle { opacity: 0.8; }
 .gb-img-wrap.ProseMirror-selectednode .gb-jot-img { outline: 2px solid var(--neon); }
+
+.gb-query {
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  margin: 0 0 1em;
+  background: var(--vellum);
+}
+.gb-query-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px 0;
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  color: var(--ink-2);
+}
+.gb-query-label { margin-right: auto; }
+.gb-query-btn,
+.gb-query-menuitem,
+.gb-query-link,
+.gb-query-chip {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  padding: 0 2px;
+}
+.gb-query-btn:hover,
+.gb-query-menuitem:hover,
+.gb-query-link:hover { color: var(--ink-0); }
+.gb-query-menu {
+  position: absolute;
+  right: 6px;
+  top: 20px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  background: var(--vellum);
+}
+.gb-query-menu[hidden] { display: none; }
+.gb-query-menuitem { text-align: left; padding: 2px 6px; }
+.gb-query-menuitem:disabled { opacity: 0.4; cursor: default; }
+.gb-query-results { padding: 6px 12px 8px; font-size: 13px; }
+.gb-query-list { list-style: none; margin: 0; padding: 0; }
+.gb-query-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; padding: 2px 0; }
+.gb-query-link { color: var(--ink-0); text-align: left; text-decoration: underline; text-decoration-color: var(--hairline); }
+.gb-query-meta { font-family: var(--font-mono, monospace); font-size: 10px; color: var(--ink-3); }
+.gb-query-snippet { flex-basis: 100%; padding-left: 22px; font-size: 12px; color: var(--ink-2); }
+.gb-query-status,
+.gb-query-warning,
+.gb-query-notice { margin: 4px 0 0; font-size: 12px; color: var(--ink-2); }
+.gb-query-chip {
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 11px;
+  color: var(--ink-1);
+}
+.gb-query-error { color: var(--pill-oxblood-fg); font-size: 12px; }
+.gb-query-error p { margin: 0; }
+.gb-query-error pre { margin: 6px 0 0; color: var(--ink-1); }
+.gb-query[data-editing='false'] > pre { display: none; }
+.gb-query > pre { margin: 0; border: 0; border-top: 1px solid var(--hairline); border-radius: 0 0 6px 6px; }

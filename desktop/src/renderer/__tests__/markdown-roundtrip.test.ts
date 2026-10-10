@@ -78,6 +78,8 @@ const FIXTURES: Record<string, string> = {
   'status inside bold': '**`status:Done/green`**',
   'table of contents': '```toc\n```',
   'toc among headings': '# Title\n\n```toc\n```\n\n## Section\n\nbody',
+  'live query block':
+    '```query\ntype: action_item\nmentions: "[[30-cross-context/people/alex]]"\nstatus: open\nsort: created desc\n```',
   'toc fence with plugin options stays code': '```toc\nstyle: number\n```',
   'toc inside a callout': '> [!info] T\n> ```toc\n> ```\n\nafter',
   'toc inside a list item': '- item\n\n  ```toc\n  ```\n\n- next',

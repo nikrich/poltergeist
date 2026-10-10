@@ -8,6 +8,7 @@ import type { Editor } from '@tiptap/core';
 export interface GbEditorEvents {
   'gb:status:edit': { pos: number };
   'gb:diagram:open': { source: string };
+  'gb:query:open': { path: string };
 }
 
 type GbEventName = keyof GbEditorEvents;

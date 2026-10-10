@@ -4,6 +4,7 @@ import type { Node as PMNode } from 'prosemirror-model';
 import type { NodeView } from '@tiptap/pm/view';
 import { emitGb } from './events';
 import { renderMermaid } from './mermaid-render';
+import { createQueryView } from './query-view';
 import { sanitizedDiagramFragment } from './svg-sanitize';
 
 export const MERMAID_TEMPLATE = 'flowchart TD\n  A[Start] --> B[End]';
@@ -134,11 +135,16 @@ function createMermaidView(initial: PMNode, editor: Editor): NodeView {
   };
 }
 
-/** StarterKit's codeBlock with a node view; markdown handling is tiptap-markdown's default. */
+/** StarterKit's codeBlock with per-language node views; markdown handling is
+ * tiptap-markdown's default, so every fence round-trips unchanged. */
 export const GbCodeBlock = CodeBlock.extend({
   addNodeView() {
     const prefix = this.options.languageClassPrefix;
-    return ({ node, editor }) =>
-      node.attrs.language === 'mermaid' ? createMermaidView(node, editor) : createPlainCodeView(node, prefix);
+    return ({ node, editor, getPos }) => {
+      const language = (node.attrs.language as string | null) ?? null;
+      if (language === 'mermaid') return createMermaidView(node, editor);
+      if (language === 'query') return createQueryView(node, editor, getPos);
+      return createPlainCodeView(node, prefix);
+    };
   },
 });
