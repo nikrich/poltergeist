@@ -8,10 +8,11 @@ import type { Settings } from '../shared/types';
 import { loadInitialState, attachStatePersistence } from './window-state';
 import { buildAppMenu } from './menu';
 import { Sidecar } from './sidecar';
-import { forward, isAllowedMethod } from './api-forwarder';
+import { forward, isAllowedMethod, requestHeadersFrom } from './api-forwarder';
 import { startChatStream, stopChatStream } from './chat-stream';
 import type { ChatStreamEvent } from '../shared/api-types';
 import { startDocsStream, stopDocsStream } from './docs-stream';
+import { startRecorderStream, stopRecorderStream } from './recorder-stream';
 import { exportPdf, renderVaultHtmlToPdf } from './pdf-export';
 import { installTray, type TrayController } from './tray';
 import {
@@ -24,11 +25,14 @@ import { installUpdater } from './updater';
 import { installClipboardBridge } from './clipboard';
 import { installCliShim } from './cli-shim';
 import { isAllowedExternalUrl } from './external-url';
+import { installNavigationGuard } from './navigation-guard';
 import {
   registerGbAssetScheme,
   registerAssetProtocol,
   installAssetBridge,
 } from './assets';
+import { isInsideVault } from './vault-paths';
+import { registerDocProtocol } from './doc-protocol';
 import { handleDemoApi, DEMO_SETTINGS } from './demo/fixtures';
 import { runDemoChatStream, stopDemoChat } from './demo/chat';
 import { createLoader, type PluginLoader } from './plugins/loader';
@@ -160,6 +164,17 @@ function createWindow() {
   }
 }
 
+// Every webContents (main window, jot overlay, pdf-export, anything added
+// later) gets the navigation guard: foreign navigations are cancelled and
+// window.open is always denied so no external page inherits the preload
+// bridge. Registered at module load, before any window exists.
+app.on('web-contents-created', (_event, contents) => {
+  installNavigationGuard(contents, {
+    devServerUrl: process.env.ELECTRON_RENDERER_URL,
+    rendererRoot: join(__dirname, '../renderer'),
+  });
+});
+
 ipcMain.handle('gb:settings:getAll', () =>
   DEMO ? DEMO_SETTINGS : settings.getAll(),
 );
@@ -198,6 +213,18 @@ installClipboardBridge();
 
 // Privileged scheme must be registered before the app is ready.
 registerGbAssetScheme();
+
+ipcMain.handle('gb:shell:showItemInFolder', (_e, p: unknown) => {
+  if (typeof p !== 'string' || p === '') {
+    return { ok: false, error: 'showItemInFolder: path must be a non-empty string' };
+  }
+  const vaultPath = settings.getAll().vaultPath;
+  if (!vaultPath || !isInsideVault(vaultPath, p, { allowRoot: false })) {
+    return { ok: false, error: 'showItemInFolder: only paths inside the vault are allowed' };
+  }
+  shell.showItemInFolder(p);
+  return { ok: true };
+});
 
 ipcMain.handle('gb:shell:openPath', async (_e, p: unknown) => {
   if (typeof p !== 'string' || p === '') {
@@ -253,6 +280,7 @@ ipcMain.handle('gb:cli:install', () => {
 
 app.whenReady().then(async () => {
   registerAssetProtocol(vaultRoot);
+  registerDocProtocol(vaultRoot);
   installAssetBridge(vaultRoot);
   buildAppMenu();
   installPlugins();
@@ -354,7 +382,7 @@ app.on('activate', () => {
 
 ipcMain.handle(
   'gb:api:request',
-  async (_e, method: unknown, path: unknown, body: unknown) => {
+  async (_e, method: unknown, path: unknown, body: unknown, opts: unknown) => {
     if (typeof method !== 'string' || typeof path !== 'string') {
       return { ok: false, error: 'Invalid request shape' };
     }
@@ -366,7 +394,7 @@ ipcMain.handle(
       return { ok: false, error: 'Path not allowed (must start with /v1/)' };
     }
     if (DEMO) return handleDemoApi(m, path, body);
-    return forward(sidecar, m, path, body);
+    return forward(sidecar, m, path, body, undefined, requestHeadersFrom(opts));
   },
 );
 
@@ -419,6 +447,30 @@ ipcMain.handle('gb:chat:stop', (_e, convId: unknown) => {
   else stopTurn(convId);
   return { ok: true };
 });
+
+// Recorder SSE routes the renderer follows: the live transcript and the
+// waveform levels. Each is forwarded to `gb:recorder:<name>:event`.
+for (const name of ['live', 'levels'] as const) {
+  const path = `/v1/recorder/${name}`;
+  ipcMain.handle(`gb:recorder:${name}:subscribe`, async (e) => {
+    if (DEMO) return { ok: false, error: 'Not available in demo mode' };
+    const wc = e.sender;
+    const key = wc.id;
+    const onDestroyed = () => stopRecorderStream(path, key);
+    wc.once('destroyed', onDestroyed);
+    try {
+      return await startRecorderStream(sidecar, path, key, (event: unknown) => {
+        if (!wc.isDestroyed()) wc.send(`gb:recorder:${name}:event`, event);
+      });
+    } finally {
+      wc.removeListener('destroyed', onDestroyed);
+    }
+  });
+  ipcMain.handle(`gb:recorder:${name}:unsubscribe`, (e) => {
+    stopRecorderStream(path, e.sender.id);
+    return { ok: true };
+  });
+}
 
 const stopDocsTurn = (jotId: string) => {
   stopDocsStream(jotId);

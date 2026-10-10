@@ -7,7 +7,10 @@ import { Eyebrow } from '../components/Eyebrow';
 import { Panel } from '../components/Panel';
 import { Ghost } from '../components/Ghost';
 import { UpcomingMeetings } from '../components/UpcomingMeetings';
+import { LiveTranscriptPanel } from '../components/LiveTranscriptPanel';
+import { Waveform } from '../components/Waveform';
 import { useMeeting } from '../stores/meeting';
+import { useLiveTranscriptStream } from '../stores/live-transcript';
 import { useNavigation } from '../stores/navigation';
 import { useNoteView } from '../stores/note-view';
 import { stub, toast } from '../stores/toast';
@@ -74,6 +77,8 @@ export function MeetingsScreen() {
     stop,
     reset,
   } = useMeeting();
+  // Live text keeps streaming through "transcribing" (the finalising state).
+  useLiveTranscriptStream(phase === 'recording' || phase === 'transcribing');
   const agenda = useAgenda();
   const meetings = useMeetings({ limit: 1 });
 
@@ -236,7 +241,7 @@ function PreMeeting({ onStart, event }: PreMeetingProps) {
             <Eyebrow className="mb-2">poltergeist primed</Eyebrow>
             <ul className="m-0 flex list-none flex-col gap-[6px] p-0">
               <li className="flex items-start gap-2 text-12 text-ink-1">
-                <Lucide name="check" size={11} color="var(--neon)" className="mt-1" />
+                <Lucide name="check" size={11} color="var(--neon-glyph)" className="mt-1" />
                 <span>
                   transcript will land in{' '}
                   <span className="font-mono text-11">
@@ -245,7 +250,7 @@ function PreMeeting({ onStart, event }: PreMeetingProps) {
                 </span>
               </li>
               <li className="flex items-start gap-2 text-12 text-ink-1">
-                <Lucide name="check" size={11} color="var(--neon)" className="mt-1" />
+                <Lucide name="check" size={11} color="var(--neon-glyph)" className="mt-1" />
                 <span>
                   auto-record skips Focus blocks; manual start works for any
                   session
@@ -426,36 +431,12 @@ function AudioSource({ icon, label, sub, active }: AudioSourceProps) {
       }`}
       title="auto-detected by the recorder"
     >
-      <Lucide name={icon} size={13} color={active ? 'var(--neon)' : 'var(--ink-2)'} />
+      <Lucide name={icon} size={13} color={active ? 'var(--neon-glyph)' : 'var(--ink-2)'} />
       <div className="flex-1 leading-[1.2]">
         <div className="text-12 text-ink-0">{label}</div>
         <div className="font-mono text-9 text-ink-2">{sub}</div>
       </div>
-      {active && <Lucide name="check" size={12} color="var(--neon)" />}
-    </div>
-  );
-}
-
-interface WaveformProps {
-  live?: boolean;
-}
-
-function Waveform({ live = false }: WaveformProps) {
-  const bars = 48;
-  const heights = useMemo(() => Array.from({ length: bars }, () => 0.2 + Math.random() * 0.8), []);
-  return (
-    <div className="flex h-9 items-center gap-[2px] rounded-r6 border border-hairline bg-paper px-3">
-      {heights.map((h, i) => (
-        <div
-          key={i}
-          className={`flex-1 rounded-[1px] ${live ? 'bg-neon' : 'bg-ink-3'}`}
-          style={{
-            height: `${h * 100}%`,
-            opacity: live ? 0.5 + h * 0.5 : 0.4 + h * 0.4,
-            animation: live ? `gb-wave 1.${i % 9}s ease-in-out infinite alternate` : 'none',
-          }}
-        />
-      ))}
+      {active && <Lucide name="check" size={12} color="var(--neon-glyph)" />}
     </div>
   );
 }
@@ -486,7 +467,7 @@ export function TargetChoiceCard({ windows = [] }: { windows?: CaptureWindow[] }
   return (
     <div role="status" className="mb-4 rounded-lg border border-neon/30 bg-neon/[0.06] p-5">
       <div className="flex items-center gap-4">
-        <Lucide name="monitor" size={18} color="var(--neon)" />
+        <Lucide name="monitor" size={18} color="var(--neon-glyph)" />
         <div className="flex-1 leading-[1.3]">
           <div className="text-14 font-medium text-ink-0">
             No meeting window found. Capture your screen for slides?
@@ -533,7 +514,7 @@ export function TargetChoiceCard({ windows = [] }: { windows?: CaptureWindow[] }
                   {w.appName}
                 </span>
                 <span className="flex-1 truncate text-12 text-ink-0">{w.title || '(untitled)'}</span>
-                {w.candidate && <Lucide name="star" size={11} color="var(--neon)" />}
+                {w.candidate && <Lucide name="star" size={11} color="var(--neon-glyph)" />}
                 <span className="flex-shrink-0 font-mono text-9 text-ink-3">
                   {w.width}×{w.height}
                 </span>
@@ -625,15 +606,7 @@ export function ActiveRecording({
       {awaitingTargetChoice && <TargetChoiceCard windows={captureWindows} />}
 
       <div className="grid grid-cols-[1.4fr_1fr] gap-4">
-        <div className="rounded-lg border border-hairline bg-vellum p-6">
-          <Eyebrow className="mb-2">capturing</Eyebrow>
-          <p className="m-0 max-w-[60ch] text-14 leading-[1.55] text-ink-1">
-            poltergeist is recording your mic + system audio. transcription runs
-            locally with whisper.cpp after you hit stop — no audio leaves your
-            machine. the transcript will land under{' '}
-            <span className="font-mono text-12">20-contexts/&lt;ctx&gt;/calendar/transcripts/</span>.
-          </p>
-        </div>
+        <LiveTranscriptPanel />
         <div className="rounded-lg border border-hairline bg-vellum p-4">
           <Eyebrow className="mb-2">sources</Eyebrow>
           <CaptureSources statusBackend={captureBackend} />
@@ -670,6 +643,9 @@ function Transcribing({ title, startedAt }: TranscribingProps) {
             {recordedSeconds !== null ? ` · ${mmss(recordedSeconds)} of audio` : ''}
           </div>
         </div>
+      </div>
+      <div className="mt-4">
+        <LiveTranscriptPanel />
       </div>
     </div>
   );

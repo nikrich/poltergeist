@@ -28,14 +28,14 @@ export function levelFor(count: number, maxCount: number): 0 | 1 | 2 | 3 | 4 {
   return Math.max(1, Math.min(4, level)) as 1 | 2 | 3 | 4;
 }
 
-// Level 0 uses the hairline tone; 1–3 are neon at 25/50/75% alpha; 4 is full
-// neon — consistent with the design tokens in styles.css / colors_and_type.css.
+// Per-theme ramp from colors_and_type.css: dark is neon at rising alpha,
+// light is a lime→olive ramp (translucent lime vanishes on a white card).
 const LEVEL_BG = [
-  'var(--hairline)',
-  'color-mix(in srgb, var(--neon) 25%, transparent)',
-  'color-mix(in srgb, var(--neon) 50%, transparent)',
-  'color-mix(in srgb, var(--neon) 75%, transparent)',
-  'var(--neon)',
+  'var(--heat-0)',
+  'var(--heat-1)',
+  'var(--heat-2)',
+  'var(--heat-3)',
+  'var(--heat-4)',
 ] as const;
 
 const MONTHS = [
@@ -181,7 +181,7 @@ export function ActivityHeatmap({
                     aspectRatio: '1 / 1',
                     borderRadius: 2,
                     background: LEVEL_BG[level],
-                    outline: selected ? '1px solid var(--neon)' : 'none',
+                    outline: selected ? '1px solid var(--heat-outline)' : 'none',
                     outlineOffset: 1,
                   }}
                 />

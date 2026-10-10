@@ -9,7 +9,9 @@ import { Btn } from './Btn';
 import { EditorToolbar } from './EditorToolbar';
 import { JotEditor } from './JotEditor';
 import { Lucide } from './Lucide';
+import { ReadAloudControls } from './ReadAloudControls';
 import { WebcamCaptureModal } from './WebcamCaptureModal';
+import { TemplateInsertDialog } from './TemplatePicker';
 
 export interface EditorHandle {
   /** Markdown for the current selection; '' when collapsed. */
@@ -43,7 +45,7 @@ function wikilinkAtOffset(text: string, offset: number): string | null {
   return null;
 }
 
-interface Props {
+export interface RichMarkdownEditorProps {
   markdown: string;
   onSave: (markdown: string) => void;
   readOnly?: boolean;
@@ -62,6 +64,8 @@ interface Props {
   onPhotoInserted?: (jotId: string, assetPath: string) => void;
   /** Increment this number to programmatically open the webcam modal. */
   openCameraSignal?: number;
+  /** Focus mode (A4): hide the formatting toolbar and centre the page. */
+  focus?: boolean;
 }
 
 type Mode = 'rich' | 'source';
@@ -90,11 +94,13 @@ export function RichMarkdownEditor({
   jotId,
   onPhotoInserted,
   openCameraSignal,
-}: Props) {
+  focus = false,
+}: RichMarkdownEditorProps) {
   // Evaluated once per mount; parents remount per note via key={...}.
   const [parseFailed] = useState(() => !parsesAsRich(markdown));
   const [mode, setMode] = useState<Mode>(parseFailed ? 'source' : 'rich');
   const [camOpen, setCamOpen] = useState(false);
+  const [templateOpen, setTemplateOpen] = useState(false);
   // Track previous openCameraSignal to skip the initial mount value.
   const prevCameraSignalRef = useRef(openCameraSignal);
 
@@ -232,6 +238,16 @@ export function RichMarkdownEditor({
     editor.on('gb:slash:photo' as Parameters<typeof editor.on>[0], handler);
     return () => {
       editor.off('gb:slash:photo' as Parameters<typeof editor.off>[0], handler);
+    };
+  }, [editor]);
+
+  // Subscribe to the /template slash command (smart templates, C1).
+  useEffect(() => {
+    if (!editor) return;
+    const handler = () => setTemplateOpen(true);
+    editor.on('gb:slash:template' as Parameters<typeof editor.on>[0], handler);
+    return () => {
+      editor.off('gb:slash:template' as Parameters<typeof editor.off>[0], handler);
     };
   }, [editor]);
 
@@ -378,8 +394,14 @@ export function RichMarkdownEditor({
   }
 
   return (
-    <div className="flex h-full flex-col" data-testid="rich-markdown-editor">
-      {mode === 'rich' && editor && <EditorToolbar editor={editor} onPhoto={() => setCamOpen(true)} />}
+    <div
+      className="flex h-full flex-col"
+      data-testid="rich-markdown-editor"
+      data-focus={focus ? 'on' : undefined}
+    >
+      {mode === 'rich' && editor && !focus && (
+        <EditorToolbar editor={editor} onPhoto={() => setCamOpen(true)} />
+      )}
       <div className="flex-1 overflow-auto">
         {mode === 'rich' ? (
           <EditorContent
@@ -410,6 +432,7 @@ export function RichMarkdownEditor({
             copy formatted
           </Btn>
         )}
+        {mode === 'rich' && editor && <ReadAloudControls editor={editor} />}
         <div className="ml-auto flex items-center gap-1 font-mono text-10 text-ink-3">
           <button
             type="button"
@@ -445,6 +468,18 @@ export function RichMarkdownEditor({
             .catch((e: Error) => toast.error(`photo insert failed: ${e.message}`));
         }}
       />
+      {templateOpen && (
+        <TemplateInsertDialog
+          onClose={() => setTemplateOpen(false)}
+          onInsert={(md) => {
+            const ed = editorRef.current;
+            if (!ed || ed.isDestroyed) return;
+            // tiptap-markdown parses the string as markdown at the cursor;
+            // onUpdate then schedules the normal autosave.
+            ed.chain().focus().insertContent(md).run();
+          }}
+        />
+      )}
     </div>
   );
 }

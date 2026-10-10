@@ -8,7 +8,8 @@ def test_upsert_creates_nested_note(client, tmp_vault, auth_headers):
         headers=auth_headers,
     )
     assert r.status_code == 200
-    assert r.json() == {"path": "Familiar/briefings/2026-07-08.md", "created": True}
+    assert {k: v for k, v in r.json().items() if k != "etag"} == {"path": "Familiar/briefings/2026-07-08.md", "created": True}
+    assert len(r.json()["etag"]) == 16
     on_disk = (tmp_vault / "Familiar" / "briefings" / "2026-07-08.md").read_text()
     assert on_disk.startswith("---\ntype: familiar-briefing")
 

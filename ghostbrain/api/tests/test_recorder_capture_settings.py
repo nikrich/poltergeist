@@ -235,8 +235,8 @@ def test_status_reports_transcribing_while_daemon_finalizes(
     'idle' — the UI otherwise drops to the lobby with no feedback."""
     (tmp_state_dir / "recorder.json").write_text(json.dumps({
         "active": {
-            "event_id": "calendar:macos:Calendar:abc", "title": "TrustFlow MVP: DSUA",
-            "context": "sanlam", "pid": 34586, "wav_path": "/tmp/m.wav",
+            "event_id": "calendar:macos:Calendar:abc", "title": "Weekly sync",
+            "context": "work", "pid": 34586, "wav_path": "/tmp/m.wav",
             "started_at": "2026-09-14T08:29:47+00:00", "scheduled_end": "2026-09-14T09:01:00+00:00",
             "capture_backend": "native", "awaiting_target_choice": False,
         },
@@ -250,9 +250,72 @@ def test_status_reports_transcribing_while_daemon_finalizes(
     body = res.json()
     assert body["phase"] == "transcribing"
     assert body["owner"] == "daemon"
-    assert body["title"] == "TrustFlow MVP: DSUA"
+    assert body["title"] == "Weekly sync"
     assert body["captureBackend"] == "native"
 
     fake_backend.capture_alive.return_value = True
     with patch("ghostbrain.recorder.audio.get_backend", return_value=fake_backend):
         assert client.get("/v1/recorder/status", headers=auth_headers).json()["phase"] == "recording"
+
+
+def test_transcription_settings_roundtrip(client: TestClient, auth_headers: dict[str, str], tmp_vault: Path):
+    res = client.get("/v1/settings/recorder", headers=auth_headers)
+    body = res.json()
+    assert body["transcription_language"] == "auto"
+    assert body["live_transcription"] is True
+
+    res = client.post("/v1/settings/recorder", headers=auth_headers, json={
+        "transcription_language": "af", "live_transcription": False,
+    })
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["transcription_language"] == "af"
+    assert body["live_transcription"] is False
+
+    import yaml
+    on_disk = yaml.safe_load((tmp_vault / "90-meta" / "config.yaml").read_text())["recorder"]
+    assert on_disk["transcription_language"] == "af"
+    assert on_disk["live_transcription"] is False
+
+
+def test_transcription_language_validation(client: TestClient, auth_headers: dict[str, str]):
+    assert client.post("/v1/settings/recorder", headers=auth_headers,
+                       json={"transcription_language": "zu"}).status_code == 422
+
+
+def test_settings_report_whether_the_model_is_multilingual(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch,
+):
+    from ghostbrain.recorder import transcribe as tmod
+
+    monkeypatch.delenv("GHOSTBRAIN_WHISPER_MODEL", raising=False)
+    monkeypatch.setattr(tmod, "_resolve_model", lambda _p: Path("/m/ggml-small.en.bin"))
+    body = client.get("/v1/settings/recorder", headers=auth_headers).json()
+    assert body["transcription_model"] == "ggml-small.en.bin"
+    assert body["multilingual_model"] is False
+    assert body["transcription_model_source"] == "default"
+
+    monkeypatch.setattr(tmod, "_resolve_model", lambda _p: Path("/m/ggml-large-v3-turbo-q5_0.bin"))
+    body = client.get("/v1/settings/recorder", headers=auth_headers).json()
+    assert body["multilingual_model"] is True
+
+
+def test_settings_report_a_model_pinned_by_the_env_var(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch, tmp_path: Path,
+):
+    pinned = tmp_path / "ggml-base.en.bin"
+    pinned.write_bytes(b"x")
+    monkeypatch.setenv("GHOSTBRAIN_WHISPER_MODEL", str(pinned))
+    body = client.get("/v1/settings/recorder", headers=auth_headers).json()
+    assert body["transcription_model"] == "ggml-base.en.bin"
+    assert body["multilingual_model"] is False
+    assert body["transcription_model_source"] == "env"
+
+
+def test_settings_report_env_source_when_the_pinned_model_is_missing(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch, tmp_path: Path,
+):
+    monkeypatch.setenv("GHOSTBRAIN_WHISPER_MODEL", str(tmp_path / "gone.bin"))
+    body = client.get("/v1/settings/recorder", headers=auth_headers).json()
+    assert body["transcription_model"] is None
+    assert body["transcription_model_source"] == "env"

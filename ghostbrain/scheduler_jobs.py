@@ -27,6 +27,7 @@ from ghostbrain.connectors.slack import runner as slack_runner
 from ghostbrain.connectors.microsoft.outlook_mail import runner as outlook_mail_runner
 from ghostbrain.connectors.microsoft.teams_chat import runner as teams_chat_runner
 from ghostbrain.connectors.microsoft.teams_meetings import runner as teams_meetings_runner
+from ghostbrain.connectors.whatsapp import runner as whatsapp_runner
 from ghostbrain.paths import queue_dir
 from ghostbrain.scheduler import (
     DailyAt,
@@ -198,6 +199,17 @@ def _gdrive_backfill_job() -> RunResult:
     return _wrap_job("gdrive-backfill", lambda: gdrive_backfill.run_tick())
 
 
+def _history_prune_job() -> RunResult:
+    """Daily page-history retention + blob GC (spec A3). Lazy import keeps
+    sidecar start cheap; prune only touches app state, never the vault."""
+    def work() -> dict:
+        from ghostbrain.history import store
+
+        return store.prune().to_details()
+
+    return _wrap_job("history-prune", work)
+
+
 def _semantic_refresh() -> RunResult:
     """Run a semantic index refresh and translate the result into RunResult.
 
@@ -251,6 +263,7 @@ def register_connectors(scheduler: Scheduler) -> None:
     scheduler.add_job("outlook_mail", Interval(seconds=3600), outlook_mail_runner.run, "every 1h")
     scheduler.add_job("teams_chat", Interval(seconds=3600), teams_chat_runner.run, "every 1h")
     scheduler.add_job("teams_meetings", Interval(seconds=7200), teams_meetings_runner.run, "every 2h")
+    scheduler.add_job("whatsapp", Interval(seconds=3600), whatsapp_runner.run, "every 1h")
     # Semantic refresh runs frequently — embedding cost is paid only for new
     # or modified notes (mtime + hash short-circuit). Steady-state runs are
     # seconds. Keeping search/answer queries up-to-date with new transcripts
@@ -265,6 +278,12 @@ def register_connectors(scheduler: Scheduler) -> None:
     # Match the schedules in orchestration/launchd/com.ghostbrain.*.plist.
     scheduler.add_job("digest", DailyAt(hour=6, minute=30), _digest_job, "daily 06:30")
     scheduler.add_job("claudemd", DailyAt(hour=2, minute=0), _claudemd_job, "daily 02:00")
+    scheduler.add_job(
+        "history-prune",
+        DailyAt(hour=3, minute=15),
+        _history_prune_job,
+        "daily 03:15",
+    )
     # launchd Weekday=0 is Sunday; datetime.weekday()=6 is Sunday.
     scheduler.add_job(
         "profile-weekly",

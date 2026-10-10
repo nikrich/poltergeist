@@ -1,4 +1,4 @@
-"""`setup fetch-model [base.en|small.en|medium.en]` — download a whisper.cpp ggml model."""
+"""`setup fetch-model [large-v3-turbo-q5_0|base.en|small.en|medium.en]` — download a whisper.cpp ggml model."""
 from __future__ import annotations
 
 import os
@@ -12,11 +12,14 @@ from ghostbrain.recorder.transcribe import DEFAULT_MODEL_DIR  # noqa: F401 — m
 
 BASE_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main"
 MODELS: dict[str, int] = {          # approximate sizes, shown before downloading
+    # Multilingual (English + Afrikaans, detected per chunk) and fast enough
+    # for live transcription on Apple Silicon.
+    "large-v3-turbo-q5_0": 547 * 1024 * 1024,
     "base.en": 142 * 1024 * 1024,
     "small.en": 466 * 1024 * 1024,
     "medium.en": 1533 * 1024 * 1024,
 }
-DEFAULT_NAME = "medium.en"
+DEFAULT_NAME = "large-v3-turbo-q5_0"
 
 
 class FetchError(RuntimeError):

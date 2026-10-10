@@ -269,6 +269,11 @@ const RECORDER_SETTINGS: RecorderSettings = {
   slide_fps: 1,
   slide_fallback: 'ask',
   capture_backend_effective: 'native',
+  transcription_language: 'auto',
+  live_transcription: true,
+  transcription_model: 'ggml-large-v3-turbo-q5_0.bin',
+  multilingual_model: true,
+  transcription_model_source: 'default',
 };
 
 const RECORDER_STATUS: RecorderStatus = {
@@ -415,6 +420,9 @@ export const DEMO_SETTINGS = {
   transcriptModel: 'whisper-large-v3' as const,
   folderStructure: 'by-source' as const,
   schedulerEnabled: true,
+  focusMode: false,
+  readAloudVoice: '',
+  readAloudRate: 1,
   hotkeys: { jotOverlay: 'Alt+J' },
 };
 

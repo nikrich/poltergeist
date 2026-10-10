@@ -1,9 +1,16 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { Editor } from '@tiptap/core';
 import { JotsScreen } from '../screens/jots';
+import { Sidebar } from '../components/Sidebar';
+import { useNavigation } from '../stores/navigation';
+import { useGraphView } from '../stores/graph-view';
 import { toast } from '../stores/toast';
-import type { JotsPage, Note, AutoRouteResponse, Project, Connector } from '../../shared/api-types';
+import { useSettings } from '../stores/settings';
+import { useFocusSurfaces } from '../lib/focus-mode';
+import { useNoteView } from '../stores/note-view';
+import type { JotsPage, Note, AutoRouteResponse, Project, Connector, TemplateSummary } from '../../shared/api-types';
 
 const apiRequest = vi.fn();
 
@@ -21,6 +28,23 @@ function withConnectors(
         ok: true,
         status: 200,
         data: { contexts: ['work', 'consulting', 'side-project', 'personal'] },
+      };
+    }
+    if (path.startsWith('/v1/vault/backlinks')) {
+      return {
+        ok: true,
+        status: 200,
+        data: {
+          items: [
+            {
+              path: '20-contexts/work/notes/standup.md',
+              title: 'Standup',
+              context: 'work',
+              snippet: 'follow up on [[20-contexts/work/notes/manual-20260514T093015-a|first jot]]',
+            },
+          ],
+          indexing: false,
+        },
       };
     }
     return impl(method, path, body);
@@ -342,6 +366,74 @@ describe('JotsScreen', () => {
       expect(routeAutoCall).toBeDefined();
     });
   });
+
+  it('shows backlinks under the selected jot', async () => {
+    apiRequest.mockImplementation(withConnectors(async (_m, path) => {
+      if (path.includes('source=manual')) return { ok: true, status: 200, data: page };
+      return { ok: true, status: 200, data: detail };
+    }));
+
+    render(withQuery(<JotsScreen />));
+    await waitFor(() => expect(screen.getByText(/full body here/)).toBeInTheDocument());
+    expect(await screen.findByText('Standup')).toBeInTheDocument();
+    expect(screen.getByText('follow up on first jot')).toBeInTheDocument();
+    expect(apiRequest).toHaveBeenCalledWith(
+      'GET',
+      '/v1/vault/backlinks?path=20-contexts%2Fwork%2Fnotes%2Fmanual-20260514T093015-a.md',
+    );
+  });
+
+  it('"template" menu creates a note from a template and opens it', async () => {
+    const MEETING: TemplateSummary = {
+      id: 'meeting-notes',
+      path: '90-meta/templates/meeting-notes.md',
+      name: 'Meeting notes',
+      description: '',
+      prompts: [{ id: 'topic', ask: 'Topic', type: 'text', optional: false, default: null, options: [] }],
+      variables: ['context', 'date', 'topic'],
+      valid: true,
+      diagnostics: [],
+    };
+    useNoteView.getState().close();
+    apiRequest.mockImplementation(withConnectors(async (method, path) => {
+      if (path.includes('source=manual')) return { ok: true, status: 200, data: { items: [], total: 0 } satisfies JotsPage };
+      if (path === '/v1/templates') return { ok: true, status: 200, data: { templates: [MEETING] } };
+      if (path === '/v1/projects') return { ok: true, status: 200, data: [] };
+      if (method === 'POST' && path === '/v1/templates/meeting-notes/create')
+        return {
+          ok: true,
+          status: 201,
+          data: { path: '20-contexts/work/meetings/2026-10-09-planning.md', title: '2026-10-09 Planning', etag: 'e', status: 'applied' },
+        };
+      return { ok: true, status: 200, data: { items: [], total: 0 } };
+    }));
+
+    render(withQuery(<JotsScreen />));
+    fireEvent.click(await screen.findByRole('button', { name: 'template' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /Meeting notes/ }));
+    fireEvent.change(await screen.findByLabelText('Topic'), { target: { value: 'Planning' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'create' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'create' }));
+    await waitFor(() =>
+      expect(useNoteView.getState().path).toBe('20-contexts/work/meetings/2026-10-09-planning.md'),
+    );
+  });
+
+  it('"show in graph" centres the vault graph on the selected jot', async () => {
+    apiRequest.mockImplementation(withConnectors(async (_m, path) => {
+      if (path.includes('source=manual')) return { ok: true, status: 200, data: page };
+      return { ok: true, status: 200, data: detail };
+    }));
+    useGraphView.getState().reset();
+    render(withQuery(<JotsScreen />));
+    await waitFor(() => expect(screen.getByText(/full body here/)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /show in graph/ }));
+    expect(useGraphView.getState()).toMatchObject({
+      tab: 'graph',
+      focus: '20-contexts/work/notes/manual-20260514T093015-a.md',
+    });
+    expect(useNavigation.getState().active).toBe('vault');
+  });
 });
 
 // ── Re-route picker with projects ─────────────────────────────────────────
@@ -471,5 +563,137 @@ describe('JotsScreen export select', () => {
     expect(infoSpy).toHaveBeenCalledWith('switch to rich mode to export pdf');
     expect(exportPdf).not.toHaveBeenCalled();
     infoSpy.mockRestore();
+  });
+});
+
+// ── Leaving Jots under the conflict banner ────────────────────────────────
+
+describe('JotsScreen conflict navigation guard', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  // Sidebar + whichever screen is active, like App's shell.
+  function Shell() {
+    const active = useNavigation((s) => s.active);
+    return (
+      <>
+        <Sidebar />
+        {active === 'jots' && <JotsScreen />}
+      </>
+    );
+  }
+
+  function mockJotApi() {
+    let patched = false;
+    apiRequest.mockImplementation(withConnectors(async (method, path) => {
+      if (path.includes('source=manual')) return { ok: true, status: 200, data: page };
+      if (method === 'PATCH') {
+        patched = true;
+        return { ok: false, status: 409, error: 'note changed' };
+      }
+      if (path.startsWith('/v1/notes?path=')) {
+        return {
+          ok: true,
+          status: 200,
+          data: patched
+            ? { ...detail, body: 'their edit', etag: 'bbbbbbbbbbbbbbbb' }
+            : { ...detail, etag: 'aaaaaaaaaaaaaaaa' },
+        };
+      }
+      return { ok: true, status: 200, data: { items: [], total: 0 } };
+    }));
+  }
+
+  async function renderShell() {
+    useNavigation.setState({ active: 'jots' });
+    render(withQuery(<Shell />));
+    await waitFor(() => expect(screen.getByText(/full body here/)).toBeInTheDocument());
+  }
+
+  function jotEditor(): Editor {
+    // TipTap hangs the Editor instance off its root DOM node.
+    const dom = document.querySelector('.ProseMirror') as (HTMLElement & { editor?: Editor }) | null;
+    expect(dom?.editor).toBeDefined();
+    return dom!.editor!;
+  }
+
+  it('sidebar navigation without a pending conflict does not prompt', async () => {
+    mockJotApi();
+    await renderShell();
+    const confirm = vi.spyOn(window, 'confirm');
+    fireEvent.click(screen.getByRole('button', { name: 'today' }));
+    expect(confirm).not.toHaveBeenCalled();
+    expect(useNavigation.getState().active).toBe('today');
+  });
+
+  it('sidebar navigation under the conflict banner asks first; cancel keeps jots and the text', async () => {
+    mockJotApi();
+    await renderShell();
+    act(() => {
+      const ed = jotEditor();
+      ed.commands.insertContentAt(ed.state.doc.content.size, 'my tail');
+    });
+    // Real timers — the editor debounce is 1s.
+    await screen.findByRole('alert', {}, { timeout: 3000 });
+
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    fireEvent.click(screen.getByRole('button', { name: 'today' }));
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(confirm.mock.calls[0]![0]).toMatch(/Discard your text\?/);
+    expect(useNavigation.getState().active).toBe('jots');
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(screen.getByText(/my tail/)).toBeInTheDocument();
+
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole('button', { name: 'today' }));
+    expect(useNavigation.getState().active).toBe('today');
+    expect(screen.queryByText(/my tail/)).toBeNull();
+  });
+});
+
+describe('JotsScreen focus mode', () => {
+  beforeEach(() => {
+    useSettings.setState({ focusMode: false });
+    useFocusSurfaces.setState({ count: 0 });
+    apiRequest.mockImplementation(
+      withConnectors(async (_m, path) => {
+        if (path.includes('source=manual')) return { ok: true, status: 200, data: page };
+        return { ok: true, status: 200, data: detail };
+      }),
+    );
+  });
+
+  afterEach(() => {
+    useSettings.setState({ focusMode: false });
+    useFocusSurfaces.setState({ count: 0 });
+  });
+
+  it('the focus button turns focus mode on', async () => {
+    render(withQuery(<JotsScreen />));
+    await waitFor(() => expect(screen.getByText(/full body here/)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'focus mode (⌘ .)' }));
+    await waitFor(() => expect(useSettings.getState().focusMode).toBe(true));
+  });
+
+  it('hides the tree, search, footer, backlinks and toolbar; exit restores them', async () => {
+    useSettings.setState({ focusMode: true });
+    render(withQuery(<JotsScreen />));
+    await waitFor(() => expect(screen.getByText(/full body here/)).toBeInTheDocument());
+
+    expect(screen.queryByPlaceholderText('search jots…')).toBeNull();
+    expect(screen.queryByRole('region', { name: 'backlinks' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'bold' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'delete' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'jots' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'history' })).toBeNull();
+    expect(screen.getByTestId('rich-markdown-editor')).toHaveAttribute('data-focus', 'on');
+
+    fireEvent.click(screen.getByRole('button', { name: 'exit focus mode' }));
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText('search jots…')).toBeInTheDocument(),
+    );
+    expect(screen.getByRole('button', { name: 'bold' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'history' })).toBeInTheDocument();
   });
 });

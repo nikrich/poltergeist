@@ -44,6 +44,9 @@ export function buildSidecarEnv(
     PYTHONUNBUFFERED: '1',
     GHOSTBRAIN_SCHEDULER_ENABLED: opts.schedulerEnabled ? '1' : '0',
     VAULT_PATH: vault,
+    // Have the sidecar shut itself down (stopping any live recording) when
+    // its stdin hits EOF, i.e. when this process dies without calling stop().
+    GHOSTBRAIN_PARENT_WATCH: '1',
   };
 }
 
@@ -68,6 +71,40 @@ const READY_LINE_RE = /^READY port=(\d+) token=([0-9a-f]+)/m;
 const STARTUP_TIMEOUT_MS = 10_000;
 const RESTART_BACKOFF_MS = 2_000;
 const MAX_RESTART_ATTEMPTS = 1;
+
+// stop() ladder: SIGTERM -> STOP_GRACE_MS -> SIGINT -> STOP_FORCE_MS -> SIGKILL
+// -> STOP_KILL_WAIT_MS. SIGTERM runs uvicorn's graceful shutdown: usually ~3 s,
+// worst case ~23 s (3 s graceful timeout + scheduler.stop()'s 10 s + whisper
+// server's 5 s + 5 s), so the grace covers that with a little slack. A second
+// signal (SIGINT) makes uvicorn force-exit, skipping the remaining hooks;
+// SIGKILL is the last resort. before-quit awaits stop(), so the total (~30 s)
+// is also the upper bound on how long a quit can hang before the app exits.
+// On win32 kill() hard-terminates whatever signal is named, so the first step
+// ends it.
+export const STOP_GRACE_MS = 25_000;
+export const STOP_FORCE_MS = 3_000;
+const STOP_KILL_WAIT_MS = 2_000;
+
+function hasExited(proc: ChildProcess): boolean {
+  // Not `proc.killed`: that flips as soon as a signal is *sent*.
+  return proc.exitCode !== null || proc.signalCode !== null;
+}
+
+/** Resolves true once `proc` has exited, or false after `ms` if it hasn't. */
+function waitForExit(proc: ChildProcess, ms: number): Promise<boolean> {
+  if (hasExited(proc)) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const onExit = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    const timer = setTimeout(() => {
+      proc.off('exit', onExit);
+      resolve(hasExited(proc));
+    }, ms);
+    proc.once('exit', onExit);
+  });
+}
 
 function bundledSidecar(): SpawnTarget | null {
   // In packaged builds the PyInstaller --onedir bundle is shipped via
@@ -181,17 +218,18 @@ export class Sidecar extends EventEmitter {
     }
     const proc = this.proc;
     this.intentionalStop = true;
-    proc.kill('SIGTERM');
-    await new Promise<void>((resolve) => {
-      const timer = setTimeout(() => {
-        if (proc && !proc.killed) proc.kill('SIGKILL');
-        resolve();
-      }, 5_000);
-      proc.once('exit', () => {
-        clearTimeout(timer);
-        resolve();
-      });
-    });
+    // stdin is deliberately left open: its EOF means "parent died" to the
+    // sidecar, which would also end a live recording that a normal quit keeps.
+    if (!hasExited(proc)) {
+      proc.kill('SIGTERM');
+      if (!(await waitForExit(proc, STOP_GRACE_MS))) {
+        proc.kill('SIGINT');
+        if (!(await waitForExit(proc, STOP_FORCE_MS))) {
+          proc.kill('SIGKILL');
+          await waitForExit(proc, STOP_KILL_WAIT_MS);
+        }
+      }
+    }
     this.proc = null;
     this.info = null;
     this.status = 'stopped';
@@ -219,6 +257,10 @@ export class Sidecar extends EventEmitter {
       const captureBin = captureHelperPath(this.cwd);
       const proc = spawn(exe, args, {
         cwd,
+        // stdin stays an open pipe for the sidecar's lifetime (nothing is
+        // written to it): the OS closes it only when this process dies, which
+        // is what GHOSTBRAIN_PARENT_WATCH listens for.
+        stdio: ['pipe', 'pipe', 'pipe'],
         env: {
           ...buildSidecarEnv(process.env, {
             schedulerEnabled: this.options.schedulerEnabled ?? false,

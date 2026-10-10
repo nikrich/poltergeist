@@ -11,6 +11,7 @@ const bridge: GbBridge = {
   },
   shell: {
     openPath: (path: string) => ipcRenderer.invoke('gb:shell:openPath', path),
+    showItemInFolder: (path: string) => ipcRenderer.invoke('gb:shell:showItemInFolder', path),
     openExternal: (url: string) => ipcRenderer.invoke('gb:shell:openExternal', url),
   },
   cli: {
@@ -18,14 +19,18 @@ const bridge: GbBridge = {
   },
   platform: process.platform,
   api: {
-    request: (method, path, body) =>
-      ipcRenderer.invoke('gb:api:request', method, path, body),
+    request: (method, path, body, opts) =>
+      ipcRenderer.invoke('gb:api:request', method, path, body, opts),
   },
   sidecar: {
     retry: () => ipcRenderer.invoke('gb:sidecar:retry'),
   },
   recorder: {
     notifyTargetChoice: () => ipcRenderer.invoke('gb:recorder:notifyTargetChoice'),
+    liveSubscribe: () => ipcRenderer.invoke('gb:recorder:live:subscribe'),
+    liveUnsubscribe: () => ipcRenderer.invoke('gb:recorder:live:unsubscribe'),
+    levelsSubscribe: () => ipcRenderer.invoke('gb:recorder:levels:subscribe'),
+    levelsUnsubscribe: () => ipcRenderer.invoke('gb:recorder:levels:unsubscribe'),
   },
   chat: {
     send: (convId, text, attachmentPaths) =>

@@ -1,10 +1,14 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Editor } from '@tiptap/core';
 import type { EditorView } from '@tiptap/pm/view';
 import { NoteView } from '../components/NoteView';
 import { useNoteView } from '../stores/note-view';
+import { useSettings } from '../stores/settings';
+import { useFocusModeShortcuts, useFocusSurfaces } from '../lib/focus-mode';
+import { useGraphView } from '../stores/graph-view';
+import { useNavigation } from '../stores/navigation';
 import type { Note } from '../../shared/api-types';
 
 const apiRequest = vi.fn();
@@ -12,6 +16,9 @@ const apiRequest = vi.fn();
 beforeEach(() => {
   apiRequest.mockReset();
   useNoteView.getState().close();
+  useSettings.setState({ focusMode: false });
+  useFocusSurfaces.setState({ count: 0 });
+  useGraphView.getState().reset();
   window.gb = {
     ...window.gb,
     api: { request: apiRequest },
@@ -36,6 +43,10 @@ const manualNote: Note = {
   body: 'hand-written',
   frontmatter: { source: 'manual', context: 'work' },
 };
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe('NoteView', () => {
   it('renders the note in the rich editor with the synced-note warning chip', async () => {
@@ -94,7 +105,40 @@ describe('NoteView', () => {
       );
     });
     // The store should now point to the linked note
-    expect(useNoteView.getState().path).toBe('20-contexts/personal/_profile');
+    expect(useNoteView.getState().path).toBe('20-contexts/personal/_profile.md');
+  });
+
+  it('a bare [[Name]] link opens the note the link index resolves it to', async () => {
+    const bare: Note = {
+      path: '20-contexts/work/notes/bare.md',
+      title: 'bare',
+      body: 'See [[Beta]] now.',
+      frontmatter: { source: 'manual', context: 'work' },
+    };
+    apiRequest.mockImplementation(async (_method: string, path: string) =>
+      path.startsWith('/v1/vault/resolve')
+        ? { ok: true, data: { path: '20-contexts/work/Beta.md', exists: true, indexing: false } }
+        : { ok: true, data: bare },
+    );
+    let editor: Editor | undefined;
+    render(withQuery(<NoteView onEditorReady={(e) => { editor = e; }} />));
+    act(() => useNoteView.getState().open(bare.path));
+    await waitFor(() => expect(editor).toBeDefined());
+    act(() => {
+      let pos = -1;
+      editor!.state.doc.descendants((node, p) => {
+        if (node.isText && node.text?.includes('[[')) {
+          pos = p + node.text.indexOf('[[') + 4;
+          return false;
+        }
+      });
+      expect(pos).toBeGreaterThan(0);
+      editor!.view.someProp('handleClick', (f: (view: EditorView, pos: number, event: MouseEvent) => boolean | void) =>
+        f(editor!.view, pos, new MouseEvent('click')),
+      );
+    });
+    await waitFor(() => expect(useNoteView.getState().path).toBe('20-contexts/work/Beta.md'));
+    expect(apiRequest).toHaveBeenCalledWith('GET', '/v1/vault/resolve?target=Beta');
   });
 
   it('saves edits through PATCH /v1/notes/body', async () => {
@@ -124,4 +168,251 @@ describe('NoteView', () => {
       { timeout: 3000 },
     );
   });
+
+  it('sends the note etag as If-Match on autosave', async () => {
+    apiRequest.mockResolvedValue({ ok: true, data: { ...syncedNote, etag: '0123456789abcdef' } });
+    let editor: Editor | undefined;
+    render(
+      withQuery(
+        <NoteView
+          onEditorReady={(e) => {
+            editor = e;
+          }}
+        />,
+      ),
+    );
+    act(() => useNoteView.getState().open(syncedNote.path));
+    await waitFor(() => expect(editor).toBeDefined());
+    act(() => {
+      editor!.commands.insertContentAt(editor!.state.doc.content.size, 'edited tail');
+    });
+    await waitFor(
+      () =>
+        expect(apiRequest).toHaveBeenCalledWith(
+          'PATCH',
+          '/v1/notes/body',
+          { path: syncedNote.path, body: expect.stringContaining('edited tail') },
+          { ifMatch: '0123456789abcdef' },
+        ),
+      { timeout: 3000 },
+    );
+  });
+
+  it('closing under the conflict banner asks first and keeps the editor when declined', async () => {
+    apiRequest.mockImplementation(async (method: string) => {
+      if (method === 'PATCH') return { ok: false, status: 409, error: 'note changed' };
+      return { ok: true, data: { ...manualNote, body: 'their edit', etag: 'bbbbbbbbbbbbbbbb' } };
+    });
+    apiRequest.mockResolvedValueOnce({ ok: true, data: { ...manualNote, etag: 'aaaaaaaaaaaaaaaa' } });
+    let editor: Editor | undefined;
+    render(
+      withQuery(
+        <NoteView
+          onEditorReady={(e) => {
+            editor = e;
+          }}
+        />,
+      ),
+    );
+    act(() => useNoteView.getState().open(manualNote.path));
+    await waitFor(() => expect(editor).toBeDefined());
+    act(() => {
+      editor!.commands.insertContentAt(editor!.state.doc.content.size, 'my tail');
+    });
+    await screen.findByRole('alert', {}, { timeout: 3000 });
+
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'close' }));
+    fireEvent.click(screen.getByRole('dialog', { name: 'note viewer' }));
+    expect(confirm).toHaveBeenCalledTimes(3);
+    expect(useNoteView.getState().path).toBe(manualNote.path);
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+
+    confirm.mockReturnValue(true);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(useNoteView.getState().path).toBeNull();
+  });
+
+  it('opening another note from outside NoteView under the conflict banner asks first', async () => {
+    apiRequest.mockImplementation(async (method: string, path: string) => {
+      if (method === 'PATCH') return { ok: false, status: 409, error: 'note changed' };
+      if (path.startsWith('/v1/vault/backlinks')) {
+        return {
+          ok: true,
+          data: {
+            items: [{ path: '20-contexts/work/notes/standup.md', title: 'Standup', context: 'work', snippet: '' }],
+            indexing: false,
+          },
+        };
+      }
+      return { ok: true, data: { ...manualNote, body: 'their edit', etag: 'bbbbbbbbbbbbbbbb' } };
+    });
+    apiRequest.mockResolvedValueOnce({ ok: true, data: { ...manualNote, etag: 'aaaaaaaaaaaaaaaa' } });
+    let editor: Editor | undefined;
+    render(
+      withQuery(
+        <NoteView
+          onEditorReady={(e) => {
+            editor = e;
+          }}
+        />,
+      ),
+    );
+    act(() => useNoteView.getState().open(manualNote.path));
+    await waitFor(() => expect(editor).toBeDefined());
+    act(() => {
+      editor!.commands.insertContentAt(editor!.state.doc.content.size, 'my tail');
+    });
+    await screen.findByRole('alert', {}, { timeout: 3000 });
+
+    // A search result / backlink / chat link elsewhere calls the store directly.
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    act(() => useNoteView.getState().open(syncedNote.path));
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(confirm.mock.calls[0]![0]).toMatch(/Discard your text\?/);
+    expect(useNoteView.getState().path).toBe(manualNote.path);
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(screen.getByText(/my tail/)).toBeInTheDocument();
+
+    // In-view links ask exactly once too (no double prompt).
+    act(() => {
+      screen.getByText('Standup').click();
+    });
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(useNoteView.getState().path).toBe(manualNote.path);
+
+    confirm.mockReturnValue(true);
+    act(() => useNoteView.getState().open(syncedNote.path));
+    expect(useNoteView.getState().path).toBe(syncedNote.path);
+  });
+
+  it('shows backlinks for the open note and opens one on click', async () => {
+    apiRequest.mockImplementation(async (_method: string, path: string) => {
+      if (path.startsWith('/v1/vault/backlinks')) {
+        return {
+          ok: true,
+          data: {
+            items: [
+              {
+                path: '20-contexts/work/notes/standup.md',
+                title: 'Standup',
+                context: 'work',
+                snippet: 'see [[20-contexts/work/notes/manual-20260609T090000-x|manual note]]',
+              },
+            ],
+            indexing: false,
+          },
+        };
+      }
+      return { ok: true, data: manualNote };
+    });
+    render(withQuery(<NoteView />));
+    act(() => useNoteView.getState().open(manualNote.path));
+    expect(await screen.findByText('Standup')).toBeInTheDocument();
+    expect(screen.getByText('see manual note')).toBeInTheDocument();
+    act(() => {
+      screen.getByText('Standup').click();
+    });
+    expect(useNoteView.getState().path).toBe('20-contexts/work/notes/standup.md');
+  });
+
+  it('offers page history in the header', async () => {
+    apiRequest.mockResolvedValue({ ok: true, data: manualNote });
+    render(withQuery(<NoteView />));
+    act(() => useNoteView.getState().open(manualNote.path));
+    await screen.findByText('hand-written');
+    expect(screen.getByRole('button', { name: 'history' })).toBeInTheDocument();
+  });
+
+  it('in focus mode the viewer drops its header and backlinks, and Esc does not close it', async () => {
+    apiRequest.mockResolvedValue({ ok: true, data: manualNote });
+    useSettings.setState({ focusMode: true });
+    render(withQuery(<NoteView />));
+    act(() => useNoteView.getState().open(manualNote.path));
+    await screen.findByText('hand-written');
+
+    expect(screen.getByTestId('focus-bar')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'close' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'history' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /show in graph/ })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'backlinks' })).toBeNull();
+    expect(screen.getByTestId('rich-markdown-editor')).toHaveAttribute('data-focus', 'on');
+
+    // Without App's focus hook mounted, nothing leaves focus — but the viewer
+    // must still not treat this Esc as "close".
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(useNoteView.getState().path).toBe(manualNote.path);
+  });
+
+  it('without focus mode Esc still closes the viewer', async () => {
+    apiRequest.mockResolvedValue({ ok: true, data: manualNote });
+    render(withQuery(<NoteView />));
+    act(() => useNoteView.getState().open(manualNote.path));
+    await screen.findByText('hand-written');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(useNoteView.getState().path).toBeNull();
+  });
+
+  it('the header focus button turns focus mode on', async () => {
+    apiRequest.mockResolvedValue({ ok: true, data: manualNote });
+    render(withQuery(<NoteView />));
+    act(() => useNoteView.getState().open(manualNote.path));
+    await screen.findByText('hand-written');
+    fireEvent.click(screen.getByRole('button', { name: 'focus mode (⌘ .)' }));
+    await waitFor(() => expect(useSettings.getState().focusMode).toBe(true));
+    expect(await screen.findByTestId('focus-bar')).toBeInTheDocument();
+  });
+
+  it('"show in graph" closes the viewer and centres the graph on the note', async () => {
+    apiRequest.mockResolvedValue({ ok: true, data: manualNote });
+    render(withQuery(<NoteView />));
+    act(() => useNoteView.getState().open(manualNote.path));
+    await screen.findByText('hand-written');
+    fireEvent.click(screen.getByRole('button', { name: /show in graph/ }));
+    expect(useNoteView.getState().path).toBeNull();
+    expect(useGraphView.getState()).toMatchObject({ tab: 'graph', focus: manualNote.path });
+    expect(useNavigation.getState().active).toBe('vault');
+  });
+});
+
+function FocusShortcuts() {
+  useFocusModeShortcuts();
+  return null;
+}
+
+describe('NoteView Esc precedence with the focus-mode shortcuts mounted', () => {
+  // App mounts the shortcut hook once, before any note opens (its listener
+  // runs first); the reverse order is covered too so neither order regresses.
+  it.each(['shortcuts first (App order)', 'viewer first'])(
+    'first Esc leaves focus mode, second Esc closes the viewer (%s)',
+    async (order) => {
+      apiRequest.mockResolvedValue({ ok: true, data: manualNote });
+      useSettings.setState({ focusMode: true });
+      if (order === 'viewer first') {
+        render(withQuery(<NoteView />));
+        act(() => useNoteView.getState().open(manualNote.path));
+        await screen.findByText('hand-written');
+        render(<FocusShortcuts />);
+      } else {
+        render(
+          withQuery(
+            <>
+              <FocusShortcuts />
+              <NoteView />
+            </>,
+          ),
+        );
+        act(() => useNoteView.getState().open(manualNote.path));
+        await screen.findByText('hand-written');
+      }
+
+      fireEvent.keyDown(window, { key: 'Escape' });
+      await waitFor(() => expect(useSettings.getState().focusMode).toBe(false));
+      expect(useNoteView.getState().path).toBe(manualNote.path);
+
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(useNoteView.getState().path).toBeNull();
+    },
+  );
 });

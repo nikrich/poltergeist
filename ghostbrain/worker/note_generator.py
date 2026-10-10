@@ -128,6 +128,11 @@ def _build_frontmatter(
                     "accountId", "truncated"):
             if md.get(key) is not None:
                 front[key] = md[key]
+    elif source == "whatsapp":
+        for key in ("chatJid", "chatName", "chatKind", "day", "participants",
+                    "messageCount", "voiceNotes"):
+            if md.get(key) is not None:
+                front[key] = md[key]
 
     return front
 
@@ -145,6 +150,14 @@ def _filename_for(event: dict, note_id: str) -> str:
         if file_id:
             title_slug = _slugify(event.get("title") or "")[:60] or "doc"
             return f"{title_slug}-{file_id}.md"
+
+    if event.get("source") == "whatsapp":
+        # One note per chat per day, overwritten on every rebuild. The JID's
+        # last 12 digits keep it unique — group JIDs share a long prefix.
+        md = event.get("metadata") or {}
+        digits = re.sub(r"\D", "", md.get("chatJid") or "")[-12:] or "0"
+        name_slug = _slugify(md.get("chatName") or "")[:40] or "chat"
+        return f"{md.get('day')}-{name_slug}-{digits}.md"
 
     ts = event.get("timestamp") or datetime.now(timezone.utc).isoformat()
     ts_slug = re.sub(r"[^0-9TZ]", "", ts)[:15]  # 20260507T103000

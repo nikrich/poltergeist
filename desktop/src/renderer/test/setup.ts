@@ -38,6 +38,9 @@ const defaultSettings: Settings = {
 
   schedulerEnabled: false,
   onboardingComplete: false,
+  focusMode: false,
+  readAloudVoice: '',
+  readAloudRate: 1,
 
   hotkeys: {
     jotOverlay: 'Alt+J',
@@ -52,6 +55,7 @@ const stubBridge: GbBridge = {
   dialogs: { pickVaultFolder: async () => null },
   shell: {
     openPath: async () => ({ ok: true }),
+    showItemInFolder: async () => ({ ok: true }),
     openExternal: async () => ({ ok: true }),
   },
   cli: {
@@ -60,7 +64,14 @@ const stubBridge: GbBridge = {
   platform: 'darwin',
   api: { request: (async () => ({ ok: true, data: null })) as GbBridge['api']['request'] },
   sidecar: { retry: async () => ({ ok: true }) },
-  recorder: { notifyTargetChoice: async () => ({ ok: true }) },
+  recorder: {
+    notifyTargetChoice: async () => ({ ok: true }),
+    // An open stream that never sends anything; tests drive events themselves.
+    liveSubscribe: () => new Promise(() => {}),
+    liveUnsubscribe: async () => ({ ok: true }),
+    levelsSubscribe: () => new Promise(() => {}),
+    levelsUnsubscribe: async () => ({ ok: true }),
+  },
   chat: {
     send: async () => ({ ok: true }),
     stop: async () => ({ ok: true }),

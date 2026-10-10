@@ -50,4 +50,20 @@ describe('settings store', () => {
     const { getAll } = await import('./settings');
     expect(getAll().theme).toBe('dark');
   });
+
+  it('defaults the editor keys: focus off, auto voice, normal rate', async () => {
+    const { getAll } = await import('./settings');
+    const s = getAll();
+    expect(s.focusMode).toBe(false);
+    expect(s.readAloudVoice).toBe('');
+    expect(s.readAloudRate).toBe(1);
+  });
+
+  it('an older config.json without the editor keys gets their defaults', async () => {
+    const { writeFileSync } = await import('node:fs');
+    writeFileSync(join(workDir, 'config.json'), JSON.stringify({ version: 1, theme: 'light' }));
+    const { getAll } = await import('./settings');
+    expect(getAll().focusMode).toBe(false);
+    expect(getAll().readAloudRate).toBe(1);
+  });
 });

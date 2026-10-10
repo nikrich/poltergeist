@@ -33,6 +33,8 @@ def write_recorder(payload: UpdateRecorderSettings) -> dict:
             capture_slides=payload.capture_slides,
             slide_fps=payload.slide_fps,
             slide_fallback=payload.slide_fallback,
+            transcription_language=payload.transcription_language,
+            live_transcription=payload.live_transcription,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

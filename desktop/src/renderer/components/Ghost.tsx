@@ -5,7 +5,7 @@ interface Props {
   className?: string;
 }
 
-export function Ghost({ size = 22, color = 'var(--neon)', floating = false, className = '' }: Props) {
+export function Ghost({ size = 22, color = 'var(--ghost-logo)', floating = false, className = '' }: Props) {
   return (
     <svg
       viewBox="0 0 100 110"

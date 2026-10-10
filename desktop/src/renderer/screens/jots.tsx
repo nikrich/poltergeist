@@ -5,9 +5,17 @@ import { ConfluenceExportDialog } from '../components/ConfluenceExportDialog';
 import { Lucide } from '../components/Lucide';
 import { Pill } from '../components/Pill';
 import { JotTree } from '../components/JotTree';
-import { RichMarkdownEditor } from '../components/RichMarkdownEditor';
+import { TemplateMenu } from '../components/TemplatePicker';
+import { GuardedNoteEditor, confirmLeave, type GuardHandle } from '../components/GuardedNoteEditor';
 import type { EditorHandle } from '../components/RichMarkdownEditor';
 import { DocsAssistPanel } from '../components/DocsAssistPanel';
+import { FocusBar } from '../components/FocusBar';
+import { setFocusMode, useFocusActive, useFocusSurface } from '../lib/focus-mode';
+import { shortcutLabel } from '../lib/editor-shortcuts';
+import { get } from '../lib/api/client';
+import { BacklinksPanel } from '../components/BacklinksPanel';
+import { NoteHistoryButton } from '../components/NoteHistory';
+import { openWikilink } from '../lib/open-wikilink';
 import {
   useAutoRouteJot,
   useConnectors,
@@ -21,14 +29,17 @@ import {
   useRouteJot,
   useUpdateJot,
 } from '../lib/api/hooks';
+import type { Note } from '../../shared/api-types';
 import { toast } from '../stores/toast';
 import { useNoteView } from '../stores/note-view';
+import { useGraphView } from '../stores/graph-view';
 import { useDocsAssist } from '../stores/docs-assist';
 
 export function JotsScreen() {
   const knownContexts = useContexts().data?.contexts ?? [];
   const [q, setQ] = useState('');
   const openNote = useNoteView((s) => s.open);
+  const showInGraph = useGraphView((s) => s.showInGraph);
   const list = useJots({ q: q || undefined });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showConfluenceDialog, setShowConfluenceDialog] = useState(false);
@@ -57,19 +68,32 @@ export function JotsScreen() {
   // the `body` prop; subsequent RQ refetches change `detail.data.body` but do
   // NOT change `initialBody`, so the editor never sees a mid-session prop flip.
   // On jot switch the ref is cleared and repopulated when the new detail lands.
-  const initialBodyRef = useRef<{ id: string; body: string } | null>(null);
+  // The etag is frozen with the body: GuardedNoteEditor chains etags itself.
+  const initialBodyRef = useRef<{ id: string; body: string; etag: string | null } | null>(null);
   if (
     detail.data &&
     selectedId &&
     (initialBodyRef.current === null || initialBodyRef.current.id !== selectedId)
   ) {
-    initialBodyRef.current = { id: selectedId, body: detail.data.body };
+    initialBodyRef.current = { id: selectedId, body: detail.data.body, etag: detail.data.etag ?? null };
   }
   if (selectedId === null) {
     initialBodyRef.current = null;
   }
-  const editorBody =
-    initialBodyRef.current?.id === selectedId ? initialBodyRef.current.body : undefined;
+  const editorInitial =
+    initialBodyRef.current?.id === selectedId ? initialBodyRef.current : undefined;
+  // Focus mode (A4) applies only while a jot is open in the editor.
+  useFocusSurface(editorInitial !== undefined);
+  const focusActive = useFocusActive();
+
+  // Latest path for conflict re-reads: a re-route moves the file while the
+  // editor stays mounted (keyed by id, not path).
+  const selectedPathRef = useRef<string | null>(null);
+  selectedPathRef.current = selectedItem?.path ?? null;
+  const guardRef = useRef<GuardHandle | null>(null);
+  // Late extract-photo results must not land in a jot the user has left.
+  const selectedIdRef = useRef(selectedId);
+  selectedIdRef.current = selectedId;
 
   // Imperative handle wired to the editor for docs-assist and PDF export.
   const editorHandle = useRef<EditorHandle | null>(null);
@@ -166,7 +190,14 @@ export function JotsScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Switching jots remounts the editor: under the conflict banner, ask first.
+  function selectJot(id: string) {
+    if (id !== selectedId && !confirmLeave(guardRef)) return;
+    setSelectedId(id);
+  }
+
   function handleNew() {
+    if (!confirmLeave(guardRef)) return;
     createJot.mutate(
       { body: 'new jot\n\n', route: false },
       {
@@ -177,11 +208,6 @@ export function JotsScreen() {
         onError: (err) => toast.error(`could not create jot: ${err.message}`),
       },
     );
-  }
-
-  function handleSaveBody(next: string) {
-    if (!selectedId) return;
-    updateJot.mutate({ id: selectedId, body: next });
   }
 
   function handleReroute(value: string) {
@@ -240,178 +266,239 @@ export function JotsScreen() {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden bg-paper">
-      <TopBar
-        title="jots"
-        subtitle={list.data ? `${list.data.total} total` : '…'}
-        right={
-          <div className="flex gap-2">
-            <Btn
-              variant="ghost"
-              size="sm"
-              icon={<Lucide name="sparkles" size={13} />}
-              onClick={toggleAssist}
-            >
-              assist
-            </Btn>
-            <Btn
-              icon={<Lucide name="camera" size={13} />}
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                if (selectedId) {
-                  setCameraSignal((n) => n + 1);
-                } else {
-                  handleNew();
-                  toast.info('jot created — tap capture to add a photo');
-                }
-              }}
-            />
-            <Btn
-              variant="primary"
-              size="sm"
-              icon={<Lucide name="plus" size={13} />}
-              onClick={handleNew}
-              disabled={createJot.isPending}
-            >
-              new
-            </Btn>
-          </div>
-        }
-      />
-      <div className="flex flex-shrink-0 border-b border-hairline px-4 py-2">
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="search jots…"
-          className="w-full bg-transparent text-12 text-ink-0 outline-none"
-        />
-      </div>
-      <div className="flex flex-1 overflow-hidden">
-        <aside className="w-[260px] flex-shrink-0 overflow-y-auto border-r border-hairline">
-          {list.data?.items.length === 0 && !list.isLoading && (
-            <div className="flex flex-1 items-center justify-center px-4 py-8 text-center text-12 text-ink-3">
-              no jots yet — press ⌥-J to create one
+      {focusActive ? (
+        <FocusBar />
+      ) : (
+        <TopBar
+          title="jots"
+          subtitle={list.data ? `${list.data.total} total` : '…'}
+          right={
+            <div className="flex gap-2">
+              {selectedItem && (
+                <NoteHistoryButton key={selectedItem.path} path={selectedItem.path} guardRef={guardRef} />
+              )}
+              <Btn
+                variant="ghost"
+                size="sm"
+                icon={<Lucide name="maximize-2" size={13} />}
+                onClick={() => void setFocusMode(true)}
+                disabled={editorInitial === undefined}
+                ariaLabel={`focus mode (${shortcutLabel('focus')})`}
+              />
+              <Btn
+                variant="ghost"
+                size="sm"
+                icon={<Lucide name="sparkles" size={13} />}
+                onClick={toggleAssist}
+              >
+                assist
+              </Btn>
+              <Btn
+                icon={<Lucide name="camera" size={13} />}
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  if (selectedId) {
+                    setCameraSignal((n) => n + 1);
+                  } else {
+                    handleNew();
+                    toast.info('jot created — tap capture to add a photo');
+                  }
+                }}
+              />
+              <TemplateMenu
+                onCreated={(res) => {
+                  if (res.status === 'pending') {
+                    toast.info('note saved for approval');
+                    return;
+                  }
+                  toast.success(`created — ${res.title}`);
+                  openNote(res.path);
+                }}
+              />
+              <Btn
+                variant="primary"
+                size="sm"
+                icon={<Lucide name="plus" size={13} />}
+                onClick={handleNew}
+                disabled={createJot.isPending}
+              >
+                new
+              </Btn>
             </div>
-          )}
-          <JotTree
-            items={list.data?.items ?? []}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
+          }
+        />
+      )}
+      {!focusActive && (
+        <div className="flex flex-shrink-0 border-b border-hairline px-4 py-2">
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="search jots…"
+            className="w-full bg-transparent text-12 text-ink-0 outline-none"
           />
-        </aside>
+        </div>
+      )}
+      <div className="flex flex-1 overflow-hidden">
+        {!focusActive && (
+          <aside className="w-[260px] flex-shrink-0 overflow-y-auto border-r border-hairline">
+            {list.data?.items.length === 0 && !list.isLoading && (
+              <div className="flex flex-1 items-center justify-center px-4 py-8 text-center text-12 text-ink-3">
+                no jots yet — press ⌥-J to create one
+              </div>
+            )}
+            <JotTree
+              items={list.data?.items ?? []}
+              selectedId={selectedId}
+              onSelect={selectJot}
+            />
+          </aside>
+        )}
         <main className="flex flex-1 flex-col">
-          {editorBody !== undefined ? (
+          {editorInitial !== undefined ? (
             <>
               <div className="flex-1 overflow-auto">
                 {/* key={selectedId} remounts the editor on jot switch, wiping
                     internal debounce timers. The markdown prop is frozen to
                     the initial fetch so mid-session RQ refetches never reset
                     the editor's internal value. */}
-                <RichMarkdownEditor
+                <GuardedNoteEditor
                   key={selectedId!}
-                  markdown={editorBody}
-                  onSave={handleSaveBody}
-                  onWikilinkClick={openNote}
-                  handleRef={editorHandle}
-                  jotId={selectedId!}
-                  openCameraSignal={cameraSignal}
-                  onPhotoInserted={(jotId, assetPath) => {
-                    toast.info('reading photo…');
-                    extractPhoto.mutate({ jotId, assetPath }, {
-                      onSuccess: (res) => {
-                        if (res.extracted) {
-                          editorHandle.current?.replaceWith(res.body, 'doc');
-                          toast.success('photo text extracted');
-                        } else {
-                          toast.info(`couldn't read photo: ${res.reason ?? ''}`);
-                        }
-                      },
-                      onError: (err) => toast.error(`extract failed: ${err.message}`),
-                    });
+                  initialBody={editorInitial.body}
+                  initialEtag={editorInitial.etag}
+                  send={(body, ifMatch) => updateJot.mutateAsync({ id: selectedId!, body, ifMatch })}
+                  fetchLatest={() =>
+                    get<Note>(`/v1/notes?path=${encodeURIComponent(selectedPathRef.current ?? '')}`)
+                  }
+                  onSaveError={(err) => toast.error(`save failed: ${err.message}`)}
+                  guardRef={guardRef}
+                  navigationScope="screen"
+                  editorProps={{
+                    focus: focusActive,
+                    onWikilinkClick: (target) => openWikilink(target, openNote),
+                    handleRef: editorHandle,
+                    jotId: selectedId!,
+                    openCameraSignal: cameraSignal,
+                    onPhotoInserted: (jotId, assetPath) => {
+                      toast.info('reading photo…');
+                      extractPhoto.mutate({ jotId, assetPath }, {
+                        onSuccess: (res) => {
+                          if (res.extracted) {
+                            // The server wrote the callout: take its etag before
+                            // the editor's own autosave of the same text — unless
+                            // the user has since switched to another jot.
+                            if (selectedIdRef.current === jotId) {
+                              guardRef.current?.adopt(res.etag ?? null, res.body);
+                              editorHandle.current?.replaceWith(res.body, 'doc');
+                            }
+                            toast.success('photo text extracted');
+                          } else {
+                            toast.info(`couldn't read photo: ${res.reason ?? ''}`);
+                          }
+                        },
+                        onError: (err) => toast.error(`extract failed: ${err.message}`),
+                      });
+                    },
                   }}
                 />
               </div>
-              <footer className="flex items-center gap-2 border-t border-hairline px-4 py-2 text-11 text-ink-2">
-                {selectedItem?.context && (
-                  <Pill>
-                    {selectedItem.context}
-                    {selectedItem.project ? ` / ${selectedItem.project}` : ''}
-                  </Pill>
-                )}
-                {selectedItem?.routingStatus && <Pill>{selectedItem.routingStatus}</Pill>}
-                <div className="ml-auto flex items-center gap-2">
-                  {selectedItem?.routingStatus !== 'routed' && (
-                    <Btn
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        if (!selectedId) return;
-                        autoRoute.mutate(selectedId, {
-                          onSuccess: (res) => {
-                            if (res.routingStatus === 'routed' && res.context) {
-                              toast.info(`filed to ${res.context}`);
-                            } else {
-                              toast.info('kept for manual review — content too ambiguous');
-                            }
-                          },
-                          onError: (err) => toast.error(`auto-route failed: ${err.message}`),
-                        });
-                      }}
-                      disabled={autoRoute.isPending}
-                    >
-                      route now
-                    </Btn>
+              {selectedItem && !focusActive && (
+                <BacklinksPanel path={selectedItem.path} onOpen={openNote} />
+              )}
+              {!focusActive && (
+                <footer className="flex items-center gap-2 border-t border-hairline px-4 py-2 text-11 text-ink-2">
+                  {selectedItem?.context && (
+                    <Pill>
+                      {selectedItem.context}
+                      {selectedItem.project ? ` / ${selectedItem.project}` : ''}
+                    </Pill>
                   )}
-                  <select
-                    onChange={(e) => {
-                      if (e.target.value) {
-                        handleReroute(e.target.value);
-                        // Reset so the placeholder shows again after selection
+                  {selectedItem?.routingStatus && <Pill>{selectedItem.routingStatus}</Pill>}
+                  <div className="ml-auto flex items-center gap-2">
+                    {selectedItem && (
+                      <Btn
+                        variant="ghost"
+                        size="sm"
+                        icon={<Lucide name="network" size={13} />}
+                        // No confirmLeave: the editor's screen guard asks on setActive('vault').
+                        onClick={() => showInGraph(selectedItem.path)}
+                      >
+                        show in graph
+                      </Btn>
+                    )}
+                    {selectedItem?.routingStatus !== 'routed' && (
+                      <Btn
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          if (!selectedId) return;
+                          autoRoute.mutate(selectedId, {
+                            onSuccess: (res) => {
+                              if (res.routingStatus === 'routed' && res.context) {
+                                toast.info(`filed to ${res.context}`);
+                              } else {
+                                toast.info('kept for manual review — content too ambiguous');
+                              }
+                            },
+                            onError: (err) => toast.error(`auto-route failed: ${err.message}`),
+                          });
+                        }}
+                        disabled={autoRoute.isPending}
+                      >
+                        route now
+                      </Btn>
+                    )}
+                    <select
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          handleReroute(e.target.value);
+                          // Reset so the placeholder shows again after selection
+                          e.target.value = '';
+                        }
+                      }}
+                      defaultValue=""
+                      className="bg-transparent text-11 text-ink-1"
+                    >
+                      <option value="" disabled>
+                        re-route…
+                      </option>
+                      {knownContexts.map((c) => (
+                        <optgroup key={c} label={c}>
+                          <option value={c}>{c}</option>
+                          {(Array.isArray(projects.data) ? projects.data : [])
+                            .filter((p) => p.context === c)
+                            .map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {c} / {p.name}
+                              </option>
+                            ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                    <select
+                      onChange={(e) => {
+                        const v = e.target.value;
                         e.target.value = '';
-                      }
-                    }}
-                    defaultValue=""
-                    className="bg-transparent text-11 text-ink-1"
-                  >
-                    <option value="" disabled>
-                      re-route…
-                    </option>
-                    {knownContexts.map((c) => (
-                      <optgroup key={c} label={c}>
-                        <option value={c}>{c}</option>
-                        {(Array.isArray(projects.data) ? projects.data : [])
-                          .filter((p) => p.context === c)
-                          .map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {c} / {p.name}
-                            </option>
-                          ))}
-                      </optgroup>
-                    ))}
-                  </select>
-                  <select
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      e.target.value = '';
-                      handleExportSelect(v);
-                    }}
-                    defaultValue=""
-                    className="bg-transparent text-11 text-ink-1"
-                    aria-label="export…"
-                  >
-                    <option value="" disabled>
-                      export…
-                    </option>
-                    <option value="confluence" disabled={!confluenceEnabled}>
-                      confluence{!confluenceEnabled ? ' (not connected)' : ''}
-                    </option>
-                    <option value="pdf">pdf</option>
-                  </select>
-                  <Btn variant="ghost" size="sm" onClick={handleDelete}>
-                    delete
-                  </Btn>
-                </div>
-              </footer>
+                        handleExportSelect(v);
+                      }}
+                      defaultValue=""
+                      className="bg-transparent text-11 text-ink-1"
+                      aria-label="export…"
+                    >
+                      <option value="" disabled>
+                        export…
+                      </option>
+                      <option value="confluence" disabled={!confluenceEnabled}>
+                        confluence{!confluenceEnabled ? ' (not connected)' : ''}
+                      </option>
+                      <option value="pdf">pdf</option>
+                    </select>
+                    <Btn variant="ghost" size="sm" onClick={handleDelete}>
+                      delete
+                    </Btn>
+                  </div>
+                </footer>
+              )}
             </>
           ) : (
             <div className="flex flex-1 items-center justify-center text-13 text-ink-3">
@@ -422,7 +509,7 @@ export function JotsScreen() {
           )}
         </main>
         {/* Docs assist panel — right aside, only when open and a jot is selected */}
-        {assistOpen && selectedId && (
+        {assistOpen && selectedId && !focusActive && (
           <aside className="w-[320px] flex-shrink-0 overflow-y-auto border-l border-hairline">
             <DocsAssistPanel jotId={selectedId} editorHandle={editorHandle} />
           </aside>

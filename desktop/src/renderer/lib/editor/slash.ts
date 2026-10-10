@@ -32,6 +32,17 @@ export const SLASH_ITEMS: SlashItem[] = [
       (e as any).emit('gb:slash:photo');
     },
   },
+  {
+    key: 'template',
+    title: 'Template',
+    run: (e, r) => {
+      e.chain().focus().deleteRange(r).run();
+      // EditorEvents is a closed interface; gb:slash:template is a custom event
+      // handled by RichMarkdownEditor (opens TemplateInsertDialog).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (e as any).emit('gb:slash:template');
+    },
+  },
 ];
 
 export function filterSlashItems(query: string): SlashItem[] {

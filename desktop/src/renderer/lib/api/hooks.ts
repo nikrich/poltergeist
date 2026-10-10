@@ -1,6 +1,13 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type {
+  DocDetail,
+  DocFolderNode,
+  DocSummary,
+  FolderRef,
+  LibraryTree,
+  UploadDocRequest,
+  UploadDocResponse,
   ImportSpace,
   ActivityRow,
   AgendaItem,
@@ -12,6 +19,7 @@ import type {
   ConfluenceExportRequest,
   ConfluenceExportResponse,
   BackfillState,
+  BacklinksResponse,
   Connector,
   ConnectorDetail,
   Conversation,
@@ -21,14 +29,17 @@ import type {
   CreateProjectRequest,
   DailyPage,
   HeatmapResponse,
+  HistoryBlobResponse,
   JotsPage,
   LlmProvidersResponse,
   LlmSettings,
   MeetingsPage,
   Note,
+  NoteHistoryResponse,
   Prep,
   Project,
   CaptureHelperDiagnostics,
+  RestoreHistoryResponse,
   RecorderSettings,
   RecorderStatus,
   SearchResponse,
@@ -38,15 +49,22 @@ import type {
   UpdateLlmSettings,
   UpdateNoteBodyRequest,
   UpdateNoteBodyResponse,
+  UpdateJotResponse,
   UpdateProjectRequest,
   UpdateRecorderSettings,
   VaultGraph,
+  EgoGraph,
   VaultContexts,
+  WhatsAppChat,
   VaultStats,
   McpServersResponse,
   McpServerWrite,
+  TemplateCreateResponse,
+  TemplateRenderResponse,
+  TemplatesResponse,
 } from '../../../shared/api-types';
 import { ApiError, del, get, patch, post, put } from './client';
+import { reportHistoryHealth } from '../history-health';
 
 export function useVaultStats() {
   return useQuery({
@@ -89,11 +107,38 @@ export function useArchiveContext() {
   });
 }
 
-export function useVaultGraph() {
+export function useVaultGraph(opts: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: ['vault', 'graph'],
     queryFn: () => get<VaultGraph>('/v1/vault/graph'),
     staleTime: 60_000,
+    enabled: opts.enabled ?? true,
+  });
+}
+
+/** Link neighbourhood of `focus` (A6). Keeps the previous graph on screen
+ * while a recentre loads; polls while the sidecar's link index is cold. */
+export function useEgoGraph(focus: string | null, depth: number) {
+  return useQuery({
+    queryKey: ['vault', 'graph', 'ego', focus, depth],
+    queryFn: () =>
+      get<EgoGraph>(`/v1/vault/graph?focus=${encodeURIComponent(focus!)}&depth=${depth}`),
+    enabled: focus !== null,
+    staleTime: 10_000,
+    placeholderData: keepPreviousData,
+    refetchInterval: (query) => (query.state.data?.indexing ? 3_000 : false),
+  });
+}
+
+export function useBacklinks(path: string | null) {
+  return useQuery({
+    queryKey: ['vault', 'backlinks', path],
+    queryFn: () =>
+      get<BacklinksResponse>(`/v1/vault/backlinks?path=${encodeURIComponent(path!)}`),
+    enabled: path !== null,
+    staleTime: 5_000,
+    // Cold link index on the sidecar: poll until it's built.
+    refetchInterval: (query) => (query.state.data?.indexing ? 3_000 : false),
   });
 }
 
@@ -576,21 +621,28 @@ export function useCreateJot() {
   return useMutation({
     mutationFn: (req: CreateJotRequest) =>
       post<CreateJotResponse>('/v1/notes', req),
-    onSuccess: () => qc.invalidateQueries({ queryKey: JOTS_KEY }),
+    onSuccess: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: JOTS_KEY }),
+        qc.invalidateQueries({ queryKey: ['vault', 'backlinks'] }),
+      ]),
   });
 }
 
 export function useUpdateJot() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { id: string; body: string }) =>
-      patch<{ id: string; path: string; updated: string }>(
+    mutationFn: (vars: { id: string; body: string; ifMatch?: string | null }) =>
+      patch<UpdateJotResponse>(
         `/v1/notes/${encodeURIComponent(vars.id)}`,
         { body: vars.body },
+        { ifMatch: vars.ifMatch },
       ),
-    onSuccess: () => {
+    onSuccess: (res) => {
+      reportHistoryHealth(res);
       qc.invalidateQueries({ queryKey: JOTS_KEY });
       qc.invalidateQueries({ queryKey: ['note-by-path'] });
+      qc.invalidateQueries({ queryKey: ['vault', 'backlinks'] });
     },
   });
 }
@@ -607,6 +659,7 @@ export function useRouteJot() {
       qc.invalidateQueries({ queryKey: JOTS_KEY });
       // Routing moves the file — the open detail view's path is now stale.
       qc.invalidateQueries({ queryKey: ['note-by-path'] });
+      qc.invalidateQueries({ queryKey: ['vault', 'backlinks'] });
     },
   });
 }
@@ -619,6 +672,7 @@ export function useAutoRouteJot() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: JOTS_KEY });
       qc.invalidateQueries({ queryKey: ['note-by-path'] });
+      qc.invalidateQueries({ queryKey: ['vault', 'backlinks'] });
     },
   });
 }
@@ -631,6 +685,7 @@ export function useExtractPhoto() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: JOTS_KEY });
       qc.invalidateQueries({ queryKey: ['note-by-path'] });
+      qc.invalidateQueries({ queryKey: ['vault', 'backlinks'] });
     },
   });
 }
@@ -639,20 +694,68 @@ export function useDeleteJot() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => del(`/v1/notes/${encodeURIComponent(id)}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: JOTS_KEY }),
+    onSuccess: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: JOTS_KEY }),
+        qc.invalidateQueries({ queryKey: ['vault', 'backlinks'] }),
+      ]),
   });
 }
 
 export function useUpdateNoteByPath() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: UpdateNoteBodyRequest) =>
-      patch<UpdateNoteBodyResponse>('/v1/notes/body', vars),
-    onSuccess: () => {
+    mutationFn: (vars: UpdateNoteBodyRequest & { ifMatch?: string | null }) =>
+      patch<UpdateNoteBodyResponse>(
+        '/v1/notes/body',
+        { path: vars.path, body: vars.body },
+        { ifMatch: vars.ifMatch },
+      ),
+    onSuccess: (res) => {
+      reportHistoryHealth(res);
       // Both caches read GET /v1/notes?path= — ['note'] (useNote/NoteView)
       // and ['note-by-path'] (useJot/jots screen).
       qc.invalidateQueries({ queryKey: ['note'] });
       qc.invalidateQueries({ queryKey: ['note-by-path'] });
+      qc.invalidateQueries({ queryKey: ['vault', 'backlinks'] });
+    },
+  });
+}
+
+export function useNoteHistory(path: string | null) {
+  return useQuery({
+    queryKey: ['note-history', path],
+    queryFn: () =>
+      get<NoteHistoryResponse>(`/v1/notes/history?path=${encodeURIComponent(path!)}`),
+    enabled: path !== null,
+    staleTime: 0,
+  });
+}
+
+export function useHistoryVersion(path: string | null, blob: string | null) {
+  return useQuery({
+    queryKey: ['note-history', path, blob],
+    queryFn: () =>
+      get<HistoryBlobResponse>(
+        `/v1/notes/history/blob?path=${encodeURIComponent(path!)}&blob=${encodeURIComponent(blob!)}`,
+      ),
+    enabled: path !== null && blob !== null,
+    staleTime: 0,
+  });
+}
+
+export function useRestoreVersion() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { path: string; blob: string }) =>
+      post<RestoreHistoryResponse>('/v1/notes/history/restore', vars),
+    onSuccess: (res) => {
+      reportHistoryHealth(res);
+      qc.invalidateQueries({ queryKey: ['note-history'] });
+      qc.invalidateQueries({ queryKey: ['note'] });
+      qc.invalidateQueries({ queryKey: ['note-by-path'] });
+      qc.invalidateQueries({ queryKey: JOTS_KEY });
+      qc.invalidateQueries({ queryKey: ['vault', 'backlinks'] });
     },
   });
 }
@@ -904,5 +1007,190 @@ export function useRecheckLlmProviders() {
   return useMutation({
     mutationFn: () => get<LlmProvidersResponse>('/v1/llm/providers?refresh=1'),
     onSuccess: (data) => qc.setQueryData(['llm', 'providers'], data),
+  });
+}
+
+export function useWhatsAppChats(enabled = true) {
+  return useQuery({
+    queryKey: ['whatsapp', 'chats'],
+    queryFn: () => get<WhatsAppChat[]>('/v1/connectors/whatsapp/chats'),
+    enabled,
+    retry: false,
+    staleTime: 60_000,
+  });
+}
+
+export function useSaveWhatsAppChats() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (chats: Record<string, { allowed: boolean; context: string | null }>) =>
+      put<WhatsAppChat[]>('/v1/connectors/whatsapp/chats', { chats }),
+    onSuccess: (data) => {
+      qc.setQueryData(['whatsapp', 'chats'], data);
+      qc.invalidateQueries({ queryKey: ['connectors'] });
+      qc.invalidateQueries({ queryKey: ['connector', 'whatsapp'] });
+    },
+  });
+}
+
+// ── Docs library ─────────────────────────────────────────────────────────────
+
+const invalidateLibrary = (qc: ReturnType<typeof useQueryClient>) =>
+  qc.invalidateQueries({ queryKey: ['library'] });
+
+function anyPending(tree: LibraryTree | undefined): boolean {
+  if (!tree) return false;
+  const walk = (n: { docs: DocSummary[]; folders: DocFolderNode[] }): boolean =>
+    n.docs.some((d) => d.summary_state === 'pending' || d.index_status === 'pending') || n.folders.some(walk);
+  return tree.scopes.some(walk);
+}
+
+export function useLibraryTree() {
+  return useQuery({
+    queryKey: ['library', 'tree'],
+    queryFn: () => get<LibraryTree>('/v1/library/tree'),
+    staleTime: 5_000,
+    refetchInterval: (q) => (anyPending(q.state.data as LibraryTree | undefined) ? 3_000 : false),
+  });
+}
+
+export function useSummariseDoc() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (docId: string) => post<{ queued: boolean }>(`/v1/library/docs/${docId}/summarise`),
+    onSuccess: () => invalidateLibrary(qc),
+  });
+}
+
+export function useDocDetail(docId: string | null) {
+  return useQuery({
+    queryKey: ['library', 'doc', docId],
+    queryFn: () => get<DocDetail>(`/v1/library/docs/${docId}`),
+    enabled: !!docId,
+  });
+}
+
+export function useLibrarySearch(q: string, project?: string | null) {
+  const params = new URLSearchParams({ q });
+  if (project) params.set('project', project);
+  return useQuery({
+    queryKey: ['library', 'search', q, project ?? null],
+    queryFn: () => get<DocSummary[]>(`/v1/library/search?${params.toString()}`),
+    enabled: q.trim().length > 0,
+    staleTime: 5_000,
+  });
+}
+
+export function useUploadDoc() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: UploadDocRequest) => post<UploadDocResponse>('/v1/library/docs', req),
+    onSuccess: () => invalidateLibrary(qc),
+  });
+}
+
+export function usePatchDoc() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ docId, ...body }: { docId: string; title?: string; context?: string; project?: string | null; folder?: string }) =>
+      patch<DocSummary>(`/v1/library/docs/${docId}`, body),
+    onSuccess: () => invalidateLibrary(qc),
+  });
+}
+
+export function useDeleteDoc() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (docId: string) => del(`/v1/library/docs/${docId}`),
+    onSuccess: () => invalidateLibrary(qc),
+  });
+}
+
+export function useReindexDoc() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (docId: string) => post<DocSummary>(`/v1/library/docs/${docId}/reindex`),
+    onSuccess: () => invalidateLibrary(qc),
+  });
+}
+
+export function useCreateFolder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ref: FolderRef) => post<FolderRef>('/v1/library/folders', ref),
+    onSuccess: () => invalidateLibrary(qc),
+  });
+}
+
+export function useMoveFolder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { from: FolderRef; to: FolderRef }) => patch<FolderRef>('/v1/library/folders', vars),
+    onSuccess: () => invalidateLibrary(qc),
+  });
+}
+
+export function useDeleteFolder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ref: FolderRef) => {
+      const params = new URLSearchParams({ context: ref.context, path: ref.path });
+      if (ref.project) params.set('project', ref.project);
+      return del(`/v1/library/folders?${params.toString()}`);
+    },
+    onSuccess: () => invalidateLibrary(qc),
+  });
+}
+
+export function useAdoptOriginal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { context: string; project: string | null; folder: string; name: string }) =>
+      post<DocSummary>('/v1/library/attention/adopt', vars),
+    onSuccess: () => invalidateLibrary(qc),
+  });
+}
+
+export function useRemoveOrphan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (docId: string) => post('/v1/library/attention/remove-orphan', { doc_id: docId }),
+    onSuccess: () => invalidateLibrary(qc),
+  });
+}
+
+// ── Smart templates (C1) ──────────────────────────────────────────────────
+
+export function useTemplates(opts: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: ['templates'],
+    queryFn: () => get<TemplatesResponse>('/v1/templates'),
+    enabled: opts.enabled ?? true,
+    staleTime: 10_000,
+  });
+}
+
+export interface TemplateAnswersVars {
+  id: string;
+  answers: Record<string, string>;
+}
+
+export function useCreateFromTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, answers }: TemplateAnswersVars) =>
+      post<TemplateCreateResponse>(`/v1/templates/${encodeURIComponent(id)}/create`, { answers }),
+    onSuccess: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: JOTS_KEY }),
+        qc.invalidateQueries({ queryKey: ['vault', 'backlinks'] }),
+      ]),
+  });
+}
+
+export function useRenderTemplate() {
+  return useMutation({
+    mutationFn: ({ id, answers }: TemplateAnswersVars) =>
+      post<TemplateRenderResponse>(`/v1/templates/${encodeURIComponent(id)}/render`, { answers }),
   });
 }

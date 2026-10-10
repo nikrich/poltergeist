@@ -1,5 +1,170 @@
 # Changelog
 
+## [1.13.0](https://github.com/nikrich/poltergeist/compare/v1.12.0...v1.13.0) (2026-10-10)
+
+
+### Features
+
+* feat(docs): AI summaries and ask-about-this-doc (docs library slice 2) (#149)
+* feat(settings): editor section with read-aloud voice, speed and preview
+* feat(editor): read-aloud controls with sentence highlight and ⌘⇧L
+* feat(read-aloud): offline voice list and language-aware voice choice
+* feat(read-aloud): per-sentence playback controller with stale-event guard
+* feat(read-aloud): decoration-only current-sentence highlight
+* feat(read-aloud): sentence segments from the editor doc + language guess
+* feat(jots): focus mode in the jots screen and note viewer
+* feat(editor): focus mode hides app chrome and the formatting toolbar
+* feat(editor): focus-mode state, ⌘. / Esc handling and focus bar
+* feat(settings): focusMode, readAloudVoice and readAloudRate keys
+* feat(desktop): HistoryDrawer with diff and restore in the note and jot editors (A3)
+* feat(desktop): restore through the guarded save chain; drop stale-instance autosaves (A3)
+* feat(desktop): page-history types, hooks, history-health toast, shared LineDiffView (A3)
+* feat(api): page history list/blob/restore routes; historyOk on saves (A3)
+* feat(vault-write): history snapshot before every changing write; restore actor (A3)
+* feat(history): retention pruning, blob GC with ref sources, log moves, daily job (A3)
+* feat(history): content-addressed page history store with user coalescing (A3)
+
+### Bug Fixes
+
+* fix(read-aloud): an idle controller's stop no longer cancels another editor's speech
+* fix(read-aloud): one active controller on the shared speech engine
+* fix(history): restore only the body of a version carried by a move
+* fix: refresh backlinks after auto-route and exit 3 when the sidecar never starts
+* fix(jots): refresh backlinks after re-route, delete and photo extract
+* fix(jots): confirm before navigation discards a pending conflict
+* fix(settings): say when the whisper model is pinned by GHOSTBRAIN_WHISPER_MODEL
+* fix(desktop): escalate sidecar stop and enable parent watch
+* fix(sidecar): stop an in-progress recording when the parent app dies
+* fix(sidecar): shut down gracefully when the parent app goes away
+* fix(release): make sidecar MCP smoke handshake wait for responses before closing stdin
+
+## [1.12.0](https://github.com/nikrich/poltergeist/compare/v1.11.0...v1.12.0) (2026-10-10)
+
+
+### Features
+
+* feat(docs): docs library — per-project folder trees, in-app viewer, AI-indexed (slice 1) (#144)
+* feat(whatsapp): connector card and opt-in chat picker in the detail pane
+* feat(whatsapp): chat picker API, probe, display entry, Full Disk Access provider
+* feat(whatsapp): path routing to personal/override; stable per-chat-day note filename
+* feat(whatsapp): connector emits one event per chat-day; hourly scheduler job
+* feat(whatsapp): opt-in chat allowlist state file
+* feat(desktop): backlinks panel in the note viewer and jots; open wikilinks as .md
+* feat(editor): [[ / # / @ suggestion menus backed by the link index
+* feat(desktop): suggest fetch helpers, link insertion text and useBacklinks
+* feat(api): GET /v1/vault/backlinks over the link index
+* feat(api): GET /v1/vault/suggest for page, tag and person autocomplete
+* feat(vault-index): incremental in-memory link index with background cold build
+* feat(vault-index): pure note parser for the link index
+* feat(whatsapp): cached whisper transcripts for voice notes
+* feat(whatsapp): render a chat-day as a markdown transcript
+* feat(whatsapp): read-only ChatStorage reader with schema guard
+* feat(desktop): conflict banner with view diff / keep theirs / keep mine in jots and note view
+* feat(desktop): etag-chained guarded autosave with conflict state and line diff
+* feat(desktop): carry If-Match from renderer through IPC to the sidecar
+* feat(api): generated docs (mcp) and chat attachments create via vault_write, never overwrite
+* feat(api): jot create/edit/route/review/stamp/delete go through vault_write
+* feat(api): note body/upsert saves go through vault_write with If-Match
+* feat(api): etag on note reads and 409/404/422/400 mapping for vault writes
+* feat(vault-write): atomic locked write path with content-hash etags
+* feat(vault-write): byte-preserving frontmatter splice and line-level field edits
+
+### Bug Fixes
+
+* fix(security): block foreign navigation and window.open in every Electron window
+* fix(whatsapp): untick a chat even when its context is archived
+* fix(whatsapp): classify SQLITE_AUTH as a Full Disk Access denial
+* fix(whatsapp): re-check today and yesterday for edits and late downloads
+* fix(whatsapp): validate each cursor field on load
+* fix(whatsapp): a missing tool or model doesn't burn voice-note attempts
+* fix(whatsapp): don't touch the store before a chat is opted in
+* fix(whatsapp): honour zero for voice_max_per_run and initial_lookback_days
+* fix(whatsapp): tolerate corrupt store in probe/API; validate chat context
+* fix(whatsapp): re-selected chats backfill; atomic cursor
+* fix(whatsapp): allowlist load tolerates malformed state
+* fix(vault-index): re-index a note on save so backlinks show at once
+* fix(editor): replace the live suggestion range when a newer query is pending
+* fix(editor): suggestion popup ignores late results after exit
+* fix(desktop): latest-wins suggest fetcher re-checks after each await
+* fix(graph): match layout positions on posix keys; pin embed behaviour
+* fix(vault-index): refresh off the request path; reject drive-letter targets
+* fix(whatsapp): resolve DST-aware local timezone
+* fix(desktop): confirm before discarding text under the conflict banner
+* fix(api): open notes whose frontmatter is not a mapping
+* fix(desktop): guarded save handles CRLF auto-resolve, late typing on keep-mine conflict, unread theirs
+
+### Performance
+
+* perf(api): select top suggestions with heapq; answer cold queries within 0.1 s
+
+## [1.11.0](https://github.com/nikrich/poltergeist/compare/v1.10.1...v1.11.0) (2026-10-09)
+
+
+### Features
+
+* feat(recorder): waveform follows the recording's real audio levels
+* feat(desktop): live transcript panel + transcription settings
+* feat(recorder): live multilingual transcription backend
+* feat(script-writer): v0.2.0 — AI co-writer, Polish, formatting bar, FDX
+* feat(script-writer): Final Draft (.fdx) import and export
+* feat(script-writer): Polish dialog + whole-document review
+* feat(script-writer): whole-document polish engine
+* feat(script-writer): AI co-writer panel — vault-grounded ask + inline actions
+* feat(script-writer): persist AI conversation threads
+* feat(script-writer): formatting toolbar, emphasis keys, + Scene
+* feat(script-writer): inline AI proposal widget + editor context
+* feat(script-writer): line/word diff for reviewing AI edits
+* feat(script-writer): scene blocks, AI prompts and output validation
+* feat(script-writer): LLM client + scoped vault retrieval
+* feat(script-writer): README + committed dist build
+* feat(script-writer): editor screen — live page, navigators, page view, autosave, export
+* feat(script-writer): UI shell — library, new-script/import dialog, styles
+* feat(script-writer): main-process drafts, import/export, PDF printing
+* feat(script-writer): library registry + backoff saver with draft mirror
+* feat(script-writer): screenplay autocomplete (prefixes, locations, times, cues)
+* feat(script-writer): Final Draft-style element flow (Tab/Enter/hints)
+* feat(script-writer): scene/character outline + scene reorder
+* feat(script-writer): page/title-page HTML renderer + printable document
+* feat(script-writer): word-wrap + industry-standard paginator
+* feat(script-writer): document model + backend client
+* feat(script-writer): Fountain parser
+* feat(script-writer): scaffold plugin (manifest, build, test harness)
+
+### Bug Fixes
+
+* fix(recorder): identify an orphan whisper-server from its full command line on Linux
+* fix(recorder): live/levels streams end cleanly where there is no audio backend; run the new recorder tests in CI
+* fix(jots): drop the image thumbnail from the jot sidebar
+* fix(recorder): resume live transcription after an app restart; honest 'off'
+* fix(recorder): final pass follows live language runs; sandbox recorder paths in tests
+* fix(recorder): put whisper-server routes behind a random secret path
+* fix(script-writer): slice 2 final review fixes (whole-line AI edits, Escape, focus, contrast, polish cursor)
+* fix(script-writer): FDX multi-line actions and forced-action transitions
+* fix(script-writer): FDX import preserves text that looks like Fountain markup
+* fix(script-writer): sanitize AI answer links/images, token-level citations, load gating, stale guard helper
+* fix(script-writer): live element dropdown, keyboard-reachable toolbar
+* fix: prompts.test.js ASCII compliance - replace raw em dash with escape
+* fix(script-writer): stripFences line-based parsing and ASCII compliance
+* fix(script-writer): stripFences and checkFountain defect corrections
+* fix(script-writer): checkFountain and stripFences review fixes
+* fix(script-writer): editor element indents, Courier metrics, sheet scroll
+* fix(script-writer): mirror the draft 300ms after every change
+* fix(script-writer): force a cue with @ when the line above is not blank
+* fix(script-writer): keep unknown frontmatter keys and find title pages after blank lines
+* fix(desktop): allow plugin: fonts in the renderer CSP
+* fix(script-writer): zero printToPDF margins and time out PDF export after 30s
+* fix(script-writer): call the backend through plugin.sidecar.request
+* fix(script-writer): strip BOM on import, atomic draft writes, harden PDF window
+* fix(script-writer): saver durability - mirror latest during outages, dispose safety, timer cleanup
+* fix(script-writer): ASCII-only regex patterns and straight quote test
+* fix(script-writer): autocomplete regex support for both apostrophe types
+* fix(script-writer): autocomplete source robustness and curly apostrophe regex
+* fix(script-writer): drop stale/duplicate hints; Enter with content below
+* fix(script-writer): renderTitlePage plain-text escaping + class formatting
+* fix(script-writer): replace F3 test with one that verifies curly quotes
+* fix(script-writer): repeat dialogue splits, dual overflow fallback, curly quotes
+* fix(script-writer): remove dist from .gitignore
+
 ## [1.10.1](https://github.com/nikrich/poltergeist/compare/v1.10.0...v1.10.1) (2026-09-29)
 
 

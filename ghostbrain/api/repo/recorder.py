@@ -328,11 +328,41 @@ def start(title: str | None, context: str | None) -> dict:
             "error": None,
         }
         _write_state(state)
+        from ghostbrain.recorder import live
+
+        live.begin_from_config(handle.wav_path)
         log.info(
             "manual recording started pid=%d wav=%s ctx=%s parent=%s",
             handle.pid, handle.wav_path.name, chosen_context, parent_path or "-",
         )
         return state
+
+
+def _stop_capture_locked(backend) -> dict | None:
+    """SIGINT whichever capture is live and persist that. Caller holds _lock.
+
+    Returns the manual state, now at phase ``transcribing``, or None when a
+    daemon-owned (calendar-driven) recording was stopped instead — the
+    recorder daemon's next tick runs _finalize (transcribe, link to vault,
+    restore audio output) and status() drops the daemon record as soon as
+    the pid is gone. Raises RecorderNotActive when nothing is recording.
+    """
+    ds = daemon_state.load()
+    if ds.active is not None and backend.capture_alive(ds.active.pid):
+        backend.stop_capture(ds.active.pid)
+        return None
+
+    state = _read_state()
+    if state is None or state.get("phase") not in ("recording", "transcribing"):
+        raise RecorderNotActive("no recording to stop")
+
+    if state.get("phase") == "recording":
+        pid = state.get("pid")
+        if isinstance(pid, int):
+            backend.stop_capture(pid)
+        state["phase"] = "transcribing"
+        _write_state(state)
+    return state
 
 
 def stop() -> dict:
@@ -341,25 +371,9 @@ def stop() -> dict:
 
     backend = get_backend()
     with _lock:
-        # Daemon-owned (calendar-driven) recording: stop capture and let
-        # the recorder daemon's next tick run _finalize (transcribe, link
-        # to vault, restore audio output). status() drops the daemon
-        # record as soon as the pid is gone, so the UI flips to idle.
-        ds = daemon_state.load()
-        if ds.active is not None and backend.capture_alive(ds.active.pid):
-            backend.stop_capture(ds.active.pid)
+        state = _stop_capture_locked(backend)
+        if state is None:
             return status()
-
-        state = _read_state()
-        if state is None or state.get("phase") not in ("recording", "transcribing"):
-            raise RecorderNotActive("no recording to stop")
-
-        if state.get("phase") == "recording":
-            pid = state.get("pid")
-            if isinstance(pid, int):
-                backend.stop_capture(pid)
-            state["phase"] = "transcribing"
-            _write_state(state)
 
         # Kick off transcription in a daemon thread so the endpoint returns
         # immediately. The UI polls /status until phase=done.
@@ -371,6 +385,27 @@ def stop() -> dict:
         )
         thread.start()
         return state
+
+
+def stop_for_shutdown() -> bool:
+    """The app is gone: stop any live capture so the WAV is finalized, but
+    leave transcription to the next sidecar — a manual recording stays at
+    ``transcribing`` with its wavPath, a daemon one stays in the daemon
+    state, and both are picked up on the next start. Returns False when
+    nothing was recording. Never raises."""
+    try:
+        _ensure_supported()
+        from ghostbrain.recorder.audio import get_backend
+
+        backend = get_backend()
+        with _lock:
+            _stop_capture_locked(backend)
+        return True
+    except (RecorderUnsupportedError, RecorderNotActive):
+        return False
+    except Exception:  # noqa: BLE001 — shutdown must go on regardless
+        log.exception("stopping the recording at shutdown failed")
+        return False
 
 
 def _transcribe_in_background(snapshot: dict) -> None:

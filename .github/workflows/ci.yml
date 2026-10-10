@@ -28,6 +28,9 @@ jobs:
             tests/test_jira_connector.py \
             tests/test_no_hardcoded_contexts.py \
             tests/test_conftest_isolation.py \
+            tests/test_vault_write_text.py \
+            tests/test_vault_write_writer.py \
+            tests/test_vault_write_history.py \
             tests/test_doctor_core.py \
             tests/test_doctor_app_checks.py \
             tests/test_doctor_recorder_checks.py \
@@ -42,6 +45,12 @@ jobs:
             tests/test_claude_settings.py \
             tests/test_recorder_start_preflight.py \
             tests/test_manual_transcribe_errors.py \
+            tests/test_recorder_chunker.py \
+            tests/test_recorder_levels.py \
+            tests/test_recorder_live.py \
+            tests/test_recorder_sandbox.py \
+            tests/test_recorder_transcribe_final_pass.py \
+            tests/test_recorder_whisper_server.py \
             tests/test_bootstrap_routing_mode.py \
             tests/test_connector_probe_calendar.py \
             tests/test_logging_setup.py \
@@ -55,6 +64,22 @@ jobs:
             tests/test_llm_providers_openai_http.py \
             tests/test_llm_providers_openai_http_chat.py \
             tests/test_llm_providers_vault_tools.py \
+            tests/test_vault_index_parse.py \
+            tests/test_vault_index_links.py \
+            tests/test_vault_index_kinds.py \
+            tests/test_file_kinds.py \
+            tests/test_doc_library_*.py \
+            tests/test_library_routes.py \
+            tests/test_history_store.py \
+            tests/test_history_retention.py \
+            tests/test_templates_lang.py \
+            tests/test_templates_security.py \
+            tests/test_templates_functions.py \
+            tests/test_templates_parse.py \
+            tests/test_templates_render.py \
+            tests/test_templates_starters.py \
+            tests/test_templates_registry.py \
+            tests/test_templates_create.py \
             -q
 
   desktop:

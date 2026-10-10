@@ -164,6 +164,17 @@ describe('RichMarkdownEditor', () => {
     expect(container.querySelector('.cm-editor')).toBeNull();
     expect(container.querySelector('h1')).not.toBeNull();
   });
+
+  it('focus hides the formatting toolbar and marks the page for centring', () => {
+    const { rerender } = render(
+      <RichMarkdownEditor markdown="body" onSave={() => {}} jotId="t" focus />,
+    );
+    expect(screen.queryByRole('button', { name: 'bold' })).toBeNull();
+    expect(screen.getByTestId('rich-markdown-editor')).toHaveAttribute('data-focus', 'on');
+    rerender(<RichMarkdownEditor markdown="body" onSave={() => {}} jotId="t" />);
+    expect(screen.getByRole('button', { name: 'bold' })).toBeInTheDocument();
+    expect(screen.getByTestId('rich-markdown-editor')).not.toHaveAttribute('data-focus');
+  });
 });
 
 describe('RichMarkdownEditor wikilink click-to-navigate', () => {

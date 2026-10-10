@@ -8,6 +8,7 @@ import { Eyebrow } from '../components/Eyebrow';
 import { Toggle } from '../components/Toggle';
 import { ConnectorAuthFlow } from '../components/ConnectorAuthFlow';
 import { ConnectorAccounts } from '../components/ConnectorAccounts';
+import { WhatsAppChatPicker } from '../components/WhatsAppChatPicker';
 import type { Connector, ConnectorDetail, ConnectorState } from '../../shared/api-types';
 import {
   useConnector,
@@ -573,6 +574,12 @@ function ConnectorDetailPanel({ c }: ConnectorDetailProps) {
           </DetailBlock>
         )}
 
+        {c.id === 'whatsapp' && (
+          <DetailBlock label="chats">
+            <WhatsAppChatPicker />
+          </DetailBlock>
+        )}
+
         <DetailBlock label="what poltergeist pulls">
           <div className="flex flex-wrap gap-[6px]">
             {c.pulls.map((p) => (
@@ -590,7 +597,7 @@ function ConnectorDetailPanel({ c }: ConnectorDetailProps) {
                 key={s}
                 className="flex items-center gap-2 font-mono text-11 text-ink-1"
               >
-                <Lucide name="check" size={12} color="var(--neon)" />
+                <Lucide name="check" size={12} color="var(--neon-glyph)" />
                 <span>{s}</span>
               </div>
             ))}

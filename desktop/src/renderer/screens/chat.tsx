@@ -100,6 +100,16 @@ export function ChatScreen() {
     })();
   };
 
+  // "ask about this doc" (docs screen) queues a question for a fresh
+  // conversation; send it once that conversation is active. takeAsk clears
+  // synchronously, so double effects (StrictMode) cannot send it twice.
+  useEffect(() => {
+    if (!activeId) return;
+    const ask = useChat.getState().takeAsk(activeId);
+    if (ask) sendMessage(ask.text, [], ask.attachments);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId]);
+
   return (
     <div className="flex flex-1 overflow-hidden bg-paper">
       <ConversationList
@@ -594,7 +604,7 @@ function StreamingTurn({ stream, onStop }: { stream: StreamState; onStop: () => 
           </>
         ) : (
           <div className="flex items-center gap-2 text-12 text-ink-2">
-            <Lucide name="sparkles" size={13} color="var(--neon)" />
+            <Lucide name="sparkles" size={13} color="var(--neon-glyph)" />
             poltergeist is thinking…
           </div>
         )}

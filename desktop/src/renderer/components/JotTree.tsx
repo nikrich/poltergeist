@@ -87,13 +87,6 @@ function MonthList({ ctx, byMonth, collapsed, toggle, selectedId, onSelect, inde
                             : 'text-ink-1 hover:bg-vellum'
                         }`}
                       >
-                        {leaf.thumbnail && (
-                          <img
-                            src={window.gb.assets.toUrl(leaf.thumbnail)}
-                            alt=""
-                            className="h-7 w-7 shrink-0 rounded-sm object-cover"
-                          />
-                        )}
                         <span className="truncate">{leaf.title}</span>
                       </button>
                     ))}

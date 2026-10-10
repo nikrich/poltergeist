@@ -124,6 +124,27 @@ body[data-theme='light'] {
   background: #d8dbe0;
 }
 
+/* Light theme only: selected/active states use `bg-neon/12`-style utilities,
+   and a 12–15% wash of lime is invisible on white. Swap those for a solid
+   pale-lime tint + border here so dark mode stays pixel-identical without
+   touching each call site. `text-neon` (lime text) fails contrast on white,
+   so it falls back to the olive --neon-ink. */
+[data-theme='light'] :is(.bg-neon\/12, .bg-neon\/15) {
+  background-color: var(--neon-tint);
+}
+[data-theme='light'] :is(.border-neon\/30, .border-neon\/40) {
+  border-color: var(--neon-tint-border);
+}
+[data-theme='light'] .text-neon {
+  color: var(--neon-ink);
+}
+
+/* Monochrome connector marks ship near-white (#F2F3F5) for the dark theme;
+   invert them to near-black on light surfaces. Full-colour marks are left as is. */
+[data-theme='light'] :is(img[src$='/github.svg'], img[src$='/linear.svg'], img[src$='/whatsapp.svg']) {
+  filter: invert(1);
+}
+
 @keyframes gb-pulse {
   0% {
     box-shadow: 0 0 0 0 rgba(255, 107, 90, 0.6);
@@ -133,14 +154,6 @@ body[data-theme='light'] {
   }
   100% {
     box-shadow: 0 0 0 0 rgba(255, 107, 90, 0);
-  }
-}
-@keyframes gb-wave {
-  from {
-    transform: scaleY(0.4);
-  }
-  to {
-    transform: scaleY(1);
   }
 }
 @keyframes gb-blink {
@@ -288,3 +301,19 @@ body[data-theme='light'] {
 .gb-prose em { color: var(--ink-1); }
 .gb-prose strong { color: var(--ink-0); }
 .gb-jot-img { max-width: 100%; border-radius: 8px; border: 1px solid var(--hairline-2); margin: 6px 0; }
+
+/* A4 focus mode: the page alone, centred at a reading measure. */
+[data-focus='on'] .ProseMirror {
+  max-width: 72ch;
+  margin-left: auto;
+  margin-right: auto;
+  padding-top: 24px;
+  padding-bottom: 30vh;
+}
+
+/* A4 read-aloud: the sentence being spoken. */
+.gb-read-aloud-current {
+  background: var(--neon-mist);
+  border-radius: 2px;
+  box-shadow: 0 0 0 2px var(--neon-mist);
+}

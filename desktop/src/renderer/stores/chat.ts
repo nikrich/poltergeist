@@ -20,8 +20,19 @@ export interface TurnError {
   attachments: ChatAttachment[];
 }
 
+export interface PendingAsk {
+  convId: string;
+  text: string;
+  attachments: ChatAttachment[];
+}
+
 interface ChatState {
   activeId: string | null;
+  /** A question queued by the docs screen for a freshly created conversation. */
+  pendingAsk: PendingAsk | null;
+  queueAsk: (a: PendingAsk) => void;
+  /** Returns and clears the queued ask only if it targets `convId`. */
+  takeAsk: (convId: string) => PendingAsk | null;
   /** In-flight turn per conversation. Presence = streaming. */
   streams: Record<string, StreamState>;
   /** Last turn error per conversation, shown inline in the thread. */
@@ -39,8 +50,16 @@ interface ChatState {
   endExport: (id: string) => void;
 }
 
-export const useChat = create<ChatState>((set) => ({
+export const useChat = create<ChatState>((set, get) => ({
   activeId: null,
+  pendingAsk: null,
+  queueAsk: (a) => set({ pendingAsk: a }),
+  takeAsk: (convId) => {
+    const a = get().pendingAsk;
+    if (!a || a.convId !== convId) return null;
+    set({ pendingAsk: null });
+    return a;
+  },
   streams: {},
   errors: {},
   setActive: (id) => set({ activeId: id }),

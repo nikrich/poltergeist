@@ -5,7 +5,7 @@ from ghostbrain.api.auth import registry
 
 @pytest.mark.parametrize("cid", [
     "gmail", "calendar", "slack", "joplin", "jira", "confluence",
-    "outlook_mail", "teams_chat", "teams_meetings", "github", "claude_code",
+    "outlook_mail", "teams_chat", "teams_meetings", "github", "claude_code", "whatsapp",
 ])
 def test_provider_registered(cid):
     assert registry.provider_for(cid) is not None

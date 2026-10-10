@@ -28,6 +28,13 @@ CAPTURE_BACKENDS = ("auto", "native", "blackhole")
 #   audio   — never capture video unless a meeting window appears
 SLIDE_FALLBACKS = ("ask", "display", "audio")
 
+# Spoken language for transcription. `auto` detects per chunk, which is what
+# mixed English/Afrikaans meetings need; a fixed code skips detection.
+TRANSCRIPTION_LANGUAGES = ("auto", "en", "af")
+# What `auto` may detect. Whisper often hears Afrikaans as Dutch; anything
+# outside this set is re-decoded (see WhisperServer.transcribe).
+AUTO_LANGUAGES = ("en", "af")
+
 RECORDER_DEFAULTS: dict[str, Any] = {
     "enabled": True,
     "poll_interval_seconds": 30,
@@ -45,6 +52,9 @@ RECORDER_DEFAULTS: dict[str, Any] = {
     "slide_fps": 1,
     "slide_min_words": 8,
     "slide_fallback": "ask",
+    "transcription_language": "auto",
+    # Show the transcript while recording (warm whisper-server + SSE).
+    "live_transcription": True,
 }
 
 
@@ -86,6 +96,15 @@ def capture_backend_from(rec: dict[str, Any] | None) -> str:
 def slide_fallback_from(rec: dict[str, Any] | None) -> str:
     value = str(recorder_value(rec, "slide_fallback")).strip().lower()
     return value if value in SLIDE_FALLBACKS else "ask"
+
+
+def transcription_language_from(rec: dict[str, Any] | None) -> str:
+    value = str(recorder_value(rec, "transcription_language")).strip().lower()
+    return value if value in TRANSCRIPTION_LANGUAGES else "auto"
+
+
+def live_transcription_from(rec: dict[str, Any] | None) -> bool:
+    return bool(recorder_value(rec, "live_transcription"))
 
 
 def capture_slides_from(rec: dict[str, Any] | None) -> bool:

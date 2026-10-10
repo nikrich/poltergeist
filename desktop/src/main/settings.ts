@@ -47,6 +47,9 @@ export const DEFAULT_SETTINGS: Settings = {
 
   schedulerEnabled: true,
   onboardingComplete: false,
+  focusMode: false,
+  readAloudVoice: '',
+  readAloudRate: 1,
 
   hotkeys: {
     jotOverlay: 'Alt+J',

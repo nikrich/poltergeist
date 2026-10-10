@@ -272,6 +272,9 @@ def _start_recording(
     state.processed[f"_audio_before:{candidate.event_id}"] = route.previous_output
 
     state_mod.save(state)
+    from ghostbrain.recorder import live
+
+    live.begin_from_config(handle.wav_path)
     audit_log(
         "recording_started",
         candidate.event_id,

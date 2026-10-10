@@ -46,6 +46,9 @@ const FIXTURES: Record<string, string> = {
   'extract callout':
     '> **Extracted from photo**\n>\n> Events flow Kinesis to handler.\n>\n> DLQ on failure.',
   'obsidian wikilinks': 'see [[20-contexts/work/_profile]] and [[a/b|Title]]',
+  'person link': 'met [[30-cross-context/people/alex|@Alex]] today',
+  hashtags: '#roadmap at line start and a #mid-tag inline',
+  'bare wikilink in a table cell': '| who | link |\n| --- | --- |\n| a | [[20-contexts/work/b]] |',
   'inline image': '![whiteboard](90-meta/assets/jots/2026/06/abc-1.jpg)',
   'image among paragraphs':
     'before the shot\n\n![photo](90-meta/assets/jots/2026/06/x-2.jpg)\n\nafter the shot',

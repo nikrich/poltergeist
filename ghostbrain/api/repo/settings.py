@@ -77,7 +77,26 @@ def get_recorder_settings() -> dict:
     out["slide_fps"] = rcfg.slide_fps_from(raw)
     out["slide_fallback"] = rcfg.slide_fallback_from(raw)
     out["capture_backend_effective"] = effective_capture_backend(raw)
+    out["transcription_language"] = rcfg.transcription_language_from(raw)
+    out["live_transcription"] = rcfg.live_transcription_from(raw)
+    (
+        out["transcription_model"],
+        out["multilingual_model"],
+        out["transcription_model_source"],
+    ) = _transcription_model()
     return out
+
+
+def _transcription_model() -> tuple[str | None, bool, str]:
+    from ghostbrain.recorder import transcribe as tmod
+
+    # _resolve_model uses GHOSTBRAIN_WHISPER_MODEL whenever it is non-empty.
+    source = "env" if os.environ.get("GHOSTBRAIN_WHISPER_MODEL") else "default"
+    try:
+        model = tmod._resolve_model(None)
+    except tmod.TranscribeError:
+        return None, False, source
+    return model.name, tmod.is_multilingual(model), source
 
 
 def update_recorder_settings(**fields) -> dict:
@@ -107,6 +126,15 @@ def update_recorder_settings(**fields) -> dict:
         if value not in rcfg.SLIDE_FALLBACKS:
             raise ValueError(f"slide_fallback must be one of {rcfg.SLIDE_FALLBACKS}")
         recorder["slide_fallback"] = value
+    if fields.get("transcription_language") is not None:
+        value = str(fields["transcription_language"]).strip().lower()
+        if value not in rcfg.TRANSCRIPTION_LANGUAGES:
+            raise ValueError(
+                f"transcription_language must be one of {rcfg.TRANSCRIPTION_LANGUAGES}"
+            )
+        recorder["transcription_language"] = value
+    if fields.get("live_transcription") is not None:
+        recorder["live_transcription"] = bool(fields["live_transcription"])
 
     config["recorder"] = recorder
     _write_yaml_atomic(config)

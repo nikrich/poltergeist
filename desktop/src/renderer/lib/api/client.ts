@@ -35,9 +35,17 @@ export async function post<T>(path: string, body?: unknown): Promise<T> {
   return result.data;
 }
 
-export async function patch<T>(path: string, body?: unknown): Promise<T> {
-  const result = await window.gb.api.request<T>('PATCH', path, body);
-  if (!result.ok) throw new Error(result.error);
+export async function patch<T>(
+  path: string,
+  body?: unknown,
+  opts?: { ifMatch?: string | null },
+): Promise<T> {
+  // Only send the 4th bridge arg when there is an etag — keeps the common
+  // call shape (and existing assertions on it) unchanged.
+  const result = opts?.ifMatch
+    ? await window.gb.api.request<T>('PATCH', path, body, { ifMatch: opts.ifMatch })
+    : await window.gb.api.request<T>('PATCH', path, body);
+  if (!result.ok) throw new ApiError(result.error, result.status);
   return result.data;
 }
 

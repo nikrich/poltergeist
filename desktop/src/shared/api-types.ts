@@ -213,6 +213,8 @@ export interface Note {
   title: string;
   body: string;
   frontmatter: Record<string, unknown>;
+  /** sha256(file bytes)[:16] — send back as If-Match on the next save. */
+  etag?: string | null;
 }
 
 export interface UpdateNoteBodyRequest {
@@ -223,6 +225,54 @@ export interface UpdateNoteBodyRequest {
 export interface UpdateNoteBodyResponse {
   path: string;
   updated: string | null;
+  etag: string;
+  /** false: saved, but no history version was kept (spec A3). */
+  historyOk?: boolean;
+}
+
+export interface UpdateJotResponse {
+  id: string;
+  path: string;
+  updated: string;
+  etag: string;
+  historyOk?: boolean;
+}
+
+/** One page-history version: the note as it was just before a write by `actor`. */
+export interface HistoryEntry {
+  ts: string;
+  /** Vault-relative path at snapshot time. */
+  path: string;
+  /** sha256 of the stored file bytes. */
+  blob: string;
+  /** user | assistant | mcp | plugin:<id> | worker:<job> | restore */
+  actor: string;
+  reason: string;
+  size: number;
+}
+
+export interface NoteHistoryResponse {
+  path: string;
+  /** Newest first. */
+  items: HistoryEntry[];
+}
+
+export interface HistoryBlobResponse {
+  path: string;
+  blob: string;
+  /** Whole file (frontmatter included) of that version. */
+  content: string;
+  /** Whole current file; null when the note no longer exists. */
+  current: string | null;
+}
+
+export interface RestoreHistoryResponse {
+  path: string;
+  etag: string | null;
+  /** The restored note's body, as GET /v1/notes?path= returns it. */
+  body: string;
+  restored: string;
+  historyOk: boolean;
 }
 
 export type RecorderPhase = 'idle' | 'recording' | 'transcribing' | 'done';
@@ -279,7 +329,48 @@ export interface RecorderSettings {
   slide_fallback: SlideFallback;
   /** Read-only. */
   capture_backend_effective: CaptureBackendEffective;
+  /** `auto` detects per chunk — needed for mixed English/Afrikaans meetings. */
+  transcription_language: TranscriptionLanguage;
+  /** Show the transcript while recording. */
+  live_transcription: boolean;
+  /** Read-only: whisper model file in use, or null when none is installed. */
+  transcription_model: string | null;
+  /** Read-only: false for English-only `.en` models. */
+  multilingual_model: boolean;
+  /** Read-only: `env` when GHOSTBRAIN_WHISPER_MODEL pins the model. */
+  transcription_model_source: 'env' | 'default';
 }
+
+export type TranscriptionLanguage = 'auto' | 'en' | 'af';
+
+/** Live transcript state, as reported by GET /v1/recorder/live. */
+export type LiveTranscriptState =
+  | 'starting'
+  | 'live'
+  | 'unavailable'
+  | 'finalizing'
+  | 'ended'
+  /** Switched off in settings. */
+  | 'off';
+
+export interface LiveTranscriptSegment {
+  type: 'segment';
+  seq: number;
+  /** Seconds from the start of the recording. */
+  t0: number;
+  t1: number;
+  text: string;
+  /** Detected language code, e.g. "en" / "af". */
+  lang: string;
+}
+
+/** GET /v1/recorder/levels: 0..1 per 100 ms of the recording, oldest first. */
+export type RecorderLevelsEvent = { type: 'levels'; levels: number[] } | { type: 'end' };
+
+export type LiveTranscriptEvent =
+  | LiveTranscriptSegment
+  | { type: 'status'; state: LiveTranscriptState; reason: string | null; lag_s: number }
+  | { type: 'end' };
 
 export interface UpdateRecorderSettings {
   enabled?: boolean;
@@ -289,6 +380,8 @@ export interface UpdateRecorderSettings {
   capture_slides?: boolean;
   slide_fps?: number;
   slide_fallback?: SlideFallback;
+  transcription_language?: TranscriptionLanguage;
+  live_transcription?: boolean;
 }
 
 export type CapturePermission = 'granted' | 'denied' | 'not_determined' | 'unknown';
@@ -464,6 +557,7 @@ export interface ExtractPhotoResponse {
   body: string;
   extracted: boolean;
   reason?: string;
+  etag?: string;
 }
 
 // ── Confluence space list (shared with the Confluence export dialog) ──
@@ -520,6 +614,8 @@ export interface VaultGraphNode {
   y: number;
   degree: number;
   updated: string | null;
+  /** Graph colour class; sidecars before A6 omit it (treat as 'note'). */
+  kind?: NoteKind;
 }
 
 export interface VaultGraphEdge {
@@ -540,6 +636,82 @@ export interface VaultGraph {
   nodes: VaultGraphNode[];
   edges: VaultGraphEdge[];
   regions: VaultGraphRegion[];
+}
+
+export type NoteKind = 'person' | 'meeting' | 'decision' | 'action' | 'ticket' | 'doc' | 'jot' | 'note';
+
+export interface EgoGraphNode {
+  /** Vault path, or a ghost's link key (e.g. "someday idea.md"). */
+  path: string;
+  title: string;
+  context: string;
+  kind: NoteKind;
+  /** Vault-wide link count. */
+  degree: number;
+  /** Linked but not written yet (drawn as a grey ring). */
+  ghost: boolean;
+  /** BFS distance from the focus. */
+  hop: number;
+}
+
+export interface EgoGraphEdge {
+  source: string;
+  target: string;
+  weight: number;
+  kind: 'related' | 'wikilink';
+}
+
+export interface EgoGraph {
+  focus: string;
+  depth: number;
+  nodes: EgoGraphNode[];
+  edges: EgoGraphEdge[];
+  /** More than 300 nodes were in reach; the nearest were kept. */
+  truncated: boolean;
+  /** The sidecar's link index is still on its first build. */
+  indexing: boolean;
+}
+
+export interface ResolvedLink {
+  path: string;
+  exists: boolean;
+  indexing: boolean;
+}
+
+// ── Linking (suggest + backlinks) ─────────────────────────────────────────────
+
+export type SuggestKind = 'page' | 'tag' | 'person';
+
+export interface SuggestItem {
+  kind: SuggestKind;
+  /** Page title, tag name (no `#`), or person name. */
+  label: string;
+  /** Vault-relative `.md` path; null for tags. */
+  path: string | null;
+  context: string;
+  /** Muted second line: path without `.md`, or "N notes" for tags. */
+  detail: string;
+  /** Number of notes carrying the tag; null for pages and people. */
+  count: number | null;
+}
+
+export interface SuggestResponse {
+  items: SuggestItem[];
+  /** True while the sidecar's link index is still on its first build. */
+  indexing: boolean;
+}
+
+export interface Backlink {
+  path: string;
+  title: string;
+  context: string;
+  /** The source line containing the link; '' for frontmatter links. */
+  snippet: string;
+}
+
+export interface BacklinksResponse {
+  items: Backlink[];
+  indexing: boolean;
 }
 
 // ── Auth Session ──────────────────────────────────────────────────────────
@@ -632,4 +804,105 @@ export interface LlmProviderDiagnostics {
 export interface LlmProvidersResponse {
   active: SidecarProviderId;
   providers: Record<SidecarProviderId, LlmProviderDiagnostics>;
+}
+
+export interface WhatsAppChat {
+  jid: string;
+  name: string;
+  kind: 'direct' | 'group';
+  lastMessageAt: string | null;
+  messageCount: number;
+  allowed: boolean;
+  context: string | null;
+}
+
+// ── Docs library ─────────────────────────────────────────────────────────────
+
+export type DocKind = 'pdf' | 'image' | 'docx' | 'xlsx' | 'text' | 'opaque';
+export interface DocSummary {
+  doc_id: string; title: string; kind: DocKind; mime: string; size: number; created: string;
+  context: string; project: string | null; folder: string; original: string;
+  original_path: string; note_path: string; index_status: 'ok' | 'failed' | 'pending';
+  pages: number | null; excerpt: string;
+  summary: string | null; summary_state: 'pending' | 'done' | 'none';
+}
+export interface UploadDocResponse extends DocSummary { duplicate: boolean }
+export interface DocDetail extends DocSummary { body: string }
+export interface DocFolderNode { name: string; path: string; folders: DocFolderNode[]; docs: DocSummary[] }
+export interface DocScope { context: string; project: string | null; name: string; archived: boolean; folders: DocFolderNode[]; docs: DocSummary[] }
+export interface AttentionItem { kind: 'orphan_note' | 'unclaimed_original' | 'index_failed'; context: string; project: string | null; folder: string; name: string; doc_id: string | null }
+export interface LibraryTree { scopes: DocScope[]; attention: AttentionItem[] }
+export interface FolderRef { context: string; project: string | null; path: string }
+export interface UploadDocRequest { context: string; project: string | null; folder: string; name: string; mime: string; content_b64: string }
+
+// ── Smart templates (C1) ──────────────────────────────────────────────────
+
+export type TemplatePromptType = 'person' | 'text' | 'date' | 'choice' | 'context' | 'project';
+
+export interface TemplatePrompt {
+  id: string;
+  ask: string;
+  type: TemplatePromptType;
+  optional: boolean;
+  default: string | null;
+  options: string[];
+}
+
+export interface TemplateDiagnostic {
+  line: number;
+  col: number;
+  severity: 'error' | 'warning' | 'info';
+  message: string;
+  code: string;
+}
+
+export interface TemplateSummary {
+  id: string;
+  path: string;
+  name: string;
+  description: string;
+  prompts: TemplatePrompt[];
+  /** Root names the template references, e.g. ['context', 'date', 'person']. */
+  variables: string[];
+  valid: boolean;
+  diagnostics: TemplateDiagnostic[];
+}
+
+export interface TemplatesResponse {
+  templates: TemplateSummary[];
+}
+
+export interface TemplateCreateResponse {
+  path: string;
+  title: string;
+  etag: string | null;
+  status: 'applied' | 'pending';
+}
+
+export interface TemplateRenderResponse {
+  path: string;
+  folder: string;
+  filename: string;
+  title: string;
+  frontmatter: Record<string, unknown>;
+  body: string;
+}
+
+export interface TemplateFunctionSpec {
+  name: string;
+  kind: 'variable' | 'field' | 'filter' | 'prompt_type';
+  type: string;
+  doc: string;
+  example: string;
+  owner: string | null;
+  accepts: string[];
+  arg: string | null;
+  argRequired: boolean;
+}
+
+export interface TemplateFunctionsResponse {
+  variables: TemplateFunctionSpec[];
+  fields: TemplateFunctionSpec[];
+  filters: TemplateFunctionSpec[];
+  promptTypes: TemplateFunctionSpec[];
 }

@@ -5,7 +5,11 @@ from ghostbrain.api.auth import registry
 from ghostbrain.api.auth.providers.atlassian_api import AtlassianTokenProvider
 from ghostbrain.api.auth.providers.cli_login import GitHubProvider
 from ghostbrain.api.auth.providers.google_oauth import GoogleProvider
-from ghostbrain.api.auth.providers.local_grant import ClaudeCodeProvider, MacosCalendarProvider
+from ghostbrain.api.auth.providers.local_grant import (
+    ClaudeCodeProvider,
+    MacosCalendarProvider,
+    WhatsAppStoreProvider,
+)
 from ghostbrain.api.auth.providers.ms_device_code import MicrosoftProvider
 from ghostbrain.api.auth.providers.paste_token import JoplinTokenProvider, SlackTokenProvider
 
@@ -27,3 +31,4 @@ registry.register("teams_meetings", _ms)
 registry.register("github", GitHubProvider())
 registry.register("claude_code", ClaudeCodeProvider())
 registry.register("macos_calendar", MacosCalendarProvider())
+registry.register("whatsapp", WhatsAppStoreProvider())

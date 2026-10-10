@@ -69,7 +69,8 @@ Do not tell the user setup is complete before this step succeeds.
 ## 5. Connectors
 
 Ask which of these matter: Claude Code, GitHub, Jira/Confluence, Slack,
-Gmail, Google Drive, Google Calendar, Apple Calendar, Microsoft 365, Joplin.
+Gmail, Google Drive, Google Calendar, Apple Calendar, WhatsApp (macOS only),
+Microsoft 365, Joplin.
 For each:
 
 - Point them at the app's connector card (Connectors screen) for the
@@ -82,6 +83,17 @@ For each:
   `calendar.macos.accounts`, `slack.workspaces`, ...). A connector that shows
   "on" with an empty block syncs nothing; add the org/account by hand, one
   line, and re-fetch.
+
+### WhatsApp (macOS only)
+
+1. Install WhatsApp for Mac from the App Store and sign in (link it to your phone).
+2. In Poltergeist → Connectors → WhatsApp, press Connect. If it asks for access, open
+   System Settings → Privacy & Security → Full Disk Access, enable Poltergeist, then Re-check.
+3. In the WhatsApp detail pane, tick the chats to import (nothing is imported until you do),
+   optionally choose a context per chat (default: personal), and Save.
+4. The next hourly run (or "sync now") pulls the last 90 days for newly ticked chats —
+   one note per chat per day under `20-contexts/<ctx>/whatsapp/`. Voice notes are
+   transcribed locally (needs ffmpeg + a whisper model; up to 40 per run).
 
 ## 6. Going live
 

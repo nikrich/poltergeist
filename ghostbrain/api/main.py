@@ -17,7 +17,9 @@ from ghostbrain.api.routes import daily as daily_routes
 from ghostbrain.api.routes import docs as docs_routes
 from ghostbrain.api.routes import doctor as doctor_routes
 from ghostbrain.api.routes import health as health_routes
+from ghostbrain.api.routes import history as history_routes
 from ghostbrain.api.routes import import_atlassian as import_routes
+from ghostbrain.api.routes import library as library_routes
 from ghostbrain.api.routes import llm as llm_routes
 from ghostbrain.api.routes import llm_providers as llm_providers_routes
 from ghostbrain.api.routes import mcp_servers as mcp_servers_routes
@@ -29,7 +31,10 @@ from ghostbrain.api.routes import scheduler as scheduler_routes
 from ghostbrain.api.routes import search as search_routes
 from ghostbrain.api.routes import settings as settings_routes
 from ghostbrain.api.routes import suggestions as suggestions_routes
+from ghostbrain.api.routes import templates as templates_routes
 from ghostbrain.api.routes import vault as vault_routes
+from ghostbrain.api.routes import whatsapp as whatsapp_routes
+from ghostbrain.api.vault_http import install_vault_write_errors
 
 API_VERSION = "1.0.0"
 
@@ -82,15 +87,19 @@ def create_app(token: str) -> FastAPI:
     # unauthenticated request, JSON 500 for the boom route once authed).
     app.middleware("http")(make_auth_middleware(token))
     install_error_handling(app)
+    install_vault_write_errors(app)
     app.include_router(health_routes.router)
     app.include_router(vault_routes.router)
     app.include_router(connectors_routes.router)
+    app.include_router(whatsapp_routes.router)
     app.include_router(captures_routes.router)
     app.include_router(meetings_routes.router)
     app.include_router(agenda_routes.router)
     app.include_router(daily_routes.router)
     app.include_router(docs_routes.router)
     app.include_router(import_routes.router)
+    # Before notes: /v1/notes/history/* must never be read as a jot id.
+    app.include_router(history_routes.router)
     app.include_router(notes_routes.router)
     app.include_router(recorder_routes.router)
     app.include_router(scheduler_routes.router)
@@ -105,6 +114,8 @@ def create_app(token: str) -> FastAPI:
     app.include_router(llm_providers_routes.router)
     app.include_router(suggestions_routes.router)
     app.include_router(projects_routes.router)
+    app.include_router(library_routes.router)
+    app.include_router(templates_routes.router)
     app.include_router(connector_auth_routes.router)
     import ghostbrain.api.auth.providers.register_all  # noqa: F401  (registers providers, Task D6)
     return app
