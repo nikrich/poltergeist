@@ -10,6 +10,7 @@ from ghostbrain.api.routes import activity as activity_routes
 from ghostbrain.api.routes import agenda as agenda_routes
 from ghostbrain.api.routes import answer as answer_routes
 from ghostbrain.api.routes import captures as captures_routes
+from ghostbrain.api.routes import changes as changes_routes
 from ghostbrain.api.routes import chat as chat_routes
 from ghostbrain.api.routes import connector_auth as connector_auth_routes
 from ghostbrain.api.routes import connectors as connectors_routes
@@ -116,6 +117,7 @@ def create_app(token: str) -> FastAPI:
     app.include_router(projects_routes.router)
     app.include_router(library_routes.router)
     app.include_router(templates_routes.router)
+    app.include_router(changes_routes.router)
     app.include_router(connector_auth_routes.router)
     import ghostbrain.api.auth.providers.register_all  # noqa: F401  (registers providers, Task D6)
     return app
