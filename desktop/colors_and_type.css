@@ -53,6 +53,18 @@
   --pill-oxblood-fg: #FF8A7C;   /* foreground for oxblood pill */
   --pill-water-fg:   #7FB3D5;   /* foreground for "water" tone (cool blue) */
 
+  /* ---------- color: graph node kinds (Graph tab) ----------------------- */
+  /* The graph ground stays dark in both themes (like the constellation), so
+     these are not overridden for light mode. lib/graph/kinds.ts mirrors them. */
+  --kind-person:   #7FB3D5;
+  --kind-meeting:  #A78BFA;
+  --kind-decision: #C5FF3D;
+  --kind-action:   #FF6B5A;
+  --kind-ticket:   #F5B94A;
+  --kind-doc:      #5EC8B8;
+  --kind-jot:      #E58FD0;
+  --kind-note:     #B7BAC2;
+
   /* ---------- borders & dividers (alpha on ink-0) ----------------------- */
   --hairline:      rgba(242, 243, 245, 0.08);
   --hairline-2:    rgba(242, 243, 245, 0.14);

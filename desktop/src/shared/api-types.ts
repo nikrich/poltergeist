@@ -611,6 +611,8 @@ export interface VaultGraphNode {
   y: number;
   degree: number;
   updated: string | null;
+  /** Graph colour class; sidecars before A6 omit it (treat as 'note'). */
+  kind?: NoteKind;
 }
 
 export interface VaultGraphEdge {
@@ -631,6 +633,46 @@ export interface VaultGraph {
   nodes: VaultGraphNode[];
   edges: VaultGraphEdge[];
   regions: VaultGraphRegion[];
+}
+
+export type NoteKind = 'person' | 'meeting' | 'decision' | 'action' | 'ticket' | 'doc' | 'jot' | 'note';
+
+export interface EgoGraphNode {
+  /** Vault path, or a ghost's link key (e.g. "someday idea.md"). */
+  path: string;
+  title: string;
+  context: string;
+  kind: NoteKind;
+  /** Vault-wide link count. */
+  degree: number;
+  /** Linked but not written yet (drawn as a grey ring). */
+  ghost: boolean;
+  /** BFS distance from the focus. */
+  hop: number;
+}
+
+export interface EgoGraphEdge {
+  source: string;
+  target: string;
+  weight: number;
+  kind: 'related' | 'wikilink';
+}
+
+export interface EgoGraph {
+  focus: string;
+  depth: number;
+  nodes: EgoGraphNode[];
+  edges: EgoGraphEdge[];
+  /** More than 300 nodes were in reach; the nearest were kept. */
+  truncated: boolean;
+  /** The sidecar's link index is still on its first build. */
+  indexing: boolean;
+}
+
+export interface ResolvedLink {
+  path: string;
+  exists: boolean;
+  indexing: boolean;
 }
 
 // ── Linking (suggest + backlinks) ─────────────────────────────────────────────

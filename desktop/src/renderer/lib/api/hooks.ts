@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type {
   DocDetail,
@@ -53,6 +53,7 @@ import type {
   UpdateProjectRequest,
   UpdateRecorderSettings,
   VaultGraph,
+  EgoGraph,
   VaultContexts,
   WhatsAppChat,
   VaultStats,
@@ -106,11 +107,26 @@ export function useArchiveContext() {
   });
 }
 
-export function useVaultGraph() {
+export function useVaultGraph(opts: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: ['vault', 'graph'],
     queryFn: () => get<VaultGraph>('/v1/vault/graph'),
     staleTime: 60_000,
+    enabled: opts.enabled ?? true,
+  });
+}
+
+/** Link neighbourhood of `focus` (A6). Keeps the previous graph on screen
+ * while a recentre loads; polls while the sidecar's link index is cold. */
+export function useEgoGraph(focus: string | null, depth: number) {
+  return useQuery({
+    queryKey: ['vault', 'graph', 'ego', focus, depth],
+    queryFn: () =>
+      get<EgoGraph>(`/v1/vault/graph?focus=${encodeURIComponent(focus!)}&depth=${depth}`),
+    enabled: focus !== null,
+    staleTime: 10_000,
+    placeholderData: keepPreviousData,
+    refetchInterval: (query) => (query.state.data?.indexing ? 3_000 : false),
   });
 }
 
