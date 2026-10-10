@@ -68,3 +68,16 @@ def test_error_mapping(client):
                          params={"context": "work", "project": "payments", "path": "full"},
                          headers=H).status_code == 409
     assert _up(client, project="ghost").status_code == 404
+
+
+def test_summarise_route(client, monkeypatch):
+    from ghostbrain.api.repo.doc_library import ai_summary
+
+    queued = []
+    monkeypatch.setattr(ai_summary, "enqueue", lambda doc_id: queued.append(doc_id) or True)
+    doc = _up(client).json()
+    assert "summary" in doc and doc["summary_state"] in ("none", "pending")
+    r = client.post(f"/v1/library/docs/{doc['doc_id']}/summarise", headers=H)
+    assert r.status_code == 200 and r.json() == {"queued": True}
+    assert queued[-1] == doc["doc_id"]
+    assert client.post("/v1/library/docs/ffffffffffff/summarise", headers=H).status_code == 404

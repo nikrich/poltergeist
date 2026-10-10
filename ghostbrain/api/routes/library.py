@@ -16,7 +16,7 @@ from ghostbrain.api.models.library import (
     UploadDocRequest,
     UploadDocResponse,
 )
-from ghostbrain.api.repo.doc_library import folders, index, ops, search
+from ghostbrain.api.repo.doc_library import ai_summary, folders, index, ops, search
 from ghostbrain.api.repo.doc_library.errors import LibraryError
 
 router = APIRouter(prefix="/v1/library", tags=["library"])
@@ -107,3 +107,9 @@ def remove_orphan(payload: RemoveOrphanRequest) -> dict:
 @router.get("/search", response_model=list[DocSummary])
 def search_docs(q: str = "", project: str | None = None) -> list[dict]:
     return search.search(q, project)
+
+
+@router.post("/docs/{doc_id}/summarise")
+def summarise_doc(doc_id: str) -> dict:
+    _run(index.get, doc_id)  # 404 for unknown docs
+    return {"queued": ai_summary.enqueue(doc_id)}
