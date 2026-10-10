@@ -197,7 +197,7 @@ export function RichMarkdownEditor({
         const files = Array.from(event.clipboardData?.files ?? []).filter((f) =>
           f.type.startsWith('image/'),
         );
-        if (files.length === 0 || !editorRef.current) return false;
+        if (files.length === 0 || !editorRef.current || !editorRef.current.isEditable) return false;
         event.preventDefault();
         files.forEach((f) =>
           void insertImageFile(editorRef.current!, jotIdRef.current, f).catch((e: Error) =>
@@ -210,7 +210,7 @@ export function RichMarkdownEditor({
         const files = Array.from((event as DragEvent).dataTransfer?.files ?? []).filter((f) =>
           f.type.startsWith('image/'),
         );
-        if (files.length === 0 || !editorRef.current) return false;
+        if (files.length === 0 || !editorRef.current || !editorRef.current.isEditable) return false;
         event.preventDefault();
         files.forEach((f) =>
           void insertImageFile(editorRef.current!, jotIdRef.current, f).catch((e: Error) =>
@@ -242,12 +242,12 @@ export function RichMarkdownEditor({
   // Subscribe to slash-command photo event emitted by the editor extensions.
   useEffect(() => {
     if (!editor) return;
-    const handler = () => setCamOpen(true);
+    const handler = () => setCamOpen(!readOnly);
     editor.on('gb:slash:photo' as Parameters<typeof editor.on>[0], handler);
     return () => {
       editor.off('gb:slash:photo' as Parameters<typeof editor.off>[0], handler);
     };
-  }, [editor]);
+  }, [editor, readOnly]);
 
   // Subscribe to the /template slash command (smart templates, C1).
   useEffect(() => {
@@ -285,8 +285,8 @@ export function RichMarkdownEditor({
   useEffect(() => {
     if (openCameraSignal === prevCameraSignalRef.current) return;
     prevCameraSignalRef.current = openCameraSignal;
-    setCamOpen(true);
-  }, [openCameraSignal]);
+    setCamOpen(!readOnly);
+  }, [openCameraSignal, readOnly]);
 
   // Populate the imperative handle so docs-assist panel and PDF export can
   // programmatically read/replace editor content without prop drilling.
@@ -430,7 +430,7 @@ export function RichMarkdownEditor({
       data-testid="rich-markdown-editor"
       data-focus={focus ? 'on' : undefined}
     >
-      {mode === 'rich' && editor && !focus && (
+      {mode === 'rich' && editor && !focus && !readOnly && (
         <EditorToolbar editor={editor} onPhoto={() => setCamOpen(true)} />
       )}
       <div className="flex-1 overflow-auto">
@@ -495,7 +495,7 @@ export function RichMarkdownEditor({
       )}
       {diagramSource !== null && <DiagramModal source={diagramSource} onClose={closeDiagram} />}
       <WebcamCaptureModal
-        open={camOpen}
+        open={camOpen && !readOnly}
         onClose={() => setCamOpen(false)}
         onCapture={(file) => {
           if (!editorRef.current) return;
@@ -504,7 +504,7 @@ export function RichMarkdownEditor({
             .catch((e: Error) => toast.error(`photo insert failed: ${e.message}`));
         }}
       />
-      {templateOpen && (
+      {templateOpen && !readOnly && (
         <TemplateInsertDialog
           onClose={() => setTemplateOpen(false)}
           onInsert={(md) => {

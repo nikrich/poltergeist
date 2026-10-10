@@ -113,4 +113,12 @@ describe('TemplateTestRun', () => {
     mount();
     expect(await screen.findByRole('alert')).toHaveTextContent('test run failed — sidecar down');
   });
+
+  it('renders the preview without the formatting toolbar or the photo button', async () => {
+    postMock.mockResolvedValueOnce(ok('Alex'));
+    mount();
+    await waitFor(() => expect(screen.getByText(/1-1 with/)).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'photo' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'bold' })).not.toBeInTheDocument();
+  });
 });

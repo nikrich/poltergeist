@@ -588,3 +588,19 @@ describe('RichMarkdownEditor EditorHandle', () => {
     expect(saved).not.toContain('\\*\\*');
   });
 });
+
+describe('RichMarkdownEditor readOnly', () => {
+  it('hides the toolbar, ignores the camera signal and never writes an asset', () => {
+    const write = vi.fn();
+    vi.stubGlobal('gb', { ...(window as unknown as { gb?: object }).gb, assets: { write } });
+    const props = { markdown: 'body text', onSave: () => {}, jotId: 'test', readOnly: true };
+    const { rerender } = render(<RichMarkdownEditor {...props} openCameraSignal={0} />);
+    expect(screen.getByText('body text')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'photo' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'bold' })).not.toBeInTheDocument();
+    rerender(<RichMarkdownEditor {...props} openCameraSignal={1} />);
+    expect(screen.queryByRole('button', { name: 'shutter' })).not.toBeInTheDocument();
+    expect(write).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+});
