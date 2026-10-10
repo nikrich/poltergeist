@@ -266,6 +266,13 @@ def test_mentions_a_name_with_no_page_falls_back_to_text(tmp_path):
     assert _paths(_run(tmp_path, 'type: action_item\nmentions: "[[Robin]]"')) == [f"{AI}/a.md", f"{AI}/b.md"]
 
 
+def test_mentions_finds_text_after_a_query_fence_in_a_crlf_note(tmp_path):
+    p = tmp_path / "20-contexts/work/crlf.md"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_bytes(b"intro\r\n```query\r\nmentions: Robin\r\n```\r\nAlex later\r\n")
+    assert _paths(_run(tmp_path, "mentions: Alex")) == ["20-contexts/work/crlf.md"]
+
+
 def test_mentions_value_is_literal_not_a_pattern(tmp_path):
     _note(tmp_path, "20-contexts/work/a.md", "abc and a.c")
     _note(tmp_path, "20-contexts/work/b.md", "abc only")
@@ -379,6 +386,11 @@ def test_first_heading_is_linear_on_hostile_lines():
 def test_body_text_strips_query_fences_and_unclosed_runs_to_end(tmp_path):
     _note(tmp_path, "n.md", "a\n```query\nmentions: Alex\n```\nb\n```python\nx\n```\nc\n```query\nmentions: Robin\n")
     assert _body_text(tmp_path, "n.md") == "a\n\nb\n```python\nx\n```\nc\n"
+
+
+def test_body_text_closes_query_fences_in_crlf_notes(tmp_path):
+    (tmp_path / "n.md").write_bytes(b"a\r\n```query\r\nmentions: x\r\n```\r\nAlex later\r\n")
+    assert _body_text(tmp_path, "n.md") == "a\r\n\nAlex later\r\n"
 
 
 def test_body_text_is_linear_on_unclosed_fences(tmp_path):

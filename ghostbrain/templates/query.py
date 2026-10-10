@@ -333,7 +333,7 @@ def _strip_query_fences(body: str) -> str:
     in_fence = False
     for line in body.split("\n"):
         if in_fence:
-            if line.startswith("```") and not line[3:].strip(" \t"):
+            if line.startswith("```") and not line[3:].strip(" \t\r"):
                 in_fence = False
             continue
         if line.startswith("```query"):
