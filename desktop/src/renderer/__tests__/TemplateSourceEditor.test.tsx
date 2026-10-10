@@ -128,8 +128,9 @@ describe('TemplateSourceEditor', () => {
     fireEvent.click(screen.getByRole('button', { name: 'reload theirs' }));
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
     // @uiw/react-codemirror defers outside value changes for 200ms after the
-    // last edit (its typing latch), so wait for the disk text to land.
-    await waitFor(() => expect(ed.text()).toBe('theirs on disk\n'));
+    // last edit (its typing latch), so wait for the disk text to land —
+    // longer than waitFor's 1 s default: the windows release runner is slow.
+    await waitFor(() => expect(ed.text()).toBe('theirs on disk\n'), { timeout: 5000 });
     expect(screen.queryByText('unsaved')).not.toBeInTheDocument();
     // The next save uses the reloaded etag.
     ed.edit('after reload\n');
