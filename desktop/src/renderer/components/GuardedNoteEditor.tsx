@@ -17,6 +17,7 @@ import {
 import { PageHeader } from './page/PageHeader';
 import { PageTitle } from './page/PageTitle';
 import { registerNavigationGuard, type NavigationScope } from '../stores/navigation';
+import { toast } from '../stores/toast';
 import type { WriteActor } from '../../shared/types';
 
 export interface GuardHandle {
@@ -115,6 +116,10 @@ export function GuardedNoteEditor({
     { body: initialBody, etag: initialEtag },
     { send, fetchLatest },
     onSaveError,
+    (diskBody) => {
+      remount(diskBody);
+      toast.info('The assistant’s change is waiting for your approval on the Changes screen.');
+    },
   );
   const guardLatest = useRef(guard);
   guardLatest.current = guard;

@@ -371,4 +371,66 @@ describe('useGuardedSave', () => {
       ['ai text', 'e5'],
     ]);
   });
+
+  it('a held change is not marked saved and drops text queued on top of it', async () => {
+    const first = deferred<{ etag: string; status: 'pending' }>();
+    const send = vi.fn().mockReturnValueOnce(first.promise).mockResolvedValueOnce({ etag: 'e2' });
+    const onHeld = vi.fn();
+    const { result } = renderHook(() =>
+      useGuardedSave({ body: 'a', etag: 'e1' }, { send, fetchLatest: vi.fn() }, undefined, onHeld),
+    );
+    act(() => {
+      result.current.attributeNext('assistant');
+      result.current.save('ai text');
+    });
+    act(() => result.current.save('ai text + a keystroke'));
+    await act(async () => first.resolve({ etag: 'e1', status: 'pending' }));
+    expect(onHeld).toHaveBeenCalledWith('a');
+    expect(send).toHaveBeenCalledTimes(1);
+    act(() => result.current.save('typed later'));
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+    expect(send.mock.calls[1]).toEqual(['typed later', 'e1']);
+  });
+
+  it('a held auto-resolve resend is reported too', async () => {
+    const send = vi
+      .fn()
+      .mockRejectedValueOnce(conflict())
+      .mockResolvedValueOnce({ etag: 'e5', status: 'pending' });
+    const fetchLatest = vi.fn().mockResolvedValue({ body: 'a', etag: 'e5' });
+    const onHeld = vi.fn();
+    const { result } = renderHook(() =>
+      useGuardedSave({ body: 'a', etag: 'e1' }, { send, fetchLatest }, undefined, onHeld),
+    );
+    act(() => {
+      result.current.attributeNext('assistant');
+      result.current.save('ai text');
+    });
+    await waitFor(() => expect(onHeld).toHaveBeenCalledWith('a'));
+    expect(result.current.conflict).toBeNull();
+  });
+
+  it('a held change sent from the queue resets to the save before it', async () => {
+    const first = deferred<{ etag: string }>();
+    const send = vi
+      .fn()
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce({ etag: 'e2', status: 'pending' })
+      .mockResolvedValueOnce({ etag: 'e3' });
+    const onHeld = vi.fn();
+    const { result } = renderHook(() =>
+      useGuardedSave({ body: 'a', etag: 'e1' }, { send, fetchLatest: vi.fn() }, undefined, onHeld),
+    );
+    act(() => result.current.save('typing'));
+    act(() => {
+      result.current.attributeNext('assistant');
+      result.current.save('typing + ai text');
+    });
+    await act(async () => first.resolve({ etag: 'e2' }));
+    await waitFor(() => expect(onHeld).toHaveBeenCalledWith('typing'));
+    expect(send.mock.calls[1]).toEqual(['typing + ai text', 'e2', 'assistant']);
+    act(() => result.current.save('typed later'));
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(3));
+    expect(send.mock.calls[2]).toEqual(['typed later', 'e2']);
+  });
 });
