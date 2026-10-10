@@ -8,6 +8,7 @@ interface Props {
   scopeName: string;
   onRename: (title: string) => void;
   onReindex: () => void;
+  onSummarise: () => void;
   onCollapse?: () => void;
 }
 
@@ -15,7 +16,7 @@ const Cap = ({ children }: { children: React.ReactNode }) => (
   <span className="font-mono text-10 uppercase tracking-[0.12em] text-ink-3">{children}</span>
 );
 
-export function DocInspector({ doc, scopeName, onRename, onReindex, onCollapse }: Props) {
+export function DocInspector({ doc, scopeName, onRename, onReindex, onSummarise, onCollapse }: Props) {
   const [editing, setEditing] = useState(false);
   const kindLine = `${kindLabel(doc)}${doc.pages ? ` · ${doc.pages} pages` : ''}`;
   const added = new Date(doc.created).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
@@ -63,6 +64,22 @@ export function DocInspector({ doc, scopeName, onRename, onReindex, onCollapse }
         <dt className="font-mono text-[10.5px] text-ink-3">{doc.project ? 'project' : 'context'}</dt>
         <dd className="text-ink-1">{doc.project ? scopeName : doc.context}</dd>
       </dl>
+      {doc.kind !== 'opaque' && (
+        <div className="rounded-[10px] border border-[rgba(197,255,61,.18)] bg-gradient-to-b from-[rgba(197,255,61,.06)] to-transparent p-3 leading-normal text-ink-1">
+          <span className="mb-1.5 block font-mono text-10 uppercase tracking-[0.12em] text-neon-ink">✦ what poltergeist knows</span>
+          {doc.summary_state === 'pending' ? (
+            <span className="animate-pulse text-ink-3">summarising…</span>
+          ) : doc.summary ? (
+            <p>{doc.summary}</p>
+          ) : doc.index_status === 'ok' ? (
+            <button type="button" onClick={onSummarise} className="font-mono text-11 text-neon-ink hover:underline">
+              summarise
+            </button>
+          ) : (
+            <span className="text-ink-3">needs indexing first</span>
+          )}
+        </div>
+      )}
       {doc.index_status === 'failed' && (
         <div className="rounded-[10px] border border-[rgba(242,193,78,.3)] bg-[rgba(242,193,78,.06)] p-3 leading-normal text-ink-1">
           Poltergeist couldn&apos;t read this file&apos;s text, so chat and search can&apos;t see it yet.

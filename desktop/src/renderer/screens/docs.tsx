@@ -20,6 +20,7 @@ import {
   useMoveFolder,
   usePatchDoc,
   useReindexDoc,
+  useSummariseDoc,
   useRemoveOrphan,
   useUploadDoc,
 } from '../lib/api/hooks';
@@ -40,6 +41,7 @@ export function DocsScreen() {
   const patchDoc = usePatchDoc();
   const deleteDoc = useDeleteDoc();
   const reindex = useReindexDoc();
+  const summarise = useSummariseDoc();
   const createFolder = useCreateFolder();
   const moveFolder = useMoveFolder();
   const deleteFolder = useDeleteFolder();
@@ -306,6 +308,7 @@ export function DocsScreen() {
           scopeName={scopeName(selectedDoc.context, selectedDoc.project)}
           onRename={(title) => run(patchDoc.mutateAsync({ docId: selectedDoc.doc_id, title }))}
           onReindex={() => run(reindex.mutateAsync(selectedDoc.doc_id))}
+          onSummarise={() => run(summarise.mutateAsync(selectedDoc.doc_id))}
         />
       )}
       <QuickOpen open={quickOpen} onClose={() => setQuickOpen(false)} onPick={(docId) => select({ type: 'doc', docId })} />

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type {
   DocDetail,
+  DocFolderNode,
   DocSummary,
   FolderRef,
   LibraryTree,
@@ -940,11 +941,27 @@ export function useRecheckLlmProviders() {
 const invalidateLibrary = (qc: ReturnType<typeof useQueryClient>) =>
   qc.invalidateQueries({ queryKey: ['library'] });
 
+function anyPending(tree: LibraryTree | undefined): boolean {
+  if (!tree) return false;
+  const walk = (n: { docs: DocSummary[]; folders: DocFolderNode[] }): boolean =>
+    n.docs.some((d) => d.summary_state === 'pending' || d.index_status === 'pending') || n.folders.some(walk);
+  return tree.scopes.some(walk);
+}
+
 export function useLibraryTree() {
   return useQuery({
     queryKey: ['library', 'tree'],
     queryFn: () => get<LibraryTree>('/v1/library/tree'),
     staleTime: 5_000,
+    refetchInterval: (q) => (anyPending(q.state.data as LibraryTree | undefined) ? 3_000 : false),
+  });
+}
+
+export function useSummariseDoc() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (docId: string) => post<{ queued: boolean }>(`/v1/library/docs/${docId}/summarise`),
+    onSuccess: () => invalidateLibrary(qc),
   });
 }
 
