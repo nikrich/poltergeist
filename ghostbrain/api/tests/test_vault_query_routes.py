@@ -176,3 +176,16 @@ def test_tick_as_mcp_without_if_match_writes_nothing(client, auth_headers, tmp_v
     assert r.status_code == 428, r.text
     assert r.json()["currentEtag"] == compute_etag(before)
     assert p.read_bytes() == before
+
+
+def test_a_held_tick_is_202_pending_and_writes_nothing(client, auth_headers, tmp_vault):
+    rel = "80-profile/preferences.md"  # stable profile: a non-user edit is held (B3)
+    p = _write(tmp_vault, rel, "---\nstatus: open\n---\n\n# Preferences\n")
+    before = p.read_bytes()
+    headers = {
+        **auth_headers, "X-Poltergeist-Actor": "assistant", "If-Match": f'"{compute_etag(before)}"',
+    }
+    r = client.patch("/v1/vault/status", json={"path": rel, "status": "done"}, headers=headers)
+    assert r.status_code == 202, r.text
+    assert r.json()["status"] == "pending" and r.json()["changeId"]
+    assert p.read_bytes() == before

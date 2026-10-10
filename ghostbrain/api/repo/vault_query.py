@@ -34,7 +34,8 @@ def set_note_status(
     """One-line frontmatter edit, as the user unless the request says
     otherwise. B1 raises InvalidPath (400), FileMissing (404), WriteConflict
     (409), MalformedNote (422); B2 raises EtagRequired (428) for a non-user
-    actor without a base etag."""
+    actor without a base etag. A change B3 holds comes back as
+    ``{"status": "pending", "changeId": ...}``."""
     rel = path.strip()
     if not rel.lower().endswith(".md"):
         raise InvalidPath("only markdown notes (.md) have a status")
@@ -45,7 +46,6 @@ def set_note_status(
         reason=f"query block: mark {status}",
         base_etag=base_etag,
     )
-    # TODO(B3): a held/pending non-user write (result.status == "pending") is
-    # echoed here as applied; once B3 installs a hold policy, surface
-    # result.status and the change id instead.
+    if result.status == "pending":  # held by the B3 risk rules: nothing written
+        return {"status": "pending", "changeId": result.change_id}
     return {"path": result.path, "status": status, "etag": result.etag}
