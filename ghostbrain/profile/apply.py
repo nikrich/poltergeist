@@ -36,9 +36,9 @@ from typing import Any, Iterable
 
 from ghostbrain import routing_config
 from ghostbrain.paths import vault_path
-from ghostbrain.worker.audit import audit_log
 from ghostbrain.vault_write import WriteResult, worker_actor
 from ghostbrain.vault_write.jobs import rewrite_text
+from ghostbrain.worker.audit import audit_log
 
 log = logging.getLogger("ghostbrain.profile.apply")
 
