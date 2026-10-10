@@ -64,6 +64,17 @@
   --kind-doc:      #5EC8B8;
   --kind-jot:      #E58FD0;
   --kind-note:     #B7BAC2;
+  --kind-self:        #F2F3F5;
+  --kind-context:     #8C93A8;
+  --kind-project:     #4FD1FF;
+  --kind-artefact:    #6E7381;
+  --kind-concept:     #9AD1FF;
+  --kind-rule:        #FFB86B;
+  --kind-requirement: #F5E663;
+  --kind-system:      #62D69B;
+  --kind-role:        #D9A6FF;
+  --kind-question:    #FF8FA3;
+  --kind-topic:       #F28C38;
 
   /* ---------- borders & dividers (alpha on ink-0) ----------------------- */
   --hairline:      rgba(242, 243, 245, 0.08);

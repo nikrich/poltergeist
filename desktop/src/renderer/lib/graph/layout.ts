@@ -8,13 +8,13 @@ import {
   type SimulationNodeDatum,
 } from 'd3-force';
 
-import type { EgoGraph, NoteKind, VaultGraph } from '../../../shared/api-types';
+import type { GraphKind, VaultGraph } from '../../../shared/api-types';
 import { nodeRadius } from '../constellation-engine';
 
 export interface SceneNode {
   path: string;
   title: string;
-  kind: NoteKind;
+  kind: GraphKind;
   degree: number;
   ghost: boolean;
   hop: number;
@@ -70,7 +70,14 @@ function mapEdges(
   return out;
 }
 
-export function layoutEgo(graph: EgoGraph, ticks: number = EGO_TICKS): Scene {
+/** Structural input for the ego layout: the A6 ego graph and the ontology graph both fit. */
+export interface EgoLike {
+  focus: string;
+  nodes: ReadonlyArray<{ path: string; title: string; kind: GraphKind; degree: number; ghost: boolean; hop: number }>;
+  edges: ReadonlyArray<{ source: string; target: string; weight: number }>;
+}
+
+export function layoutEgo(graph: EgoLike, ticks: number = EGO_TICKS): Scene {
   const index = indexByPath(graph.nodes.map((n) => n.path));
   const count = Math.max(graph.nodes.length, 1);
   // Seed each node on its hop ring so the start is deterministic and spread.

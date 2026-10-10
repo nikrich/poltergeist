@@ -71,6 +71,11 @@ mcp = [
     "mcp>=1.2.0,<2",  # 2.0 removed mcp.server.fastmcp; ghostbrain.mcp is written against 1.x
     "httpx>=0.27.0",
 ]
+ontology = [
+    # Gold graph: embedded ArcadeDB (Cypher + vectors) with a bundled JRE.
+    # Validated frozen on macOS arm64, Windows and Linux in the 2026-10-10 spike.
+    "arcadedb-embedded>=26.10.1,<27",
+]
 recorder-win = [
     # WASAPI loopback capture; Windows only. Imported exclusively inside
     # ghostbrain/recorder/audio/wasapi.py.
@@ -80,6 +85,7 @@ recorder-win = [
 
 [project.scripts]
 ghostbrain-bootstrap = "ghostbrain.bootstrap:main"
+ghostbrain-ontology-selfcheck = "ghostbrain.ontology.selfcheck:main"
 ghostbrain-worker = "ghostbrain.worker.main:main"
 ghostbrain-claude-md = "ghostbrain.profile.claude_md:main"
 ghostbrain-digest = "ghostbrain.worker.digest:main"

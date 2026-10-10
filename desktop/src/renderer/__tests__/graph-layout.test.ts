@@ -56,7 +56,8 @@ describe('layoutEgo', () => {
       nodes.push(n(`h2-${i}.md`, 2));
       edges.push(e(`h1-${i % 60}.md`, `h2-${i}.md`));
     }
-    const s = layoutEgo({ focus: 'f.md', depth: 2, truncated: true, indexing: false, nodes, edges });
+    const ego: EgoGraph = { focus: 'f.md', depth: 2, truncated: true, indexing: false, nodes, edges };
+    const s = layoutEgo(ego);
     expect(s.nodes).toHaveLength(300);
     expect(s.nodes.every((x) => Number.isFinite(x.x) && Number.isFinite(x.y))).toBe(true);
   });

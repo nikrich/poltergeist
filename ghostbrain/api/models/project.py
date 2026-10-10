@@ -12,6 +12,7 @@ class Project(BaseModel):
     created_at: float
     # Design-system pack id for live design sessions; None = the user's default.
     design_system: str | None = None
+    uuid: str | None = None
 
 
 class CreateProjectRequest(BaseModel):

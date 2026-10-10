@@ -9,6 +9,7 @@
 # Output: desktop/resources/sidecar/ghostbrain-api/  (--onedir layout)
 # Electron-builder picks this up via `extraResources` in electron-builder.yml.
 
+import os
 import sys
 
 from PyInstaller.utils.hooks import (
@@ -133,6 +134,23 @@ if sys.platform == 'win32':
 # its own — list both the wrapper package and its compiled extension module.
 if sys.platform == 'darwin':
     hiddenimports += ['CoreAudio', 'CoreAudio._CoreAudio']
+
+# Ontology gold graph (arcadedb-embedded). The bundled JRE and jars are copied
+# verbatim as data so PyInstaller never relocates the JRE's dylibs; validated
+# frozen on macOS arm64 and Windows in the 2026-10-10 spike. Guarded so builds
+# without the `ontology` extra still work.
+try:
+    import arcadedb_embedded as _adb
+
+    _adb_dir = os.path.dirname(_adb.__file__)
+    datas += [
+        (os.path.join(_adb_dir, 'jre'), 'arcadedb_embedded/jre'),
+        (os.path.join(_adb_dir, 'jars'), 'arcadedb_embedded/jars'),
+    ]
+    datas += copy_metadata('arcadedb_embedded') + copy_metadata('jpype1')
+    hiddenimports += collect_submodules('arcadedb_embedded') + collect_submodules('jpype') + ['_jpype']
+except ImportError:
+    pass
 
 a = Analysis(
     ['../ghostbrain/api/__main__.py'],

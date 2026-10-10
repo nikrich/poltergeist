@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { NoteKind } from '../../shared/api-types';
+import type { GraphKind } from '../../shared/api-types';
 import { fitCamera, nodeRadius, toScreen, type Camera } from '../lib/constellation-engine';
 import {
   EDGE_BUDGET,
@@ -16,7 +16,7 @@ import type { Scene, SceneNode } from '../lib/graph/layout';
 
 const W = 1200;
 const H = 800;
-const NONE = new Set<NoteKind>();
+const NONE = new Set<GraphKind>();
 
 /** Synthetic whole-vault scene: seeded positions, ~3 links per node. */
 function bigScene(count = 30_000, linksPerNode = 3): Scene {
@@ -76,7 +76,7 @@ describe('planFrame', () => {
 
   it('hides filtered kinds and their links, but never the focus', () => {
     const focused: Scene = { ...scene, focus: 0 }; // node 0 is a person
-    const hidden = new Set<NoteKind>(['person', 'note']);
+    const hidden = new Set<GraphKind>(['person', 'note']);
     const plan = planFrame(focused, { x: 0, y: 0, scale: 2 }, W, H, { hidden, hover: -1 });
     const shown = plan.nodes.filter((i) => i !== 0);
     expect(shown.every((i) => !hidden.has(focused.nodes[i]!.kind))).toBe(true);
@@ -108,7 +108,7 @@ describe('pickNode', () => {
     const [x, y] = toScreen(cam, W, H, 0, 0);
     expect(pickNode(scene, cam, W, H, x, y, NONE)).toBe(0);
     expect(pickNode(scene, cam, W, H, x + 200, y, NONE)).toBe(-1);
-    expect(pickNode(scene, cam, W, H, x, y, new Set<NoteKind>(['person']))).toBe(-1);
+    expect(pickNode(scene, cam, W, H, x, y, new Set<GraphKind>(['person']))).toBe(-1);
   });
 });
 

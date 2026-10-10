@@ -1,4 +1,4 @@
-import type { NoteKind } from '../../../shared/api-types';
+import type { GraphKind } from '../../../shared/api-types';
 import { toScreen, type Camera } from '../constellation-engine';
 import {
   EDGE_COLOR,
@@ -24,7 +24,7 @@ export const VIEW_MARGIN_PX = 40;
 export const LABEL_MAX_CHARS = 32;
 
 export interface FrameOptions {
-  hidden: ReadonlySet<NoteKind>;
+  hidden: ReadonlySet<GraphKind>;
   hover: number;
 }
 
@@ -48,7 +48,7 @@ export type DrawContext = Pick<
   | 'fillStyle' | 'strokeStyle' | 'lineWidth' | 'font' | 'textAlign' | 'textBaseline' | 'globalAlpha'
 >;
 
-export function isHidden(scene: Scene, i: number, hidden: ReadonlySet<NoteKind>): boolean {
+export function isHidden(scene: Scene, i: number, hidden: ReadonlySet<GraphKind>): boolean {
   const node = scene.nodes[i];
   return node !== undefined && i !== scene.focus && hidden.has(node.kind);
 }
@@ -151,7 +151,7 @@ export function drawFrame(
   }
 
   // Nodes: one filled path per kind; ghosts as grey rings.
-  const byKind = new Map<NoteKind, number[]>();
+  const byKind = new Map<GraphKind, number[]>();
   const ghosts: number[] = [];
   for (const i of plan.nodes) {
     const n = scene.nodes[i]!;
@@ -228,7 +228,7 @@ export function pickNode(
   h: number,
   px: number,
   py: number,
-  hidden: ReadonlySet<NoteKind>,
+  hidden: ReadonlySet<GraphKind>,
 ): number {
   let best = -1;
   let bestD = Infinity;

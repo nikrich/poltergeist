@@ -29,6 +29,7 @@ from ghostbrain.api.routes import llm_providers as llm_providers_routes
 from ghostbrain.api.routes import mcp_servers as mcp_servers_routes
 from ghostbrain.api.routes import meetings as meetings_routes
 from ghostbrain.api.routes import notes as notes_routes
+from ghostbrain.api.routes import ontology as ontology_routes
 from ghostbrain.api.routes import projects as projects_routes
 from ghostbrain.api.routes import recorder as recorder_routes
 from ghostbrain.api.routes import scheduler as scheduler_routes
@@ -122,6 +123,7 @@ def create_app(token: str) -> FastAPI:
     app.include_router(design_routes.router)
     app.include_router(design_artefacts_routes.router)
     app.include_router(library_routes.router)
+    app.include_router(ontology_routes.router)
     app.include_router(templates_routes.router)
     app.include_router(changes_routes.router)
     app.include_router(connector_auth_routes.router)

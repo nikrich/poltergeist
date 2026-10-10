@@ -153,6 +153,7 @@ def _publish_descriptor(port: int, token: str) -> IO | None:
 # API stack (see module docstring of the test file).
 SUBCOMMANDS: dict[str, str] = {
     "bootstrap": "ghostbrain.bootstrap:main",
+    "ontology-selfcheck": "ghostbrain.ontology.selfcheck:main",
     "worker": "ghostbrain.worker.main:main",
     "claude-md": "ghostbrain.profile.claude_md:main",
     "digest": "ghostbrain.worker.digest:main",

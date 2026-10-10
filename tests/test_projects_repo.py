@@ -32,6 +32,7 @@ def test_create_writes_registry_and_folder(vault: Path):
         "description": "second brain product",
         "archived": False,
         "created_at": p["created_at"],
+        "uuid": p["uuid"],
     }
     assert (vault / "20-contexts/consulting/projects/poltergeist").is_dir()
     on_disk = json.loads((vault / "90-meta/projects.json").read_text())

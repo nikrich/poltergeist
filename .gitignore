@@ -43,3 +43,6 @@ media/poltergeist-demo.webm
 
 # local uv venv lock (CI uses pip)
 uv.lock
+
+# ArcadeDB embedded application logs
+/log/
