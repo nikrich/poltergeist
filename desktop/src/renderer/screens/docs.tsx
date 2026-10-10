@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import type { AttentionItem, FolderRef } from '../../shared/api-types';
+import type { AttentionItem, DocSummary, FolderRef } from '../../shared/api-types';
 import { AttentionPanel } from '../components/docs/AttentionPanel';
 import { DocInspector } from '../components/docs/DocInspector';
 import { DocReader } from '../components/docs/DocReader';
@@ -12,6 +12,7 @@ import { CLIENT_MAX_BYTES, fileToBase64 } from '../components/docs/upload';
 import { Lucide } from '../components/Lucide';
 import {
   useAdoptOriginal,
+  useCreateConversation,
   useCreateFolder,
   useDeleteDoc,
   useDeleteFolder,
@@ -24,7 +25,9 @@ import {
   useRemoveOrphan,
   useUploadDoc,
 } from '../lib/api/hooks';
+import { useChat } from '../stores/chat';
 import { useDocs } from '../stores/docs';
+import { useNavigation } from '../stores/navigation';
 import { useSettings } from '../stores/settings';
 import { toast } from '../stores/toast';
 
@@ -43,6 +46,7 @@ export function DocsScreen() {
   const reindex = useReindexDoc();
   const summarise = useSummariseDoc();
   const summarising = useRef(new Set<string>());
+  const createConversation = useCreateConversation();
   const createFolder = useCreateFolder();
   const moveFolder = useMoveFolder();
   const deleteFolder = useDeleteFolder();
@@ -140,6 +144,22 @@ export function DocsScreen() {
 
   const run = (p: Promise<unknown>, ok?: string) =>
     p.then(() => ok && toast.success(ok)).catch((e: unknown) => toast.error(errMsg(e)));
+
+  const askAbout = async (d: DocSummary, question: string) => {
+    if (createConversation.isPending) return;
+    try {
+      const conv = await createConversation.mutateAsync();
+      useChat.getState().queueAsk({
+        convId: conv.id,
+        text: question,
+        attachments: [{ path: d.note_path, title: d.title, kind: d.kind }],
+      });
+      useChat.getState().setActive(conv.id);
+      useNavigation.getState().setActive('chat');
+    } catch (e) {
+      toast.error(errMsg(e));
+    }
+  };
 
   const scopeName = (ctx: string, proj: string | null) =>
     data?.scopes.find((s) => s.context === ctx && s.project === proj)?.name ?? ctx;
@@ -310,6 +330,7 @@ export function DocsScreen() {
           onRename={(title) => run(patchDoc.mutateAsync({ docId: selectedDoc.doc_id, title }))}
           onReindex={() => run(reindex.mutateAsync(selectedDoc.doc_id))}
           summarising={summarise.isPending && summarise.variables === selectedDoc.doc_id}
+          onAsk={(q) => void askAbout(selectedDoc, q)}
           onSummarise={() => {
             if (summarising.current.has(selectedDoc.doc_id)) return;
             summarising.current.add(selectedDoc.doc_id);

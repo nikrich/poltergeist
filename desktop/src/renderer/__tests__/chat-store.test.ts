@@ -3,7 +3,7 @@ import { useChat } from '../stores/chat';
 
 describe('chat store', () => {
   beforeEach(() => {
-    useChat.setState({ activeId: null, streams: {}, errors: {}, exporting: {} });
+    useChat.setState({ activeId: null, streams: {}, errors: {}, exporting: {}, pendingAsk: null });
   });
 
   it('beginStream snapshots the pending user text and clears prior error', () => {
@@ -107,5 +107,15 @@ describe('chat store', () => {
     expect(useChat.getState().exporting.c2).toBeUndefined();
     useChat.getState().endExport('c1');
     expect(useChat.getState().exporting.c1).toBeUndefined();
+  });
+});
+
+describe('pending ask', () => {
+  it('is taken exactly once, only for its conversation', () => {
+    const att = { path: '20-contexts/work/docs/a-aaaaaa.md', title: 'A', kind: 'pdf' };
+    useChat.getState().queueAsk({ convId: 'c1', text: 'what is this?', attachments: [att] });
+    expect(useChat.getState().takeAsk('c2')).toBeNull();
+    expect(useChat.getState().takeAsk('c1')).toEqual({ convId: 'c1', text: 'what is this?', attachments: [att] });
+    expect(useChat.getState().takeAsk('c1')).toBeNull();
   });
 });

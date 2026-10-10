@@ -15,6 +15,8 @@ vi.mock('../lib/api/client', () => ({
 import * as client from '../lib/api/client';
 import { DocsScreen } from '../screens/docs';
 import { useDocs } from '../stores/docs';
+import { useChat } from '../stores/chat';
+import { useNavigation } from '../stores/navigation';
 import { DRAG_MIME, encodeDrag } from '../components/docs/tree-model';
 import { doc, libraryFixture } from './fixtures/library';
 
@@ -215,5 +217,23 @@ describe('DocsScreen', () => {
       expect(useDocs.getState().treeCollapsed).toBe(false);
       input.remove();
     });
+  });
+
+  it('ask about this doc creates a conversation, queues the ask and opens chat', async () => {
+    useChat.setState({ activeId: null, pendingAsk: null });
+    useNavigation.setState({ active: 'docs' } as never);
+    renderScreen();
+    vi.mocked(client.post).mockResolvedValue({ id: 'conv9' } as never);
+    fireEvent.click(await screen.findByText('Payments API v2'));
+    const input = await screen.findByPlaceholderText('ask about this doc…');
+    fireEvent.change(input, { target: { value: 'summarise risks' } });
+    fireEvent.submit((input as HTMLInputElement).form!);
+    await waitFor(() => expect(useNavigation.getState().active).toBe('chat'));
+    expect(client.post).toHaveBeenCalledWith('/v1/chat');
+    const ask = useChat.getState().pendingAsk;
+    expect(ask?.convId).toBe('conv9');
+    expect(ask?.text).toBe('summarise risks');
+    expect(ask?.attachments[0]?.path).toBe(doc({}).note_path);
+    expect(useChat.getState().activeId).toBe('conv9');
   });
 });

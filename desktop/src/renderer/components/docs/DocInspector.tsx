@@ -9,6 +9,7 @@ interface Props {
   onRename: (title: string) => void;
   onReindex: () => void;
   onSummarise: () => void;
+  onAsk: (question: string) => void;
   summarising?: boolean;
   onCollapse?: () => void;
 }
@@ -17,7 +18,7 @@ const Cap = ({ children }: { children: React.ReactNode }) => (
   <span className="font-mono text-10 uppercase tracking-[0.12em] text-ink-3">{children}</span>
 );
 
-export function DocInspector({ doc, scopeName, onRename, onReindex, onSummarise, summarising, onCollapse }: Props) {
+export function DocInspector({ doc, scopeName, onRename, onReindex, onSummarise, onAsk, summarising, onCollapse }: Props) {
   const [editing, setEditing] = useState(false);
   const kindLine = `${kindLabel(doc)}${doc.pages ? ` · ${doc.pages} pages` : ''}`;
   const added = new Date(doc.created).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
@@ -89,6 +90,20 @@ export function DocInspector({ doc, scopeName, onRename, onReindex, onSummarise,
           <button type="button" onClick={onReindex} className="mt-2 block font-mono text-11 text-[#F2C14E] hover:underline">retry indexing</button>
         </div>
       )}
+      <form
+        className="mt-auto flex items-center gap-2 rounded-[9px] border border-hairline-2 bg-paper px-2.5 py-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const input = e.currentTarget.elements.namedItem('ask') as HTMLInputElement;
+          const q = input.value.trim();
+          if (!q) return;
+          onAsk(q);
+          input.value = '';
+        }}
+      >
+        <input name="ask" placeholder="ask about this doc…" className="min-w-0 flex-1 bg-transparent text-12 text-ink-0 outline-none placeholder:text-ink-3" />
+        <button type="submit" aria-label="ask" className="grid h-[22px] w-[22px] place-items-center rounded-md bg-neon font-bold text-[#0E0F12]">↑</button>
+      </form>
     </aside>
   );
 }

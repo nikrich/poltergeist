@@ -113,7 +113,7 @@ function renderChatWithMessages(messages: Conversation['messages']) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  useChat.setState({ activeId: 'c1', streams: {}, errors: {} });
+  useChat.setState({ activeId: 'c1', streams: {}, errors: {}, pendingAsk: null });
   stubGet();
   window.gb.chat = {
     send: vi.fn(async () => ({ ok: true }) as const),
@@ -352,5 +352,20 @@ describe('ChatScreen export', () => {
     await waitFor(() => {
       expect(vi.mocked(client.post)).toHaveBeenCalledWith('/v1/chat/c1/export-jot');
     });
+  });
+});
+
+describe('ChatScreen pending ask', () => {
+  it('sends a queued ask exactly once, even across StrictMode double effects and re-renders', async () => {
+    const att = { path: '20-contexts/work/docs/a-aaaaaa.md', title: 'A', kind: 'pdf' };
+    useChat.setState({ activeId: 'c1', pendingAsk: { convId: 'c1', text: 'q', attachments: [att] } });
+    const ui = wrap(<React.StrictMode><ChatScreen /></React.StrictMode>);
+    const { rerender } = render(ui);
+    await waitFor(() => expect(window.gb.chat.send).toHaveBeenCalledTimes(1));
+    expect(window.gb.chat.send).toHaveBeenCalledWith('c1', 'q', [att.path]);
+    expect(useChat.getState().pendingAsk).toBeNull();
+    rerender(ui);
+    await screen.findAllByText('auth thread');
+    expect(window.gb.chat.send).toHaveBeenCalledTimes(1);
   });
 });
