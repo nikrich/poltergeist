@@ -1,11 +1,26 @@
+import { afterEach } from 'vitest';
 import { Editor } from '@tiptap/core';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import { buildEditorExtensions } from '../../lib/editor/extensions';
 import { getMarkdown } from '../../lib/editor/markdown';
 
-/** Headless editor built from the exact production schema. */
+const liveEditors = new Set<Editor>();
+
+/** Destroy every editor makeEditor created; safe for editors a test already destroyed. */
+export function destroyEditors(): void {
+  for (const editor of liveEditors) if (!editor.isDestroyed) editor.destroy();
+  liveEditors.clear();
+}
+
+// Registered on the root suite of every test file that imports this helper, so
+// editors never outlive their test (and jsdom teardown).
+afterEach(destroyEditors);
+
+/** Headless editor built from the exact production schema; destroyed after each test. */
 export function makeEditor(content: string, editable = true): Editor {
-  return new Editor({ extensions: buildEditorExtensions(), content, editable });
+  const editor = new Editor({ extensions: buildEditorExtensions(), content, editable });
+  liveEditors.add(editor);
+  return editor;
 }
 
 /** Same normalisation as markdown-roundtrip.test.ts: trailing whitespace per line + trailing newlines. */
