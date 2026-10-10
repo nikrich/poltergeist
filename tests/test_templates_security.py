@@ -165,9 +165,55 @@ def test_sec_aliased_strings_finish_fast():
 
 
 def test_sec_many_schema_errors_finish_fast():
-    extra = "\n".join(f"  extra{i}: 1" for i in range(2_500))
+    extra = "\n".join(f"  extra{i}: 1" for i in range(2_000))
     start = time.monotonic()
     r = parse_template(f"---\ntemplate:\n  name: X\n{extra}\n---\n", "x")
     assert time.monotonic() - start < 2.0
     assert not r.ok and len(r.diagnostics) <= 21
     assert "more" in r.diagnostics[-1].message
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "2026-02-30",
+        "2026-13-45",
+        "9" * 5_000,
+        "1" + ":59" * 5_000,
+        "1" + ":59" * 2_000 + ".5",
+    ],
+    ids=["bad-date", "month-13", "5000-digit-int", "long-sexagesimal", "sexagesimal-float"],
+)
+def test_sec_unconstructable_scalars_are_a_diagnostic(value):
+    src = f"---\ntemplate:\n  name: X\n  frontmatter:\n    v: {value}\n---\n"
+    start = time.monotonic()
+    r = parse_template(src, "x")
+    assert time.monotonic() - start < 1.0
+    assert not r.ok and r.diagnostics[0].code in ("yaml", "limit")
+    assert r.diagnostics[0].line == 2
+
+
+def test_sec_huge_flow_list_is_rejected_fast():
+    src = "---\ntemplate:\n  name: X\n  frontmatter:\n    v: [" + "1," * 120_000 + "1]\n---\n"
+    assert len(src) < MAX_TEMPLATE_CHARS
+    start = time.monotonic()
+    r = parse_template(src, "x")
+    assert time.monotonic() - start < 0.5
+    assert not r.ok and r.diagnostics[0].code == "limit"
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["!!set {a: null}", "!!binary aGVsbG8=", ".nan", "-.inf", "!!omap [{a: 1}]"],
+    ids=["set", "binary", "nan", "inf", "omap"],
+)
+def test_sec_non_json_frontmatter_values_are_rejected(value):
+    src = f"---\ntemplate:\n  name: X\n  frontmatter:\n    v: {value}\n---\n"
+    r = parse_template(src, "x")
+    assert not r.ok and r.diagnostics[0].code == "limit"
+
+
+def test_sec_early_limit_reports_the_column():
+    r = parse_template("---\ntemplate:\n  name: X\n  frontmatter:\n    v: &a 1\n---\n", "x")
+    d = r.diagnostics[0]
+    assert d.code == "limit" and (d.line, d.col) == (5, 8)

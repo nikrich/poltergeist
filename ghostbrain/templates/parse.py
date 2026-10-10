@@ -10,8 +10,10 @@ total-text budget bounds whatever is left.
 """
 from __future__ import annotations
 
+import math
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
+from datetime import date
 from typing import Any, Literal
 
 import yaml
@@ -147,22 +149,26 @@ class _TemplateModel(BaseModel):
     frontmatter: dict[str, Any] = Field(default_factory=dict)
 
 
-def _event_problem(fm_inner: str) -> tuple[int, str] | None:
+def _event_problem(fm_inner: str) -> tuple[yaml.Mark, str] | None:
     """Scan the YAML event stream (nothing constructed yet) for anchors,
-    aliases and runaway nesting, so neither alias amplification nor the
-    composer's recursion ever runs. Returns the 0-based frontmatter line and
-    a message, or None."""
-    depth = 0
+    aliases, too many nodes and runaway nesting, so neither alias
+    amplification nor the constructor/composer ever runs on them. Returns
+    the offending event's mark and a message, or None."""
+    depth = nodes = 0
     for event in yaml.parse(fm_inner, Loader=yaml.SafeLoader):
         if isinstance(event, yaml.AliasEvent) or (
             isinstance(event, yaml.NodeEvent) and event.anchor is not None
         ):
-            return (event.start_mark.line,
+            return (event.start_mark,
                     "YAML anchors and aliases (&name, *name, <<) are not allowed in templates")
+        if isinstance(event, (yaml.ScalarEvent, yaml.CollectionStartEvent)):
+            nodes += 1
+            if nodes > MAX_TREE_NODES:
+                return event.start_mark, "frontmatter is too large"
         if isinstance(event, yaml.CollectionStartEvent):
             depth += 1
             if depth > MAX_TREE_DEPTH + 1:  # the root mapping is depth 1
-                return event.start_mark.line, "frontmatter is nested too deeply"
+                return event.start_mark, "frontmatter is nested too deeply"
         elif isinstance(event, yaml.CollectionEndEvent):
             depth -= 1
     return None
@@ -180,6 +186,12 @@ def _tree_problem(value: Any) -> str | None:
             return "frontmatter is too large"
         if depth > MAX_TREE_DEPTH:
             return "frontmatter is nested too deeply"
+        if isinstance(item, float) and not math.isfinite(item):
+            return "frontmatter numbers must be finite"
+        if isinstance(item, int) and item.bit_length() > 63:
+            return "frontmatter numbers must fit in 64 bits"
+        if not isinstance(item, (str, int, float, date, list, dict)) and item is not None:
+            return f"frontmatter values cannot be YAML {type(item).__name__} (use text, numbers, lists or mappings)"
         if isinstance(item, str):
             chars += len(item)
         elif isinstance(item, dict):
@@ -205,6 +217,44 @@ def _strings(value: Any) -> Iterator[str]:
             stack.extend(item.values())
         elif isinstance(item, list):
             stack.extend(item)
+
+
+def _with_source_spelling(template: Any, root: yaml.Node | None) -> Any:
+    """Copy of the ``template`` mapping whose prompt ``default``/``options``
+    scalars carry their source text, so ``yes``/``On``/``2026-10-09`` stay as
+    written instead of YAML 1.1's bool/date (``_scalar_text`` is the fallback)."""
+    prompts = template.get("prompts")
+    if root is None or not isinstance(prompts, list):
+        return template
+
+    def node_at(*loc: Any) -> yaml.Node | None:
+        node: yaml.Node | None = root
+        for part in loc:
+            if isinstance(node, yaml.MappingNode):
+                node = next((v for k, v in node.value
+                             if isinstance(k, yaml.ScalarNode) and k.value == part), None)
+            elif isinstance(node, yaml.SequenceNode) and isinstance(part, int) and part < len(node.value):
+                node = node.value[part]
+            else:
+                return None
+        return node
+
+    def spelled(value: Any, node: yaml.Node | None) -> Any:
+        if value is None or isinstance(value, (str, list, dict)) or not isinstance(node, yaml.ScalarNode):
+            return value
+        return node.value
+
+    new_prompts = []
+    for i, prompt in enumerate(prompts):
+        if isinstance(prompt, dict):
+            prompt = dict(prompt)
+            if "default" in prompt:
+                prompt["default"] = spelled(prompt["default"], node_at("template", "prompts", i, "default"))
+            if isinstance(prompt.get("options"), list):
+                prompt["options"] = [spelled(v, node_at("template", "prompts", i, "options", j))
+                                     for j, v in enumerate(prompt["options"])]
+        new_prompts.append(prompt)
+    return {**template, "prompts": new_prompts}
 
 
 def _compose(fm_inner: str) -> yaml.Node | None:
@@ -268,7 +318,7 @@ def parse_template(source: str, template_id: str) -> ParseResult:
     try:
         early = _event_problem(parsed.fm_inner)
         if early is not None:
-            return fail(fm_line + early[0], 1, early[1], "limit")
+            return fail(fm_line + early[0].line, early[0].column + 1, early[1], "limit")
         meta = yaml.safe_load(parsed.fm_inner)
     except yaml.MarkedYAMLError as e:
         mark = e.problem_mark or e.context_mark
@@ -279,6 +329,10 @@ def parse_template(source: str, template_id: str) -> ParseResult:
         return fail(fm_line, 1, f"frontmatter is not valid YAML: {e}", "yaml")
     except RecursionError:
         return fail(fm_line, 1, "frontmatter is nested too deeply", "limit")
+    except (ValueError, OverflowError) as e:
+        # SafeConstructor raises these for e.g. 2026-02-30, a >4300-digit int
+        # or an overflowing sexagesimal float.
+        return fail(fm_line, 1, f"frontmatter has a value YAML cannot read: {e}", "yaml")
     if not isinstance(meta, dict) or not isinstance(meta.get("template"), dict):
         return fail(fm_line, 1, "frontmatter needs a `template:` mapping", "no-template")
     problem = _tree_problem(meta)
@@ -292,7 +346,7 @@ def parse_template(source: str, template_id: str) -> ParseResult:
                                     f"top-level key `{key}` is ignored; note frontmatter goes "
                                     "under template.frontmatter", "ignored-key"))
     try:
-        model = _TemplateModel.model_validate(meta["template"])
+        model = _TemplateModel.model_validate(_with_source_spelling(meta["template"], root))
     except ValidationError as e:
         errors = []
         for err in e.errors():

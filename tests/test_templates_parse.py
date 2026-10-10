@@ -165,3 +165,16 @@ def test_defaults_and_options_are_coerced_to_text():
     date_p, n_p = r.template.prompts
     assert date_p.default == "2026-10-09"
     assert n_p.options == ("1", "2", "true") and n_p.default == "2"
+
+
+def test_yaml11_boolean_spellings_are_kept():
+    src = (
+        "---\ntemplate:\n  name: X\n  prompts:\n    - id: go\n      ask: Go?\n"
+        "      type: choice\n      options: [yes, no, On]\n      default: no\n"
+        "    - id: note\n      ask: Note\n      type: text\n      default: off\n---\n"
+    )
+    r = parse_template(src, "x")
+    assert r.ok, r.diagnostics
+    go, note = r.template.prompts
+    assert go.options == ("yes", "no", "On") and go.default == "no"
+    assert note.default == "off"
