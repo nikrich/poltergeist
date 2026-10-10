@@ -91,3 +91,38 @@ def test_stop_during_backoff_breaks_out(tmp_path: Path) -> None:
         await asyncio.wait_for(sched.stop(timeout=2), timeout=3)
 
     _run(scenario())
+
+
+def test_daemon_restart_clears_previous_error(tmp_path: Path) -> None:
+    """The recorder daemon showed a months-old 'ffmpeg not on PATH' error in
+    the UI although it had restarted cleanly: an always-on daemon never
+    completes, so nothing cleared last_error. A (re)start must clear it."""
+    import asyncio
+    from ghostbrain.scheduler import Scheduler
+
+    async def run() -> str | None:
+        sched = Scheduler(status_file=tmp_path / "status.json")
+        attempts = {"n": 0}
+
+        async def flaky(stop: asyncio.Event) -> None:
+            attempts["n"] += 1
+            if attempts["n"] == 1:
+                raise RuntimeError("synthetic first failure")
+            await stop.wait()
+
+        sched.add_daemon("flaky", flaky, label="always-on")
+        sched._DAEMON_BACKOFF_S = (0,)
+        await sched.start()
+        for _ in range(100):
+            await asyncio.sleep(0.02)
+            if attempts["n"] >= 2:
+                break
+        await asyncio.sleep(0.05)
+        status = sched.status_snapshot()["jobs"]["flaky"]
+        await sched.stop()
+        return status
+
+    status = asyncio.run(run())
+    assert status["running"] is True
+    assert status["last_error"] is None
+    assert status["consecutive_failures"] == 1

@@ -164,3 +164,68 @@ def test_health_check_false_without_token(tmp_path, monkeypatch) -> None:
     )
     conn = _conn(tmp_path, MagicMock())
     assert conn.health_check() is False
+
+
+def test_extract_join_urls() -> None:
+    from ghostbrain.connectors.microsoft.teams_meetings.connector import extract_join_urls
+    text = (
+        "Join: <https://teams.microsoft.com/l/meetup-join/19%3ameeting_abc%40thread.v2/0"
+        "?context=%7b%22Tid%22%3a%22t%22%7d>. Or dial https://teams.microsoft.com/meet/33525233?p=xyz, "
+        "again https://teams.microsoft.com/meet/33525233?p=xyz."
+    )
+    urls = extract_join_urls(text)
+    assert urls == [
+        "https://teams.microsoft.com/l/meetup-join/19%3ameeting_abc%40thread.v2/0?context=%7b%22Tid%22%3a%22t%22%7d",
+        "https://teams.microsoft.com/meet/33525233?p=xyz",
+    ]
+    assert extract_join_urls("no links here") == []
+
+
+def test_macos_calendar_discovery_uses_local_events(tmp_path, monkeypatch) -> None:
+    from ghostbrain.connectors.microsoft.teams_meetings import connector as mod
+
+    class FakeCal:
+        def __init__(self, config, queue_dir, state_dir):
+            FakeCal.config = config
+        def fetch(self, since):
+            return [
+                {"title": "Standup", "body": "", "metadata": {
+                    "url": "", "location": "Microsoft Teams Meeting",
+                    "description": "Join https://teams.microsoft.com/l/meetup-join/19%3ax%40thread.v2/0?context=c"}},
+                {"title": "Lunch", "body": "", "metadata": {"url": "", "location": "Cafe", "description": ""}},
+                {"title": "Dup", "body": "https://teams.microsoft.com/l/meetup-join/19%3ax%40thread.v2/0?context=c",
+                 "metadata": {}},
+            ]
+
+    import ghostbrain.connectors.calendar.macos as calmod
+    monkeypatch.setattr(calmod, "MacosCalendarConnector", FakeCal)
+
+    client = MagicMock()
+    conn = mod.TeamsMeetingsConnector(
+        config={"discover_from": "macos_calendar", "calendar_lookback_days": 3,
+                "macos_calendars": {"Calendar": "work"}},
+        queue_dir=tmp_path / "q", state_dir=tmp_path / "s", client=client,
+    )
+    refs = conn._meeting_refs(client)
+    assert refs == ["https://teams.microsoft.com/l/meetup-join/19%3ax%40thread.v2/0?context=c"]
+    assert FakeCal.config["accounts"] == {"Calendar": "work"}
+    assert FakeCal.config["lookback_hours"] == 72
+    client.get_all.assert_not_called()  # Graph calendar never touched
+
+    # No calendars configured → empty, with a warning rather than a crash.
+    conn2 = mod.TeamsMeetingsConnector(
+        config={"discover_from": "macos_calendar"}, queue_dir=tmp_path / "q",
+        state_dir=tmp_path / "s", client=client,
+    )
+    assert conn2._meeting_refs(client) == []
+
+
+def test_graph_calendar_403_explains_the_fix(tmp_path) -> None:
+    import requests
+    from ghostbrain.connectors.microsoft.graph.auth import MicrosoftAuthError
+    client = MagicMock()
+    resp = MagicMock(status_code=403)
+    client.get_all.side_effect = requests.HTTPError("403 Client Error", response=resp)
+    conn = _conn(tmp_path, client)
+    with pytest.raises(MicrosoftAuthError, match="discover_from: macos_calendar"):
+        conn._meeting_refs(client)

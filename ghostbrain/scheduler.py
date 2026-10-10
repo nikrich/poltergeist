@@ -444,6 +444,12 @@ class Scheduler:
             with self._lock:
                 self._status[name].running = True
                 self._status[name].last_run_ok = True
+                # A (re)started daemon is healthy until proven otherwise: the
+                # previous attempt's error must not linger in the UI forever
+                # (an always-on daemon never "completes", so nothing else
+                # would ever clear it).
+                self._status[name].last_error = None
+                self._status[name].last_error_type = None
             try:
                 await factory(self._stop_event)
                 # Voluntary clean exit — no restart.

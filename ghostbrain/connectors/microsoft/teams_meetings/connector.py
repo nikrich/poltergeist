@@ -1,12 +1,16 @@
 """Teams meeting transcripts connector.
 
-Discovers meetings one of two ways, then lists each meeting's transcripts and
+Discovers meetings one of three ways, then lists each meeting's transcripts and
 emits only those created since last_run (the dedup mechanism):
 
 - a configured list of meeting join-URLs/IDs (``microsoft.teams_meetings.meetings``)
   — works with transcripts-only scope (OnlineMeetings.Read +
-  OnlineMeetingTranscript.Read.All); or
-- otherwise, by walking the calendar over a rolling window (needs Calendars.Read).
+  OnlineMeetingTranscript.Read.All);
+- ``discover_from: macos_calendar`` — Teams join links pulled from the local
+  Calendar.app events (EventKit) over the rolling window; also transcripts-only
+  scope, and no hand-maintained list; or
+- otherwise (``discover_from: graph``), by walking the Graph calendar over the
+  rolling window (needs Calendars.Read).
 
 Transcripts are pulled deliberately, so there is no relevance gate. Carries
 over resolve/list/fetch logic from the pull_transcript.py prototype."""
@@ -30,6 +34,25 @@ DEFAULT_LOOKBACK_DAYS = 7
 DEFAULT_BODY_CAP_CHARS = 200_000
 
 _MEET_ID_RE = re.compile(r"/meet/(\d+)")
+# Teams join links as they appear in calendar invitations: the long
+# meetup-join URL and the short teams.microsoft.com/meet/<id> form.
+_JOIN_URL_RE = re.compile(
+    r"https://teams\.microsoft\.com/(?:l/meetup-join/[^\s<>\"')\]]+|meet/\d+[^\s<>\"')\]]*)",
+    re.IGNORECASE,
+)
+
+DISCOVER_MODES = ("graph", "macos_calendar")
+
+
+def extract_join_urls(text: str) -> list[str]:
+    """Teams join links in free text (invitation body, location, URL field),
+    de-duplicated, first occurrence first."""
+    out: list[str] = []
+    for m in _JOIN_URL_RE.finditer(text or ""):
+        url = m.group(0).rstrip(".,;")
+        if url not in out:
+            out.append(url)
+    return out
 
 
 def extract_meeting_id(ref: str) -> str | None:
@@ -53,6 +76,11 @@ class TeamsMeetingsConnector(Connector):
         self.configured_meetings = [
             str(m).strip() for m in (config.get("meetings") or []) if str(m).strip()
         ]
+        mode = str(config.get("discover_from") or "graph").strip().lower()
+        self.discover_from = mode if mode in DISCOVER_MODES else "graph"
+        # {Calendar.app calendar name: context}; injected by the runner from
+        # routing.yaml's calendar.macos.accounts.
+        self.macos_calendars = dict(config.get("macos_calendars") or {})
         self._client = client  # injected in tests
 
     def health_check(self) -> bool:
@@ -95,12 +123,60 @@ class TeamsMeetingsConnector(Connector):
         falls back to walking the calendar (needs Calendars.Read)."""
         if self.configured_meetings:
             return self.configured_meetings
+        if self.discover_from == "macos_calendar":
+            return self._macos_calendar_refs()
         window_start = datetime.now(timezone.utc) - timedelta(days=self.lookback_days)
         refs: list[str] = []
-        for ev in self._list_calendar_online_meetings(client, window_start):
+        try:
+            events = self._list_calendar_online_meetings(client, window_start)
+        except requests.HTTPError as e:
+            if getattr(e.response, "status_code", None) == 403:
+                raise MicrosoftAuthError(
+                    "Graph refused /me/calendarView (403): the app has no Calendars.Read "
+                    "scope. Set microsoft.teams_meetings.discover_from: macos_calendar "
+                    "(join links from Calendar.app) or list meetings under "
+                    "microsoft.teams_meetings.meetings."
+                ) from e
+            raise
+        for ev in events:
             join_url = (ev.get("onlineMeeting") or {}).get("joinUrl")
             if join_url:
                 refs.append(join_url)
+        return refs
+
+    def _macos_calendar_refs(self) -> list[str]:
+        """Teams join links from the local Calendar.app events in
+        [now - lookback_days, now + 1 day]. Needs no Graph calendar scope."""
+        if not self.macos_calendars:
+            log.warning(
+                "teams_meetings.discover_from is macos_calendar but no "
+                "calendar.macos.accounts are configured in routing.yaml"
+            )
+            return []
+        from ghostbrain.connectors.calendar.macos import MacosCalendarConnector
+
+        cal = MacosCalendarConnector(
+            config={
+                "accounts": self.macos_calendars,
+                "lookback_hours": self.lookback_days * 24,
+                "lookahead_hours": 24,
+            },
+            queue_dir=self.queue_dir,
+            state_dir=self.state_dir,
+        )
+        refs: list[str] = []
+        for ev in cal.fetch(datetime.now(timezone.utc)):
+            meta = ev.get("metadata") or {}
+            haystack = " ".join(
+                str(x or "") for x in (
+                    ev.get("url"), meta.get("url"), meta.get("location"),
+                    meta.get("description"), ev.get("body"), ev.get("title"),
+                )
+            )
+            for url in extract_join_urls(haystack):
+                if url not in refs:
+                    refs.append(url)
+        log.info("teams_meetings: %d join link(s) from Calendar.app", len(refs))
         return refs
 
     # -- Graph calls ---------------------------------------------------------

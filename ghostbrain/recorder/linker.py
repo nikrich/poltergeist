@@ -59,7 +59,9 @@ def link_transcript(
         raise FileNotFoundError(transcript_txt)
     body = transcript_txt.read_text(encoding="utf-8").strip()
     if not body:
-        raise RuntimeError(f"transcript empty: {transcript_txt}")
+        # Same terminal outcome as a too-short transcript: silence. Raising a
+        # generic error here left the WAV behind and logged a scary traceback.
+        raise TranscriptTooShort(f"transcript empty (silent recording): {transcript_txt}")
     if len(body.split()) < MIN_TRANSCRIPT_WORDS:
         raise TranscriptTooShort(
             f"transcript has fewer than {MIN_TRANSCRIPT_WORDS} words "

@@ -98,14 +98,26 @@ def _clear_state() -> None:
 
 def _daemon_active() -> dict | None:
     """Daemon-owned (calendar-driven) recording info, if one is live."""
+    info = _daemon_record()
+    if info is None or not info["capture_alive"]:
+        return None
+    return info
+
+
+def _daemon_record() -> dict | None:
+    """The daemon's active recording (if any) plus whether its capture process
+    is still running. A dead capture with the record still present means the
+    user pressed Stop (or the meeting ended) and the daemon is about to
+    transcribe + link on its next tick — i.e. the recording is *transcribing*,
+    not idle. The daemon clears the record once it has finalized."""
     from ghostbrain.recorder.audio import get_backend
 
     ds = daemon_state.load()
     if ds.active is None:
         return None
-    if not get_backend().capture_alive(ds.active.pid):
-        return None
-    return ds.active.to_dict()
+    info = ds.active.to_dict()
+    info["capture_alive"] = bool(get_backend().capture_alive(ds.active.pid))
+    return info
 
 
 def _vault_relative(path: Path) -> str | None:
@@ -135,10 +147,10 @@ def status() -> dict:
     """Snapshot the current recording phase across daemon + manual states."""
     _ensure_supported()
     exclusions = _source_exclusions()
-    daemon = _daemon_active()
+    daemon = _daemon_record()
     if daemon is not None:
         return {
-            "phase": "recording",
+            "phase": "recording" if daemon["capture_alive"] else "transcribing",
             "owner": "daemon",
             "title": daemon.get("title"),
             "startedAt": daemon.get("started_at"),

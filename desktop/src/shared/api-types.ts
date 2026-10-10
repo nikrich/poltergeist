@@ -115,6 +115,9 @@ export interface PastMeeting {
   id: string;
   title: string;
   date: string;
+  /** Full start instant (ISO) and local HH:MM when the note carries a time. */
+  startedAt?: string | null;
+  time?: string | null;
   dur: string;
   speakers: number;
   tags: string[];

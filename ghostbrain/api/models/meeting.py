@@ -8,6 +8,10 @@ class PastMeeting(BaseModel):
     id: str
     title: str
     date: str
+    # Full start instant (ISO, local tz) and HH:MM, when the note has one.
+    # Lists are ordered by startedAt so same-day meetings keep their order.
+    startedAt: str | None = None
+    time: str | None = None
     dur: str
     speakers: int
     tags: list[str]
