@@ -311,7 +311,7 @@ def verify_exact(source: str, template: Template) -> None:
 
 def run_turn(prompt: str, *, turn_key: str) -> str:
     """One read-only agent turn: no session, no user MCP servers, vault
-    search only."""
+    search only. Any failure raises GenerateError."""
     from ghostbrain.llm.client import LLMError
     from ghostbrain.llm.providers import get_provider
     from ghostbrain.llm.providers.base import ChatRequest, to_tier
@@ -338,8 +338,14 @@ def run_turn(prompt: str, *, turn_key: str) -> str:
                 final = str(event.get("text") or "")
             elif kind == "error":
                 raise GenerateError(str(event.get("message") or "the model returned an error"))
+    except GenerateError:
+        raise
     except LLMError as e:
         raise GenerateError(str(e)) from e
+    except Exception as e:
+        # Any other provider failure (bad config, a dead socket mid-stream)
+        # is a failed turn too: callers see only GenerateError or DraftInvalid.
+        raise GenerateError(str(e) or type(e).__name__) from e
     text = final if final else "".join(deltas)
     if not text.strip():
         raise GenerateError("the model returned nothing")

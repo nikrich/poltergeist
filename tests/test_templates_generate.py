@@ -1102,3 +1102,21 @@ def test_split_schemes_before_any_host_are_rejected(body):
 def test_a_hit_only_whole_text_shows_is_located_at_line_1():
     problems = url_problems(GOOD.replace("## Blockers", "Intro.\nht\ntps:evil"))
     assert [d.line for d in problems if not d.message.startswith("in the note")] == [1]
+
+
+class _Broken:
+    def chat(self, req):
+        yield {"type": "delta", "text": "---"}
+        raise OSError("connection reset")
+
+
+def test_run_turn_turns_any_provider_failure_into_a_generate_error(monkeypatch):
+    def no_provider(cfg=None):
+        raise RuntimeError("provider config is broken")
+
+    monkeypatch.setattr("ghostbrain.llm.providers.get_provider", no_provider)
+    with pytest.raises(GenerateError, match="provider config is broken"):
+        run_turn("p", turn_key="k")
+    monkeypatch.setattr("ghostbrain.llm.providers.get_provider", lambda cfg=None: _Broken())
+    with pytest.raises(GenerateError, match="connection reset"):
+        run_turn("p", turn_key="k")
