@@ -179,6 +179,16 @@ def check_mcp_handshake(binary: str, tmp: Path, timeout: float = 120) -> None:
     print(f"mcp subcommand: initialize + tools/list ({len(tools)} tools) … OK")
 
 
+def check_ontology_selfcheck(binary: str, tmp: str) -> None:
+    proc = subprocess.run([binary, "ontology-selfcheck"], env=_env(Path(tmp)), capture_output=True,
+                          text=True, timeout=240, cwd=tmp)
+    if proc.returncode != 0 or "ontology selfcheck: OK" not in proc.stdout:
+        raise SystemExit(f"ontology selfcheck failed (rc={proc.returncode}):\n{proc.stdout}\n{proc.stderr}")
+    if (Path(tmp) / "log").exists():
+        raise SystemExit("ontology selfcheck leaked a ./log directory into the process cwd")
+    print("ontology selfcheck: OK")
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         raise SystemExit("usage: smoke-sidecar.py <path-to-ghostbrain-api-binary>")
@@ -189,6 +199,8 @@ def main() -> None:
         check_server_ready(binary, Path(tmp))
     with tempfile.TemporaryDirectory() as tmp:
         check_mcp_handshake(binary, Path(tmp))
+    with tempfile.TemporaryDirectory() as tmp:
+        check_ontology_selfcheck(binary, tmp)
     print("sidecar smoke test: PASS")
 
 

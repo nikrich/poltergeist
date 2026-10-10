@@ -9,6 +9,7 @@ export type ScreenId =
   | 'artefacts'
   | 'capture'
   | 'vault'
+  | 'ontology'
   | 'daily'
   | 'settings'
   | 'jots'

@@ -13,6 +13,7 @@ import os
 import re
 import threading
 import time
+import uuid
 from collections.abc import Callable
 from pathlib import Path
 
@@ -112,6 +113,28 @@ def list_projects(*, include_archived: bool = False) -> list[dict]:
     return items
 
 
+@_with_registry_lock
+def ensure_project_uuids() -> list[dict]:
+    """Give every registry entry a permanent `uuid` (the ontology's key; ids
+    change on rename). Writes only when something was missing."""
+    items = _read()
+    changed = False
+    for p in items:
+        if not p.get("uuid"):
+            p["uuid"] = uuid.uuid4().hex
+            changed = True
+    if changed:
+        _write(items)
+    return items
+
+
+def get_project_by_uuid(project_uuid: str) -> dict | None:
+    for p in _read():
+        if p.get("uuid") == project_uuid:
+            return p
+    return None
+
+
 def get_project(context: str, slug: str, *, active_only: bool = False) -> dict | None:
     for p in _read():
         if p["context"] == context and p["slug"] == slug:
@@ -142,6 +165,7 @@ def create_project(context: str, name: str, description: str = "") -> dict:
         "description": description.strip(),
         "archived": False,
         "created_at": time.time(),
+        "uuid": uuid.uuid4().hex,
     }
     items = _read()
     items.append(project)

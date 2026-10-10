@@ -139,7 +139,7 @@ jobs:
           # The sidecar imports fastapi/uvicorn (the `api` extra) and lazy-loads
           # sentence-transformers (the `semantic` extra). Both must be present
           # at PyInstaller analysis time for the hidden-imports list to resolve.
-          pip install -e ".[api,semantic]"
+          pip install -e ".[api,semantic,ontology]"
           pip install pyinstaller==6.11.1
           # torch >= 2.9 wants setuptools>=77, which pip satisfies with 82+ —
           # where pkg_resources was REMOVED. PyInstaller 6.11.1 still injects
@@ -157,7 +157,10 @@ jobs:
           # shellcheck disable=SC2012  # ls is fine here, the dir is ours
           ls -la desktop/resources/sidecar/ghostbrain-api | head -20
 
-      - name: Smoke-test frozen sidecar (server + mcp)
+      - name: Prune ArcadeDB runtime (unused jars, unsigned lz4 natives)
+        run: python scripts/prune-arcadedb.py desktop/resources/sidecar/ghostbrain-api
+
+      - name: Smoke-test frozen sidecar (server + mcp + ontology)
         run: python scripts/smoke-sidecar.py desktop/resources/sidecar/ghostbrain-api/ghostbrain-api
 
       - name: Select Xcode 26 (Swift 6.2 — the toolchain the capture helper is written against)
@@ -267,7 +270,7 @@ jobs:
           # only does CPU inference; install the CPU wheel first so the
           # semantic extra's resolver keeps it.
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install -e ".[api,semantic]"
+          pip install -e ".[api,semantic,ontology]"
           pip install pyinstaller==6.11.1
           # Last setuptools that ships pkg_resources, which PyInstaller
           # 6.11.1's bootstrap hook needs (see the mac step for the story).
@@ -282,7 +285,10 @@ jobs:
           # shellcheck disable=SC2012  # ls is fine here, the dir is ours
           ls -la desktop/resources/sidecar/ghostbrain-api | head -20
 
-      - name: Smoke-test frozen sidecar (server + mcp)
+      - name: Prune ArcadeDB runtime (unused jars, unsigned lz4 natives)
+        run: python scripts/prune-arcadedb.py desktop/resources/sidecar/ghostbrain-api
+
+      - name: Smoke-test frozen sidecar (server + mcp + ontology)
         run: python scripts/smoke-sidecar.py desktop/resources/sidecar/ghostbrain-api/ghostbrain-api
 
       - name: Install desktop deps
@@ -349,7 +355,7 @@ jobs:
           # the packaged Windows sidecar can run the meeting recorder — this
           # extra is a no-op on macOS/Linux (its dependency is
           # sys_platform == 'win32' only), which is why only this job adds it.
-          pip install -e ".[api,semantic,recorder-win]"
+          pip install -e ".[api,semantic,recorder-win,ontology]"
           pip install pyinstaller==6.11.1
           # Last setuptools that ships pkg_resources, which PyInstaller
           # 6.11.1's bootstrap hook needs (see the mac step for the story).
@@ -365,7 +371,11 @@ jobs:
           # shellcheck disable=SC2012  # ls is fine here, the dir is ours
           ls -la desktop/resources/sidecar/ghostbrain-api | head -20
 
-      - name: Smoke-test frozen sidecar (server + mcp)
+      - name: Prune ArcadeDB runtime (unused jars, unsigned lz4 natives)
+        shell: bash
+        run: python scripts/prune-arcadedb.py desktop/resources/sidecar/ghostbrain-api
+
+      - name: Smoke-test frozen sidecar (server + mcp + ontology)
         shell: bash
         run: python scripts/smoke-sidecar.py desktop/resources/sidecar/ghostbrain-api/ghostbrain-api.exe
 

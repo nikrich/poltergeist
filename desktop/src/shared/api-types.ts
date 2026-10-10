@@ -667,6 +667,40 @@ export interface VaultGraph {
 
 export type NoteKind = 'person' | 'meeting' | 'decision' | 'action' | 'ticket' | 'doc' | 'jot' | 'note';
 
+/** Kinds of nodes in a project ontology graph ('decision' is shared with NoteKind). */
+export type OntologyKind =
+  | 'self' | 'context' | 'project' | 'artefact' | 'concept' | 'rule'
+  | 'decision' | 'requirement' | 'system' | 'role' | 'question' | 'topic';
+
+/** Anything the graph canvas can colour. */
+export type GraphKind = NoteKind | OntologyKind;
+
+export interface OntologyGraphNode {
+  path: string; // node uid
+  title: string;
+  context: string;
+  kind: OntologyKind;
+  degree: number;
+  ghost: boolean;
+  hop: number;
+  note_path: string | null;
+}
+
+export interface OntologyGraphEdge {
+  source: string;
+  target: string;
+  weight: number;
+  kind: string;
+}
+
+export interface OntologyGraph {
+  focus: string;
+  depth: number;
+  nodes: OntologyGraphNode[];
+  edges: OntologyGraphEdge[];
+  truncated: boolean;
+}
+
 export interface EgoGraphNode {
   /** Vault path, or a ghost's link key (e.g. "someday idea.md"). */
   path: string;
@@ -1067,3 +1101,45 @@ export interface ChangeRejectResponse {
   id: number;
   status: ChangeStatus;
 }
+export interface OntologyStatus { available: boolean; reason: string | null }
+export interface OntologyProject {
+  uuid: string; id: string; name: string; context: string; seeds: string[]; bound: number; pending_items: number;
+}
+export interface OntologyEvidence { aid: string; path: string; title: string; quote: string; locator: string }
+export interface OntologyCandidate {
+  id: number; kind: string; name: string; statement: string; value: string | null; confidence: number;
+  evidence: OntologyEvidence[];
+}
+export interface OntologyBindingArtefact { aid: string; path: string; title: string }
+export interface OntologyScopeNote { aid: string; path: string; title: string; reason: string }
+export interface OntologyScopeQuestion {
+  topic_uid: string; name: string; lean: 'about' | 'not_about' | 'unclear'; notes: OntologyScopeNote[];
+}
+export interface OntologyTopic { uid: string; name: string; status: 'in' | 'out' | 'pending'; notes: number }
+export interface OntologyItem {
+  id: number; type: 'binding' | 'candidate' | 'scope'; created: string;
+  candidate: OntologyCandidate | null; artefacts: OntologyBindingArtefact[];
+  scope: OntologyScopeQuestion | null;
+}
+export interface OntologyNodeEvidence {
+  aid: string; note_path: string | null; title: string; quote: string | null; locator: string | null;
+}
+export interface OntologyNodeRelation {
+  direction: 'out' | 'in'; type: string; uid: string; name: string; kind: OntologyKind;
+}
+export interface OntologyNodeDetail {
+  uid: string; kind: OntologyKind; name: string; statement: string | null; value: string | null;
+  provenance: string | null; ratified_at: string | null; note_path: string | null;
+  generated_note_path: string | null;
+  evidence: OntologyNodeEvidence[]; relations: OntologyNodeRelation[];
+}
+export interface OntologyExtractStatus {
+  running: boolean; project: string | null; summary: Record<string, number | string | null> | null; last_error: string | null;
+}
+export type OntologyActionBody =
+  | { action: 'ratify'; name?: string; statement?: string; value?: string | null; exclude?: string[] }
+  | { action: 'reject' }
+  | { action: 'yes'; exclude?: string[] }
+  | { action: 'no' }
+  | { action: 'investigate'; note?: string };
+export interface RegistryProject { id: string; context: string; name: string; archived: boolean }

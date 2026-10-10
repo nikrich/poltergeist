@@ -44,3 +44,11 @@ def chats_dir() -> Path:
     if raw:
         return Path(raw).expanduser().resolve()
     return (Path.home() / "ghostbrain" / "chats").resolve()
+
+
+def ontology_dir() -> Path:
+    """Ontology data: the SQLite log/working state and the ArcadeDB gold graph."""
+    env = os.environ.get("GHOSTBRAIN_ONTOLOGY_DIR")
+    if env:
+        return Path(env).expanduser()
+    return Path.home() / "ghostbrain" / "ontology"

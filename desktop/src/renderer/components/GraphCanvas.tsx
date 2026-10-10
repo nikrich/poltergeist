@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 
-import type { NoteKind } from '../../shared/api-types';
+import type { GraphKind } from '../../shared/api-types';
 import { fitCamera, toWorld, type Camera, type ZoomBounds } from '../lib/constellation-engine';
 import { drawFrame, pickNode, planFrame } from '../lib/graph/draw';
 import type { Scene, SceneNode } from '../lib/graph/layout';
@@ -18,9 +18,10 @@ export const A11Y_LIST_MAX = 400;
 
 interface Props {
   scene: Scene;
-  hiddenKinds: ReadonlySet<NoteKind>;
+  hiddenKinds: ReadonlySet<GraphKind>;
   onRecenter: (node: SceneNode) => void;
   onOpen: (node: SceneNode) => void;
+  ariaLabel?: string;
 }
 
 export function nodeButtonLabel(node: SceneNode): string {
@@ -42,7 +43,7 @@ interface LastClick {
   y: number;
 }
 
-export function GraphCanvas({ scene, hiddenKinds, onRecenter, onOpen }: Props) {
+export function GraphCanvas({ scene, hiddenKinds, onRecenter, onOpen, ariaLabel = 'link graph' }: Props) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const camRef = useRef<Camera>({ x: 0, y: 0, scale: 1 });
@@ -221,7 +222,7 @@ export function GraphCanvas({ scene, hiddenKinds, onRecenter, onOpen }: Props) {
       <canvas
         ref={canvasRef}
         role="img"
-        aria-label="link graph"
+        aria-label={ariaLabel}
         className="absolute inset-0 h-full w-full cursor-grab touch-none"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}

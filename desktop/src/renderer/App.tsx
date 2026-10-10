@@ -19,6 +19,7 @@ import { ConnectorsScreen } from './screens/connectors';
 import { MeetingsScreen } from './screens/meetings';
 import { ArtefactsScreen } from './screens/artefacts';
 import { CaptureScreen } from './screens/capture';
+import { OntologyScreen } from './screens/ontology';
 import { VaultScreen } from './screens/vault';
 import { DailyScreen } from './screens/daily';
 import { SettingsScreen } from './screens/settings';
@@ -168,6 +169,7 @@ function MainApp() {
           {active === 'artefacts' && <ArtefactsScreen />}
           {active === 'capture' && <CaptureScreen />}
           {active === 'vault' && <VaultScreen />}
+          {active === 'ontology' && <OntologyScreen />}
           {active === 'daily' && <DailyScreen />}
           {active === 'settings' && <SettingsScreen />}
           {active === 'jots' && <JotsScreen />}

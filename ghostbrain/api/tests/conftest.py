@@ -165,3 +165,14 @@ def isolate_manual_recorder_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     rec_dir.mkdir()
     monkeypatch.setattr(repo, "RECORDINGS_DIR", rec_dir)
     monkeypatch.setattr(repo, "STATE_FILE", rec_dir.parent / "manual.state")
+
+
+@pytest.fixture
+def ontology_root(tmp_path, monkeypatch):
+    from ghostbrain.ontology import service  # noqa: PLC0415
+
+    root = tmp_path / "ontology"
+    monkeypatch.setenv("GHOSTBRAIN_ONTOLOGY_DIR", str(root))
+    service.reset_service()
+    yield root
+    service.reset_service()
