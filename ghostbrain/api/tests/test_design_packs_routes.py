@@ -86,13 +86,13 @@ def test_import_validation(client, auth_headers):
 def test_settings_get_put(client, auth_headers, tmp_vault):
     r = client.get("/v1/design/settings", headers=auth_headers)
     assert r.json() == {"listen": True, "budget_usd": 2.0, "default_pack": packs.BUILTIN_PACK_ID,
-                        "code_roots": ["~/development"]}
+                        "code_roots": ["~/development"], "web": True}
     _make_pack(tmp_vault, "acme")
     r = client.put(
         "/v1/design/settings", json={"listen": False, "default_pack": "acme"}, headers=auth_headers,
     )
     assert r.status_code == 200
-    assert r.json() == {"listen": False, "budget_usd": 2.0, "default_pack": "acme", "code_roots": ["~/development"]}
+    assert r.json() == {"listen": False, "budget_usd": 2.0, "default_pack": "acme", "code_roots": ["~/development"], "web": True}
     assert client.get("/v1/design/settings", headers=auth_headers).json()["listen"] is False
     bad = client.put("/v1/design/settings", json={"budget_usd": 100}, headers=auth_headers)
     assert bad.status_code == 422

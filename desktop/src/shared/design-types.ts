@@ -152,6 +152,8 @@ export interface DesignSettings {
   default_pack: string;
   /** Folders searched for existing codebases ("~" allowed). */
   code_roots: string[];
+  /** The prototype agent may search and read the web for reference. */
+  web: boolean;
 }
 
 /** Result of bundling a prototype in Electron main. */

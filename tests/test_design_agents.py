@@ -279,3 +279,19 @@ def test_worktree_modes_deny_node_modules_edits():
     for mode in ("bootstrap", "worktree"):
         _allowed, disallowed, _rules = ui_agent._tools(mode)
         assert "Edit(**/node_modules/**)" in disallowed and "Write(node_modules/**)" in disallowed
+
+
+
+def test_web_access_for_meeting_runs_but_never_the_bootstrap():
+    from ghostbrain.design import ui_agent
+
+    for mode in ("scratch", "worktree"):
+        allowed, disallowed, rules = ui_agent._tools(mode, web=True)
+        assert "WebSearch" in allowed and "WebFetch" in allowed
+        assert "WebSearch" not in disallowed and "WebFetch" not in disallowed
+        assert "never put meeting content" in rules
+    allowed, disallowed, _ = ui_agent._tools("bootstrap", web=True)
+    assert "WebFetch" not in allowed and "WebFetch" in disallowed
+    allowed, disallowed, _ = ui_agent._tools("scratch", web=False)
+    assert "WebSearch" not in allowed and "WebSearch" in disallowed
+

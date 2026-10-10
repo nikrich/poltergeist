@@ -59,3 +59,9 @@ def test_settings_route_accepts_code_roots(vault: Path):
     assert client.put("/v1/design/settings", json={"listen": False}).json()["code_roots"] == ["~/work"]
     bad = client.put("/v1/design/settings", json={"code_roots": [f"~/r{i}" for i in range(11)]})
     assert bad.status_code == 422
+
+
+def test_web_defaults_on_and_can_be_switched_off(vault: Path):
+    assert settings.load()["web"] is True
+    assert settings.update(web=False)["web"] is False
+    assert settings.load()["web"] is False

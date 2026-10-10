@@ -107,6 +107,15 @@ def _slug(text: str) -> str:
     return s[:60].rstrip("-")
 
 
+def _web() -> bool:
+    try:
+        from ghostbrain.design import settings
+
+        return bool(settings.load()["web"])
+    except Exception:  # noqa: BLE001
+        return True
+
+
 def _budget() -> float:
     try:
         from ghostbrain.design import settings
@@ -625,7 +634,7 @@ class DesignSession:
         result = ui_agent.run_ui(
             folder, excerpt=excerpt, nudges=nudges, pack_readme=self._pack_readme(folder),
             session_id=self.ui_session_id, budget_usd=_budget(), build_error=build_error,
-            project_brief=brief,
+            project_brief=brief, web=_web(),
         )
         summary = str(result.get("summary") or "").strip() or "Updated the prototype"
         with self._lock:
@@ -685,7 +694,7 @@ class DesignSession:
             result = ui_agent.run_ui(
                 wt.app_dir, excerpt=excerpt, nudges=nudges, pack_readme="",
                 session_id=self.ui_session_id, budget_usd=_budget(), build_error=build_error,
-                mode="worktree", project_brief=brief,
+                mode="worktree", project_brief=brief, web=_web(),
             )
             if build_error is None:
                 with self._lock:

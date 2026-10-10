@@ -15,7 +15,7 @@ vi.mock('../lib/api/client', () => ({
   del: vi.fn(),
 }));
 
-const settings: DesignSettings = { listen: true, budget_usd: 2, default_pack: 'poltergeist-neutral', code_roots: ['~/development'] };
+const settings: DesignSettings = { listen: true, budget_usd: 2, default_pack: 'poltergeist-neutral', code_roots: ['~/development'], web: true };
 let packs: DesignPack[];
 let job: DesignPackImportJob;
 
