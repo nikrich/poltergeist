@@ -22,6 +22,10 @@ export interface ReadAloudCallbacks {
 /** Error codes that mean "we cancelled it", not "the engine failed". */
 const BENIGN = new Set(['interrupted', 'canceled']);
 
+/** speechSynthesis is one global queue, but several editors can each own a
+ * controller (jots + the NoteView overlay). Only one may speak at a time. */
+const slot: { active: ReadAloudController | null } = { active: null };
+
 /** Speaks segments one utterance per sentence. Every speak bumps `gen`, and
  * every event handler checks it, so the async end/error that Chromium fires
  * for a cancelled utterance can never advance or restart playback. Pause =
@@ -89,12 +93,21 @@ export class ReadAloudController {
     });
   }
 
+  /** Another controller took the engine (and already cancelled it): drop
+   * this run without cancelling again. */
+  private halt(): void {
+    this.gen++;
+    this.reset();
+  }
+
   private speakCurrent(): void {
     const seg = this.segments[this.index];
     if (!seg) {
       this.reset();
       return;
     }
+    if (slot.active && slot.active !== this) slot.active.halt();
+    slot.active = this;
     const gen = ++this.gen;
     const u = this.makeUtterance(seg.text);
     if (this.opts.voice) {
@@ -108,8 +121,14 @@ export class ReadAloudController {
       this.speakCurrent();
     };
     u.onerror = (e: SpeechSynthesisErrorEvent) => {
-      if (gen !== this.gen || BENIGN.has(e.error)) return;
+      if (gen !== this.gen) return;
       this.gen++;
+      // Every internal cancel bumps gen first, so a benign error on the
+      // current gen is an outside cancel: go idle quietly.
+      if (BENIGN.has(e.error)) {
+        this.reset();
+        return;
+      }
       this.engine.cancel();
       this.reset();
       this.cb.onError(e.error);
@@ -125,6 +144,7 @@ export class ReadAloudController {
     this.segments = [];
     this.index = 0;
     this.current = null;
+    if (slot.active === this) slot.active = null;
     if (wasActive) this.cb.onHighlight(null);
     this.setStatus('idle');
   }

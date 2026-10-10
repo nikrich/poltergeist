@@ -10,8 +10,7 @@ const SEGS: SpeechSegment[] = [
 ];
 const OPTS = { voice: null, rate: 1 };
 
-function setup() {
-  const synth = new FakeSynth();
+function setup(synth = new FakeSynth()) {
   const highlights: Array<SpeechSegment | null> = [];
   const statuses: ReadAloudStatus[] = [];
   const errors: string[] = [];
@@ -146,5 +145,49 @@ describe('ReadAloudController', () => {
     ctrl.resume();
     expect(synth.spoken).toHaveLength(0);
     expect(ctrl.status).toBe('idle');
+  });
+  it('starting a second controller on the same engine halts the first', () => {
+    const a = setup();
+    const b = setup(a.synth);
+    a.ctrl.start(SEGS, 0, OPTS);
+    const aUtterance = a.synth.last;
+    b.ctrl.start(SEGS, 1, OPTS);
+    expect(a.ctrl.status).toBe('idle');
+    expect(a.highlights.at(-1)).toBeNull();
+    expect(a.statuses).toEqual(['playing', 'idle']);
+    // The shared engine's late events for A's cut-off utterance never revive A.
+    fail(aUtterance, 'interrupted');
+    end(aUtterance);
+    expect(a.ctrl.status).toBe('idle');
+    expect(a.errors).toEqual([]);
+    end(a.synth.last);
+    expect(a.synth.texts()).toEqual(['One.', 'Two.', 'Three.']);
+    expect(b.ctrl.status).toBe('playing');
+  });
+
+  it('resuming a paused controller halts the other active one', () => {
+    const a = setup();
+    const b = setup(a.synth);
+    a.ctrl.start(SEGS, 0, OPTS);
+    a.ctrl.pause();
+    b.ctrl.start(SEGS, 2, OPTS);
+    expect(a.ctrl.status).toBe('idle');
+    a.ctrl.resume();
+    expect(a.synth.texts()).toEqual(['One.', 'Three.']);
+    b.ctrl.start(SEGS, 1, OPTS);
+    a.ctrl.start(SEGS, 0, OPTS);
+    expect(b.ctrl.status).toBe('idle');
+    expect(b.highlights.at(-1)).toBeNull();
+  });
+
+  it('an outside cancel of the current utterance goes idle quietly', () => {
+    const { synth, ctrl, highlights, errors } = setup();
+    ctrl.start(SEGS, 0, OPTS);
+    fail(synth.last, 'interrupted');
+    expect(ctrl.status).toBe('idle');
+    expect(highlights.at(-1)).toBeNull();
+    expect(errors).toEqual([]);
+    end(synth.last);
+    expect(synth.spoken).toHaveLength(1);
   });
 });
