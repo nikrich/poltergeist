@@ -343,6 +343,7 @@ body[data-theme='light'] {
 }
 .gb-page-title::placeholder { color: var(--ink-3); }
 .gb-page-title:focus-visible { box-shadow: 0 2px 0 0 var(--hairline-3); }
+.gb-page-title[readonly] { cursor: default; }
 
 /* Body: 16px / 1.7. These rules follow the `.gb-prose` ones above and
    share their specificity, so they win and rescale the 14px rhythm. */
