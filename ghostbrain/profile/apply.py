@@ -15,6 +15,11 @@ The current-projects.md format uses H2 headings per configured context
 (see ``routing_config.contexts()``). The applier appends new bullets
 under the heading that matches the proposal's most-frequent context
 across its corroborating set, falling back to "personal" if unknown.
+
+Both files are written through the vault write path as ``worker:profile-apply``
+(spec B, slice B4): against the etag just read (a user edit in between is
+re-read, never overwritten), snapshotted in page history, and listed on the
+Changes screen.
 """
 
 from __future__ import annotations
@@ -32,6 +37,8 @@ from typing import Any, Iterable
 from ghostbrain import routing_config
 from ghostbrain.paths import vault_path
 from ghostbrain.worker.audit import audit_log
+from ghostbrain.vault_write import WriteResult, worker_actor
+from ghostbrain.vault_write.jobs import rewrite_text
 
 log = logging.getLogger("ghostbrain.profile.apply")
 
@@ -39,6 +46,9 @@ CORROBORATION_THRESHOLD = 3
 STABLE_FIELDS = ("working-style", "preferences")
 CURRENT_FIELDS = ("current-projects", "people", "decisions")
 LOOKBACK_DAYS = 7
+PROFILE_ACTOR = worker_actor("profile-apply")
+CURRENT_PROJECTS_REL = "80-profile/current-projects.md"
+REVIEW_REL = "80-profile/_review.md"
 
 
 @dataclasses.dataclass
@@ -141,6 +151,20 @@ def _iter_proposals(start: date, end: date) -> Iterable[dict]:
                     log.warning("malformed proposal line in %s: %r", f, line[:120])
 
 
+def _universal_newlines(text: str) -> str:
+    """What ``Path.read_text`` used to hand this module; keeps the output
+    byte-identical to the pre-B4 applier."""
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _status(res: WriteResult | None, rel: str) -> str:
+    if res is None:
+        return "unchanged"
+    if res.status == "pending":
+        log.info("profile change to %s waits for approval (change #%s)", rel, res.change_id)
+    return res.status
+
+
 def _apply_current_projects(additions: list[tuple[str, list[dict]]]) -> None:
     """Append new bullets under the right H2 in current-projects.md.
 
@@ -148,26 +172,31 @@ def _apply_current_projects(additions: list[tuple[str, list[dict]]]) -> None:
     parent notes of the corroborating proposals; falls back to ``personal``
     when none of the parents tell us a context.
     """
-    target = vault_path() / "80-profile" / "current-projects.md"
-    body = target.read_text(encoding="utf-8") if target.exists() else (
-        "# Current projects\n\n"
-        + "".join(f"## {c}\n\n" for c in routing_config.contexts())
-    )
 
+    def transform(current: str | None) -> str:
+        body = _universal_newlines(current) if current is not None else (
+            "# Current projects\n\n"
+            + "".join(f"## {c}\n\n" for c in routing_config.contexts())
+        )
+        for after, group in additions:
+            body = _insert_bullet_under_h2(body, _pick_context(group), f"- {after}")
+        return body
+
+    res = rewrite_text(
+        CURRENT_PROJECTS_REL, transform, actor=PROFILE_ACTOR,
+        reason=f"added {len(additions)} current project(s) from your sessions",
+    )
+    status = _status(res, CURRENT_PROJECTS_REL)
     for after, group in additions:
-        ctx = _pick_context(group)
-        bullet = f"- {after}"
-        body = _insert_bullet_under_h2(body, ctx, bullet)
         audit_log(
             "profile_diff_applied",
             event_id=group[0].get("parent_event_id", ""),
             field="current-projects",
             after=after,
-            context=ctx,
+            context=_pick_context(group),
             corroboration=len(group),
+            status=status,
         )
-
-    target.write_text(body, encoding="utf-8")
 
 
 def _insert_bullet_under_h2(body: str, heading: str, bullet: str) -> str:
@@ -270,12 +299,7 @@ def _format_review(group: list[dict], *, label: str) -> list[str]:
 
 
 def _write_review(target_date: date, lines: list[str]) -> None:
-    out = vault_path() / "80-profile" / "_review.md"
     header = f"# Profile diffs awaiting review\n\nLast updated: {target_date.isoformat()}\n"
-    if out.exists():
-        existing = out.read_text(encoding="utf-8")
-    else:
-        existing = header
     block = [
         "",
         f"## {target_date.isoformat()} batch",
@@ -283,8 +307,17 @@ def _write_review(target_date: date, lines: list[str]) -> None:
         *lines,
         "",
     ]
-    out.write_text(existing.rstrip() + "\n" + "\n".join(block) + "\n",
-                   encoding="utf-8")
+    count = sum(1 for line in lines if line.startswith("### "))
+
+    def transform(current: str | None) -> str:
+        existing = _universal_newlines(current) if current is not None else header
+        return existing.rstrip() + "\n" + "\n".join(block) + "\n"
+
+    res = rewrite_text(
+        REVIEW_REL, transform, actor=PROFILE_ACTOR,
+        reason=f"queued {count} profile change(s) for review",
+    )
+    _status(res, REVIEW_REL)
 
 
 def main() -> None:
