@@ -271,3 +271,11 @@ def test_board_prompt_carries_the_project_brief():
 
     board_agent.run_board(None, "crews dock", [], budget_usd=1.0, run=run, project_brief="Orbit salvage game")
     assert "Orbit salvage game" in seen["prompt"]
+
+
+def test_worktree_modes_deny_node_modules_edits():
+    from ghostbrain.design import ui_agent
+
+    for mode in ("bootstrap", "worktree"):
+        _allowed, disallowed, _rules = ui_agent._tools(mode)
+        assert "Edit(**/node_modules/**)" in disallowed and "Write(node_modules/**)" in disallowed

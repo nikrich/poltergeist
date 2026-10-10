@@ -151,7 +151,10 @@ def _tools(mode: str) -> tuple[str, str, str]:
     """(allowed, disallowed, system rules) for ``mode``."""
     if mode == "scratch":
         return "Read,Glob,Grep,Edit(src/**),Write(src/**)", ",".join(_BASE_DENY), RULES
-    deny = [*_BASE_DENY, "Edit(.git)", "Write(.git)", "Edit(.git/**)", "Write(.git/**)"]
+    deny = [*_BASE_DENY, "Edit(.git)", "Write(.git)", "Edit(.git/**)", "Write(.git/**)",
+            # Installed code: the dev server runs it.
+            "Edit(node_modules/**)", "Write(node_modules/**)",
+            "Edit(**/node_modules/**)", "Write(**/node_modules/**)"]
     # The dev server and package manager execute scripts, config and rc files
     # and run.json: the agent may not touch them at any depth (the session
     # also reverts them after every run — restore_protected is the backstop,

