@@ -289,3 +289,10 @@ body[data-theme='light'] {
   padding-top: 24px;
   padding-bottom: 30vh;
 }
+
+/* A4 read-aloud: the sentence being spoken. */
+.gb-read-aloud-current {
+  background: var(--neon-mist);
+  border-radius: 2px;
+  box-shadow: 0 0 0 2px var(--neon-mist);
+}
