@@ -3,10 +3,18 @@
 Unlike chat there is no session persistence — every assist call is a fresh
 single turn. Cancellation reuses the agent registry with key ``docs:<stream key>``
 (stream_id, else jot id, else "path:<path>").
+
+Each request also owns a generation on its key (``begin``). A draft reads
+related notes before its turn registers, so a stop in that window has no turn
+to kill: the generation carries the stop instead, and ``run_assist`` never
+starts the turn. A request's own ``close`` (the SSE on_close, which can fire
+seconds late) only cancels the turn while it is still the key's current
+request, so it can't kill a newer run on the same jot.
 """
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Iterator
 
 from ghostbrain.api.repo import docs_context, notes_manual
@@ -133,6 +141,34 @@ def _resolve_target(jot_id: str | None, path: str | None) -> tuple[str, str]:
     return found["body"], path
 
 
+class Generation:
+    """One /assist request's claim on its stream key."""
+
+    def __init__(self) -> None:
+        self.cancelled = threading.Event()
+
+
+_gen_lock = threading.Lock()
+_generations: dict[str, Generation] = {}
+
+
+def begin(key: str) -> Generation:
+    """Make a new request the key's current one; an older one is superseded."""
+    gen = Generation()
+    with _gen_lock:
+        old = _generations.get(key)
+        _generations[key] = gen
+    if old is not None:
+        old.cancelled.set()
+    return gen
+
+
+def _release(key: str, gen: Generation) -> None:
+    with _gen_lock:
+        if _generations.get(key) is gen:
+            del _generations[key]
+
+
 def run_assist(
     jot_id: str | None = None,
     *,
@@ -144,6 +180,32 @@ def run_assist(
     target_language: str | None = None,
     before: str | None = None,
     placement: str | None = None,
+    generation: Generation | None = None,
+) -> Iterator[dict]:
+    key = stream_key or jot_id or f"path:{path}"
+    gen = generation or begin(key)
+    try:
+        yield from _run(
+            jot_id, path=path, key=key, gen=gen, instruction=instruction,
+            selection=selection, mode=mode, target_language=target_language,
+            before=before, placement=placement,
+        )
+    finally:
+        _release(key, gen)
+
+
+def _run(
+    jot_id: str | None,
+    *,
+    path: str | None,
+    key: str,
+    gen: Generation,
+    instruction: str | None,
+    selection: str | None,
+    mode: str,
+    target_language: str | None,
+    before: str | None,
+    placement: str | None,
 ) -> Iterator[dict]:
     try:
         body, rel = _resolve_target(jot_id, path)
@@ -164,7 +226,9 @@ def run_assist(
         placement=placement,
         vault_context=vault_context,
     )
-    key = stream_key or jot_id or f"path:{path}"
+    if gen.cancelled.is_set():  # stopped, closed or superseded while gathering
+        yield {"type": "error", "message": "stopped", "interrupted": True}
+        return
     yield from agent.run_chat_turn(
         prompt,
         system_prompt=DOCS_SYSTEM_PROMPT,
@@ -174,4 +238,19 @@ def run_assist(
 
 
 def cancel(key: str) -> bool:
-    return agent.cancel_turn(f"docs:{key}")
+    """Stop whatever runs on ``key``, including a request still gathering."""
+    with _gen_lock:
+        gen = _generations.pop(key, None)
+    if gen is not None:
+        gen.cancelled.set()
+    return agent.cancel_turn(f"docs:{key}") or gen is not None
+
+
+def close(key: str, gen: Generation) -> None:
+    """One request's stream went away: stop it, and its turn only if current."""
+    gen.cancelled.set()
+    with _gen_lock:
+        if _generations.get(key) is not gen:
+            return  # superseded: the registered turn belongs to a newer request
+        del _generations[key]
+        agent.cancel_turn(f"docs:{key}")

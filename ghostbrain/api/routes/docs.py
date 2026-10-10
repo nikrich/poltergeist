@@ -24,6 +24,7 @@ router = APIRouter(prefix="/v1/docs", tags=["docs"])
 @router.post("/assist")
 def assist(payload: DocsAssistRequest) -> StreamingResponse:
     key = payload.stream_key
+    gen = docs_assist.begin(key)
     events = docs_assist.run_assist(
         payload.jot_id,
         path=payload.path,
@@ -34,12 +35,14 @@ def assist(payload: DocsAssistRequest) -> StreamingResponse:
         target_language=payload.target_language,
         before=payload.before,
         placement=payload.placement,
+        generation=gen,
     )
     # Keepalive comments stop undici's 300 s body timeout during silent turns.
-    # A client disconnect closes the stream → on_close kills the turn (the
-    # sync generator is threadpooled by starlette, same as chat).
+    # A client disconnect closes the stream → on_close kills this request's
+    # turn, never a newer one on the same key (the sync generator is
+    # threadpooled by starlette, same as chat).
     return StreamingResponse(
-        sse_stream(events, on_close=lambda: docs_assist.cancel(key)),
+        sse_stream(events, on_close=lambda: docs_assist.close(key, gen)),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
