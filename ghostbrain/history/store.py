@@ -25,10 +25,11 @@ import os
 import re
 import tempfile
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Iterable
 
 import ghostbrain.paths as _paths
 
@@ -284,3 +285,131 @@ def list_snapshots(rel_path: str, *, limit: int | None = None) -> list[Snapshot]
         raise HistoryUnavailable(f"history unavailable: {e}") from e
     entries.reverse()
     return entries if limit is None else entries[:limit]
+
+
+# ── retention + GC ───────────────────────────────────────────────────────────
+
+KEEP_ALL = timedelta(days=30)
+KEEP_DAILY = timedelta(days=365)
+# A blob younger than this is never collected: a snapshot may have stored it
+# a moment before the prune scanned the logs.
+BLOB_GRACE = timedelta(days=1)
+
+_ref_sources: dict[str, Callable[[], Iterable[str]]] = {}
+
+
+@dataclass(frozen=True)
+class PruneResult:
+    notes: int
+    kept: int
+    dropped: int
+    blobs_deleted: int
+    gc_skipped: bool = False
+
+    def to_details(self) -> dict[str, int | bool]:
+        return {
+            "notes": self.notes, "kept": self.kept, "dropped": self.dropped,
+            "blobsDeleted": self.blobs_deleted, "gcSkipped": self.gc_skipped,
+        }
+
+
+def register_ref_source(name: str, source: Callable[[], Iterable[str]]) -> None:
+    """Blob ids referenced outside the note logs (spec B's changes.db). GC
+    keeps every id a source yields; a source that raises skips GC."""
+    _ref_sources[name] = source
+
+
+def retained(entries: list[Snapshot], now: datetime) -> list[Snapshot]:
+    """30 days: everything. Then the newest per UTC day for a year, then the
+    newest per UTC month. Returned oldest first."""
+    keep: list[Snapshot] = []
+    days: set[object] = set()
+    months: set[tuple[int, int]] = set()
+    for s in sorted(entries, key=lambda e: e.when, reverse=True):
+        when = s.when.astimezone(timezone.utc)
+        age = now - when
+        if age <= KEEP_ALL:
+            keep.append(s)
+        elif age <= KEEP_DAILY:
+            if when.date() not in days:
+                days.add(when.date())
+                keep.append(s)
+        elif (when.year, when.month) not in months:
+            months.add((when.year, when.month))
+            keep.append(s)
+    keep.sort(key=lambda e: e.when)
+    return keep
+
+
+def _gc_blobs(referenced: set[str]) -> int:
+    blobs = _blobs_dir()
+    if not blobs.is_dir():
+        return 0
+    cutoff = time.time() - BLOB_GRACE.total_seconds()
+    deleted = 0
+    for p in blobs.iterdir():
+        name = p.name
+        is_blob = name.endswith(".md") and _BLOB_RE.fullmatch(name[:-3]) is not None
+        is_tmp = name.startswith(".") and name.endswith(".tmp")
+        if not (is_blob or is_tmp) or (is_blob and name[:-3] in referenced):
+            continue  # never touch files we did not create
+        try:
+            if p.stat().st_mtime > cutoff:
+                continue
+            p.unlink()
+        except FileNotFoundError:
+            continue
+        if is_blob:
+            deleted += 1
+    return deleted
+
+
+def prune(now: datetime | None = None) -> PruneResult:
+    now = now or _now()
+    notes = kept = dropped = 0
+    referenced: set[str] = set()
+    try:
+        with _lock:
+            notes_dir = _notes_dir()
+            log_files = sorted(notes_dir.glob("*.jsonl")) if notes_dir.is_dir() else []
+            for log_file in log_files:
+                notes += 1
+                raw = _raw_lines(log_file)
+                entries = [s for s in (_parse_line(line) for line in raw) if s is not None]
+                keep = retained(entries, now)
+                kept += len(keep)
+                dropped += len(raw) - len(keep)
+                if len(keep) != len(raw):
+                    _rewrite(log_file, keep)
+                referenced.update(s.blob for s in keep)
+            for name, source in list(_ref_sources.items()):
+                try:
+                    referenced.update(source())
+                except Exception:  # noqa: BLE001 — unknown refs: deleting would be unsafe
+                    log.exception("history ref source %r failed; skipping blob GC", name)
+                    return PruneResult(notes, kept, dropped, 0, gc_skipped=True)
+            deleted = _gc_blobs(referenced)
+    except OSError as e:
+        raise HistoryUnavailable(f"history unavailable: {e}") from e
+    return PruneResult(notes, kept, dropped, deleted)
+
+
+# ── moves ────────────────────────────────────────────────────────────────────
+
+def move_log(src_rel: str, dest_rel: str) -> None:
+    """A note moved (jot re-route): its history follows it."""
+    if src_rel == dest_rel:
+        return
+    try:
+        with _lock:
+            src_log = _log_path(src_rel)
+            if src_log.exists():
+                merged = sorted(_read_log(dest_rel) + _read_log(src_rel), key=lambda s: s.when)
+                _rewrite(_log_path(dest_rel), merged)
+                src_log.unlink()
+            head = _read_head(src_rel)
+            if head is not None:
+                _write_head(dest_rel, head)
+                _head_path(src_rel).unlink(missing_ok=True)
+    except OSError as e:
+        raise HistoryUnavailable(f"history unavailable: {e}") from e
