@@ -101,9 +101,9 @@ export function optionsFor(
     case 'prompt-type':
       return reg.promptTypes.map((t) => fromSpec(t, 'type'));
     case 'query-key':
-      return (reg.queryKeys ?? []).map((k) => fromSpec(k, 'keyword', `${k.name}: `));
+      return reg.queryKeys.map((k) => fromSpec(k, 'keyword', `${k.name}: `));
     case 'query-value': {
-      const spec = (reg.queryKeys ?? []).find((k) => k.name === cur.key);
+      const spec = reg.queryKeys.find((k) => k.name === cur.key);
       if (!spec) return [];
       return queryValues(cur.key, hints).map<Completion>((v) => ({
         label: v,
@@ -116,7 +116,7 @@ export function optionsFor(
 }
 
 /** Completions after `{{`, after `|`, for prompt `type:`, and inside ```query
- * fences, all from the C1 registry (query keys only when C2 added them). */
+ * fences, all from the C1 registry. */
 export function templateCompletions(getData: () => TemplateEditorData): CompletionSource {
   return (ctx: CompletionContext): CompletionResult | null => {
     const { registry, hints } = getData();

@@ -221,6 +221,6 @@ def test_query_blocks_are_skipped_without_c2(no_query_parser):
 
 
 def test_real_query_parser_flags_a_bad_key_in_a_template():
-    pytest.importorskip("ghostbrain.templates.query")
+    assert lint_mod.query_parser() is not None
     src = HEAD + '```query\ntype: action_item\nmentions: "{{person.link}}"\ncolour: red\n```\n'
     assert [(d.line, d.code) for d in lint(src, "t")] == [(BODY_LINE + 3, "unknown-key")]

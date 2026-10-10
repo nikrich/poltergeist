@@ -960,9 +960,9 @@ export interface ChangeActionResponse {
 
 // ── Template editor (C3) ──────────────────────────────────────────────────
 
-/** GET /v1/templates/functions. `queryKeys` exists once C2 is on the branch;
- * the editor treats it as optional so query completions switch off without it. */
-export type TemplateRegistry = TemplateFunctionsResponse & { queryKeys?: TemplateFunctionSpec[] };
+/** GET /v1/templates/functions as the editor uses it (C1 registry, always
+ * including C2's `queryKeys`). */
+export type TemplateRegistry = TemplateFunctionsResponse;
 
 export interface TemplateLintResponse {
   diagnostics: TemplateDiagnostic[];

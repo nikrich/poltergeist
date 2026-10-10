@@ -125,7 +125,7 @@ export function hoverAt(text: string, pos: number, reg: TemplateRegistry): Hover
   }
   if (inQueryFence(text, wordFrom) && /^[ \t]*$/.test(before) && text[wordTo] !== undefined) {
     if (!/^[ \t]*:/.test(text.slice(wordTo, lineEnd))) return null;
-    const spec = (reg.queryKeys ?? []).find((k) => k.name === word.toLowerCase());
+    const spec = reg.queryKeys.find((k) => k.name === word.toLowerCase());
     return spec ? hit(wordFrom, wordTo, `${spec.name}:`, spec) : null;
   }
   return null;

@@ -11,7 +11,7 @@ function spec(
   return { name, kind, type, doc, example, owner: null, accepts: [], arg: null, argRequired: false, ...extra };
 }
 
-/** A trimmed copy of GET /v1/templates/functions (C1 + C2's queryKeys). */
+/** A trimmed copy of GET /v1/templates/functions. */
 export const REGISTRY: TemplateRegistry = {
   variables: [
     spec('date', 'variable', 'date', 'Today, or the date prompt.', '{{date | format: D MMM YYYY}}'),
