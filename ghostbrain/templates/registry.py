@@ -86,6 +86,15 @@ def _inside_vault(base: Path, vault: Path) -> bool:
         return False
 
 
+def _is_plain_file(path: Path) -> bool:
+    """A regular file, not a symlink; False if it cannot even be stat'ed
+    (e.g. a readable but not searchable folder)."""
+    try:
+        return not path.is_symlink() and path.is_file()
+    except OSError:
+        return False
+
+
 def _error(template_id: str, message: str, code: str) -> TemplateInvalid:
     return TemplateInvalid(template_id, (Diagnostic(1, 1, "error", message, code),))
 
@@ -118,7 +127,7 @@ def _template_path(template_id: str, root: Path | None) -> Path:
     except OSError:
         exact = False
     path = base / name
-    if not exact or path.is_symlink() or not path.is_file():
+    if not exact or not _is_plain_file(path):
         raise TemplateNotFound(template_id)
     return path
 
@@ -169,8 +178,7 @@ def list_templates(root: Path | None = None) -> list[TemplateInfo]:
     infos = [
         _info(entry.stem, entry)
         for entry in entries
-        if entry.suffix == ".md" and not entry.name.startswith(".")
-        and not entry.is_symlink() and entry.is_file()
+        if entry.suffix == ".md" and not entry.name.startswith(".") and _is_plain_file(entry)
     ]
     infos.sort(key=lambda i: ((i.template.name if i.template else i.id).lower(), i.id))
     return infos

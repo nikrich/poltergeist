@@ -8,6 +8,7 @@ the registry imports it.
 """
 from __future__ import annotations
 
+import errno
 from pathlib import Path
 
 TEMPLATES_REL = "90-meta/templates"
@@ -137,8 +138,9 @@ STARTER_TEMPLATES: dict[str, str] = {
 def seed_starter_templates(root: Path) -> list[str]:
     """Write the starters if <root>/90-meta/templates is missing. Returns the
     vault-relative paths written; [] when the folder already existed, or when
-    it would resolve outside the vault (a symlinked 90-meta) or not at all
-    (a symlink loop)."""
+    it would resolve outside the vault (a symlinked 90-meta), or when a symlink
+    loop on the path makes it unusable (Python 3.11/3.12 raise RuntimeError in
+    resolve(); 3.13+ resolve() returns the path and mkdir fails with ELOOP)."""
     vault = Path(root)
     folder = vault / TEMPLATES_REL
     if folder.exists() or folder.is_symlink():
@@ -149,13 +151,17 @@ def seed_starter_templates(root: Path) -> list[str]:
         inside = False
     if not inside:
         return []
-    folder.mkdir(parents=True, exist_ok=True)
     written: list[str] = []
-    for name, body in STARTER_TEMPLATES.items():
-        try:
-            with open(folder / name, "x", encoding="utf-8", newline="\n") as fh:
-                fh.write(body)
-        except FileExistsError:
-            continue
-        written.append(f"{TEMPLATES_REL}/{name}")
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        for name, body in STARTER_TEMPLATES.items():
+            try:
+                with open(folder / name, "x", encoding="utf-8", newline="\n") as fh:
+                    fh.write(body)
+            except FileExistsError:
+                continue
+            written.append(f"{TEMPLATES_REL}/{name}")
+    except OSError as e:
+        if e.errno != errno.ELOOP:
+            raise
     return written

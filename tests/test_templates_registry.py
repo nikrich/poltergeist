@@ -152,3 +152,16 @@ def test_oversized_file_is_rejected_without_reading_it_whole(tmp_path: Path, mon
         load_template("weekly-review", tmp_path)
     assert e.value.diagnostics[0].code == "limit"
     assert TEMPLATES_REL == "90-meta/templates"
+
+
+@posix_non_root
+def test_unsearchable_templates_folder_lists_and_loads_nothing(tmp_path: Path):
+    _put(tmp_path, "weekly-review.md", OK)
+    folder = tmp_path / TEMPLATES_REL
+    folder.chmod(0o400)  # readable (listdir works) but not searchable (stat fails)
+    try:
+        assert list_templates(tmp_path) == []
+        with pytest.raises(TemplateNotFound):
+            load_template("weekly-review", tmp_path)
+    finally:
+        folder.chmod(0o755)
