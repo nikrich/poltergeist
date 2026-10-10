@@ -23,6 +23,15 @@ describe('RichMarkdownEditor page canvas (A7)', () => {
     expect(hdr.compareDocumentPosition(pm!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it('renders a plain canvas as compact prose without the page chrome', () => {
+    render(<RichMarkdownEditor markdown="body" onSave={() => {}} jotId="t" readOnly canvas="plain" />);
+    expect(screen.queryByTestId('page-canvas')).not.toBeInTheDocument();
+    const prose = screen.getByTestId('rich-markdown-editor').querySelector('.gb-prose');
+    expect(prose).not.toBeNull();
+    expect(prose).not.toHaveClass('gb-page-body');
+    expect(prose).toHaveClass('px-4', 'py-3', 'text-14');
+  });
+
   it('follows the page width setting; focus mode always uses the fixed measure', () => {
     useSettings.setState({ pageWidth: 'full' });
     const { rerender } = render(<RichMarkdownEditor markdown="body" onSave={() => {}} jotId="t" />);

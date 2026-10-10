@@ -84,6 +84,7 @@ export function TemplateTestRun({ templateId, source }: { templateId: string; so
             markdown={result.rendered.body}
             onSave={noop}
             readOnly
+            canvas="plain"
             jotId={`template-preview-${templateId}`}
           />
         )}

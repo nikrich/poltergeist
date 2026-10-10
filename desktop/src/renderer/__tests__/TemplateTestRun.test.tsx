@@ -152,5 +152,15 @@ describe('TemplateTestRun', () => {
     await waitFor(() => expect(screen.getByText(/1-1 with/)).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: 'photo' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'bold' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('toolbar', { name: 'formatting' })).not.toBeInTheDocument();
+  });
+
+  it('renders the preview as compact prose, not on the A7 page canvas', async () => {
+    postMock.mockResolvedValueOnce(ok('Alex'));
+    mount();
+    await waitFor(() => expect(screen.getByText(/1-1 with/)).toBeInTheDocument());
+    expect(screen.queryByTestId('page-canvas')).not.toBeInTheDocument();
+    expect(document.querySelector('.gb-page-body')).toBeNull();
+    expect(document.querySelector('.gb-prose')).not.toBeNull();
   });
 });

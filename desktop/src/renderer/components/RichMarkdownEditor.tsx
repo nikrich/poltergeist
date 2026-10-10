@@ -105,6 +105,10 @@ export interface RichMarkdownEditorProps {
   /** A7: page header (breadcrumb, title, byline) shown above the document
    * inside the page canvas. GuardedNoteEditor supplies it in page mode. */
   pageHeader?: React.ReactNode;
+  /** A7: `page` (default) lays the document out on the centred page canvas;
+   * `plain` keeps the compact full-width prose for embedded previews such as
+   * the C3 template test run. */
+  canvas?: 'page' | 'plain';
 }
 
 type Mode = 'rich' | 'source';
@@ -136,6 +140,7 @@ export function RichMarkdownEditor({
   focus = false,
   inlineAssist,
   pageHeader,
+  canvas = 'page',
 }: RichMarkdownEditorProps) {
   // Evaluated once per mount; parents remount per note via key={...}.
   const [parseFailed] = useState(() => !parsesAsRich(markdown));
@@ -559,6 +564,19 @@ export function RichMarkdownEditor({
     }
   }
 
+  const sourceEditor = (
+    <JotEditor
+      body={current.current}
+      debounceMs={debounceMs}
+      readOnly={readOnly}
+      onSave={(next) => {
+        current.current = next;
+        lastSaved.current = next;
+        onSave(next);
+      }}
+    />
+  );
+
   return (
     <div
       className="flex h-full flex-col"
@@ -576,32 +594,35 @@ export function RichMarkdownEditor({
           single document while the toolbar above stays put. */}
       <div className="flex-1 overflow-auto">
         {mode === 'rich' && editor && !readOnly && !focus && <TableToolbar editor={editor} />}
-        <div
-          className="gb-page"
-          data-testid="page-canvas"
-          data-width={focus ? 'fixed' : pageWidth}
-        >
-          {pageHeader}
-          {mode === 'rich' ? (
-            <EditorContent
-              editor={editor}
-              className="gb-prose gb-page-body text-ink-0 [&_.ProseMirror]:min-h-[40vh] [&_.ProseMirror]:outline-none"
-            />
-          ) : (
-            <div className="gb-page-body gb-page-source">
-              <JotEditor
-                body={current.current}
-                debounceMs={debounceMs}
-                readOnly={readOnly}
-                onSave={(next) => {
-                  current.current = next;
-                  lastSaved.current = next;
-                  onSave(next);
-                }}
+        {canvas === 'page' ? (
+          <div
+            className="gb-page"
+            data-testid="page-canvas"
+            data-width={focus ? 'fixed' : pageWidth}
+          >
+            {pageHeader}
+            {mode === 'rich' ? (
+              <EditorContent
+                editor={editor}
+                className="gb-prose gb-page-body text-ink-0 [&_.ProseMirror]:min-h-[40vh] [&_.ProseMirror]:outline-none"
               />
-            </div>
-          )}
-        </div>
+            ) : (
+              <div className="gb-page-body gb-page-source">{sourceEditor}</div>
+            )}
+          </div>
+        ) : (
+          <>
+            {pageHeader}
+            {mode === 'rich' ? (
+              <EditorContent
+                editor={editor}
+                className="gb-prose h-full px-4 py-3 text-14 leading-[1.65] text-ink-0 [&_.ProseMirror]:min-h-full [&_.ProseMirror]:outline-none"
+              />
+            ) : (
+              sourceEditor
+            )}
+          </>
+        )}
       </div>
       <div className="flex flex-shrink-0 items-center gap-2 border-t border-hairline px-3 py-[6px]">
         {mode === 'rich' && (
