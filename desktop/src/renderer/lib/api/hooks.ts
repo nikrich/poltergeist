@@ -58,6 +58,9 @@ import type {
   VaultStats,
   McpServersResponse,
   McpServerWrite,
+  TemplateCreateResponse,
+  TemplateRenderResponse,
+  TemplatesResponse,
 } from '../../../shared/api-types';
 import { ApiError, del, get, patch, post, put } from './client';
 import { reportHistoryHealth } from '../history-health';
@@ -1134,5 +1137,41 @@ export function useRemoveOrphan() {
   return useMutation({
     mutationFn: (docId: string) => post('/v1/library/attention/remove-orphan', { doc_id: docId }),
     onSuccess: () => invalidateLibrary(qc),
+  });
+}
+
+// ── Smart templates (C1) ──────────────────────────────────────────────────
+
+export function useTemplates(opts: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: ['templates'],
+    queryFn: () => get<TemplatesResponse>('/v1/templates'),
+    enabled: opts.enabled ?? true,
+    staleTime: 10_000,
+  });
+}
+
+export interface TemplateAnswersVars {
+  id: string;
+  answers: Record<string, string>;
+}
+
+export function useCreateFromTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, answers }: TemplateAnswersVars) =>
+      post<TemplateCreateResponse>(`/v1/templates/${encodeURIComponent(id)}/create`, { answers }),
+    onSuccess: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: JOTS_KEY }),
+        qc.invalidateQueries({ queryKey: ['vault', 'backlinks'] }),
+      ]),
+  });
+}
+
+export function useRenderTemplate() {
+  return useMutation({
+    mutationFn: ({ id, answers }: TemplateAnswersVars) =>
+      post<TemplateRenderResponse>(`/v1/templates/${encodeURIComponent(id)}/render`, { answers }),
   });
 }

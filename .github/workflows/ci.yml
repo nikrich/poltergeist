@@ -71,6 +71,14 @@ jobs:
             tests/test_library_routes.py \
             tests/test_history_store.py \
             tests/test_history_retention.py \
+            tests/test_templates_lang.py \
+            tests/test_templates_security.py \
+            tests/test_templates_functions.py \
+            tests/test_templates_parse.py \
+            tests/test_templates_render.py \
+            tests/test_templates_starters.py \
+            tests/test_templates_registry.py \
+            tests/test_templates_create.py \
             -q
 
   desktop:
