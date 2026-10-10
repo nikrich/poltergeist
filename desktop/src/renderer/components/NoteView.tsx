@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Editor } from '@tiptap/core';
 
 import { get } from '../lib/api/client';
@@ -16,7 +16,8 @@ import { SkeletonRows } from './SkeletonRows';
 import { PanelError } from './PanelError';
 import { openWikilink } from '../lib/open-wikilink';
 import { BacklinksPanel } from './BacklinksPanel';
-import { NoteHistoryButton } from './NoteHistory';
+import { PageByline } from './page/PageByline';
+import { pageAuthor, pageBreadcrumb, pageUpdated, titleRuleFor } from '../lib/page-meta';
 import { FocusBar } from './FocusBar';
 import { focusActiveNow, setFocusMode, useFocusActive, useFocusSurface } from '../lib/focus-mode';
 import { shortcutLabel } from '../lib/editor-shortcuts';
@@ -42,6 +43,9 @@ export function NoteView({ onEditorReady }: Props = {}) {
   const note = useNote(path);
   const vaultPath = useSettings((s) => s.vaultPath);
   const updateNote = useUpdateNoteByPath();
+  // A7: backlinks recede — collapsed until the byline (or their header) opens them.
+  const [backlinksOpen, setBacklinksOpen] = useState(false);
+  const backlinksRef = useRef<HTMLDivElement | null>(null);
   const showInGraph = useGraphView((s) => s.showInGraph);
 
   useEffect(() => {
@@ -82,6 +86,12 @@ export function NoteView({ onEditorReady }: Props = {}) {
   // "manual" → best-effort edits, may be overwritten by the next sync.
   const source = note.data?.frontmatter?.source;
   const isSynced = typeof source === 'string' && source !== 'manual';
+  const fm = note.data?.frontmatter;
+  const titleRule = titleRuleFor(fm);
+  const showBacklinks = () => {
+    setBacklinksOpen(true);
+    backlinksRef.current?.scrollIntoView?.({ block: 'nearest' });
+  };
 
   const openInEditor = async () => {
     const target = `${vaultPath}/${path}`;
@@ -117,20 +127,12 @@ export function NoteView({ onEditorReady }: Props = {}) {
         {focusActive ? (
           <FocusBar />
         ) : (
-          <header className="flex items-center gap-3 border-b border-hairline px-6 py-4">
-            <Lucide name="file-text" size={14} color="var(--ink-2)" />
-            <div className="min-w-0 flex-1 leading-[1.2]">
-              <div className="truncate text-13 font-medium text-ink-0">
-                {note.data?.title ?? path.split('/').pop()}
-              </div>
-              <div className="truncate font-mono text-10 text-ink-3">{path}</div>
-            </div>
+          <header className="flex items-center justify-end gap-2 border-b border-hairline px-4 py-2">
             {isSynced && (
               <Pill tone="oxblood">
                 synced note — edits may be overwritten by the next sync
               </Pill>
             )}
-            <NoteHistoryButton key={path} path={path} guardRef={guardRef} />
             <Btn
               variant="ghost"
               size="sm"
@@ -192,6 +194,20 @@ export function NoteView({ onEditorReady }: Props = {}) {
                   onSaveError={(err) => toast.error(`save failed: ${err.message}`)}
                   guardRef={guardRef}
                   navigationScope="note"
+                  page={{
+                    titleRule,
+                    fallbackTitle: titleRule === 'note' ? (note.data?.title ?? '') : '',
+                    breadcrumb: pageBreadcrumb(path, fm),
+                    byline: (
+                      <PageByline
+                        author={pageAuthor(fm)}
+                        updated={pageUpdated(fm)}
+                        path={path}
+                        guardRef={guardRef}
+                        onShowBacklinks={showBacklinks}
+                      />
+                    ),
+                  }}
                   editorProps={{
                     focus: focusActive,
                     jotId: path,
@@ -205,7 +221,16 @@ export function NoteView({ onEditorReady }: Props = {}) {
                   }}
                 />
               </div>
-              {!focusActive && <BacklinksPanel path={path} onOpen={openView} />}
+              {!focusActive && (
+                <div ref={backlinksRef}>
+                  <BacklinksPanel
+                    path={path}
+                    onOpen={openView}
+                    open={backlinksOpen}
+                    onOpenChange={setBacklinksOpen}
+                  />
+                </div>
+              )}
             </>
           )}
         </div>

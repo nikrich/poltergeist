@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Editor } from '@tiptap/core';
 import { JotsScreen } from '../screens/jots';
@@ -156,7 +156,9 @@ describe('JotsScreen', () => {
     }));
 
     render(withQuery(<JotsScreen />));
-    const leaf = await screen.findByText('first jot');
+    // The page title (a textarea) also reads "first jot" once the jot loads;
+    // the tree leaf comes first in the DOM.
+    const leaf = (await screen.findAllByText('first jot'))[0]!;
     fireEvent.click(leaf);
     await waitFor(() => expect(screen.getByText(/full body here/)).toBeInTheDocument());
   });
@@ -375,6 +377,8 @@ describe('JotsScreen', () => {
 
     render(withQuery(<JotsScreen />));
     await waitFor(() => expect(screen.getByText(/full body here/)).toBeInTheDocument());
+    // A7: backlinks start collapsed; the byline opens them.
+    fireEvent.click(await screen.findByRole('button', { name: '1 backlink' }));
     expect(await screen.findByText('Standup')).toBeInTheDocument();
     expect(screen.getByText('follow up on first jot')).toBeInTheDocument();
     expect(apiRequest).toHaveBeenCalledWith(
@@ -433,6 +437,38 @@ describe('JotsScreen', () => {
       focus: '20-contexts/work/notes/manual-20260514T093015-a.md',
     });
     expect(useNavigation.getState().active).toBe('vault');
+  });
+
+  it('shows the jot as a page: breadcrumb, first-line title, byline with history', async () => {
+    apiRequest.mockImplementation(withConnectors(async (_m, path) => {
+      if (path.includes('source=manual')) return { ok: true, status: 200, data: page };
+      return { ok: true, status: 200, data: detail };
+    }));
+    render(withQuery(<JotsScreen />));
+    await waitFor(() => expect(screen.getByText(/full body here/)).toBeInTheDocument());
+    expect(screen.getByLabelText('page title')).toHaveValue('first jot');
+    const crumbs = screen.getByRole('navigation', { name: 'breadcrumb' });
+    expect(within(crumbs).getByText('work')).toBeInTheDocument();
+    const byline = screen.getByTestId('page-byline');
+    expect(within(byline).getByText('you')).toBeInTheDocument();
+    expect(within(byline).getByRole('button', { name: 'history' })).toBeInTheDocument();
+  });
+
+  it('renaming the jot rewrites its first line through the jot save', async () => {
+    apiRequest.mockImplementation(withConnectors(async (_m, path) => {
+      if (path.includes('source=manual')) return { ok: true, status: 200, data: page };
+      return { ok: true, status: 200, data: detail };
+    }));
+    render(withQuery(<JotsScreen />));
+    await waitFor(() => expect(screen.getByText(/full body here/)).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText('page title'), { target: { value: 'Sprint retro' } });
+    fireEvent.blur(screen.getByLabelText('page title'));
+    await waitFor(() => {
+      const call = apiRequest.mock.calls.find(
+        ([m, p]) => m === 'PATCH' && p === '/v1/notes/manual-20260514T093015-a',
+      );
+      expect(call?.[2]).toEqual({ body: 'Sprint retro\n\nfull body here' });
+    });
   });
 });
 
