@@ -13,6 +13,7 @@ backend's own preflight.
 """
 from __future__ import annotations
 
+import os
 import shutil
 import sys
 
@@ -24,6 +25,7 @@ IDS = (
 )
 
 BLACKHOLE_DEVICE = "BlackHole 2ch"
+MODEL_ENV = "GHOSTBRAIN_WHISPER_MODEL"
 
 
 def _platform() -> str:
@@ -207,9 +209,26 @@ def check_whisper_model() -> CheckResult:
         is_multilingual,
     )
 
+    # A pinned model overrides whatever fetch-model downloads, so the usual
+    # fixes don't apply — say where the pin lives instead.
+    pinned = bool(os.environ.get(MODEL_ENV))
+    pinned_fix = Fix(
+        kind="manual",
+        command=(f"unset {MODEL_ENV} (environment or ~/.ghostbrain/.env) or point it "
+                 "at a multilingual model, then restart the app"),
+    )
+
     try:
         model = _resolve_model(None)
     except TranscribeError as e:
+        if pinned:
+            return CheckResult(
+                id="whisper-model", status="fail",
+                summary=f"{MODEL_ENV} points at a missing model",
+                detail=str(e),
+                fix=pinned_fix,
+                data={"source": "env"},
+            )
         fix = (
             Fix(kind="automated", command="setup fetch-model",
                 note="downloads ggml-large-v3-turbo-q5_0.bin (~550 MB, English + Afrikaans); pass small.en for an English-only model")
@@ -221,6 +240,14 @@ def check_whisper_model() -> CheckResult:
             summary=f"no ggml-*.bin in {DEFAULT_MODEL_DIR}",
             detail=str(e),
             fix=fix,
+        )
+    if not is_multilingual(model) and pinned:
+        return CheckResult(
+            id="whisper-model", status="warn",
+            summary=f"{model.name} is English-only (pinned by {MODEL_ENV})",
+            detail="Afrikaans and mixed-language meetings need a multilingual model.",
+            data={"model": str(model), "source": "env"},
+            fix=pinned_fix,
         )
     if not is_multilingual(model):
         return CheckResult(

@@ -256,11 +256,34 @@ def test_settings_report_whether_the_model_is_multilingual(
 ):
     from ghostbrain.recorder import transcribe as tmod
 
+    monkeypatch.delenv("GHOSTBRAIN_WHISPER_MODEL", raising=False)
     monkeypatch.setattr(tmod, "_resolve_model", lambda _p: Path("/m/ggml-small.en.bin"))
     body = client.get("/v1/settings/recorder", headers=auth_headers).json()
     assert body["transcription_model"] == "ggml-small.en.bin"
     assert body["multilingual_model"] is False
+    assert body["transcription_model_source"] == "default"
 
     monkeypatch.setattr(tmod, "_resolve_model", lambda _p: Path("/m/ggml-large-v3-turbo-q5_0.bin"))
     body = client.get("/v1/settings/recorder", headers=auth_headers).json()
     assert body["multilingual_model"] is True
+
+
+def test_settings_report_a_model_pinned_by_the_env_var(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch, tmp_path: Path,
+):
+    pinned = tmp_path / "ggml-base.en.bin"
+    pinned.write_bytes(b"x")
+    monkeypatch.setenv("GHOSTBRAIN_WHISPER_MODEL", str(pinned))
+    body = client.get("/v1/settings/recorder", headers=auth_headers).json()
+    assert body["transcription_model"] == "ggml-base.en.bin"
+    assert body["multilingual_model"] is False
+    assert body["transcription_model_source"] == "env"
+
+
+def test_settings_report_env_source_when_the_pinned_model_is_missing(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch, tmp_path: Path,
+):
+    monkeypatch.setenv("GHOSTBRAIN_WHISPER_MODEL", str(tmp_path / "gone.bin"))
+    body = client.get("/v1/settings/recorder", headers=auth_headers).json()
+    assert body["transcription_model"] is None
+    assert body["transcription_model_source"] == "env"

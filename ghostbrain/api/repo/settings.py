@@ -79,18 +79,24 @@ def get_recorder_settings() -> dict:
     out["capture_backend_effective"] = effective_capture_backend(raw)
     out["transcription_language"] = rcfg.transcription_language_from(raw)
     out["live_transcription"] = rcfg.live_transcription_from(raw)
-    out["transcription_model"], out["multilingual_model"] = _transcription_model()
+    (
+        out["transcription_model"],
+        out["multilingual_model"],
+        out["transcription_model_source"],
+    ) = _transcription_model()
     return out
 
 
-def _transcription_model() -> tuple[str | None, bool]:
+def _transcription_model() -> tuple[str | None, bool, str]:
     from ghostbrain.recorder import transcribe as tmod
 
+    # _resolve_model uses GHOSTBRAIN_WHISPER_MODEL whenever it is non-empty.
+    source = "env" if os.environ.get("GHOSTBRAIN_WHISPER_MODEL") else "default"
     try:
         model = tmod._resolve_model(None)
     except tmod.TranscribeError:
-        return None, False
-    return model.name, tmod.is_multilingual(model)
+        return None, False, source
+    return model.name, tmod.is_multilingual(model), source
 
 
 def update_recorder_settings(**fields) -> dict:
