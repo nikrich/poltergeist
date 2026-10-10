@@ -18,6 +18,7 @@ from ghostbrain.templates.lang import (
     Text,
     tokenize,
 )
+from ghostbrain.templates.parse import parse_template
 
 PKG = Path(__file__).resolve().parents[1] / "ghostbrain" / "templates"
 FORBIDDEN = [
@@ -88,3 +89,85 @@ def test_sec_many_placeholders_on_one_line_finish_fast():
     segs = tokenize(src)
     assert time.monotonic() - start < 2.0
     assert sum(isinstance(s, Placeholder) for s in segs) == MAX_PLACEHOLDERS
+
+
+
+BOMB = """---
+a: &a ["x","x","x","x","x","x","x","x","x"]
+b: &b [*a,*a,*a,*a,*a,*a,*a,*a,*a]
+c: &c [*b,*b,*b,*b,*b,*b,*b,*b,*b]
+d: &d [*c,*c,*c,*c,*c,*c,*c,*c,*c]
+e: &e [*d,*d,*d,*d,*d,*d,*d,*d,*d]
+f: &f [*e,*e,*e,*e,*e,*e,*e,*e,*e]
+g: &g [*f,*f,*f,*f,*f,*f,*f,*f,*f]
+template:
+  name: Bomb
+  frontmatter:
+    boom: *g
+---
+"""
+
+
+def test_sec_yaml_python_tags_do_not_execute(monkeypatch):
+    import os
+
+    monkeypatch.setattr(os, "system", lambda *_a, **_k: pytest.fail("os.system ran"))
+    r = parse_template("---\ntemplate: !!python/object/apply:os.system ['echo pwned']\n---\n", "x")
+    assert not r.ok and r.diagnostics[0].code == "yaml"
+
+
+def test_sec_yaml_alias_bomb_is_rejected_fast():
+    start = time.monotonic()
+    r = parse_template(BOMB, "bomb")
+    assert time.monotonic() - start < 2.0
+    assert not r.ok and r.diagnostics[0].code == "limit"
+
+
+def test_sec_recursive_yaml_is_rejected():
+    src = "---\ntemplate:\n  name: Loop\n  frontmatter:\n    me: &me [*me]\n---\n"
+    r = parse_template(src, "loop")
+    assert not r.ok and r.diagnostics[0].code == "limit"
+
+
+def test_sec_deeply_nested_yaml_does_not_crash():
+    src = "---\ntemplate:\n  name: Deep\n  frontmatter:\n    x: " + "[" * 3000 + "]" * 3000 + "\n---\n"
+    start = time.monotonic()
+    r = parse_template(src, "deep")
+    assert time.monotonic() - start < 1.0
+    assert not r.ok and r.diagnostics[0].code in ("yaml", "limit")
+
+
+def test_sec_oversized_source_is_a_diagnostic_not_a_crash():
+    r = parse_template("---\ntemplate:\n  name: Big\n---\n" + "a" * MAX_TEMPLATE_CHARS, "big")
+    assert not r.ok and r.diagnostics[0].code == "limit"
+
+
+def test_sec_yaml_merge_key_bomb_is_rejected_fast():
+    lines = ["a0: &a0 {" + ", ".join(f"k{i}: {i}" for i in range(9)) + "}"]
+    for n in range(1, 8):
+        lines.append(f"a{n}: &a{n} {{<<: [" + ", ".join([f"*a{n - 1}"] * 9) + "]}")
+    src = "---\n" + "\n".join(lines) + "\ntemplate:\n  name: Merge\n---\n"
+    start = time.monotonic()
+    r = parse_template(src, "merge")
+    assert time.monotonic() - start < 1.0
+    assert not r.ok and r.diagnostics[0].code == "limit"
+    assert r.diagnostics[0].line == 2
+
+
+def test_sec_aliased_strings_finish_fast():
+    blob = "{{x}} " * 4_000
+    refs = "\n".join(f"    k{i}: *s" for i in range(800))
+    src = f"---\ns: &s \"{blob}\"\ntemplate:\n  name: Blob\n  frontmatter:\n{refs}\n---\n"
+    start = time.monotonic()
+    r = parse_template(src, "blob")
+    assert time.monotonic() - start < 2.0
+    assert not r.ok and r.diagnostics[0].code == "limit"
+
+
+def test_sec_many_schema_errors_finish_fast():
+    extra = "\n".join(f"  extra{i}: 1" for i in range(2_500))
+    start = time.monotonic()
+    r = parse_template(f"---\ntemplate:\n  name: X\n{extra}\n---\n", "x")
+    assert time.monotonic() - start < 2.0
+    assert not r.ok and len(r.diagnostics) <= 21
+    assert "more" in r.diagnostics[-1].message

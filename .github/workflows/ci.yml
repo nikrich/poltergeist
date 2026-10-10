@@ -74,6 +74,7 @@ jobs:
             tests/test_templates_lang.py \
             tests/test_templates_security.py \
             tests/test_templates_functions.py \
+            tests/test_templates_parse.py \
             -q
 
   desktop:
