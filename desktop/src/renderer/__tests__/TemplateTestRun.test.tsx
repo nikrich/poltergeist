@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import * as client from '../lib/api/client';
 import { TemplateTestRun } from '../components/TemplateTestRun';
 import { rememberAnswers } from '../lib/templates/last-answers';
-import type { TemplateDryRunResponse } from '../../shared/api-types';
+import type { TemplateDryRunResponse, VaultQueryRow } from '../../shared/api-types';
 import { TEMPLATE } from './helpers/template-registry';
 import { stubLocalStorage } from './helpers/memory-storage';
 
@@ -13,6 +13,9 @@ vi.mock('../lib/api/client', async () => {
   return { ApiError: actual.ApiError, get: vi.fn(), post: vi.fn(), patch: vi.fn(), del: vi.fn(), put: vi.fn() };
 });
 const postMock = vi.mocked(client.post);
+
+const { runVaultQuery, setNoteStatus } = vi.hoisted(() => ({ runVaultQuery: vi.fn(), setNoteStatus: vi.fn() }));
+vi.mock('../lib/editor/query-api', () => ({ runVaultQuery, setNoteStatus }));
 
 const PROMPTS = [
   { id: 'person', ask: 'Who?', type: 'person' as const, optional: false, default: null, options: [] },
@@ -53,6 +56,8 @@ beforeEach(() => {
 });
 afterEach(() => {
   postMock.mockReset();
+  runVaultQuery.mockReset();
+  setNoteStatus.mockReset();
   vi.unstubAllGlobals();
 });
 
@@ -112,6 +117,33 @@ describe('TemplateTestRun', () => {
     postMock.mockRejectedValueOnce(new Error('sidecar down'));
     mount();
     expect(await screen.findByRole('alert')).toHaveTextContent('test run failed — sidecar down');
+  });
+
+  it('shows a query block read-only: no ticks and no freeze', async () => {
+    const row: VaultQueryRow = {
+      path: '20-contexts/work/a.md',
+      title: 'Send Alex the budget',
+      context: 'work',
+      status: null,
+      created: '2026-10-08',
+      snippet: '',
+      etag: 'aaaaaaaaaaaaaaaa',
+    };
+    runVaultQuery.mockResolvedValue({ results: [row], diagnostics: [], indexing: false, partial: false });
+    const fence = '```query\ntype: action_item\nstatus: open\n```';
+    const res = ok('Alex');
+    postMock.mockResolvedValueOnce({ ...res, rendered: { ...res.rendered!, body: `# 1-1 with [[Alex]]\n\n${fence}\n` } });
+    mount();
+    const box = await screen.findByRole('checkbox', { name: 'mark Send Alex the budget done' });
+    expect(box).toBeDisabled();
+    fireEvent.click(box);
+    expect(setNoteStatus).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'query options' }));
+    const freeze = screen.getByRole('menuitem', { name: 'freeze' });
+    expect(freeze).toBeDisabled();
+    fireEvent.click(freeze);
+    expect(screen.getByRole('checkbox', { name: 'mark Send Alex the budget done' })).toBeInTheDocument();
+    expect(setNoteStatus).not.toHaveBeenCalled();
   });
 
   it('renders the preview without the formatting toolbar or the photo button', async () => {
