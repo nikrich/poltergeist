@@ -1,7 +1,7 @@
 """GET /v1/vault/stats, /graph, /contexts, /suggest, /backlinks and /resolve."""
-from typing import Literal, Union
+from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel
 
 from ghostbrain import routing_config
@@ -56,18 +56,28 @@ def vault_stats() -> dict:
     return get_vault_stats()
 
 
-@router.get("/graph", response_model=Union[EgoGraphResponse, GraphResponse])
+def _json(model: type[BaseModel], body: dict) -> Response:
+    return Response(model.model_validate(body).model_dump_json(), media_type="application/json")
+
+
+# Each mode is validated against its own model only: a Union response_model
+# would try the ego model on every whole-vault node first (~2.5x slower at 30k).
+@router.get(
+    "/graph",
+    response_model=None,
+    responses={200: {"model": GraphResponse | EgoGraphResponse}},
+)
 def vault_graph(
     focus: str | None = Query(None, min_length=1, max_length=500),
     depth: int = Query(2, ge=1, le=3),
-) -> dict:
+) -> Response:
     """Without `focus`: the whole-vault graph (BrainConstellation, Graph tab's
     whole-vault mode). With `focus`: its link neighbourhood up to `depth` hops,
     ghosts included, capped at 300 nodes nearest first."""
     if focus is None:
-        return build_graph()
+        return _json(GraphResponse, build_graph())
     try:
-        return ego_graph(focus, depth)
+        return _json(EgoGraphResponse, ego_graph(focus, depth))
     except InvalidLinkPath as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except FocusNotFound as e:

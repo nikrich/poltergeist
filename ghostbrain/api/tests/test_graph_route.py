@@ -63,3 +63,25 @@ def test_graph_without_focus_nodes_carry_kind(client: TestClient, auth_headers, 
     data = client.get("/v1/vault/graph", headers=auth_headers).json()
     assert [(n["path"], n["kind"]) for n in data["nodes"]] == [("20-contexts/work/j.md", "jot")]
     assert "regions" in data
+
+
+def test_graph_key_sets_are_pinned_for_both_modes(client: TestClient, auth_headers, tmp_vault: Path, monkeypatch, tmp_path):
+    monkeypatch.setenv("GHOSTBRAIN_SEMANTIC_INDEX_DIR", str(tmp_path / "sem"))
+    d = tmp_vault / "20-contexts" / "work"
+    d.mkdir(parents=True)
+    (d / "a.md").write_text("---\ntitle: A\n---\n[[20-contexts/work/b]]", encoding="utf-8")
+    (d / "b.md").write_text("b", encoding="utf-8")
+
+    whole = client.get("/v1/vault/graph", headers=auth_headers).json()
+    assert set(whole) == {"nodes", "edges", "regions"}
+    assert {frozenset(n) for n in whole["nodes"]} == {frozenset(
+        {"path", "title", "context", "tags", "x", "y", "degree", "updated", "kind"},
+    )}
+    assert {frozenset(e) for e in whole["edges"]} == {frozenset({"source", "target", "weight", "kind"})}
+
+    ego = _ego(client, auth_headers, focus="20-contexts/work/a", depth=1).json()
+    assert set(ego) == {"focus", "depth", "nodes", "edges", "truncated", "indexing"}
+    assert {frozenset(n) for n in ego["nodes"]} == {frozenset(
+        {"path", "title", "context", "kind", "degree", "ghost", "hop"},
+    )}
+    assert {frozenset(e) for e in ego["edges"]} == {frozenset({"source", "target", "weight", "kind"})}
