@@ -32,6 +32,13 @@ class WriteConflict(VaultWriteError):
         self.current_etag = current_etag
 
 
+class NotHeldError(VaultWriteError):
+    """A write that must be held for approval (``require_hold=True``) would
+    not be: the actor's changes are not recorded, it is an approval, or the
+    hold policy found no reason to hold it. Nothing was written, stored or
+    recorded."""
+
+
 ETAG_REQUIRED_MESSAGE = "read the note first and send its etag (If-Match) to change it"
 
 
