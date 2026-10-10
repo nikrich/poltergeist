@@ -167,3 +167,37 @@ def test_cross_context_only_filter(vault: Path, index_dir: Path) -> None:
         assert "20-contexts/work" not in r, (
             f"related entry {r} should be cross-context, not work"
         )
+
+
+def test_refresh_prunes_entries_for_moved_and_deleted_notes(vault: Path, index_dir: Path) -> None:
+    """A moved/deleted note's old row must go: otherwise related: links to a
+    path that no longer exists (e.g. after a project rename, the moved note
+    links to its own old path)."""
+    import frontmatter
+    from ghostbrain.semantic.index import load
+    from ghostbrain.semantic.refresh import refresh
+
+    old = vault / "20-contexts" / "work" / "projects" / "old"
+    new = vault / "20-contexts" / "work" / "projects" / "new"
+    _write_note(old / "a.md", "Avro schema A", "Avro schema A", "work")
+    _write_note(old / "gone.md", "Avro schema G", "Avro schema G", "work")
+    _write_note(vault / "20-contexts" / "work" / "b.md", "Avro schema B", "Avro schema B", "work")
+    refresh(top_k=5, min_similarity=0.0, embedder=FakeEmbedder())
+    assert "20-contexts/work/projects/old/a.md" in load().entries
+
+    new.mkdir(parents=True)
+    (old / "a.md").rename(new / "a.md")
+    (old / "gone.md").unlink()
+    refresh(top_k=5, min_similarity=0.0, embedder=FakeEmbedder())
+
+    idx = load()
+    assert not any(k.startswith("20-contexts/work/projects/old/") for k in idx.entries)
+    assert "20-contexts/work/projects/new/a.md" in idx.entries
+    assert all((vault / k).is_file() for k in idx.entries)
+    assert idx.vectors.shape[0] == len(idx.entries)
+    assert sorted(e.row for e in idx.entries.values()) == list(range(len(idx.entries)))
+    for note in (new / "a.md", vault / "20-contexts" / "work" / "b.md"):
+        related = frontmatter.load(note).metadata.get("related") or []
+        assert related, f"{note} should still get related links"
+        assert not any("projects/old" in r for r in related), related
+    assert "[[20-contexts/work/b]]" in frontmatter.load(new / "a.md").metadata["related"]
