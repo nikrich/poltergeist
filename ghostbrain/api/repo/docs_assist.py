@@ -1,14 +1,16 @@
 """Docs assistant: one-shot streamed writing turns over a jot.
 
 Unlike chat there is no session persistence — every assist call is a fresh
-single turn. Cancellation reuses the agent registry with key ``docs:<jot_id>``.
+single turn. Cancellation reuses the agent registry with key ``docs:<stream key>``
+(stream_id, else jot id, else "path:<path>").
 """
 from __future__ import annotations
 
 import logging
 from typing import Iterator
 
-from ghostbrain.api.repo import notes_manual
+from ghostbrain.api.repo import docs_context, notes_manual
+from ghostbrain.api.repo import note as note_repo
 from ghostbrain.llm import agent
 
 log = logging.getLogger("ghostbrain.docs_assist")
@@ -108,24 +110,68 @@ def build_prompt(
     return "\n\n".join(parts)
 
 
+class _TargetError(Exception):
+    pass
+
+
+def _resolve_target(jot_id: str | None, path: str | None) -> tuple[str, str]:
+    """(body, vault-relative path) of the note being assisted."""
+    if jot_id is not None:
+        try:
+            jot = notes_manual.read_jot(jot_id)
+        except notes_manual.JotNotFound:
+            raise _TargetError("jot not found") from None
+        return jot["body"], jot["path"]
+    if not path:
+        raise _TargetError("send a jot_id or a path")
+    try:
+        found = note_repo.get_note(path)
+    except note_repo.NoteInvalidPath:
+        raise _TargetError("invalid note path") from None
+    except note_repo.NoteNotFound:
+        raise _TargetError("note not found") from None
+    return found["body"], path
+
+
 def run_assist(
-    jot_id: str, *, instruction: str | None, selection: str | None, mode: str
+    jot_id: str | None = None,
+    *,
+    path: str | None = None,
+    stream_key: str | None = None,
+    instruction: str | None,
+    selection: str | None,
+    mode: str,
+    target_language: str | None = None,
+    before: str | None = None,
+    placement: str | None = None,
 ) -> Iterator[dict]:
     try:
-        jot = notes_manual.read_jot(jot_id)
-    except notes_manual.JotNotFound:
-        yield {"type": "error", "message": "jot not found"}
+        body, rel = _resolve_target(jot_id, path)
+    except _TargetError as e:
+        yield {"type": "error", "message": str(e)}
         return
+    vault_context: str | None = None
+    if mode == "draft":
+        yield {"type": "tool", "name": "vault_context", "summary": "reading related notes"}
+        vault_context = docs_context.gather(instruction or selection or "", current_path=rel) or None
     prompt = build_prompt(
-        body=jot["body"], instruction=instruction, selection=selection, mode=mode
+        body=body,
+        instruction=instruction,
+        selection=selection,
+        mode=mode,
+        target_language=target_language,
+        before=before,
+        placement=placement,
+        vault_context=vault_context,
     )
+    key = stream_key or jot_id or f"path:{path}"
     yield from agent.run_chat_turn(
         prompt,
         system_prompt=DOCS_SYSTEM_PROMPT,
         allowed_tools=DOCS_ALLOWED_TOOLS,
-        turn_key=f"docs:{jot_id}",
+        turn_key=f"docs:{key}",
     )
 
 
-def cancel(jot_id: str) -> bool:
-    return agent.cancel_turn(f"docs:{jot_id}")
+def cancel(key: str) -> bool:
+    return agent.cancel_turn(f"docs:{key}")
