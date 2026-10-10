@@ -32,13 +32,21 @@ from ghostbrain.api.repo.notes_manual import (
     update_jot_body,
     write_inbox_jot,
 )
-from ghostbrain.api.vault_http import if_match
-from ghostbrain.vault_write import USER, plugin_actor
+from ghostbrain.api.vault_http import if_match, request_actor
+from ghostbrain.vault_write import ASSISTANT, USER, Actor, plugin_actor
 
-# PUT /v1/notes is the plugin write-back route. B2 replaces this with the id
-# the main process stamps on the request; until then plugin writes are
-# attributed generically.
+# PUT /v1/notes is the plugin write-back route. The desktop main process
+# stamps X-Poltergeist-Actor: plugin:<id> (spec B §2); a request without the
+# header (an older client) is still never invisible on the Changes screen.
 _PLUGIN_WRITER = plugin_actor("unattributed")
+
+
+def _edit_reason(actor: Actor, user_reason: str) -> str:
+    if actor == USER:
+        return user_reason
+    if actor == ASSISTANT:
+        return "accepted an assistant edit"
+    return "edited through the API"
 
 
 def _known_contexts() -> set[str]:
@@ -86,18 +94,23 @@ def get_notes(
 
 
 @router.put("", status_code=status.HTTP_200_OK)
-def upsert_note(req: UpsertNoteRequest, base_etag: str | None = Depends(if_match)) -> dict:
+def upsert_note(
+    req: UpsertNoteRequest,
+    base_etag: str | None = Depends(if_match),
+    actor: Actor = Depends(request_actor),
+) -> dict:
     """Create or replace a vault note at an explicit path (plugin write-back)."""
     if not req.content.strip():
         raise HTTPException(status_code=422, detail="content must not be empty")
+    writer = _PLUGIN_WRITER if actor == USER else actor
     try:
-        return save_note_at_path(req.path, req.content, actor=_PLUGIN_WRITER, base_etag=base_etag)
+        return save_note_at_path(req.path, req.content, actor=writer, base_etag=base_etag)
     except NoteInvalidPath as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("", status_code=status.HTTP_200_OK)
-def create_note(req: CreateNoteRequest) -> dict:
+def create_note(req: CreateNoteRequest, actor: Actor = Depends(request_actor)) -> dict:
     """Create a manual jot, optionally routing it synchronously.
 
     When ``route=false`` the jot is written to the inbox with
@@ -120,13 +133,13 @@ def create_note(req: CreateNoteRequest) -> dict:
                 detail="capturedAt must include a timezone offset (e.g. 2026-05-14T09:30:15+00:00)",
             )
     if not req.route:
-        record = write_inbox_jot(body, captured_at=captured)
+        record = write_inbox_jot(body, captured_at=captured, actor=actor)
         return {
             "id": record["id"],
             "path": record["path"],
             "routingStatus": "pending",
         }
-    return create_and_route_jot(body, captured_at=captured)
+    return create_and_route_jot(body, captured_at=captured, actor=actor)
 
 
 # ── Order-sensitive: /body must be registered BEFORE /{jot_id} ──────────────
@@ -136,7 +149,11 @@ def create_note(req: CreateNoteRequest) -> dict:
 # instead of falling through to this handler. Pinned by
 # test_patch_body_not_shadowed_by_jot_route.
 @router.patch("/body")
-def patch_note_body(req: UpdateNoteBodyRequest, base_etag: str | None = Depends(if_match)) -> dict:
+def patch_note_body(
+    req: UpdateNoteBodyRequest,
+    base_etag: str | None = Depends(if_match),
+    actor: Actor = Depends(request_actor),
+) -> dict:
     """Rewrite the markdown body of any vault note by path.
 
     Frontmatter bytes are preserved; `updated` bumped when the key exists.
@@ -145,7 +162,8 @@ def patch_note_body(req: UpdateNoteBodyRequest, base_etag: str | None = Depends(
     if not req.body.strip():
         raise HTTPException(status_code=422, detail="body must not be empty")
     try:
-        return save_note_body(req.path, req.body, actor=USER, base_etag=base_etag)
+        return save_note_body(req.path, req.body, actor=actor, base_etag=base_etag,
+                              reason=_edit_reason(actor, "edited in the editor"))
     except NoteInvalidPath as e:
         raise HTTPException(status_code=400, detail=str(e))
     except NoteNotFound:
@@ -157,6 +175,7 @@ def patch_note(
     req: UpdateNoteRequest,
     jot_id: str = PathParam(..., min_length=8, max_length=128),
     base_etag: str | None = Depends(if_match),
+    actor: Actor = Depends(request_actor),
 ) -> dict:
     """Update the body (and re-derive tags) of an existing jot. `If-Match` →
     409 when the jot changed since the editor read it."""
@@ -164,7 +183,8 @@ def patch_note(
     if not body.strip():
         raise HTTPException(status_code=422, detail="body must not be empty")
     try:
-        return update_jot_body(jot_id, body, actor=USER, base_etag=base_etag)
+        return update_jot_body(jot_id, body, actor=actor, base_etag=base_etag,
+                               reason=_edit_reason(actor, "edited jot"))
     except JotNotFound:
         raise HTTPException(status_code=404, detail=f"Jot not found: {jot_id}")
 
@@ -202,6 +222,8 @@ def extract_photo(
 def route_note(
     req: RouteNoteRequest,
     jot_id: str = PathParam(..., min_length=8, max_length=128),
+    base_etag: str | None = Depends(if_match),
+    actor: Actor = Depends(request_actor),
 ) -> dict:
     """Manually re-route a jot to a known context, optionally into a project."""
     valid = _known_contexts()
@@ -225,7 +247,8 @@ def route_note(
             confidence=1.0,
             method="user",
             reasoning="manual re-route by user",
-            actor=USER,
+            actor=actor,
+            base_etag=base_etag,
         )
     except JotNotFound:
         raise HTTPException(status_code=404, detail=f"Jot not found: {jot_id}")
@@ -234,10 +257,12 @@ def route_note(
 @router.delete("/{jot_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_note(
     jot_id: str = PathParam(..., min_length=8, max_length=128),
+    base_etag: str | None = Depends(if_match),
+    actor: Actor = Depends(request_actor),
 ) -> Response:
     """Delete a jot permanently."""
     try:
-        delete_jot(jot_id, actor=USER)
+        delete_jot(jot_id, actor=actor, base_etag=base_etag)
     except JotNotFound:
         raise HTTPException(status_code=404, detail=f"Jot not found: {jot_id}")
     return Response(status_code=204)

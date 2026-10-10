@@ -10,7 +10,7 @@ import re
 from datetime import datetime, timezone
 
 from ghostbrain import vault_write
-from ghostbrain.vault_write import MCP
+from ghostbrain.vault_write import MCP, Actor
 
 GENERATED_DOCS_DIR_REL = "20-contexts/generated-docs"
 MAX_HTML_BYTES = 2_000_000
@@ -21,7 +21,7 @@ def _slug(title: str) -> str:
     return slug[:60] or "document"
 
 
-def write_doc(title: str, html: str) -> dict:
+def write_doc(title: str, html: str, *, actor: Actor = MCP) -> dict:
     title = title.strip()
     if not title:
         raise ValueError("title must not be empty")
@@ -34,7 +34,7 @@ def write_doc(title: str, html: str) -> dict:
     res = vault_write.write_new(
         f"{GENERATED_DOCS_DIR_REL}/{stamp}-{_slug(title)}.html",
         html,
-        actor=MCP,
+        actor=actor,
         reason=f"generated doc: {title}",
     )
     return {"path": res.path, "title": title}

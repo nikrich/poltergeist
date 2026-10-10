@@ -275,6 +275,7 @@ def move_jot(
     method: str,
     reasoning: str,
     actor: Actor = USER,
+    base_etag: str | None = None,
 ) -> dict:
     src = _find_file(jot_id)
     if to_project:
@@ -313,7 +314,7 @@ def move_jot(
     log.info("moving jot id=%s: %s -> %s", jot_id, src, dst)
     res = vault_write.write(
         _vault_rel(src), op="move", dest=_vault_rel(dst), fields=fields,
-        actor=actor, reason=f"filed to {to_context}",
+        actor=actor, reason=f"filed to {to_context}", base_etag=base_etag,
     )
     log.info("moved jot id=%s -> %s (project=%s)", jot_id, to_context, to_project)
     return {
@@ -344,9 +345,11 @@ def set_frontmatter_fields(jot_id: str, fields: dict[str, Any], *, actor: Actor 
     return {"id": jot_id, "path": res.path, "etag": res.etag}
 
 
-def delete_jot(jot_id: str, *, actor: Actor = USER) -> None:
+def delete_jot(jot_id: str, *, actor: Actor = USER, base_etag: str | None = None) -> None:
     path = _find_file(jot_id)
-    vault_write.write(_vault_rel(path), op="delete", actor=actor, reason="deleted jot")
+    vault_write.write(
+        _vault_rel(path), op="delete", actor=actor, reason="deleted jot", base_etag=base_etag,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -611,7 +614,7 @@ def route_existing_jot(jot_id: str) -> dict:
 
 
 def create_and_route_jot(
-    body: str, *, captured_at: "datetime | None" = None
+    body: str, *, captured_at: "datetime | None" = None, actor: Actor = USER
 ) -> dict:
     """Write a jot to the inbox, classify it, and (on success) move it to a
     context folder. Returns the public response payload.
@@ -620,7 +623,7 @@ def create_and_route_jot(
     with routingStatus="manual_review" — never raises to the caller. The hotkey
     overlay is fire-and-forget, so callers need a stable contract.
     """
-    record = write_inbox_jot(body, captured_at=captured_at)
+    record = write_inbox_jot(body, captured_at=captured_at, actor=actor)
     jot_id = record["id"]
 
     result = _route_jot_core(jot_id, body, path_hint=record["path"])

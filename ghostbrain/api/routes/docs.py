@@ -2,7 +2,7 @@
 import json
 
 import requests
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
 from ghostbrain.api.models.docs import (
@@ -15,7 +15,9 @@ from ghostbrain.api.models.docs import (
 from ghostbrain.api.repo import docs_assist, export_confluence, generated_docs
 from ghostbrain.api.repo.import_atlassian import ImportNotConfiguredError
 from ghostbrain.api.repo.notes_manual import JotNotFound
+from ghostbrain.api.vault_http import request_actor
 from ghostbrain.connectors.atlassian._base import AtlassianAuthError
+from ghostbrain.vault_write import MCP, USER, Actor
 
 router = APIRouter(prefix="/v1/docs", tags=["docs"])
 
@@ -46,9 +48,11 @@ def stop(payload: DocsAssistStopRequest) -> dict:
 
 
 @router.post("/write", response_model=WriteDocResponse)
-def write_doc(payload: WriteDocRequest) -> dict:
+def write_doc(payload: WriteDocRequest, actor: Actor = Depends(request_actor)) -> dict:
+    # Agent-only tool: a request without the header is still the MCP agent.
+    writer = MCP if actor == USER else actor
     try:
-        return generated_docs.write_doc(payload.title, payload.html)
+        return generated_docs.write_doc(payload.title, payload.html, actor=writer)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

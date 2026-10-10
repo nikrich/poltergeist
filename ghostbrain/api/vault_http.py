@@ -2,23 +2,46 @@
 vault-write exceptions → status codes, registered once for every route."""
 from __future__ import annotations
 
-from fastapi import FastAPI, Header, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from ghostbrain.history import HistoryUnavailable
 from ghostbrain.vault_write import (
+    RESTORE,
+    USER,
+    Actor,
     EtagRequired,
     FileMissing,
     InvalidPath,
     MalformedNote,
     WriteConflict,
     normalize_if_match,
+    parse_actor,
 )
 
 
 def if_match(value: str | None = Header(default=None, alias="If-Match")) -> str | None:
     """FastAPI dependency: the etag a write is based on, or None."""
     return normalize_if_match(value)
+
+
+ACTOR_HEADER = "X-Poltergeist-Actor"
+
+
+def request_actor(value: str | None = Header(default=None, alias=ACTOR_HEADER)) -> Actor:
+    """FastAPI dependency (spec B §2): who is writing. A missing header means
+    the user. ``worker:*`` and ``restore`` are in-process only."""
+    if value is None or not value.strip():
+        return USER
+    try:
+        actor = parse_actor(value.strip())
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"invalid {ACTOR_HEADER} header") from None
+    if actor == RESTORE or actor.startswith("worker:"):
+        raise HTTPException(
+            status_code=400, detail=f"{ACTOR_HEADER}: {actor!r} is reserved for in-process writers",
+        )
+    return actor
 
 
 def install_vault_write_errors(app: FastAPI) -> None:
