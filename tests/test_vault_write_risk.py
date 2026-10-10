@@ -73,6 +73,9 @@ def test_plain_prose_is_not_held():
         b"```c\nfor (i=0; i<n; i++)\n  online = 1;\n```\n",
         b"- latency p95<b target\n\n- online = 1 rollout\n",
         b"```html\n<img src=x\n```\nonline = 1\n",
+        b"a <b>bold</b> idea\n\nonline = 1\n",
+        b"1 < 2\n\nonline = 1\n",
+        b"line<br>\n\nonline = 1\n",
     ):
         assert risk.evaluate(_p(op="create", before=None, after=code)) == [], code
 
@@ -626,3 +629,81 @@ def test_an_unlisted_worker_cannot_name_a_protected_path(vault):
     with pytest.raises(InvalidPath):
         jobs.update_fields("80-profile/preferences.md", _related, actor=SEMANTIC, reason="r")
     assert _protected(vault) == before
+
+
+# CommonMark HTML blocks: a type-1 block (pre, script, style, textarea) runs to
+# its closing tag; any other open tag ends only at a blank line, never at a
+# fence. Only LF, CR and CRLF end a line.
+MD_BLOCK_CONTINUATIONS = [
+    "<div\n```\nonclick=alert(1)>x</div>",
+    "<details\n~~~\nontoggle=alert(1) open>",
+    "<pre\n\nonmouseover=alert(1)>x</pre>",
+    "<style\n\nonload=alert(1)>",
+    "<textarea\n\nonfocus=alert(1) autofocus>",
+    "  <SCRIPT\n\nonload=alert(1)>",
+    "<div\n\x0c\nonclick=alert(1)>",
+    "<div\n\x85\nonclick=alert(1)>",
+    "<div\n\u2028\nonclick=alert(1)>",
+    "<div\n\u2029\nonclick=alert(1)>",
+    "<div\n\x0b\nonclick=alert(1)>",
+    "<div\n\x1c\nonclick=alert(1)>",
+]
+
+
+@pytest.mark.parametrize("payload", MD_BLOCK_CONTINUATIONS)
+def test_markdown_html_blocks_continue_across_fences_and_type_1_blank_lines(payload):
+    assert risk.REASON_HANDLER in risk.evaluate(_p(after=V1 + payload.encode() + b"\n"))
+
+
+def test_a_type_1_block_stays_open_for_a_tag_later_on_its_line():
+    after = V1 + b"<pre>code <img src=x\n\nonerror=alert(1)>\n"
+    assert risk.evaluate(_p(after=after)) == [risk.REASON_HANDLER]
+
+
+@pytest.mark.parametrize("payload,expected", [
+    # a blank line ends a type-6 block: not raw HTML in CommonMark
+    ("<div\n\nonclick=alert(1)>", []),
+    # CommonMark renders this as text plus a code block; a fence no longer ends
+    # an open tag, so it is held (fails closed)
+    ("<img src=x\n```\nonerror=alert(1)>", [risk.REASON_HANDLER]),
+])
+def test_markdown_block_controls(payload, expected):
+    assert risk.evaluate(_p(after=V1 + payload.encode() + b"\n")) == expected
+
+
+def test_only_lf_cr_and_crlf_end_a_line():
+    assert risk.added_lines(None, b"a\x0cb\r\nc\rd\n") == ["a\x0cb", "c", "d"]
+    assert risk.added_lines(None, b"a\n\n") == ["a", ""]
+    assert risk.added_lines(None, b"") == []
+
+
+def test_a_markdown_html_block_with_a_fenced_handler_waits(vault):
+    res = write(NOTE, content=V1.decode() + "<div\n```\nonclick=alert(1)>x</div>\n",
+                actor=ASSISTANT, base_etag=compute_etag(V1))
+    assert res.status == "pending"
+    assert (vault / NOTE).read_bytes() == V1
+
+
+@needs_symlinks
+def test_a_worker_create_cannot_land_in_a_protected_path_through_a_dangling_link(vault):
+    (vault / "20-contexts/dangling.md").symlink_to("../90-meta/new.md")
+    before = _protected(vault)
+    with pytest.raises(InvalidPath):
+        write_new("20-contexts/dangling.md", "# x\n", actor=worker_actor("reversal"))
+    assert _protected(vault) == before
+    assert not (vault / "90-meta/new.md").exists()
+
+
+def test_a_worker_create_cannot_name_a_protected_path(vault):
+    with pytest.raises(InvalidPath):
+        write("90-meta/new.md", content="# x\n", op="create", actor=worker_actor("reversal"))
+    assert not (vault / "90-meta/new.md").exists()
+
+
+@pytest.mark.parametrize("rel", [
+    "80-profile/_review.md", "00-inbox/raw/gmail/m1.md", "20-contexts/work/meeting.md",
+])
+def test_ordinary_worker_creates_still_apply(vault, rel):
+    res = write(rel, content="# x\n", op="create", actor=worker_actor("ingest"))
+    assert (res.status, res.change_id) == ("applied", None)
+    assert (vault / rel).exists()

@@ -16,7 +16,7 @@ import html
 import logging
 import re
 import unicodedata
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
 from ghostbrain.changes import log as _changes
 from ghostbrain.vault_write.writer import ProposedChange, _rel, resolve_safe
@@ -48,13 +48,19 @@ _SCRIPT_RE = re.compile(r"<\s*script\b", re.IGNORECASE)
 # HTML parsers accept "/" as well as whitespace before an attribute.
 _HANDLER_RE = re.compile(r"<[a-z][^>]*[\s/]on[a-z]+\s*=", re.IGNORECASE)
 # A tag still open at the end of a line: the next line continues its attributes.
-# In markdown (CommonMark raw HTML) the tag name ends at whitespace, "/" or the
-# line end (``a<b:`` and ``i<n;`` are prose), and a blank line (spaces/tabs
-# only) or a code fence (at most 3 spaces in) ends it. HTML has neither: the
-# tokenizer reads any run up to whitespace, "/" or ">" as the name (``<b:x``).
+# In markdown the tag name ends at whitespace, "/" or the line end (``a<b:`` and
+# ``i<n;`` are prose). As in CommonMark HTML blocks, a tag opened on a line that
+# starts with a type-1 name (pre, script, style, textarea) runs until it closes;
+# any other ends at a blank line (spaces/tabs only), never at a fence; and a
+# ``<`` inside fenced code opens nothing. HTML has none of this: the tokenizer
+# reads any run up to whitespace, "/" or ">" as the name (``<b:x``).
 _OPEN_TAG_MD_RE = re.compile(r"<[a-z][a-z0-9-]*(?:[\s/][^>]*)?$", re.IGNORECASE)
 _OPEN_TAG_HTML_RE = re.compile(r"<[a-z][^\s/>]*(?:[\s/][^>]*)?$", re.IGNORECASE)
-_FENCE_LINE_RE = re.compile(r"^ {0,3}(?:`{3,}|~{3,})")
+_TYPE1_BLOCK_RE = re.compile(r"^ {0,3}</?(?:pre|script|style|textarea)(?=[\s>]|$)", re.IGNORECASE)
+_FENCE_OPEN_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+# Only LF, CR and CRLF end a line (CommonMark); str.splitlines() also splits on
+# form feed, NEL, U+2028 … which leaves a tag open in a browser.
+_LINE_END_RE = re.compile(r"\r\n|\r|\n")
 _JS_URL_RE = re.compile(
     r"(?:href|src|action|formaction|xlink:href|data)\s*=\s*[\"']?\s*javascript\s*:"
     r"|\]\(\s*<?\s*javascript\s*:"
@@ -178,7 +184,53 @@ def protected_reasons(*paths: str) -> list[str]:
 
 
 def _lines(data: bytes) -> list[str]:
-    return data.decode("utf-8", errors="replace").splitlines()
+    lines = _LINE_END_RE.split(data.decode("utf-8", errors="replace"))
+    if lines[-1] == "":  # a final line ending starts no new line
+        lines.pop()
+    return lines
+
+
+def _fence_closes(line: str, fence: str) -> bool:
+    """``line`` closes a block opened by ``fence``: same character, at least as
+    long, at most 3 spaces in, nothing after but spaces/tabs."""
+    m = _FENCE_OPEN_RE.match(line)
+    return (
+        m is not None and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence)
+        and line[m.end():].strip(" \t") == ""
+    )
+
+
+def _scan_lines(lines: list[str], markdown: bool) -> Iterator[str]:
+    """Each line as the tag rules see it: prefixed with ``<x `` when it
+    continues a tag left open on an earlier line."""
+    open_tag_re = _OPEN_TAG_MD_RE if markdown else _OPEN_TAG_HTML_RE
+    tag_open = False
+    never_reset = False  # the open tag started a type-1 block
+    fence: str | None = None  # the fence of the code block we're in
+    for line in lines:
+        if tag_open:
+            if markdown and not never_reset and line.strip(" \t") == "":
+                tag_open = False
+                yield line
+                continue
+            scan = "<x " + line
+            tag_open = open_tag_re.search(scan) is not None
+            yield scan
+            continue
+        if markdown:
+            if fence is not None:
+                if _fence_closes(line, fence):
+                    fence = None
+                yield line
+                continue
+            m = _FENCE_OPEN_RE.match(line)
+            if m is not None:
+                fence = m.group(1)
+                yield line
+                continue
+        tag_open = open_tag_re.search(line) is not None
+        never_reset = tag_open and _TYPE1_BLOCK_RE.match(line) is not None
+        yield line
 
 
 def _added_indices(before: bytes | None, after: bytes) -> list[int]:
@@ -214,19 +266,12 @@ def _content_reasons(change: ProposedChange, paths: list[str]) -> list[str]:
     in_template = any(p.startswith(_TEMPLATES_FOLDED) for p in paths)
     # Unknown or mixed suffix: judged as HTML, the stricter reading.
     markdown = bool(paths) and all(p.endswith(".md") for p in paths)
-    open_tag_re = _OPEN_TAG_MD_RE if markdown else _OPEN_TAG_HTML_RE
     new = _lines(change.after)
     added = _added_indices(change.before, change.after)
     added_set = set(added)
     reasons: list[str] = []
-    tag_open = False  # tracked over the whole file: a kept line can open the tag
-    for i, line in enumerate(new):
-        # A line inside an unclosed tag is more of its attributes.
-        boundary = markdown and (
-            line.strip(" \t") == "" or _FENCE_LINE_RE.match(line) is not None
-        )
-        scan = "<x " + line if tag_open and not boundary else line
-        tag_open = not boundary and open_tag_re.search(scan) is not None
+    # Tracked over the whole file: a kept line can open the tag.
+    for i, (line, scan) in enumerate(zip(new, _scan_lines(new, markdown))):
         if i not in added_set:
             continue
         if _SCRIPT_RE.search(line):
