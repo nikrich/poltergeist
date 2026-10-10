@@ -145,6 +145,23 @@ describe('ai-suggestion plugin', () => {
     expect(markdownOf(editor)).toBe('| a | b |\n| --- | --- |\n| **first** second | two |');
   });
 
+  it('previews a multi-block answer in a table cell exactly as accept will write it', () => {
+    setup('| a | b |\n| --- | --- |\n| one | two |');
+    suggest(range('one'), '**first**\n\n- second');
+    const ins = editor.view.dom.querySelector(`.${INS_CLASS}`);
+    expect(ins?.textContent).toBe('first second');
+    expect(ins?.querySelector('strong')?.textContent).toBe('first');
+    expect(ins?.querySelector('p, ul, li, h1, h2')).toBeNull();
+  });
+
+  it('an answer that parses to nothing deletes nothing and reports false', () => {
+    setup('alpha beta');
+    suggest(range('beta'), '[a]: http://x');
+    expect(acceptAiSuggestion(editor)).toBe(false);
+    expect(getAiSuggestion(editor)).toBeNull();
+    expect(markdownOf(editor)).toBe('alpha beta');
+  });
+
   it('continues after a status lozenge without touching it, adding a joining space', () => {
     setup('Build is `status:In progress/yellow` today');
     const end = editor.state.doc.content.size - 1;

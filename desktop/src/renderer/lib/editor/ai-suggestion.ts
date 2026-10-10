@@ -108,7 +108,38 @@ function needsSpace(inline: Fragment): boolean {
   return !(first.isText && /^[\s.,;:!?)\]]/.test(first.text ?? ''));
 }
 
-function renderInsertion(editor: Editor, s: AiSuggestion): HTMLElement {
+/** True when the fragment holds anything to insert (text, an atom, a rule,
+ * an image) rather than nothing or only empty blocks. */
+function hasContent(frag: Fragment): boolean {
+  let found = false;
+  frag.descendants((node) => {
+    if (node.isLeaf) found = true;
+    return !found;
+  });
+  return found;
+}
+
+interface Shaped {
+  inline: boolean;
+  content: Fragment;
+}
+
+/** The single source of what an answer becomes at a position, shared by the
+ * preview and the accept so the user sees exactly what will be written:
+ * one paragraph (or anything inside a table cell, flattened) goes in inline
+ * with the joining space; anything else goes in as blocks. Null when the
+ * answer holds nothing to insert, so accept never just deletes the range. */
+function shapeAnswer(schema: Schema, s: AiSuggestion, frag: Fragment, inCell: boolean): Shaped | null {
+  if (!hasContent(frag)) return null;
+  const single = singleParagraphInline(frag);
+  if (!single && !inCell) return { inline: false, content: frag };
+  let inline = single ?? flattenToInline(frag, schema);
+  if (!hasContent(inline)) return null;
+  if (s.joinWithSpace && needsSpace(inline)) inline = Fragment.from(schema.text(' ')).append(inline);
+  return { inline: true, content: inline };
+}
+
+function renderInsertion(editor: Editor, s: AiSuggestion, inCell: boolean): HTMLElement {
   const wrap = document.createElement('span');
   wrap.className = INS_CLASS;
   wrap.setAttribute('data-testid', 'ai-insertion');
@@ -125,10 +156,14 @@ function renderInsertion(editor: Editor, s: AiSuggestion): HTMLElement {
     wrap.textContent = s.text;
     return wrap;
   }
-  const inline = singleParagraphInline(frag);
-  if (inline && s.joinWithSpace && needsSpace(inline)) wrap.append(' ');
-  if (!inline) wrap.classList.add('gb-ai-ins-block');
-  wrap.append(DOMSerializer.fromSchema(editor.schema).serializeFragment(inline ?? frag));
+  const shaped = shapeAnswer(editor.schema, s, frag, inCell);
+  if (!shaped) {
+    wrap.classList.add('gb-ai-pending');
+    wrap.textContent = '…';
+    return wrap;
+  }
+  if (!shaped.inline) wrap.classList.add('gb-ai-ins-block');
+  wrap.append(DOMSerializer.fromSchema(editor.schema).serializeFragment(shaped.content));
   return wrap;
 }
 
@@ -144,11 +179,12 @@ function buildDecorations(editor: Editor, doc: PMNode, s: AiSuggestion): Decorat
       return true;
     });
   }
+  const inCell = insideCell(doc.resolve(s.from));
   decos.push(
-    Decoration.widget(s.to, () => renderInsertion(editor, s), {
+    Decoration.widget(s.to, () => renderInsertion(editor, s, inCell), {
       side: 1,
       ignoreSelection: true,
-      key: `gb-ai-ins:${s.status}:${s.joinWithSpace ? 1 : 0}:${s.text}`,
+      key: `gb-ai-ins:${s.status}:${s.joinWithSpace ? 1 : 0}:${inCell ? 1 : 0}:${s.text}`,
     }),
   );
   return DecorationSet.create(doc, decos);
@@ -243,14 +279,12 @@ function applyReplacement(editor: Editor, s: AiSuggestion, frag: Fragment): Tran
   const { state, schema } = editor;
   const { from, to } = clampRange(state.doc, s.from, s.to);
   const $from = state.doc.resolve(from);
+  const shaped = shapeAnswer(schema, s, frag, insideCell($from));
+  if (!shaped) return null;
   try {
     const tr = state.tr;
-    const single = singleParagraphInline(frag);
-    if (single || insideCell($from)) {
-      let inline = single ?? flattenToInline(frag, schema);
-      if (inline.size === 0) return null;
-      if (s.joinWithSpace && needsSpace(inline)) inline = Fragment.from(schema.text(' ')).append(inline);
-      tr.replaceWith(from, to, inline);
+    if (shaped.inline) {
+      tr.replaceWith(from, to, shaped.content);
     } else if (from === to && $from.parent.isTextblock && $from.parent.content.size === 0) {
       tr.replaceWith($from.before(), $from.after(), frag);
     } else {
