@@ -5,6 +5,7 @@ import type { EditorView } from '@tiptap/pm/view';
 import { RichMarkdownEditor } from '../components/RichMarkdownEditor';
 import type { EditorHandle } from '../components/RichMarkdownEditor';
 import { useToasts } from '../stores/toast';
+import { emitGb } from '../lib/editor/events';
 
 vi.useFakeTimers();
 
@@ -174,6 +175,24 @@ describe('RichMarkdownEditor', () => {
     rerender(<RichMarkdownEditor markdown="body" onSave={() => {}} jotId="t" />);
     expect(screen.getByRole('button', { name: 'bold' })).toBeInTheDocument();
     expect(screen.getByTestId('rich-markdown-editor')).not.toHaveAttribute('data-focus');
+  });
+
+  it('opens a query result through onWikilinkClick', () => {
+    const onWikilinkClick = vi.fn();
+    let editor: Editor | undefined;
+    render(
+      <RichMarkdownEditor
+        markdown="text"
+        onSave={() => {}}
+        jotId="test"
+        onWikilinkClick={onWikilinkClick}
+        onEditorReady={(e) => {
+          editor = e;
+        }}
+      />,
+    );
+    act(() => emitGb(editor!, 'gb:query:open', { path: '20-contexts/work/a.md' }));
+    expect(onWikilinkClick).toHaveBeenCalledWith('20-contexts/work/a');
   });
 });
 

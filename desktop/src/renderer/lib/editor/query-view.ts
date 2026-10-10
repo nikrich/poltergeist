@@ -2,9 +2,10 @@ import type { Editor } from '@tiptap/core';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import type { NodeView } from '@tiptap/pm/view';
 import type { VaultQueryResponse, VaultQueryRow } from '../../../shared/api-types';
+import { ApiError } from '../api/client';
 import { emitGb } from './events';
-import { runVaultQuery } from './query-api';
-import { isClosedStatus } from './query-format';
+import { runVaultQuery, setNoteStatus } from './query-api';
+import { freezeMarkdown, isClosedStatus } from './query-format';
 
 export const QUERY_POLL_MS = 60_000;
 export const QUERY_EDIT_DEBOUNCE_MS = 500;
@@ -46,7 +47,7 @@ function isResponse(value: unknown): value is VaultQueryResponse {
  * Fetch: deferred on mount (a throwaway probe editor never fetches), on window
  * focus, every QUERY_POLL_MS while on screen, after edits, after ticks.
  */
-export function createQueryView(initial: PMNode, editor: Editor, _getPos: unknown): NodeView {
+export function createQueryView(initial: PMNode, editor: Editor, getPos: unknown): NodeView {
   let node = initial;
   let editing = node.textContent.trim() === '';
   let phase: Phase = { kind: 'loading' };
@@ -58,6 +59,7 @@ export function createQueryView(initial: PMNode, editor: Editor, _getPos: unknow
   let visible = true;
   let editTimer: ReturnType<typeof setTimeout> | null = null;
   const timers = new Set<ReturnType<typeof setTimeout>>();
+  const busy = new Set<string>();
 
   const dom = el('div', 'gb-query');
   const bar = el('div', 'gb-query-bar');
@@ -88,8 +90,16 @@ export function createQueryView(initial: PMNode, editor: Editor, _getPos: unknow
     timers.add(t);
   };
 
+  function canWrite(): boolean {
+    return editor.isEditable;
+  }
+
   function canFreeze(): boolean {
-    return false; // Task 7 enables Freeze
+    return (
+      canWrite() &&
+      phase.kind === 'ready' &&
+      !phase.data.diagnostics.some((d) => d.severity === 'error')
+    );
   }
 
   function paintChrome(): void {
@@ -107,7 +117,10 @@ export function createQueryView(initial: PMNode, editor: Editor, _getPos: unknow
     box.type = 'checkbox';
     box.checked = done;
     box.setAttribute('aria-label', `mark ${row.title} ${done ? 'open' : 'done'}`);
-    box.disabled = true; // Task 7 wires tick-to-done
+    box.disabled = !canWrite() || busy.has(row.path);
+    // `click` rather than `change`: it fires after the toggle (mouse and Space
+    // alike), and jsdom only fires `change` for checkboxes in the document.
+    box.addEventListener('click', () => void toggle(row, box.checked));
     const link = button('gb-query-link', row.title);
     link.addEventListener('click', (e) => {
       e.preventDefault();
@@ -189,6 +202,38 @@ export function createQueryView(initial: PMNode, editor: Editor, _getPos: unknow
     }
   }
 
+  async function toggle(row: VaultQueryRow, done: boolean): Promise<void> {
+    if (!canWrite() || busy.has(row.path)) return;
+    busy.add(row.path);
+    notice = null;
+    paint();
+    try {
+      await setNoteStatus(row.path, done ? 'done' : 'open', row.etag);
+    } catch (err) {
+      notice =
+        err instanceof ApiError && err.status === 409
+          ? `${row.title} changed elsewhere — list refreshed, try again`
+          : `could not update ${row.title}: ${err instanceof Error ? err.message : String(err)}`;
+    } finally {
+      busy.delete(row.path);
+    }
+    await refresh();
+  }
+
+  function freeze(): void {
+    if (!canFreeze() || phase.kind !== 'ready') return;
+    const pos = typeof getPos === 'function' ? (getPos as () => number | undefined)() : undefined;
+    if (typeof pos !== 'number') return;
+    // tiptap-markdown parses a string passed to insertContentAt as markdown.
+    // insertContentAt defaults to preserveWhitespace 'full', which would keep
+    // the space after each task checkbox as leading text ("- [ ]  [[…").
+    editor.commands.insertContentAt(
+      { from: pos, to: pos + node.nodeSize },
+      freezeMarkdown(phase.data.results),
+      { parseOptions: { preserveWhitespace: false } },
+    );
+  }
+
   refreshBtn.addEventListener('click', (e) => {
     e.preventDefault();
     void refresh();
@@ -203,6 +248,12 @@ export function createQueryView(initial: PMNode, editor: Editor, _getPos: unknow
     editing = !editing;
     menuOpen = false;
     paintChrome();
+  });
+  freezeItem.addEventListener('click', (e) => {
+    e.preventDefault();
+    menuOpen = false;
+    paintChrome();
+    freeze();
   });
 
   const onFocus = (): void => void refresh();

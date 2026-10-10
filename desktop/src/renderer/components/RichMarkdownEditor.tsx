@@ -5,6 +5,7 @@ import { buildEditorExtensions } from '../lib/editor/extensions';
 import { onGb } from '../lib/editor/events';
 import { clipboardPayload, getMarkdown, restoreWikilinks } from '../lib/editor/markdown';
 import { insertImageFile } from '../lib/editor/insert-image';
+import { noteTarget } from '../lib/editor/link-suggest';
 import { toast } from '../stores/toast';
 import { Btn } from './Btn';
 import { DiagramModal } from './DiagramModal';
@@ -279,6 +280,13 @@ export function RichMarkdownEditor({
   useEffect(() => {
     if (!editor) return;
     return onGb(editor, 'gb:diagram:open', ({ source }) => setDiagramSource(source));
+  }, [editor]);
+
+  // A live query result was clicked: open it the way a [[wikilink]] opens,
+  // so the host's unsaved-changes guard applies.
+  useEffect(() => {
+    if (!editor) return;
+    return onGb(editor, 'gb:query:open', ({ path }) => onWikilinkClickRef.current?.(noteTarget(path)));
   }, [editor]);
 
   // Open the camera whenever openCameraSignal is incremented (skip initial mount).

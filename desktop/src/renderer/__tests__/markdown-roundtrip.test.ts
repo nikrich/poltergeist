@@ -33,6 +33,8 @@ function normalize(md: string): string {
 }
 
 const FIXTURES: Record<string, string> = {
+  'frozen query list':
+    '- [ ] [[20-contexts/work/a|Send Alex the budget]]\n- [x] [[20-contexts/work/b|Book the room]]',
   headings: '# h1\n\n## h2\n\n### h3\n\nbody text',
   emphasis: '**bold** and *italic* and `inline code`',
   'nested bullet lists': '- top\n  - nested\n    - deeper\n- second top',
