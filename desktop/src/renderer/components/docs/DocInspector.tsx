@@ -9,6 +9,7 @@ interface Props {
   onRename: (title: string) => void;
   onReindex: () => void;
   onSummarise: () => void;
+  summarising?: boolean;
   onCollapse?: () => void;
 }
 
@@ -16,7 +17,7 @@ const Cap = ({ children }: { children: React.ReactNode }) => (
   <span className="font-mono text-10 uppercase tracking-[0.12em] text-ink-3">{children}</span>
 );
 
-export function DocInspector({ doc, scopeName, onRename, onReindex, onSummarise, onCollapse }: Props) {
+export function DocInspector({ doc, scopeName, onRename, onReindex, onSummarise, summarising, onCollapse }: Props) {
   const [editing, setEditing] = useState(false);
   const kindLine = `${kindLabel(doc)}${doc.pages ? ` · ${doc.pages} pages` : ''}`;
   const added = new Date(doc.created).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
@@ -67,14 +68,16 @@ export function DocInspector({ doc, scopeName, onRename, onReindex, onSummarise,
       {doc.kind !== 'opaque' && (
         <div className="rounded-[10px] border border-[rgba(197,255,61,.18)] bg-gradient-to-b from-[rgba(197,255,61,.06)] to-transparent p-3 leading-normal text-ink-1">
           <span className="mb-1.5 block font-mono text-10 uppercase tracking-[0.12em] text-neon-ink">✦ what poltergeist knows</span>
-          {doc.summary_state === 'pending' ? (
+          {summarising || doc.summary_state === 'pending' ? (
             <span className="animate-pulse text-ink-3">summarising…</span>
           ) : doc.summary ? (
-            <p>{doc.summary}</p>
+            <p className="break-words whitespace-pre-line">{doc.summary}</p>
           ) : doc.index_status === 'ok' ? (
             <button type="button" onClick={onSummarise} className="font-mono text-11 text-neon-ink hover:underline">
               summarise
             </button>
+          ) : doc.index_status === 'pending' ? (
+            <span className="text-ink-3">indexing…</span>
           ) : (
             <span className="text-ink-3">needs indexing first</span>
           )}

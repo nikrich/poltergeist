@@ -42,6 +42,7 @@ export function DocsScreen() {
   const deleteDoc = useDeleteDoc();
   const reindex = useReindexDoc();
   const summarise = useSummariseDoc();
+  const summarising = useRef(new Set<string>());
   const createFolder = useCreateFolder();
   const moveFolder = useMoveFolder();
   const deleteFolder = useDeleteFolder();
@@ -308,7 +309,13 @@ export function DocsScreen() {
           scopeName={scopeName(selectedDoc.context, selectedDoc.project)}
           onRename={(title) => run(patchDoc.mutateAsync({ docId: selectedDoc.doc_id, title }))}
           onReindex={() => run(reindex.mutateAsync(selectedDoc.doc_id))}
-          onSummarise={() => run(summarise.mutateAsync(selectedDoc.doc_id))}
+          summarising={summarise.isPending && summarise.variables === selectedDoc.doc_id}
+          onSummarise={() => {
+            if (summarising.current.has(selectedDoc.doc_id)) return;
+            summarising.current.add(selectedDoc.doc_id);
+            const id = selectedDoc.doc_id;
+            void run(summarise.mutateAsync(id).finally(() => summarising.current.delete(id)));
+          }}
         />
       )}
       <QuickOpen open={quickOpen} onClose={() => setQuickOpen(false)} onPick={(docId) => select({ type: 'doc', docId })} />

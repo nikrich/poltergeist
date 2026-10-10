@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../lib/api/client', () => ({ get: vi.fn(), post: vi.fn(), patch: vi.fn(), del: vi.fn() }));
 
@@ -14,6 +14,8 @@ function wrapper({ children }: { children: React.ReactNode }) {
 }
 
 describe('useLibraryTree polling', () => {
+  afterEach(() => vi.useRealTimers());
+
   it('polls while a summary is pending and stops when done', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const pending = libraryFixture();
@@ -26,6 +28,5 @@ describe('useLibraryTree polling', () => {
     await waitFor(() => expect(client.get).toHaveBeenCalledTimes(2));
     await vi.advanceTimersByTimeAsync(6200);
     expect(client.get).toHaveBeenCalledTimes(2);
-    vi.useRealTimers();
   });
 });

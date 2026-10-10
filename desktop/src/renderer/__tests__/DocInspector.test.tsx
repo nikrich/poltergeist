@@ -49,6 +49,19 @@ describe('DocInspector summary card', () => {
     expect(screen.queryByText('✦ what poltergeist knows')).toBeNull();
     rerender(<DocInspector {...base} onSummarise={onSummarise} doc={doc({ index_status: 'failed', summary_state: 'none' })} />);
     expect(screen.queryByRole('button', { name: 'summarise' })).toBeNull();
+    expect(screen.getByText('needs indexing first')).toBeTruthy();
+  });
+
+  it('shows indexing… while the index is pending', () => {
+    render(<DocInspector {...base} onSummarise={vi.fn()} doc={doc({ index_status: 'pending' })} />);
+    expect(screen.getByText('indexing…')).toBeTruthy();
+    expect(screen.queryByText('needs indexing first')).toBeNull();
+  });
+
+  it('shows summarising… and no button while a summarise request is in flight', () => {
+    render(<DocInspector {...base} onSummarise={vi.fn()} summarising doc={doc({ summary_state: 'none' })} />);
+    expect(screen.getByText('summarising…')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'summarise' })).toBeNull();
   });
 });
 

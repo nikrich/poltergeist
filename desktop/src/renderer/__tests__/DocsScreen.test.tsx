@@ -74,6 +74,19 @@ describe('DocsScreen', () => {
     expect(client.post).not.toHaveBeenCalled();
   });
 
+  it('posts summarise once when clicked twice while in flight', async () => {
+    renderScreen();
+    fireEvent.click(await screen.findByText('Payments API v2'));
+    const btn = await screen.findByRole('button', { name: 'summarise' });
+    vi.mocked(client.post).mockImplementation((() => new Promise(() => {})) as never);
+    fireEvent.click(btn);
+    fireEvent.click(btn);
+    await screen.findByText('summarising…');
+    const calls = vi.mocked(client.post).mock.calls.filter((c) => String(c[0]).endsWith('/summarise'));
+    expect(calls).toHaveLength(1);
+    await screen.findByText(/\/ 1/);
+  });
+
   it('opens quick open on Cmd+P and jumps to the picked doc', async () => {
     renderScreen();
     await screen.findByText('Payments');
