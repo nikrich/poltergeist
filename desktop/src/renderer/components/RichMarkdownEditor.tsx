@@ -11,6 +11,7 @@ import { JotEditor } from './JotEditor';
 import { Lucide } from './Lucide';
 import { ReadAloudControls } from './ReadAloudControls';
 import { WebcamCaptureModal } from './WebcamCaptureModal';
+import { TemplateInsertDialog } from './TemplatePicker';
 
 export interface EditorHandle {
   /** Markdown for the current selection; '' when collapsed. */
@@ -99,6 +100,7 @@ export function RichMarkdownEditor({
   const [parseFailed] = useState(() => !parsesAsRich(markdown));
   const [mode, setMode] = useState<Mode>(parseFailed ? 'source' : 'rich');
   const [camOpen, setCamOpen] = useState(false);
+  const [templateOpen, setTemplateOpen] = useState(false);
   // Track previous openCameraSignal to skip the initial mount value.
   const prevCameraSignalRef = useRef(openCameraSignal);
 
@@ -236,6 +238,16 @@ export function RichMarkdownEditor({
     editor.on('gb:slash:photo' as Parameters<typeof editor.on>[0], handler);
     return () => {
       editor.off('gb:slash:photo' as Parameters<typeof editor.off>[0], handler);
+    };
+  }, [editor]);
+
+  // Subscribe to the /template slash command (smart templates, C1).
+  useEffect(() => {
+    if (!editor) return;
+    const handler = () => setTemplateOpen(true);
+    editor.on('gb:slash:template' as Parameters<typeof editor.on>[0], handler);
+    return () => {
+      editor.off('gb:slash:template' as Parameters<typeof editor.off>[0], handler);
     };
   }, [editor]);
 
@@ -456,6 +468,18 @@ export function RichMarkdownEditor({
             .catch((e: Error) => toast.error(`photo insert failed: ${e.message}`));
         }}
       />
+      {templateOpen && (
+        <TemplateInsertDialog
+          onClose={() => setTemplateOpen(false)}
+          onInsert={(md) => {
+            const ed = editorRef.current;
+            if (!ed || ed.isDestroyed) return;
+            // tiptap-markdown parses the string as markdown at the cursor;
+            // onUpdate then schedules the normal autosave.
+            ed.chain().focus().insertContent(md).run();
+          }}
+        />
+      )}
     </div>
   );
 }
