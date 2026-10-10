@@ -481,3 +481,25 @@ def test_sec_symlinked_templates_folder_outside_vault_is_ignored(tmp_path):
     assert list_templates(vault) == []
     with pytest.raises(TemplateNotFound):
         load_template("outside", vault)
+
+
+def test_sec_symlinked_folder_inside_vault_cannot_write_outside(tmp_path, monkeypatch):
+    from ghostbrain.templates.create import create_from_template, preview_from_template
+    from ghostbrain.vault_write import InvalidPath
+
+    vault = tmp_path / "vault"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (vault / "90-meta/templates").mkdir(parents=True)
+    (vault / "20-contexts/work").mkdir(parents=True)
+    _symlink(outside, vault / "20-contexts/work/escape")
+    (vault / "90-meta/templates/escape.md").write_text(
+        "---\ntemplate:\n  name: Escape\n  file:\n    folder: 20-contexts/work/escape\n---\nx\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("VAULT_PATH", str(vault))
+    with pytest.raises(InvalidPath):
+        preview_from_template("escape", {}, env=_ENV)
+    with pytest.raises(InvalidPath):
+        create_from_template("escape", {}, env=_ENV)
+    assert list(outside.iterdir()) == []

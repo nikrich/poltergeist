@@ -78,6 +78,7 @@ jobs:
             tests/test_templates_render.py \
             tests/test_templates_starters.py \
             tests/test_templates_registry.py \
+            tests/test_templates_create.py \
             -q
 
   desktop:
