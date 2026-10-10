@@ -1,7 +1,8 @@
-import { createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { createEvent, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Editor } from '@tiptap/core';
 import { EditorToolbar } from '../components/EditorToolbar';
+import { useAnchoredPanel } from '../components/editor-toolbar/ToolbarMenu';
 import { SLASH_ITEMS } from '../lib/editor/slash';
 import { useSettings } from '../stores/settings';
 import { makeEditor, markdownOf } from './helpers/editor';
@@ -185,5 +186,29 @@ describe('EditorToolbar (A7)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'inline ai' }));
     expect(onAssist).toHaveBeenCalledOnce();
     editor.destroy();
+  });
+
+  // jsdom focuses hidden elements; Chromium does not. An opened panel must
+  // never be visibility:hidden, or focus stays in the editor (Review Focus #1).
+  it('opened menus and the link form are never hidden, so they can take focus', () => {
+    setup();
+    openInsert();
+    expect(screen.getByRole('menu').style.visibility).not.toBe('hidden');
+    expect(screen.getAllByRole('menuitem')[0]).toHaveFocus();
+    fireEvent.keyDown(screen.getAllByRole('menuitem')[0]!, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'text style' }));
+    expect(screen.getByRole('menu').style.visibility).not.toBe('hidden');
+    fireEvent.keyDown(screen.getAllByRole('menuitemradio')[0]!, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'link' }));
+    expect(screen.getByRole('dialog', { name: 'edit link' }).style.visibility).not.toBe('hidden');
+    expect(screen.getByLabelText('link address')).toHaveFocus();
+  });
+
+  it('an open panel is visible even before it is placed (its first frame)', () => {
+    // No anchor → never placed: this is the style of the first open commit,
+    // when the open-time focus runs.
+    const { result } = renderHook(() => useAnchoredPanel(true, 200));
+    expect(result.current.style.visibility).not.toBe('hidden');
+    expect(result.current.style.position).toBe('fixed');
   });
 });

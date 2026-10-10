@@ -52,9 +52,13 @@ export function useAnchoredPanel(open: boolean, minWidth: number) {
     window.addEventListener('resize', place);
     return () => window.removeEventListener('resize', place);
   }, [open, minWidth]);
+  // Never hide the unplaced first frame: Chromium will not focus a
+  // visibility:hidden element, and the open-time focus runs before the
+  // re-render that places the panel. That re-render lands before paint,
+  // so the unplaced frame is never seen.
   const style: React.CSSProperties = pos
     ? { position: 'fixed', top: pos.top, left: pos.left, minWidth }
-    : { position: 'fixed', minWidth, visibility: 'hidden' };
+    : { position: 'fixed', minWidth };
   return { anchorRef, style };
 }
 
