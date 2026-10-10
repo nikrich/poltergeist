@@ -18,6 +18,7 @@ POST /v1/templates/generate         draft with the AI, validate, save as a pendi
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -53,6 +54,7 @@ from ghostbrain.templates.source import (
 from ghostbrain.templates.testrun import dry_run
 from ghostbrain.vault_write import USER, Actor, InvalidPath, NotHeldError, WriteConflict
 
+log = logging.getLogger("ghostbrain.api.templates")
 router = APIRouter(prefix="/v1/templates", tags=["templates"])
 _ERRORS = (TemplateNotFound, TemplateInvalid, AnswerError, RenderError)
 
@@ -219,8 +221,9 @@ def generate_template(body: GenerateBody, actor: Actor = Depends(request_actor))
         raise HTTPException(status_code=409, detail="no free template name — rename or delete "
                                                     "an old template") from e
     except InvalidPath as e:
-        raise HTTPException(status_code=409, detail=f"the templates folder cannot be written "
-                                                    f"(is it outside the vault?): {e}") from e
+        log.warning("AI template not saved: %s", e)
+        raise HTTPException(status_code=409, detail="the templates folder cannot be written "
+                                                    "(is it outside the vault?)") from e
     except HistoryUnavailable as e:
         raise HTTPException(status_code=503, detail="history is unavailable, so the AI template "
                                                     "was not saved; try again") from e

@@ -19,7 +19,7 @@ import re
 import unicodedata
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 
 from ghostbrain.templates import draft_rules
@@ -52,6 +52,7 @@ MAX_CHOICE_RENDERS = 32
 MAX_RENDERED_CHARS = 2_000_000
 GENERATE_TIER = "balanced"
 PROVIDER_FAILED = "check the AI provider in settings"
+RATE_LIMITED = "the AI provider is rate limited; try again later"
 GENERATE_TIMEOUT_S = 180
 # Search only: its snippets are bounded, so little vault text reaches the draft.
 TEMPLATE_TOOLS = "mcp__poltergeist__poltergeist_search"
@@ -63,6 +64,8 @@ SAMPLE_ENV = RenderEnv(
     projects={"sample": ProjectValue("sample", "Sample", "sample", "sample")},
     user_name="Sample",
 )
+# No name set in 90-meta/config.yaml (the usual case): {{user.name}} is empty.
+NO_USER_ENV = replace(SAMPLE_ENV, user_name="")
 _SAMPLE_BY_TYPE = {
     "person": "Sample Person",
     "text": "sample",
@@ -70,7 +73,6 @@ _SAMPLE_BY_TYPE = {
     "context": "sample",
     "project": "sample",
 }
-
 
 
 class GenerateError(RuntimeError):
@@ -236,16 +238,18 @@ def blank_answers(template: Template) -> dict[str, str]:
     }
 
 
-def _answer_sets(template: Template) -> list[dict[str, str]] | None:
+def _answer_sets(template: Template) -> list[tuple[dict[str, str], RenderEnv]] | None:
     """Sample answers once per combination of choice options, then the
-    blank-optional answers; None past MAX_CHOICE_RENDERS combinations."""
+    blank-optional answers, also with no user name; None past
+    MAX_CHOICE_RENDERS combinations."""
     choices = [p for p in template.prompts if p.type == "choice"]
     if math.prod(len(p.options) for p in choices) > MAX_CHOICE_RENDERS:
         return None
     sample = sample_answers(template)
     combos = itertools.product(*(p.options for p in choices))
-    return [{**sample, **{p.id: o for p, o in zip(choices, combo, strict=True)}} for combo in combos] \
-        + [blank_answers(template)]
+    blank = blank_answers(template)
+    return [({**sample, **{p.id: o for p, o in zip(choices, combo, strict=True)}}, SAMPLE_ENV)
+            for combo in combos] + [(blank, SAMPLE_ENV), (blank, NO_USER_ENV)]
 
 
 def _rendered_problems(draft: str, template: Template) -> list[Diagnostic]:
@@ -261,9 +265,9 @@ def _rendered_problems(draft: str, template: Template) -> list[Diagnostic]:
     render_errors: set[str] = set()
     checked: set[str] = set()
     spent = 0
-    for answers in answer_sets:
+    for answers, env in answer_sets:
         try:
-            note: RenderedNote = render(template, answers, SAMPLE_ENV)
+            note: RenderedNote = render(template, answers, env)
         except (AnswerError, RenderError) as e:
             if str(e) not in render_errors:
                 render_errors.add(str(e))
@@ -290,6 +294,27 @@ def _rendered_problems(draft: str, template: Template) -> list[Diagnostic]:
     return out
 
 
+def emptied(draft: str) -> str:
+    """``draft`` with every placeholder deleted (its line breaks kept): how
+    it reads when each renders empty, as ``{{user.name}}`` does for most
+    users and ``{{context}}`` may on a fresh install."""
+    try:
+        segments = tokenize(draft)
+    except TemplateLimitError:
+        return draft  # reported by the placeholder check
+    return "".join("\n" * draft.count("\n", seg.start, seg.end) if isinstance(seg, Placeholder)
+                   else seg.text for seg in segments)
+
+
+def _emptied_problems(draft: str) -> list[Diagnostic]:
+    """The content rules over ``emptied(draft)``, so no URL or tag is built
+    from placeholders that render empty. ``//`` and ``:/`` don't count here:
+    folders and names put slashes between placeholders (``{{context}}/x``),
+    and such text is no URL without a scheme word or ``www.``, which do."""
+    return [Diagnostic(d.line, d.col, d.severity, f"with every placeholder empty: {d.message}", d.code)
+            for d in draft_rules.content_problems(emptied(draft), slashes=False)]
+
+
 def check_draft(draft: str, template_id: str = "draft") -> DraftCheck:
     """Everything wrong with a draft, as line-numbered problems."""
     if len(draft) > MAX_DRAFT_CHARS:
@@ -298,6 +323,7 @@ def check_draft(draft: str, template_id: str = "draft") -> DraftCheck:
                                             "too-long"),))
     parsed = parse_template(draft, template_id)
     problems = draft_rules.control_problems(draft)
+    problems += draft_rules.invisible_problems(draft)
     problems += [d for d in parsed.diagnostics if d.severity == "error"]
     problems += draft_rules.content_problems(draft)
     problems += draft_rules.literal_problems(draft)
@@ -308,7 +334,7 @@ def check_draft(draft: str, template_id: str = "draft") -> DraftCheck:
         problems += _unknown_placeholders(draft, template)
         # A rendered problem on a line the source already flags adds nothing.
         located = {(d.line, d.code) for d in problems}
-        for d in _rendered_problems(draft, template):
+        for d in (*_emptied_problems(draft), *_rendered_problems(draft, template)):
             if (d.line, d.code) not in located:
                 located.add((d.line, d.code))
                 problems.append(d)
@@ -345,6 +371,23 @@ def drafting_provider():
     return provider
 
 
+_TIMEOUT_RE = re.compile(r"poltergeist took longer than \d+s and was stopped\.")
+
+
+def _turn_error(message: str) -> str:
+    """What the user is told about a failed turn. Provider text (for claude,
+    the tail of its stderr) can name local paths and settings, so only the
+    providers' own fixed messages pass; the rest is logged."""
+    from ghostbrain.llm.agent import BINARY_MISSING_MESSAGE, MCP_BINARY_MISSING_MESSAGE
+    from ghostbrain.llm.providers.base import ALLOWLIST_REFUSED
+
+    if message in (BINARY_MISSING_MESSAGE, MCP_BINARY_MISSING_MESSAGE, ALLOWLIST_REFUSED) \
+            or _TIMEOUT_RE.fullmatch(message):
+        return message
+    log.warning("template generation: the turn failed: %s", message)
+    return RATE_LIMITED if "rate limit" in message.casefold() else PROVIDER_FAILED
+
+
 def run_turn(prompt: str, *, turn_key: str) -> str:
     """One read-only agent turn: no session, no user MCP servers, vault
     search only. Any failure raises GenerateError (ProviderCannotDraft when
@@ -375,11 +418,11 @@ def run_turn(prompt: str, *, turn_key: str) -> str:
             elif kind == "done":
                 final = str(event.get("text") or "")
             elif kind == "error":
-                raise GenerateError(str(event.get("message") or "the model returned an error"))
+                raise GenerateError(_turn_error(str(event.get("message") or "")))
     except GenerateError:
         raise
     except LLMError as e:
-        raise GenerateError(str(e)) from e
+        raise GenerateError(_turn_error(str(e))) from e
     except Exception as e:
         # Any other provider failure (bad config, a dead socket mid-stream)
         # is a failed turn too: callers see only GenerateError or DraftInvalid.

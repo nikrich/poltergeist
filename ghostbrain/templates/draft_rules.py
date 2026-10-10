@@ -32,9 +32,11 @@ Rule                   Vector it covers
                        ``!``, ``?``), so ``<img>``, ``<a href>``, comments
 ``_CLICK_RE``          mermaid ``click`` actions (callbacks run code)
 ``_DIRECTIVE_RE``      mermaid ``%%{…}%%`` directives (theme CSS, config)
+``_diagram_config``    mermaid ``config:`` frontmatter (theme CSS, config)
 ``_DIAGRAM_META_RE``   mermaid ``@{ img:/icon: … }`` shape images and icons
-``_placeholder_links`` link/definition destinations holding a placeholder or
-                       not on their line; emails built from placeholders
+``_placeholder_links`` a placeholder anywhere after ``](`` or ``]:``, a
+                       destination not on its line; emails built from
+                       placeholders
 ``ALLOWED_FENCES``     code blocks other than query/mermaid/text/markdown
 ``_unclosed_fence``    a code block never closed (reject-only, skips nothing)
 ``literal_problems``   ``format``/``default`` literals holding markup characters
@@ -42,6 +44,7 @@ Rule                   Vector it covers
 ``structure_…``        duplicate keys, ``<<`` merge keys, a second ``---``
                        block; URLs in any frontmatter value as YAML reads it
 ``control_problems``   CR, BOM, NUL, U+2028/9: text parsers split differently
+``invisible_problems`` bidi overrides, zero-width and tag characters (Cf)
 =====================  ========================================================
 """
 from __future__ import annotations
@@ -82,9 +85,12 @@ _CLICK_RE = re.compile(
 # Mermaid %%{init: …}%% and other directives: they carry theme CSS and config.
 _DIRECTIVE_RE = re.compile(r"%%\s*\{")
 # Mermaid shape metadata A@{ … }, across lines, and the keys that load media.
+_CONFIG_KEY_RE = re.compile(r"(?<![\w-])config[\"']?\s*:|^\W*\?\s*[\"']?config\b")
 _DIAGRAM_META_RE = re.compile(r"@\{[^}]*")
 _RESOURCE_KEY_RE = re.compile(r"\b(?:img|icon)\s*:", re.IGNORECASE)
-_LINK_DEST_RE = re.compile(r"\]\([^)]*")  # [text](…) and ![alt](…) destinations
+# [text](…) and ![alt](…): everything after the opener, since balanced or
+# escaped parentheses keep a destination going past the first ")".
+_LINK_DEST_RE = re.compile(r"\]\(.*")
 _LINK_OPEN_AT_END_RE = re.compile(r"\]\(\s*<?\s*$")
 _DEFINITION_RE = re.compile(r" {0,3}\[((?:\\.|[^\]\\]){1,999})\]:(.*)$")
 _PLACEHOLDER_EMAIL_RE = re.compile(r"\}\}[\w.+\-]*@[\w\-{]|[\w.+\-]@[\w.\-]*\{\{")  # GFM emails
@@ -92,9 +98,10 @@ _PLACEHOLDER_EMAIL_RE = re.compile(r"\}\}[\w.+\-]*@[\w\-{]|[\w.+\-]@[\w.\-]*\{\{
 _MERMAID_ENTITY_RE = re.compile(r"(?<!&)#(\d{1,7}|[a-z][a-z0-9]{1,31});", re.IGNORECASE)
 
 # The URL rule, matched on casefolded text.
-_URL_HIT_RE = re.compile(
-    r"//|:/|(?<![a-z0-9])(?:(?:https?|ftp|wss?|data|file|javascript|vbscript)\s*+:|www\.)"
-)
+_SCHEME_HIT = r"(?<![a-z0-9])(?:(?:https?|ftp|wss?|data|file|javascript|vbscript)\s*+:|www\.)"
+_URL_HIT_RE = re.compile(r"//|:/|" + _SCHEME_HIT)
+# Only scheme words and www.: for text whose slashes stand between placeholders.
+_SCHEME_HIT_RE = re.compile(_SCHEME_HIT)
 _WHITESPACE_RE = re.compile(r"\s+")
 
 
@@ -250,7 +257,7 @@ def _readings(text: str) -> list[str]:
     return list(dict.fromkeys(out))
 
 
-def _hit(readings: list[str]) -> re.Match[str] | None:
+def _hit(readings: list[str], rule: re.Pattern[str] = _URL_HIT_RE) -> re.Match[str] | None:
     """The first URL rule hit in any reading, also read with backslashes as
     slashes and with all whitespace removed."""
     for reading in readings:
@@ -258,7 +265,7 @@ def _hit(readings: list[str]) -> re.Match[str] | None:
         slashed = folded.replace("\\", "/")
         stripped = _WHITESPACE_RE.sub("", slashed)
         for variant in (folded, slashed, stripped) if slashed != folded else (folded, stripped):
-            m = _URL_HIT_RE.search(variant)
+            m = rule.search(variant)
             if m:
                 return m
     return None
@@ -268,17 +275,19 @@ def _url_problem(line: int, col: int, m: re.Match[str]) -> Diagnostic:
     return _problem(line, col, f"`{m.group()}` may be read as part of a URL; {URL_MESSAGE}")
 
 
-def url_problems(text: str) -> list[Diagnostic]:
+def url_problems(text: str, *, slashes: bool = True) -> list[Diagnostic]:
     """One problem per line with a hit in any of its readings; else one at
-    line 1 for a hit only the whole text has (split over lines)."""
+    line 1 for a hit only the whole text has (split over lines). With
+    ``slashes=False`` only scheme words and ``www.`` count."""
+    rule = _URL_HIT_RE if slashes else _SCHEME_HIT_RE
     out = []
     for i, line in enumerate(text.split("\n")):
-        m = _hit(_readings(line))
+        m = _hit(_readings(line), rule)
         if m:
-            raw = _URL_HIT_RE.search(line.casefold())
+            raw = rule.search(line.casefold())
             out.append(_url_problem(i + 1, raw.start() + 1 if raw else 1, m))
     if not out:
-        m = _hit(_readings(text))
+        m = _hit(_readings(text), rule)
         if m:
             out.append(_url_problem(1, 1, m))
     return out
@@ -358,6 +367,19 @@ def _diagram_media(lines: list[str]) -> list[Diagnostic]:
             for m in _DIAGRAM_META_RE.finditer(joined) if _RESOURCE_KEY_RE.search(m.group())]
 
 
+def _diagram_config(lines: list[str]) -> list[Diagnostic]:
+    """A ``config`` key on any line from the first mermaid code block on:
+    mermaid reads it from a diagram's own frontmatter (theme CSS, like
+    ``%%{init}%%``). Reject-only, so no fence model is needed."""
+    out, seen = [], False
+    for i, line in enumerate(lines):
+        fence = _FENCE_OPEN_RE.match(_content(line))
+        seen = seen or bool(fence and fence.group(1).lower() == "mermaid")
+        if seen and _CONFIG_KEY_RE.search(decode(line).casefold()):
+            out.append(_problem(i + 1, 1, "diagram config is not allowed in a template"))
+    return out
+
+
 def _unclosed_fence(lines: list[str]) -> list[Diagnostic]:
     """A code block that never closes. Reject-only: no rule skips fenced
     text, so this decides nothing else and can only over-reject."""
@@ -374,8 +396,9 @@ def _unclosed_fence(lines: list[str]) -> list[Diagnostic]:
     return [_problem(opened + 1, 1, "this code block is never closed")] if fence else []
 
 
-def content_problems(text: str) -> list[Diagnostic]:
-    """Everything live in a markdown text (a draft, or a note it renders)."""
+def content_problems(text: str, *, slashes: bool = True) -> list[Diagnostic]:
+    """Everything live in a markdown text (a draft, or a note it renders).
+    ``slashes`` as in ``url_problems``."""
     lines = text.split("\n")
     out: list[Diagnostic] = []
     for i, line in enumerate(lines):
@@ -383,8 +406,9 @@ def content_problems(text: str) -> list[Diagnostic]:
         out += _line_rules(i, line, decoded)
         out += _placeholder_links(i, decoded)
     out += _diagram_media(lines)
+    out += _diagram_config(lines)
     out += _unclosed_fence(lines)
-    out += url_problems(mask_file_key(text))
+    out += url_problems(mask_file_key(text), slashes=slashes)
     return out
 
 
@@ -398,6 +422,36 @@ def control_problems(text: str) -> list[Diagnostic]:
     return [_problem(line, m.start() - text.rfind("\n", 0, m.start()),
                      f"the template contains the control character U+{ord(m.group()):04X}; "
                      "use plain text with LF line endings")]
+
+
+INVISIBLE_MESSAGE = "invisible formatting characters are not allowed"
+# Emoji-ish characters a zero-width joiner may join (VS16 may sit before it).
+_EMOJI_CATEGORIES = frozenset({"So", "Sk"})
+
+
+def _joins_emoji(text: str, i: int) -> bool:
+    before = text[i - 1] if i else ""
+    after = text[i + 1] if i + 1 < len(text) else ""
+    return (before == "\ufe0f" or (before and unicodedata.category(before) in _EMOJI_CATEGORIES)) \
+        and bool(after) and unicodedata.category(after) in _EMOJI_CATEGORIES
+
+
+def invisible_problems(text: str) -> list[Diagnostic]:
+    """Format characters (bidi overrides, zero-width marks, tag characters)
+    can make the approval view show other text than a reader sees; one
+    problem per line. A zero-width joiner inside an emoji sequence is fine;
+    the BOM is reported by ``control_problems``."""
+    out, last = [], 0
+    for i, ch in enumerate(text):
+        if ch == "\ufeff" or unicodedata.category(ch) != "Cf":
+            continue
+        if ch == "\u200d" and _joins_emoji(text, i):
+            continue
+        line = text.count("\n", 0, i) + 1
+        if line != last:
+            out.append(_problem(line, i - text.rfind("\n", 0, i), INVISIBLE_MESSAGE))
+            last = line
+    return out
 
 
 def literal_problems(text: str) -> list[Diagnostic]:

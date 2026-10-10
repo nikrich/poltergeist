@@ -13,6 +13,8 @@ export function MakeTemplateDialog({ onClose }: { onClose: () => void }) {
   const gen = useGenerateTemplate();
   const setActive = useNavigation((s) => s.setActive);
   const result = gen.data;
+  // A backdrop click must not throw away a turn in flight or a draft to copy.
+  const keepOpen = gen.isPending || result?.status === 'invalid';
 
   function copyDraft(draft: string) {
     void navigator.clipboard
@@ -35,7 +37,7 @@ export function MakeTemplateDialog({ onClose }: { onClose: () => void }) {
       aria-label="make a template with ai"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget && !keepOpen) onClose();
       }}
     >
       <div className="flex max-h-[80vh] w-[480px] flex-col gap-3 overflow-auto rounded-r6 border border-hairline-2 bg-paper p-4 shadow-card">
@@ -51,7 +53,11 @@ export function MakeTemplateDialog({ onClose }: { onClose: () => void }) {
           maxLength={MAX_TEMPLATE_DESCRIPTION}
           rows={4}
           placeholder="e.g. a weekly review with wins, misses and open follow-ups"
-          onChange={(e) => setDescription(e.target.value)}
+          onChange={(e) => {
+            setDescription(e.target.value);
+            // A pending template is already proposed; a new one needs a new description.
+            if (result?.status === 'pending') gen.reset();
+          }}
           className="w-full rounded-sm border border-hairline-2 bg-vellum px-2 py-1 text-12 text-ink-0"
         />
         <div className="flex justify-end gap-2">
@@ -62,7 +68,7 @@ export function MakeTemplateDialog({ onClose }: { onClose: () => void }) {
             variant="primary"
             size="sm"
             icon={<Lucide name="sparkles" size={13} />}
-            disabled={!description.trim() || gen.isPending}
+            disabled={!description.trim() || gen.isPending || result?.status === 'pending'}
             onClick={() => gen.mutate(description.trim())}
           >
             {gen.isPending ? 'drafting…' : 'generate'}
