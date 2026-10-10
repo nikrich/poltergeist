@@ -41,6 +41,7 @@ jobs:
             tests/test_profile_apply.py \
             tests/test_profile_apply_vault_write.py \
             tests/test_semantic_related_write.py \
+            tests/test_vault_write_risk.py \
             tests/test_scheduler_history_prune_job.py \
             tests/test_mcp_client.py \
             tests/test_doctor_core.py \

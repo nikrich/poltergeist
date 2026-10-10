@@ -88,6 +88,7 @@ def test_worker_creation_is_ingest_but_worker_edits_are_recorded(vault):
 
 
 def test_move_and_delete_rows(vault):
+    set_hold_policy(lambda _p: [])  # row mechanics only; B3 would hold both (not their notes)
     dest = "20-contexts/work/projects/plan.md"
     moved = write(REL, op="move", dest=dest, fields={"context": "work"}, actor=FAMILIAR,
                   base_etag=compute_etag(V1))

@@ -5,7 +5,8 @@ snapshot from spec A3, change log from slice B2).
 Every write by an actor other than ``user`` / ``restore`` gets a row in the
 change log (``ghostbrain.changes``), except a ``worker:*`` create, which is
 connector ingest and stays audit-only (user decision 2026-10-09). The B3 risk
-policy plugs in through ``set_hold_policy``; B2's default never holds.
+rules (``risk.evaluate``) are the default hold policy; a held
+change is stored as a pending row and nothing is written.
 """
 from __future__ import annotations
 
@@ -268,18 +269,20 @@ class ProposedChange:
 HoldPolicy = Callable[[ProposedChange], list[str]]
 
 
-def _never_hold(_change: ProposedChange) -> list[str]:
-    return []
+def _risk_rules(change: ProposedChange) -> list[str]:
+    from ghostbrain.vault_write.risk import evaluate  # risk imports this module
+
+    return evaluate(change)
 
 
-_hold_policy: HoldPolicy = _never_hold
+_hold_policy: HoldPolicy = _risk_rules
 
 
 def set_hold_policy(policy: HoldPolicy | None) -> None:
-    """B3 installs its risk rules here. ``None`` restores B2's default: never
-    hold (user decision 2026-10-09: new notes apply now, revert in one click)."""
+    """Swap the hold policy (tests). ``None`` restores the default: the B3
+    risk rules (spec B §3). A reset can never leave the vault unguarded."""
     global _hold_policy
-    _hold_policy = policy or _never_hold
+    _hold_policy = policy or _risk_rules
 
 
 # Derived metadata refreshed in bulk (semantic `related:` links, every 15

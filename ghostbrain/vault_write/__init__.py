@@ -46,6 +46,7 @@ from ghostbrain.vault_write.writer import (
     write,
     write_new,
 )
+from ghostbrain.vault_write import risk  # noqa: E402  (imports writer; must come after it)
 
 __all__ = [
     "ASSISTANT", "DELETE_FIELD", "MCP", "RESTORE", "USER", "UNLISTED_ACTORS", "WRITABLE_SUFFIXES",
@@ -54,6 +55,6 @@ __all__ = [
     "VaultWriteError", "WriteConflict", "WriteResult",
     "apply_fields", "compute_etag", "current_etag", "find_key_block", "lines_of",
     "load_metadata", "needs_base_etag", "normalize_if_match", "parse_actor", "parse_note",
-    "plugin_actor", "read", "records_change", "resolve_safe", "set_hold_policy",
+    "plugin_actor", "read", "records_change", "resolve_safe", "risk", "set_hold_policy",
     "splice_body", "worker_actor", "write", "write_new",
 ]

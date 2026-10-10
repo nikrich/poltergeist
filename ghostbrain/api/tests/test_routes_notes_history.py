@@ -190,9 +190,13 @@ def test_restoring_a_version_carried_by_a_move_restores_only_the_body(
     tmp_vault, client, auth_headers,
 ):
     write_note(tmp_vault, INBOX, PRE_ROUTE)
-    vault_write.write(INBOX, op="move", dest=ROUTED, actor=worker_actor("router"),
-                      fields={"context": "work", "routingStatus": "routed"},
-                      body="new body")
+    vault_write.set_hold_policy(lambda _p: [])  # restore mechanics; B3 holds this move
+    try:
+        vault_write.write(INBOX, op="move", dest=ROUTED, actor=worker_actor("router"),
+                          fields={"context": "work", "routingStatus": "routed"},
+                          body="new body")
+    finally:
+        vault_write.set_hold_policy(None)
     items = client.get("/v1/notes/history", params={"path": ROUTED},
                        headers=auth_headers).json()["items"]
     [carried] = [i for i in items if i["path"] == INBOX]
