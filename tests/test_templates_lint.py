@@ -8,7 +8,7 @@ import pytest
 from ghostbrain.templates import lint as lint_mod
 from ghostbrain.templates.lint import MAX_LINT_DIAGNOSTICS, lint
 from ghostbrain.templates.parse import Diagnostic, parse_template
-from ghostbrain.templates.render import RenderEnv, render
+from ghostbrain.templates.render import RenderEnv, RenderError, render
 from ghostbrain.templates.starters import STARTER_TEMPLATES
 from ghostbrain.templates.values import ProjectValue
 
@@ -138,6 +138,53 @@ def test_lint_flags_exactly_what_render_leaves_literal(expr, no_query_parser):
     flagged = bool(lint(src, "t"))
     note = render(parse_template(src, "t").template, ANSWERS, ENV)
     assert flagged == ("{{" + expr + "}}" in note.body), expr
+
+
+# ── `title` is not in scope while file.name / file.folder render ───────────
+
+
+def _with_file(name: str, folder: str = "Notes") -> str:
+    return HEAD.replace(
+        "  name: T\n", f'  name: T\n  file:\n    name: "{name}"\n    folder: "{folder}"\n'
+    )
+
+
+TITLE_MESSAGE = (
+    "`title` is the note's title, made from file.name; it isn't available in file.name or file.folder"
+)
+
+
+def test_title_in_file_name_is_flagged():
+    [d] = lint(_with_file("{{title}} {{topic}}") + "# {{title}}\n", "t")
+    assert (d.line, d.col, d.severity, d.code, d.message) == (
+        5, 12, "warning", "unknown-name", TITLE_MESSAGE)
+
+
+def test_title_in_file_folder_is_flagged():
+    [d] = lint(_with_file("{{topic}}", "Notes/{{title | slug}}") + "body\n", "t")
+    assert (d.line, d.col, d.code, d.message) == (6, 20, "unknown-name", TITLE_MESSAGE)
+
+
+def test_title_in_block_scalar_file_name_is_flagged():
+    src = HEAD.replace("  name: T\n", "  name: T\n  file:\n    name: >-\n      Notes {{title}}\n")
+    assert found(src + "body\n") == [(6, 13, "warning", "unknown-name")]
+
+
+def test_title_in_the_body_and_other_frontmatter_is_clean():
+    src = _with_file("{{topic}}").replace(
+        '    folder: "Notes"\n', '    folder: "Notes"\n  frontmatter:\n    heading: "{{title}}"\n')
+    assert lint(src + "# {{title}}\n", "t") == []
+
+
+def test_render_leaves_title_literal_in_file_name_and_rejects_it_in_folder(no_query_parser):
+    src = _with_file("{{title}} {{topic}}")
+    assert lint(src, "t")
+    note = render(parse_template(src, "t").template, ANSWERS, ENV)
+    assert "{{title}}" in note.title
+    src = _with_file("{{topic}}", "Notes/{{title}}")
+    assert lint(src, "t")
+    with pytest.raises(RenderError, match="unresolved placeholder"):
+        render(parse_template(src, "t").template, ANSWERS, ENV)
 
 
 # ── query blocks (C2) ──────────────────────────────────────────────────────
