@@ -423,6 +423,7 @@ export const DEMO_SETTINGS = {
   focusMode: false,
   readAloudVoice: '',
   readAloudRate: 1,
+  pageWidth: 'fixed' as const,
   hotkeys: { jotOverlay: 'Alt+J' },
 };
 

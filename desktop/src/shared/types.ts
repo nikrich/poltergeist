@@ -14,6 +14,9 @@ export type AudioRetention = '30d' | '7d' | 'immediate' | 'forever';
 export type TranscriptModel = 'whisper-large-v3' | 'whisper-medium';
 export type FolderStructure = 'by-source' | 'by-date' | 'by-person';
 
+/** A7 page canvas width: a reading measure or the editor's full width. */
+export type PageWidth = 'fixed' | 'full';
+
 export interface Settings {
   theme: Theme;
   density: Density;
@@ -44,6 +47,8 @@ export interface Settings {
   readAloudVoice: string;
   /** Read-aloud speaking rate, 0.5–2 (1 = normal). */
   readAloudRate: number;
+  /** A7 page width (toolbar toggle). Global: a reading preference, not page content. */
+  pageWidth: PageWidth;
 
   hotkeys: {
     jotOverlay: string;

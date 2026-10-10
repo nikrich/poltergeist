@@ -66,4 +66,11 @@ describe('settings store', () => {
     expect(getAll().focusMode).toBe(false);
     expect(getAll().readAloudRate).toBe(1);
   });
+
+  it('defaults pageWidth to fixed, also for an older config.json without it', async () => {
+    const { writeFileSync } = await import('node:fs');
+    writeFileSync(join(workDir, 'config.json'), JSON.stringify({ version: 1, theme: 'light' }));
+    const { getAll } = await import('./settings');
+    expect(getAll().pageWidth).toBe('fixed');
+  });
 });
