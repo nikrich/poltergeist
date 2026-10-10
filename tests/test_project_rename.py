@@ -333,3 +333,95 @@ def test_rollback_moves_back_self_linked_note_without_trailing_newline(vault: Pa
     assert _front(note)["project"] == "paymnets"
     assert f"[[{OLD}/self.md]]" in note.read_text(encoding="utf-8")
     assert not (vault / NEW).exists()
+
+
+def test_malformed_note_aborts_rename_naming_the_note(vault: Path, monkeypatch):
+    from ghostbrain import vault_write
+    from ghostbrain.vault_write import MalformedNote
+
+    _note(vault / OLD / "a.md", {"project": "paymnets"})
+    _note(vault / OLD / "b.md", {"project": "paymnets"})
+    _note(vault / "20-contexts/personal/l.md", {}, f"[[{OLD}/a.md]]")
+    before = {p: p.read_bytes() for p in vault.rglob("*") if p.is_file()}
+    real_write = vault_write.write
+
+    def flaky(rel, **kw):
+        if rel == f"{OLD}/b.md" and kw.get("op") == "move":
+            raise MalformedNote("field 'project' did not round-trip through YAML")
+        return real_write(rel, **kw)
+
+    monkeypatch.setattr(vault_write, "write", flaky)
+    with pytest.raises(projects.MalformedProjectNote) as exc:
+        projects.rename_project("work", "paymnets", name="Payments")
+    assert exc.value.path == f"{OLD}/b.md"
+    assert str(exc.value) == f"can't rename: {OLD}/b.md has malformed frontmatter"
+    assert {p: p.read_bytes() for p in vault.rglob("*") if p.is_file()} == before
+    assert not (vault / NEW).exists()
+    assert projects.get_project("work", "paymnets") is not None
+
+
+def test_concurrent_renames_of_different_projects_both_land(vault: Path, monkeypatch):
+    import threading
+    import time
+
+    real_write = projects._write
+
+    def slow_write(items):
+        time.sleep(0.2)  # widen the registry read-modify-write window
+        real_write(items)
+
+    monkeypatch.setattr(projects, "_write", slow_write)
+    errors: list[BaseException] = []
+
+    def run(slug: str, name: str) -> None:
+        try:
+            projects.rename_project("work", slug, name=name)
+        except BaseException as e:  # noqa: BLE001
+            errors.append(e)
+
+    threads = [
+        threading.Thread(target=run, args=("paymnets", "Payments")),
+        threading.Thread(target=run, args=("pay", "Payroll")),
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+    assert not errors
+    slugs = {p["slug"] for p in projects.list_projects(include_archived=True)}
+    assert slugs == {"payments", "payroll"}
+    assert (vault / NEW).is_dir() and (vault / "20-contexts/work/projects/payroll").is_dir()
+
+
+def test_same_slug_edit_under_lock_does_not_deadlock(vault: Path):
+    with projects._registry_lock:  # reentrant: rename → update_project
+        p = projects.rename_project("work", "paymnets", name="PAYMNETS", description="x")
+    assert p["description"] == "x"
+
+
+def test_md_library_original_keeps_its_bytes(vault: Path):
+    """An uploaded .md original is byte-identical to the upload (sha256 dedupe):
+    neither the link rewrite nor the re-stamp may touch it."""
+    docs = vault / OLD / "docs"
+    original = (
+        f"---\nproject: paymnets\n---\n\n# Readme\n\nsee [[{OLD}/manual-1-jot.md]]\n"
+    ).encode()
+    docs.mkdir(parents=True)
+    (docs / "Readme.md").write_bytes(original)
+    _note(docs / "readme-aaaaaa.md", {"doc_id": "aaaaaaaaaaaa", "source": "doc-library",
+          "original": "Readme.md", "project": "paymnets", "context": "work"})
+    _note(vault / OLD / "manual-1-jot.md", {"project": "paymnets"})
+    # An original elsewhere in the vault that mentions the project is left alone too.
+    other_docs = vault / "20-contexts/personal/docs"
+    other = f"links to [[{OLD}/manual-1-jot.md]]\n".encode()
+    other_docs.mkdir(parents=True)
+    (other_docs / "Notes.md").write_bytes(other)
+    _note(other_docs / "notes-bbbbbb.md", {"doc_id": "bbbbbbbbbbbb", "source": "doc-library",
+          "original": "Notes.md", "context": "personal"})
+
+    projects.rename_project("work", "paymnets", name="Payments")
+
+    assert (vault / NEW / "docs/Readme.md").read_bytes() == original
+    assert (other_docs / "Notes.md").read_bytes() == other
+    assert _front(vault / NEW / "docs/readme-aaaaaa.md")["project"] == "payments"
+    assert _front(vault / NEW / "manual-1-jot.md")["project"] == "payments"

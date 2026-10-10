@@ -6,10 +6,12 @@ to context-only rather than failing.
 """
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import os
 import re
+import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -18,7 +20,7 @@ import yaml
 
 from ghostbrain import routing_config, vault_write
 from ghostbrain.paths import vault_path
-from ghostbrain.vault_write import USER, WriteConflict, compute_etag
+from ghostbrain.vault_write import USER, MalformedNote, WriteConflict, compute_etag
 
 log = logging.getLogger("ghostbrain.projects")
 
@@ -37,6 +39,29 @@ class ProjectExists(ValueError):
 class ProjectBusy(Exception):
     """A doc of the project is being indexed or summarised; renaming now would
     pull its files out from under the background job."""
+
+
+class MalformedProjectNote(Exception):
+    """A note of the project could not be re-stamped (its frontmatter is not
+    valid YAML / does not round-trip). The rename was rolled back."""
+
+    def __init__(self, path: str) -> None:
+        super().__init__(f"can't rename: {path} has malformed frontmatter")
+        self.path = path
+
+
+# Serialises registry read-modify-write (create / update / rename). Reentrant:
+# rename_project calls update_project for a same-slug edit.
+_registry_lock = threading.RLock()
+
+
+def _with_registry_lock(fn):
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        with _registry_lock:
+            return fn(*args, **kwargs)
+
+    return wrapper
 
 
 def _registry_path() -> Path:
@@ -79,6 +104,7 @@ def get_project(context: str, slug: str, *, active_only: bool = False) -> dict |
     return None
 
 
+@_with_registry_lock
 def create_project(context: str, name: str, description: str = "") -> dict:
     # Function-level import to avoid the import cycle:
     # projects → notes_manual → router → projects (Task 3 wires router to projects)
@@ -108,6 +134,7 @@ def create_project(context: str, name: str, description: str = "") -> dict:
     return project
 
 
+@_with_registry_lock
 def update_project(
     context: str,
     slug: str,
@@ -188,10 +215,13 @@ def _move_note(
     re-stamp, ``updated`` bump), restores the original bytes exactly."""
     src_rel, dst_rel = _rel(src), _rel(dst)
     original = src.read_bytes()
-    moved = vault_write.write(
-        src_rel, op="move", dest=dst_rel, fields=fields, actor=USER, reason=reason,
-        base_etag=compute_etag(original),
-    )
+    try:
+        moved = vault_write.write(
+            src_rel, op="move", dest=dst_rel, fields=fields, actor=USER, reason=reason,
+            base_etag=compute_etag(original),
+        )
+    except MalformedNote as exc:
+        raise MalformedProjectNote(src_rel) from exc
     etags[dst_rel] = moved.etag
 
     def undo() -> None:
@@ -236,6 +266,24 @@ def _iter_vault_notes(root: Path):
             yield p
 
 
+def _claimed_originals(old_dir: Path, new_dir: Path) -> frozenset[Path]:
+    """Realpaths of every doc-library original in the vault, with those inside
+    ``old_dir`` also listed at their post-move location under ``new_dir``.
+
+    Read before the move: the library resolves project scopes through the
+    registry, which still names the old slug until the rename's last step."""
+    from ghostbrain.api.repo.doc_library import index as library_index
+
+    library_index.invalidate()
+    claims = set(library_index.claimed_originals())
+    old_real = old_dir.resolve()
+    new_real = old_real.parent / new_dir.name
+    for c in list(claims):
+        if old_real in c.parents:
+            claims.add(new_real / c.relative_to(old_real))
+    return frozenset(claims)
+
+
 def _check_not_busy(old_dir: Path) -> None:
     """Refuse when any doc of the project is being indexed or summarised.
 
@@ -262,6 +310,7 @@ def _check_not_busy(old_dir: Path) -> None:
             raise ProjectBusy(f"doc {doc_id} is still being indexed or summarised")
 
 
+@_with_registry_lock
 def rename_project(
     context: str,
     slug: str,
@@ -282,10 +331,14 @@ def rename_project(
     Notes edited concurrently keep the user's edit: link rewrites and rollback
     restores carry a base etag and skip the note on WriteConflict.
 
+    Doc-library originals (files a companion note names) keep their bytes:
+    they are never re-stamped nor link-rewritten (the library dedupes by hash).
+
     Returns the updated project, or None when it is unknown. Raises
     ProjectExists when the new slug is taken (registry or folder on disk),
-    ProjectBusy when a doc of the project is being indexed or summarised, and
-    ValueError for a name without letters or digits.
+    ProjectBusy when a doc of the project is being indexed or summarised,
+    MalformedProjectNote when a note cannot be re-stamped, and ValueError for
+    a name without letters or digits. Holds the registry lock throughout.
     """
     current = get_project(context, slug)
     if current is None:
@@ -308,6 +361,7 @@ def rename_project(
     if get_project(context, new_slug) is not None or new_dir.exists() or new_dir.is_symlink():
         raise ProjectExists(f"{context}/{new_slug}")
     _check_not_busy(old_dir)
+    originals = _claimed_originals(old_dir, new_dir)
 
     old_id, new_id = f"{context}/{slug}", f"{context}/{new_slug}"
     reason = f"rename project {slug} → {new_slug}"
@@ -327,7 +381,8 @@ def rename_project(
                 continue
             dst.parent.mkdir(parents=True, exist_ok=True)
             if not src.is_symlink() and src.suffix.lower() in vault_write.WRITABLE_SUFFIXES:
-                stamp = {"project": new_slug} if _front_project(src) == slug else None
+                restamp = src.resolve() not in originals and _front_project(src) == slug
+                stamp = {"project": new_slug} if restamp else None
                 undo.append(_move_note(src, dst, fields=stamp, reason=reason, etags=etags))
             else:
                 os.replace(src, dst)
@@ -338,6 +393,8 @@ def rename_project(
         pattern = _link_pattern(context, slug)
         replacement = PROJECT_DIR_TEMPLATE.format(context=context, slug=new_slug)
         for note in _iter_vault_notes(root):
+            if note.resolve() in originals:
+                continue  # an uploaded .md original keeps its exact bytes
             rel = _rel(note)
             try:
                 original = note.read_bytes()

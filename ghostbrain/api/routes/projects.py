@@ -8,7 +8,7 @@ from ghostbrain.api.models.project import (
     UpdateProjectRequest,
 )
 from ghostbrain.api.repo import projects as repo
-from ghostbrain.vault_write import WriteConflict
+from ghostbrain.vault_write import FileMissing, WriteConflict
 
 router = APIRouter(prefix="/v1/projects", tags=["projects"])
 
@@ -50,7 +50,10 @@ def update_project(context: str, slug: str, payload: UpdateProjectRequest) -> di
             status_code=409,
             detail="project busy: a doc is still being indexed or summarised",
         )
-    except WriteConflict:
+    except repo.MalformedProjectNote as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except (WriteConflict, FileMissing, FileNotFoundError):
+        # A note was edited, moved or deleted under the rename; it rolled back.
         raise HTTPException(
             status_code=409,
             detail="a note in this project changed during the rename — try again",

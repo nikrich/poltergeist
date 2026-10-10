@@ -91,3 +91,67 @@ def test_patch_write_conflict_maps_to_409(client, auth_headers, rename_sandbox, 
     r = client.patch("/v1/projects/work/alpha", json={"name": "Beta"}, headers=H)
     assert r.status_code == 409
     assert r.json()["detail"] == "a note in this project changed during the rename — try again"
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        lambda: __import__("ghostbrain.vault_write", fromlist=["FileMissing"]).FileMissing("x.md"),
+        lambda: FileNotFoundError(2, "No such file or directory", "x.md"),
+    ],
+    ids=["FileMissing", "FileNotFoundError"],
+)
+def test_patch_missing_file_mid_rename_maps_to_409(client, auth_headers, rename_sandbox, monkeypatch, exc):
+    H = auth_headers
+    client.post("/v1/projects", json={"context": "work", "name": "Alpha"}, headers=H)
+
+    def vanished(*a, **k):
+        raise exc()
+
+    monkeypatch.setattr(projects_repo, "rename_project", vanished)
+    r = client.patch("/v1/projects/work/alpha", json={"name": "Beta"}, headers=H)
+    assert r.status_code == 409
+    assert r.json()["detail"] == "a note in this project changed during the rename — try again"
+
+
+def test_patch_file_deleted_mid_rename_rolls_back_and_409s(client, auth_headers, rename_sandbox, monkeypatch):
+    """A file deleted between the folder scan and its move (FileNotFoundError
+    from the plain move): real rollback, then 409."""
+    from ghostbrain import vault_write
+    from ghostbrain.paths import vault_path
+
+    H = auth_headers
+    client.post("/v1/projects", json={"context": "work", "name": "Alpha"}, headers=H)
+    old = vault_path() / "20-contexts/work/projects/alpha"
+    a_bytes = b"---\nproject: alpha\n---\n\na\n"
+    (old / "a.md").write_bytes(a_bytes)
+    (old / "z.pdf").write_bytes(b"%PDF")
+    real_write = vault_write.write
+
+    def delete_pdf_meanwhile(rel, **kw):
+        if rel.endswith("alpha/a.md") and kw.get("op") == "move":
+            (old / "z.pdf").unlink()
+        return real_write(rel, **kw)
+
+    monkeypatch.setattr(vault_write, "write", delete_pdf_meanwhile)
+    r = client.patch("/v1/projects/work/alpha", json={"name": "Beta"}, headers=H)
+    assert r.status_code == 409
+    assert r.json()["detail"] == "a note in this project changed during the rename — try again"
+    assert (old / "a.md").read_bytes() == a_bytes
+    assert not (vault_path() / "20-contexts/work/projects/beta").exists()
+    assert projects_repo.get_project("work", "alpha") is not None
+
+
+def test_patch_malformed_note_maps_to_409_naming_it(client, auth_headers, rename_sandbox, monkeypatch):
+    H = auth_headers
+    client.post("/v1/projects", json={"context": "work", "name": "Alpha"}, headers=H)
+
+    def malformed(*a, **k):
+        raise projects_repo.MalformedProjectNote("20-contexts/work/projects/alpha/bad.md")
+
+    monkeypatch.setattr(projects_repo, "rename_project", malformed)
+    r = client.patch("/v1/projects/work/alpha", json={"name": "Beta"}, headers=H)
+    assert r.status_code == 409
+    assert r.json()["detail"] == (
+        "can't rename: 20-contexts/work/projects/alpha/bad.md has malformed frontmatter"
+    )
