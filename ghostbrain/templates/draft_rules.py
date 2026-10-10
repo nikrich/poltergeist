@@ -1,5 +1,18 @@
 """Content rules for AI-drafted templates (spec C4).
 
+Where this module sits: it is defence in depth, layer 3 of three.
+
+- layer 1, the renderer CSP: remote content is blocked by default (since
+  #168); the opt-in allows only https images.
+- layer 2, B3: every AI template is held as a pending change, and approving
+  it shows the user the full text.
+- layer 3, this module: rejects URLs, raw HTML, scripts and diagram
+  directives in drafts and in the notes they render.
+
+A parser differential left in these rules (a reader seeing text they don't)
+is documented residual risk. Anything that bypasses B3's hold, or writes
+outside 90-meta/templates, is a must-fix.
+
 A draft is untrusted text, and the notes it creates are written as the user,
 so B3's approval hold never sees them. These rules keep anything live out of
 both the template and what it renders. Every rule reads every line of the
@@ -32,7 +45,8 @@ Rule                   Vector it covers
                        ``!``, ``?``), so ``<img>``, ``<a href>``, comments
 ``_CLICK_RE``          mermaid ``click`` actions (callbacks run code)
 ``_DIRECTIVE_RE``      mermaid ``%%{…}%%`` directives (theme CSS, config)
-``_diagram_config``    mermaid ``config:`` frontmatter (theme CSS, config)
+``_diagram_config``    mermaid ``config:`` lines (theme CSS, config)
+``_diagram_front…``    mermaid frontmatter: a ``title`` key only, as YAML reads it
 ``_DIAGRAM_META_RE``   mermaid ``@{ img:/icon: … }`` shape images and icons
 ``_placeholder_links`` a placeholder anywhere after ``](`` or ``]:``, a
                        destination not on its line; emails built from
@@ -380,6 +394,33 @@ def _diagram_config(lines: list[str]) -> list[Diagnostic]:
     return out
 
 
+def _diagram_frontmatter(lines: list[str]) -> list[Diagnostic]:
+    """A mermaid block's own ``---`` frontmatter may hold a ``title`` and
+    nothing else, as YAML reads it (escapes and tags resolved), so no
+    ``config`` gets through however it is spelled. One that is never closed
+    or does not load is rejected."""
+    out = []
+    for i, line in enumerate(lines):
+        fence = _FENCE_OPEN_RE.match(_content(line))
+        if not (fence and fence.group(1).lower() == "mermaid"):
+            continue
+        rest = [_content(text) for text in lines[i + 1:]]
+        start = next((j for j, text in enumerate(rest) if text.strip()), None)
+        if start is None or rest[start].strip() != "---":
+            continue
+        end = next((j for j in range(start + 1, len(rest)) if rest[j].strip() == "---"), None)
+        closer = next((j for j in range(start + 1, len(rest)) if _FENCE_OPEN_RE.match(rest[j])), None)
+        try:
+            front = None if end is None or (closer is not None and closer < end) \
+                else yaml.safe_load("\n".join(rest[start + 1:end]))
+        except yaml.YAMLError:
+            front = None
+        if not (isinstance(front, dict) and set(front) <= {"title"}):
+            out.append(_problem(i + start + 2, 1,
+                                "diagram frontmatter may only hold a title in a template"))
+    return out
+
+
 def _unclosed_fence(lines: list[str]) -> list[Diagnostic]:
     """A code block that never closes. Reject-only: no rule skips fenced
     text, so this decides nothing else and can only over-reject."""
@@ -407,6 +448,7 @@ def content_problems(text: str, *, slashes: bool = True) -> list[Diagnostic]:
         out += _placeholder_links(i, decoded)
     out += _diagram_media(lines)
     out += _diagram_config(lines)
+    out += _diagram_frontmatter(lines)
     out += _unclosed_fence(lines)
     out += url_problems(mask_file_key(text), slashes=slashes)
     return out

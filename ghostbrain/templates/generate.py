@@ -3,9 +3,10 @@
 One agent turn through the configured LLM provider (``get_provider()``),
 with tools limited to searching the vault. The draft is untrusted: it must
 parse (C1), use only registry placeholders, and carry nothing live (see
-``draft_rules``), both as written and as rendered, once with sample answers
-and once with every optional prompt left blank, to a folder inside the
-vault. An invalid draft gets exactly one repair turn; a second failure is
+``draft_rules``), as written, as it reads with placeholders empty, and as
+rendered for every combination of choice options (once with sample
+answers, once with every optional prompt and the user name left blank), to
+a folder inside the vault. An invalid draft gets exactly one repair turn; a second failure is
 reported with the draft and nothing is saved. A valid draft is saved by
 ``ai_save.save_ai_template`` as a pending change for the user to approve,
 after ``verify_exact`` re-checks the exact text it writes.
@@ -238,18 +239,22 @@ def blank_answers(template: Template) -> dict[str, str]:
     }
 
 
-def _answer_sets(template: Template) -> list[tuple[dict[str, str], RenderEnv]] | None:
-    """Sample answers once per combination of choice options, then the
-    blank-optional answers, also with no user name; None past
+def _combos(template: Template) -> list[dict[str, str]] | None:
+    """Each combination of choice options as answers; None past
     MAX_CHOICE_RENDERS combinations."""
     choices = [p for p in template.prompts if p.type == "choice"]
     if math.prod(len(p.options) for p in choices) > MAX_CHOICE_RENDERS:
         return None
-    sample = sample_answers(template)
-    combos = itertools.product(*(p.options for p in choices))
-    blank = blank_answers(template)
-    return [({**sample, **{p.id: o for p, o in zip(choices, combo, strict=True)}}, SAMPLE_ENV)
-            for combo in combos] + [(blank, SAMPLE_ENV), (blank, NO_USER_ENV)]
+    return [{p.id: o for p, o in zip(choices, combo, strict=True)}
+            for combo in itertools.product(*(p.options for p in choices))]
+
+
+def _answer_sets(template: Template, combo: dict[str, str]) -> list[tuple[dict[str, str], RenderEnv]]:
+    """The renders of one choice combination: with sample answers, and with
+    blank optionals and no user name, so an option never meets an empty
+    value unchecked."""
+    return [({**sample_answers(template), **combo}, SAMPLE_ENV),
+            ({**blank_answers(template), **combo}, NO_USER_ENV)]
 
 
 def _rendered_problems(draft: str, template: Template) -> list[Diagnostic]:
@@ -257,15 +262,16 @@ def _rendered_problems(draft: str, template: Template) -> list[Diagnostic]:
     frontmatter, title, folder and filename. Body problems are mapped back to
     the template's body lines; the rest are reported on line 1."""
     out: list[Diagnostic] = []
-    answer_sets = _answer_sets(template)
-    if answer_sets is None:
+    combos = _combos(template)
+    if combos is None:
         return [Diagnostic(1, 1, "error",
                            f"choice prompts allow more than {MAX_CHOICE_RENDERS} combinations of "
                            "options; use fewer options", "limit")]
     render_errors: set[str] = set()
     checked: set[str] = set()
     spent = 0
-    for answers, env in answer_sets:
+    runs = [(combo, answers, env) for combo in combos for answers, env in _answer_sets(template, combo)]
+    for combo, answers, env in runs:
         try:
             note: RenderedNote = render(template, answers, env)
         except (AnswerError, RenderError) as e:
@@ -291,28 +297,45 @@ def _rendered_problems(draft: str, template: Template) -> list[Diagnostic]:
                 line = 1 if offset is None else d.line + offset
                 out.append(Diagnostic(line, d.col, d.severity,
                                       f"in the note it creates: {d.message}", d.code))
+        # The source with this combination's options in and every other
+        # placeholder deleted: options next to values that may be empty.
+        text = emptied(draft, combo)
+        if text not in checked:
+            spent += len(text)
+            checked.add(text)
+            out += _emptied_problems(text)
     return out
 
 
-def emptied(draft: str) -> str:
+def emptied(draft: str, keep: dict[str, str] | None = None) -> str:
     """``draft`` with every placeholder deleted (its line breaks kept): how
     it reads when each renders empty, as ``{{user.name}}`` does for most
-    users and ``{{context}}`` may on a fresh install."""
+    users and ``{{context}}`` may on a fresh install. A bare ``{{id}}`` in
+    ``keep`` (a choice prompt) becomes its option instead."""
     try:
         segments = tokenize(draft)
     except TemplateLimitError:
         return draft  # reported by the placeholder check
-    return "".join("\n" * draft.count("\n", seg.start, seg.end) if isinstance(seg, Placeholder)
-                   else seg.text for seg in segments)
+    keep = keep or {}
+
+    def text(seg) -> str:
+        if not isinstance(seg, Placeholder):
+            return seg.text
+        if seg.path and len(seg.path) == 1 and not seg.filters and seg.path[0] in keep:
+            return keep[seg.path[0]]
+        return "\n" * draft.count("\n", seg.start, seg.end)
+
+    return "".join(text(seg) for seg in segments)
 
 
-def _emptied_problems(draft: str) -> list[Diagnostic]:
-    """The content rules over ``emptied(draft)``, so no URL or tag is built
-    from placeholders that render empty. ``//`` and ``:/`` don't count here:
-    folders and names put slashes between placeholders (``{{context}}/x``),
-    and such text is no URL without a scheme word or ``www.``, which do."""
+def _emptied_problems(text: str) -> list[Diagnostic]:
+    """The content rules over an ``emptied`` reading, so no URL or tag is
+    built from placeholders that render empty. ``//`` and ``:/`` don't count
+    here: folders and names put slashes between placeholders
+    (``{{context}}/x``), and such text is no URL without a scheme word or
+    ``www.``, which do."""
     return [Diagnostic(d.line, d.col, d.severity, f"with every placeholder empty: {d.message}", d.code)
-            for d in draft_rules.content_problems(emptied(draft), slashes=False)]
+            for d in draft_rules.content_problems(text, slashes=False)]
 
 
 def check_draft(draft: str, template_id: str = "draft") -> DraftCheck:
@@ -334,7 +357,7 @@ def check_draft(draft: str, template_id: str = "draft") -> DraftCheck:
         problems += _unknown_placeholders(draft, template)
         # A rendered problem on a line the source already flags adds nothing.
         located = {(d.line, d.code) for d in problems}
-        for d in (*_emptied_problems(draft), *_rendered_problems(draft, template)):
+        for d in (*_emptied_problems(emptied(draft)), *_rendered_problems(draft, template)):
             if (d.line, d.code) not in located:
                 located.add((d.line, d.code))
                 problems.append(d)
