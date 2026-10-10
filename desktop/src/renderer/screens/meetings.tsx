@@ -241,7 +241,7 @@ function PreMeeting({ onStart, event }: PreMeetingProps) {
             <Eyebrow className="mb-2">poltergeist primed</Eyebrow>
             <ul className="m-0 flex list-none flex-col gap-[6px] p-0">
               <li className="flex items-start gap-2 text-12 text-ink-1">
-                <Lucide name="check" size={11} color="var(--neon)" className="mt-1" />
+                <Lucide name="check" size={11} color="var(--neon-glyph)" className="mt-1" />
                 <span>
                   transcript will land in{' '}
                   <span className="font-mono text-11">
@@ -250,7 +250,7 @@ function PreMeeting({ onStart, event }: PreMeetingProps) {
                 </span>
               </li>
               <li className="flex items-start gap-2 text-12 text-ink-1">
-                <Lucide name="check" size={11} color="var(--neon)" className="mt-1" />
+                <Lucide name="check" size={11} color="var(--neon-glyph)" className="mt-1" />
                 <span>
                   auto-record skips Focus blocks; manual start works for any
                   session
@@ -431,12 +431,12 @@ function AudioSource({ icon, label, sub, active }: AudioSourceProps) {
       }`}
       title="auto-detected by the recorder"
     >
-      <Lucide name={icon} size={13} color={active ? 'var(--neon)' : 'var(--ink-2)'} />
+      <Lucide name={icon} size={13} color={active ? 'var(--neon-glyph)' : 'var(--ink-2)'} />
       <div className="flex-1 leading-[1.2]">
         <div className="text-12 text-ink-0">{label}</div>
         <div className="font-mono text-9 text-ink-2">{sub}</div>
       </div>
-      {active && <Lucide name="check" size={12} color="var(--neon)" />}
+      {active && <Lucide name="check" size={12} color="var(--neon-glyph)" />}
     </div>
   );
 }
@@ -467,7 +467,7 @@ export function TargetChoiceCard({ windows = [] }: { windows?: CaptureWindow[] }
   return (
     <div role="status" className="mb-4 rounded-lg border border-neon/30 bg-neon/[0.06] p-5">
       <div className="flex items-center gap-4">
-        <Lucide name="monitor" size={18} color="var(--neon)" />
+        <Lucide name="monitor" size={18} color="var(--neon-glyph)" />
         <div className="flex-1 leading-[1.3]">
           <div className="text-14 font-medium text-ink-0">
             No meeting window found. Capture your screen for slides?
@@ -514,7 +514,7 @@ export function TargetChoiceCard({ windows = [] }: { windows?: CaptureWindow[] }
                   {w.appName}
                 </span>
                 <span className="flex-1 truncate text-12 text-ink-0">{w.title || '(untitled)'}</span>
-                {w.candidate && <Lucide name="star" size={11} color="var(--neon)" />}
+                {w.candidate && <Lucide name="star" size={11} color="var(--neon-glyph)" />}
                 <span className="flex-shrink-0 font-mono text-9 text-ink-3">
                   {w.width}×{w.height}
                 </span>

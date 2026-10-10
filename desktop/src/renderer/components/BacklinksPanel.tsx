@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useBacklinks } from '../lib/api/hooks';
 import { Lucide } from './Lucide';
 
-const WIKILINK_DISPLAY_RE = /\[\[([^\][|]+?)(?:\|([^\]]+))?\]\]/g;
+const WIKILINK_DISPLAY_RE = /!?\[\[([^\][|]+?)(?:\|([^\]]+))?\]\]/g;
 
 /** Raw `[[path|Alias]]` markup → what a reader sees: the alias, else the basename. */
 export function displaySnippet(snippet: string): string {

@@ -34,12 +34,36 @@
   --moss:          #5C7C4F;   /* success, "connected" */
   --moss-mist:     #16201A;
 
+  /* ---------- color: activity heatmap ramp ------------------------------ */
+  --heat-0:        var(--hairline);
+  --heat-1:        color-mix(in srgb, var(--neon) 25%, transparent);
+  --heat-2:        color-mix(in srgb, var(--neon) 50%, transparent);
+  --heat-3:        color-mix(in srgb, var(--neon) 75%, transparent);
+  --heat-4:        var(--neon);
+  --heat-outline:  var(--neon);
+
+  /* lime used as an icon/logo foreground (not a fill behind text) */
+  --neon-glyph:    var(--neon);
+  --ghost-logo:    var(--neon);
+
   /* ---------- color: pill foregrounds ----------------------------------- */
   /* Tonally-shifted accent foregrounds for Pill component (lighter than the
      base accent to read on a tinted backplate). */
   --pill-moss-fg:    #A2C795;   /* foreground for moss pill */
   --pill-oxblood-fg: #FF8A7C;   /* foreground for oxblood pill */
   --pill-water-fg:   #7FB3D5;   /* foreground for "water" tone (cool blue) */
+
+  /* ---------- color: graph node kinds (Graph tab) ----------------------- */
+  /* The graph ground stays dark in both themes (like the constellation), so
+     these are not overridden for light mode. lib/graph/kinds.ts mirrors them. */
+  --kind-person:   #7FB3D5;
+  --kind-meeting:  #A78BFA;
+  --kind-decision: #C5FF3D;
+  --kind-action:   #FF6B5A;
+  --kind-ticket:   #F5B94A;
+  --kind-doc:      #5EC8B8;
+  --kind-jot:      #E58FD0;
+  --kind-note:     #B7BAC2;
 
   /* ---------- borders & dividers (alpha on ink-0) ----------------------- */
   --hairline:      rgba(242, 243, 245, 0.08);
@@ -128,13 +152,36 @@
    (with intentional fixed dark-ink text, see Btn.tsx) — keeping them
    identical across themes preserves the brand. ------------------------- */
 [data-theme="light"] {
-  --bg-paper:   #F5F6F7;
-  --bg-vellum:  #ECEEF1;
-  --bg-fog:     #E1E4E9;
+  /* Cards (vellum) sit WHITE on a faintly tinted page (paper) — the reverse
+     of dark mode, where panels are lighter than the page. Darker-than-page
+     cards read as grey slabs on a light background. */
+  --bg-paper:   #F3F4F6;
+  --bg-vellum:  #FFFFFF;
+  --bg-fog:     #E9EBEF;
   --ink-0:      #0E0F12;
   --ink-1:      #3A3D44;
-  --ink-2:      #6A6E78;
-  --ink-3:      #A4A8B2;
+  --ink-2:      #5E636D;
+  --ink-3:      #868B95;
+
+  /* Translucent neon is ~1.4:1 on white, so the heatmap gets a real
+     lime→olive ramp instead of alpha steps. */
+  --heat-0:        #EBEDF0;
+  --heat-1:        #DDF5A6;
+  --heat-2:        #B4E05A;
+  --heat-3:        #7DB82A;
+  --heat-4:        #4D7F0F;
+  --heat-outline:  #4D7F0F;
+
+  /* Brand lime is ~1.4:1 on white — icons and the ghost logo vanish. This
+     deeper lime keeps the hue and clears 3:1 for graphics on --bg-paper. */
+  --neon-glyph:    #5E8F14;
+  /* the ghost logo goes solid black on light surfaces */
+  --ghost-logo:    var(--ink-0);
+
+  /* Selected-state tint + border for the `bg-neon/12`-style utilities (see
+     the light-only overrides in styles.css). */
+  --neon-tint:        #E6F7B8;
+  --neon-tint-border: #B9DE6A;
 
   --neon-mist:     #E8FAB8;
   --violet-mist:   #E8FAB8;

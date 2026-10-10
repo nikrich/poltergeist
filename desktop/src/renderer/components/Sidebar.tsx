@@ -163,7 +163,7 @@ function NavRow({
       {active && (
         <span className="absolute -left-2 bottom-[6px] top-[6px] w-[2px] rounded-sm bg-neon" />
       )}
-      <Lucide name={item.icon} size={15} color={active ? 'var(--neon)' : 'var(--ink-2)'} />
+      <Lucide name={item.icon} size={15} color={active ? 'var(--neon-glyph)' : 'var(--ink-2)'} />
       <span className="flex-1">{item.label}</span>
       {badge &&
         (typeof badge === 'string' ? (
@@ -196,7 +196,7 @@ function VaultRow({
         active ? 'bg-neon/12 font-medium text-ink-0' : 'text-ink-1 hover:bg-vellum'
       }`}
     >
-      <Lucide name={icon} size={12} color={active ? 'var(--neon)' : 'var(--ink-3)'} />
+      <Lucide name={icon} size={12} color={active ? 'var(--neon-glyph)' : 'var(--ink-3)'} />
       <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{label}</span>
       <span className="font-mono text-9 text-ink-3">{count ?? '—'}</span>
     </button>

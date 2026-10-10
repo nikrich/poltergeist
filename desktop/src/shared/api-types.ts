@@ -611,6 +611,8 @@ export interface VaultGraphNode {
   y: number;
   degree: number;
   updated: string | null;
+  /** Graph colour class; sidecars before A6 omit it (treat as 'note'). */
+  kind?: NoteKind;
 }
 
 export interface VaultGraphEdge {
@@ -631,6 +633,46 @@ export interface VaultGraph {
   nodes: VaultGraphNode[];
   edges: VaultGraphEdge[];
   regions: VaultGraphRegion[];
+}
+
+export type NoteKind = 'person' | 'meeting' | 'decision' | 'action' | 'ticket' | 'doc' | 'jot' | 'note';
+
+export interface EgoGraphNode {
+  /** Vault path, or a ghost's link key (e.g. "someday idea.md"). */
+  path: string;
+  title: string;
+  context: string;
+  kind: NoteKind;
+  /** Vault-wide link count. */
+  degree: number;
+  /** Linked but not written yet (drawn as a grey ring). */
+  ghost: boolean;
+  /** BFS distance from the focus. */
+  hop: number;
+}
+
+export interface EgoGraphEdge {
+  source: string;
+  target: string;
+  weight: number;
+  kind: 'related' | 'wikilink';
+}
+
+export interface EgoGraph {
+  focus: string;
+  depth: number;
+  nodes: EgoGraphNode[];
+  edges: EgoGraphEdge[];
+  /** More than 300 nodes were in reach; the nearest were kept. */
+  truncated: boolean;
+  /** The sidecar's link index is still on its first build. */
+  indexing: boolean;
+}
+
+export interface ResolvedLink {
+  path: string;
+  exists: boolean;
+  indexing: boolean;
 }
 
 // ── Linking (suggest + backlinks) ─────────────────────────────────────────────
@@ -789,3 +831,75 @@ export interface AttentionItem { kind: 'orphan_note' | 'unclaimed_original' | 'i
 export interface LibraryTree { scopes: DocScope[]; attention: AttentionItem[] }
 export interface FolderRef { context: string; project: string | null; path: string }
 export interface UploadDocRequest { context: string; project: string | null; folder: string; name: string; mime: string; content_b64: string }
+
+// ── Smart templates (C1) ──────────────────────────────────────────────────
+
+export type TemplatePromptType = 'person' | 'text' | 'date' | 'choice' | 'context' | 'project';
+
+export interface TemplatePrompt {
+  id: string;
+  ask: string;
+  type: TemplatePromptType;
+  optional: boolean;
+  default: string | null;
+  options: string[];
+}
+
+export interface TemplateDiagnostic {
+  line: number;
+  col: number;
+  severity: 'error' | 'warning' | 'info';
+  message: string;
+  code: string;
+}
+
+export interface TemplateSummary {
+  id: string;
+  path: string;
+  name: string;
+  description: string;
+  prompts: TemplatePrompt[];
+  /** Root names the template references, e.g. ['context', 'date', 'person']. */
+  variables: string[];
+  valid: boolean;
+  diagnostics: TemplateDiagnostic[];
+}
+
+export interface TemplatesResponse {
+  templates: TemplateSummary[];
+}
+
+export interface TemplateCreateResponse {
+  path: string;
+  title: string;
+  etag: string | null;
+  status: 'applied' | 'pending';
+}
+
+export interface TemplateRenderResponse {
+  path: string;
+  folder: string;
+  filename: string;
+  title: string;
+  frontmatter: Record<string, unknown>;
+  body: string;
+}
+
+export interface TemplateFunctionSpec {
+  name: string;
+  kind: 'variable' | 'field' | 'filter' | 'prompt_type';
+  type: string;
+  doc: string;
+  example: string;
+  owner: string | null;
+  accepts: string[];
+  arg: string | null;
+  argRequired: boolean;
+}
+
+export interface TemplateFunctionsResponse {
+  variables: TemplateFunctionSpec[];
+  fields: TemplateFunctionSpec[];
+  filters: TemplateFunctionSpec[];
+  promptTypes: TemplateFunctionSpec[];
+}

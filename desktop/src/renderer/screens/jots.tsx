@@ -5,6 +5,7 @@ import { ConfluenceExportDialog } from '../components/ConfluenceExportDialog';
 import { Lucide } from '../components/Lucide';
 import { Pill } from '../components/Pill';
 import { JotTree } from '../components/JotTree';
+import { TemplateMenu } from '../components/TemplatePicker';
 import { GuardedNoteEditor, confirmLeave, type GuardHandle } from '../components/GuardedNoteEditor';
 import type { EditorHandle } from '../components/RichMarkdownEditor';
 import { DocsAssistPanel } from '../components/DocsAssistPanel';
@@ -14,7 +15,7 @@ import { shortcutLabel } from '../lib/editor-shortcuts';
 import { get } from '../lib/api/client';
 import { BacklinksPanel } from '../components/BacklinksPanel';
 import { NoteHistoryButton } from '../components/NoteHistory';
-import { notePathFromTarget } from '../lib/editor/link-suggest';
+import { openWikilink } from '../lib/open-wikilink';
 import {
   useAutoRouteJot,
   useConnectors,
@@ -31,12 +32,14 @@ import {
 import type { Note } from '../../shared/api-types';
 import { toast } from '../stores/toast';
 import { useNoteView } from '../stores/note-view';
+import { useGraphView } from '../stores/graph-view';
 import { useDocsAssist } from '../stores/docs-assist';
 
 export function JotsScreen() {
   const knownContexts = useContexts().data?.contexts ?? [];
   const [q, setQ] = useState('');
   const openNote = useNoteView((s) => s.open);
+  const showInGraph = useGraphView((s) => s.showInGraph);
   const list = useJots({ q: q || undefined });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showConfluenceDialog, setShowConfluenceDialog] = useState(false);
@@ -303,6 +306,16 @@ export function JotsScreen() {
                   }
                 }}
               />
+              <TemplateMenu
+                onCreated={(res) => {
+                  if (res.status === 'pending') {
+                    toast.info('note saved for approval');
+                    return;
+                  }
+                  toast.success(`created — ${res.title}`);
+                  openNote(res.path);
+                }}
+              />
               <Btn
                 variant="primary"
                 size="sm"
@@ -362,7 +375,7 @@ export function JotsScreen() {
                   navigationScope="screen"
                   editorProps={{
                     focus: focusActive,
-                    onWikilinkClick: (target) => openNote(notePathFromTarget(target)),
+                    onWikilinkClick: (target) => openWikilink(target, openNote),
                     handleRef: editorHandle,
                     jotId: selectedId!,
                     openCameraSignal: cameraSignal,
@@ -402,6 +415,17 @@ export function JotsScreen() {
                   )}
                   {selectedItem?.routingStatus && <Pill>{selectedItem.routingStatus}</Pill>}
                   <div className="ml-auto flex items-center gap-2">
+                    {selectedItem && (
+                      <Btn
+                        variant="ghost"
+                        size="sm"
+                        icon={<Lucide name="network" size={13} />}
+                        // No confirmLeave: the editor's screen guard asks on setActive('vault').
+                        onClick={() => showInGraph(selectedItem.path)}
+                      >
+                        show in graph
+                      </Btn>
+                    )}
                     {selectedItem?.routingStatus !== 'routed' && (
                       <Btn
                         variant="ghost"

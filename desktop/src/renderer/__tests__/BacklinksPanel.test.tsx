@@ -32,6 +32,7 @@ describe('displaySnippet', () => {
       'ask Alpha and beta',
     );
     expect(displaySnippet('no links here')).toBe('no links here');
+    expect(displaySnippet('see ![[20-contexts/work/beta]] here')).toBe('see beta here');
   });
 });
 

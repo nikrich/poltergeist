@@ -6,7 +6,7 @@ import threading
 from pathlib import Path
 
 import ghostbrain.vault_index.links as links_mod
-from ghostbrain.vault_index.links import Edge, LinkIndex, get_link_index, warm_link_index
+from ghostbrain.vault_index.links import Edge, LinkIndex, get_link_index, link_key, warm_link_index
 
 
 def _write(root: Path, rel: str, text: str, *, mtime_ns: int | None = None) -> Path:
@@ -335,3 +335,33 @@ def test_in_flight_refresh_does_not_clobber_note_changed(tmp_path: Path):
     idx._read = racing_read  # type: ignore[method-assign]
     idx.refresh()
     assert [e.source for e in idx.backlinks("20-contexts/work/b.md")] == ["20-contexts/work/a.md"]
+
+
+def test_note_embed_is_a_backlink_but_attachment_embed_is_not(tmp_path: Path):
+    _write(tmp_path, "20-contexts/work/b.md", "b")
+    _write(tmp_path, "20-contexts/work/a.md", "![[20-contexts/work/b]]\n![[90-meta/assets/x.png]]")
+    idx = _idx(tmp_path)
+    idx.refresh()
+    assert [(e.source, e.snippet) for e in idx.backlinks("20-contexts/work/b.md")] == [
+        ("20-contexts/work/a.md", "![[20-contexts/work/b]]"),
+    ]
+    assert [e.target for e in idx.outgoing("20-contexts/work/a.md")] == ["20-contexts/work/b.md"]
+
+
+def test_link_key_lowercases_bare_names_only():
+    assert link_key("Someday Idea.md") == "someday idea.md"
+    assert link_key("20-contexts/Work/A.md") == "20-contexts/Work/A.md"
+
+
+def test_inbound_finds_the_linkers_of_a_ghost(tmp_path: Path):
+    _write(tmp_path, "20-contexts/work/a.md", "see [[Someday Idea]]")
+    _write(tmp_path, "20-contexts/work/b.md", "also [[someday idea|later]]\n[[20-contexts/work/missing]]")
+    idx = _idx(tmp_path)
+    idx.refresh()
+    edges = idx.inbound("someday idea.md")
+    assert [(e.source, e.exists, e.kind, e.snippet) for e in edges] == [
+        ("20-contexts/work/a.md", False, "wikilink", "see [[Someday Idea]]"),
+        ("20-contexts/work/b.md", False, "wikilink", "also [[someday idea|later]]"),
+    ]
+    assert [e.source for e in idx.inbound("20-contexts/work/missing.md")] == ["20-contexts/work/b.md"]
+    assert idx.inbound("nobody.md") == []

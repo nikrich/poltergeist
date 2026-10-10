@@ -65,11 +65,13 @@ def test_parse_note_fields_and_links():
     assert (e.created, e.updated) == ("2026-10-01", "2026-10-02")
     assert (e.mtime_ns, e.size) == (5, len(text))
     line = "see [[20-contexts/work/c|C note]] and [[d#Heading]] #launch"
+    embed_line = "![[90-meta/assets/x.png]] and ![[embedded-note]] and [[#local]]"
     assert e.links == (
         OutLink("20-contexts/work/b.md", "related", 0.7, ""),
         OutLink("20-contexts/work/p.md", "wikilink", 1.0, ""),
         OutLink("20-contexts/work/c.md", "wikilink", 0.5, line),
         OutLink("d.md", "wikilink", 0.5, line),
+        OutLink("embedded-note.md", "wikilink", 0.5, embed_line),
     )
 
 

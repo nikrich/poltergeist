@@ -604,7 +604,7 @@ function StreamingTurn({ stream, onStop }: { stream: StreamState; onStop: () => 
           </>
         ) : (
           <div className="flex items-center gap-2 text-12 text-ink-2">
-            <Lucide name="sparkles" size={13} color="var(--neon)" />
+            <Lucide name="sparkles" size={13} color="var(--neon-glyph)" />
             poltergeist is thinking…
           </div>
         )}

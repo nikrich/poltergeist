@@ -23,4 +23,10 @@ describe('useVaultGraph', () => {
     expect(request).toHaveBeenCalledWith('GET', '/v1/vault/graph');
     expect(result.current.data).toEqual({ nodes: [], edges: [], regions: [] });
   });
+
+  it('does not fetch while disabled', async () => {
+    renderHook(() => useVaultGraph({ enabled: false }), { wrapper });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(request).not.toHaveBeenCalled();
+  });
 });

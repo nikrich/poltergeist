@@ -12,6 +12,7 @@ from pathlib import Path
 
 from ghostbrain import routing_config
 from ghostbrain.paths import vault_path
+from ghostbrain.templates.starters import seed_starter_templates
 
 log = logging.getLogger("ghostbrain.bootstrap")
 
@@ -964,6 +965,9 @@ def bootstrap(root: Path | None = None) -> Path:
 
     for rel, body in SEED_FILES.items():
         _write_if_absent(root / rel, _render_seed(body, contexts))
+
+    # Smart-template starters (90-meta/templates/), only if that folder is missing.
+    seed_starter_templates(root)
 
     _ensure_contexts_key(root, contexts)
 

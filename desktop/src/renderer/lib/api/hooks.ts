@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type {
   DocDetail,
@@ -53,11 +53,15 @@ import type {
   UpdateProjectRequest,
   UpdateRecorderSettings,
   VaultGraph,
+  EgoGraph,
   VaultContexts,
   WhatsAppChat,
   VaultStats,
   McpServersResponse,
   McpServerWrite,
+  TemplateCreateResponse,
+  TemplateRenderResponse,
+  TemplatesResponse,
 } from '../../../shared/api-types';
 import { ApiError, del, get, patch, post, put } from './client';
 import { reportHistoryHealth } from '../history-health';
@@ -103,11 +107,26 @@ export function useArchiveContext() {
   });
 }
 
-export function useVaultGraph() {
+export function useVaultGraph(opts: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: ['vault', 'graph'],
     queryFn: () => get<VaultGraph>('/v1/vault/graph'),
     staleTime: 60_000,
+    enabled: opts.enabled ?? true,
+  });
+}
+
+/** Link neighbourhood of `focus` (A6). Keeps the previous graph on screen
+ * while a recentre loads; polls while the sidecar's link index is cold. */
+export function useEgoGraph(focus: string | null, depth: number) {
+  return useQuery({
+    queryKey: ['vault', 'graph', 'ego', focus, depth],
+    queryFn: () =>
+      get<EgoGraph>(`/v1/vault/graph?focus=${encodeURIComponent(focus!)}&depth=${depth}`),
+    enabled: focus !== null,
+    staleTime: 10_000,
+    placeholderData: keepPreviousData,
+    refetchInterval: (query) => (query.state.data?.indexing ? 3_000 : false),
   });
 }
 
@@ -1151,5 +1170,41 @@ export function useRemoveOrphan() {
   return useMutation({
     mutationFn: (docId: string) => post('/v1/library/attention/remove-orphan', { doc_id: docId }),
     onSuccess: () => invalidateLibrary(qc),
+  });
+}
+
+// ── Smart templates (C1) ──────────────────────────────────────────────────
+
+export function useTemplates(opts: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: ['templates'],
+    queryFn: () => get<TemplatesResponse>('/v1/templates'),
+    enabled: opts.enabled ?? true,
+    staleTime: 10_000,
+  });
+}
+
+export interface TemplateAnswersVars {
+  id: string;
+  answers: Record<string, string>;
+}
+
+export function useCreateFromTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, answers }: TemplateAnswersVars) =>
+      post<TemplateCreateResponse>(`/v1/templates/${encodeURIComponent(id)}/create`, { answers }),
+    onSuccess: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: JOTS_KEY }),
+        qc.invalidateQueries({ queryKey: ['vault', 'backlinks'] }),
+      ]),
+  });
+}
+
+export function useRenderTemplate() {
+  return useMutation({
+    mutationFn: ({ id, answers }: TemplateAnswersVars) =>
+      post<TemplateRenderResponse>(`/v1/templates/${encodeURIComponent(id)}/render`, { answers }),
   });
 }

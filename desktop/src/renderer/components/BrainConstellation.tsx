@@ -6,6 +6,7 @@ import {
   buildAdjacency,
   fitCamera,
   hitTest,
+  nodeRadius,
   toScreen,
   toWorld,
   type Camera,
@@ -19,12 +20,6 @@ import { Lucide } from './Lucide';
 import { PanelError } from './PanelError';
 
 // ── pure helpers (no React, no DOM) ────────────────────────────────────────
-
-/** Node draw radius from degree. Mirrors the size formula baked into
- * constellation-engine's `hitTest` (not exported standalone) — keep in sync. */
-function nodeRadius(degree: number): number {
-  return 2.7 + Math.min(degree, 14) * 0.62;
-}
 
 function hexRgb(hex: string): { r: number; g: number; b: number } {
   const n = parseInt(hex.slice(1), 16);
@@ -827,7 +822,7 @@ export function BrainConstellation() {
               onClick={() => openNote(card.node.path)}
               className="flex shrink-0 items-center gap-[6px] whitespace-nowrap border-0 bg-transparent p-0 text-neon"
             >
-              <Lucide name="eye" size={11} color="var(--neon)" />
+              <Lucide name="eye" size={11} color="var(--neon-glyph)" />
               view note
             </button>
             <button
@@ -835,7 +830,7 @@ export function BrainConstellation() {
               onClick={() => onOpenPath(card.node.path)}
               className="flex shrink-0 items-center gap-[6px] whitespace-nowrap border-0 bg-transparent p-0 text-neon"
             >
-              <Lucide name="external-link" size={11} color="var(--neon)" />
+              <Lucide name="external-link" size={11} color="var(--neon-glyph)" />
               open in vault
             </button>
           </div>

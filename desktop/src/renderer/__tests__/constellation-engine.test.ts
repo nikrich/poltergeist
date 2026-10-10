@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toScreen, toWorld, fitCamera, hitTest, buildAdjacency } from '../lib/constellation-engine';
+import { toScreen, toWorld, fitCamera, hitTest, buildAdjacency, nodeRadius } from '../lib/constellation-engine';
 import type { VaultGraph } from '../../shared/api-types';
 
 const node = (path: string, x: number, y: number) =>
@@ -39,5 +39,17 @@ describe('constellation-engine', () => {
     const adj = buildAdjacency(graph);
     expect(adj.get('a')).toEqual(['b']);
     expect(adj.get('b')).toEqual(['a']);
+  });
+
+  it('nodeRadius grows with links and caps at 14', () => {
+    expect(nodeRadius(0)).toBeCloseTo(2.7);
+    expect(nodeRadius(5)).toBeGreaterThan(nodeRadius(1));
+    expect(nodeRadius(14)).toBeCloseTo(nodeRadius(40));
+  });
+
+  it('fitCamera accepts wider zoom bounds for a whole-vault view', () => {
+    const far = [node('a', -1000, -1000), node('b', 1000, 1000)];
+    expect(fitCamera(far, 800, 600).scale).toBe(0.7);
+    expect(fitCamera(far, 800, 600, { min: 0.05, max: 1.6 }).scale).toBeLessThan(0.7);
   });
 });

@@ -63,6 +63,12 @@ def _inbound_key(target: str) -> str:
     return target if "/" in target else target.lower()
 
 
+def link_key(target: str) -> str:
+    """Identity of a link target: the path itself, or a bare name lower-cased
+    (bare names resolve case-insensitively). Ghost graph nodes use this id."""
+    return _inbound_key(target)
+
+
 class LinkIndex:
     def __init__(
         self,
@@ -364,6 +370,23 @@ class LinkIndex:
                 for link in entry.links:
                     if self._resolve(link.target) == path:
                         out.append(Edge(src, path, True, link.kind, link.weight, link.snippet))
+        return out
+
+    def inbound(self, target: str) -> list[Edge]:
+        """Every link whose *written* target has ``target``'s link key, sorted by
+        source. Needs no resolution, so it lists the linkers of a ghost (a target
+        with no file), which backlinks() cannot. Self-links excluded."""
+        key = _inbound_key(target)
+        exists = self.exists(target)
+        out: list[Edge] = []
+        with self._data_lock:
+            for src in sorted(self._inbound.get(key, ())):
+                entry = self._entries.get(src)
+                if entry is None or src == target:
+                    continue
+                for link in entry.links:
+                    if _inbound_key(link.target) == key:
+                        out.append(Edge(src, target, exists, link.kind, link.weight, link.snippet))
         return out
 
     def ghosts(self) -> dict[str, int]:
