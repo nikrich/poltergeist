@@ -55,3 +55,15 @@ def test_kill_all_running_continues_past_a_raising_kill():
     assert bad_cancelled.is_set() and good_cancelled.is_set()
     # Registry cleared even though "bad"'s kill() raised.
     assert base.kill_all_running() == 0
+
+
+def test_only_providers_that_declare_it_support_the_tool_allowlist():
+    class Unknown:
+        id = "x"
+
+    class Truthy:
+        supports_tool_allowlist = "yes"
+
+    assert base.supports_tool_allowlist(Unknown()) is False
+    assert base.supports_tool_allowlist(Truthy()) is False
+    assert base.ChatRequest(prompt="p", tier="fast", session_id=None, turn_key=None).tool_allowlist_only is False

@@ -71,7 +71,7 @@ def test_probe_detail_names_the_tier_map_under_tiers(monkeypatch):
     assert probe.detail["tiers"] == {"fast": "haiku", "balanced": "sonnet", "quality": "opus"}
 
 
-def test_chat_forwards_no_builtin_tools(monkeypatch):
+def test_chat_forwards_tool_allowlist_only(monkeypatch):
     from ghostbrain.llm.providers import claude_cli
 
     seen: list[list[str]] = []
@@ -84,5 +84,8 @@ def test_chat_forwards_no_builtin_tools(monkeypatch):
     p = ClaudeCli(binary="/c", mcp_binary="/m")
     for flag in (False, True):
         list(p.chat(base.ChatRequest(prompt="q", tier="balanced", session_id=None, turn_key="k",
-                                     no_builtin_tools=flag)))
-    assert "--disallowedTools" not in seen[0] and "--disallowedTools" in seen[1]
+                                     allowed_tools="mcp__poltergeist__poltergeist_search",
+                                     tool_allowlist_only=flag)))
+    assert "--tools" not in seen[0] and "--disallowedTools" not in seen[0]
+    assert "--tools" in seen[1] and "--disallowedTools" in seen[1]
+    assert ClaudeCli.supports_tool_allowlist is True

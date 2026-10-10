@@ -198,3 +198,20 @@ def test_chat_restricts_include_tools_to_the_allowed_list(monkeypatch, tmp_path:
     doc = json.loads((tmp_path / "run" / "gemini" / ".gemini" / "settings.json").read_text())
     assert doc["mcpServers"]["poltergeist"]["includeTools"] == [
         "poltergeist_search", "poltergeist_get_note", "poltergeist_write_doc"]
+
+
+def test_gemini_refuses_an_allowlist_only_turn(monkeypatch, tmp_path: Path):
+    """The CLI merges the user's own ~/.gemini settings (MCP servers,
+    extensions) into the workspace and runs with --approval-mode=yolo, so the
+    workspace alone cannot guarantee a vault-only toolset: refused, no spawn."""
+    def fake_stream(cmd, **kw):
+        raise AssertionError("spawned gemini for an allowlist-only turn")
+
+    monkeypatch.setattr(gm, "stream_subprocess", fake_stream)
+    monkeypatch.setattr(gm, "find_gemini_binary", lambda: "/g")
+    monkeypatch.setattr(gm, "read_gemini_auth", lambda: "oauth-personal")
+    monkeypatch.setattr(gm, "_run_root", lambda: tmp_path / "run")
+    assert gm.GeminiCli.supports_tool_allowlist is False
+    events = list(gm.GeminiCli(M).chat(base.ChatRequest(prompt="q", tier="fast", session_id=None,
+                                                        turn_key=None, tool_allowlist_only=True)))
+    assert [e["type"] for e in events] == ["error"]

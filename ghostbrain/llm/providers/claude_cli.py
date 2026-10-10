@@ -23,6 +23,7 @@ DEFAULT_MODELS: dict[str, str] = {"fast": "haiku", "balanced": "sonnet", "qualit
 
 class ClaudeCli:
     id = "claude"
+    supports_tool_allowlist = True
 
     def __init__(
         self,
@@ -117,7 +118,7 @@ class ClaudeCli:
             system_prompt=req.system_prompt,
             allowed_tools=req.allowed_tools,
             user_servers=user_servers,
-            no_builtin_tools=req.no_builtin_tools,
+            tool_allowlist_only=req.tool_allowlist_only,
         )
         log.info(
             "chat turn: resume=%s mcp=%s user_servers=%d",

@@ -77,6 +77,14 @@ class GenerateError(RuntimeError):
     """The model turn failed (provider error, empty answer)."""
 
 
+class ProviderCannotDraft(GenerateError):
+    """The configured provider cannot run a turn limited to the vault tools."""
+
+
+CANNOT_DRAFT_MESSAGE = ("AI templates need a provider that can run without tools: switch to claude "
+                        "or a local/OpenAI-compatible model in settings")
+
+
 class DraftInvalid(ValueError):
     """The draft failed validation twice; ``draft`` is offered to the user."""
 
@@ -321,11 +329,27 @@ def verify_exact(source: str, template: Template) -> None:
                                                "changed"),))
 
 
+def drafting_provider():
+    """The configured provider, if it can run an allowlist-only turn. Raises
+    ProviderCannotDraft, or GenerateError if there is no provider at all."""
+    from ghostbrain.llm.providers import get_provider
+    from ghostbrain.llm.providers.base import supports_tool_allowlist
+
+    try:
+        provider = get_provider()
+    except Exception as e:
+        log.warning("template generation: no provider: %r", e)
+        raise GenerateError(PROVIDER_FAILED) from e
+    if not supports_tool_allowlist(provider):
+        raise ProviderCannotDraft(CANNOT_DRAFT_MESSAGE)
+    return provider
+
+
 def run_turn(prompt: str, *, turn_key: str) -> str:
     """One read-only agent turn: no session, no user MCP servers, vault
-    search only. Any failure raises GenerateError."""
+    search only. Any failure raises GenerateError (ProviderCannotDraft when
+    the provider cannot limit the turn to that tool)."""
     from ghostbrain.llm.client import LLMError
-    from ghostbrain.llm.providers import get_provider
     from ghostbrain.llm.providers.base import ChatRequest, to_tier
 
     req = ChatRequest(
@@ -338,12 +362,13 @@ def run_turn(prompt: str, *, turn_key: str) -> str:
         history=None,
         timeout_s=GENERATE_TIMEOUT_S,
         allowed_tools=TEMPLATE_TOOLS,
-        no_builtin_tools=True,
+        tool_allowlist_only=True,
     )
+    provider = drafting_provider()
     deltas: list[str] = []
     final: str | None = None
     try:
-        for event in get_provider().chat(req):
+        for event in provider.chat(req):
             kind = event.get("type")
             if kind == "delta":
                 deltas.append(str(event.get("text") or ""))

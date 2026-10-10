@@ -155,6 +155,8 @@ def test_invalid_twice_raises_with_the_last_draft():
 
 
 class _Provider:
+    supports_tool_allowlist = True
+
     def __init__(self, events):
         self.events = events
         self.requests = []
@@ -175,7 +177,7 @@ def test_run_turn_is_read_only_and_uses_no_user_servers(monkeypatch):
     for tool in ("poltergeist_get_note", "poltergeist_write_doc", "poltergeist_ask"):
         assert tool not in req.allowed_tools
     assert req.system_prompt == system_prompt()
-    assert req.no_builtin_tools is True
+    assert req.tool_allowlist_only is True
 
 
 def test_run_turn_falls_back_to_deltas_and_reports_errors(monkeypatch):
@@ -1106,6 +1108,8 @@ def test_a_hit_only_whole_text_shows_is_located_at_line_1():
 
 
 class _Broken:
+    supports_tool_allowlist = True
+
     def chat(self, req):
         yield {"type": "delta", "text": "---"}
         raise OSError("connection reset")
@@ -1123,3 +1127,30 @@ def test_run_turn_turns_any_provider_failure_into_a_generate_error(monkeypatch):
     with pytest.raises(GenerateError) as e:
         run_turn("p", turn_key="k")
     assert str(e.value) == generate.PROVIDER_FAILED and "reset" not in str(e.value)
+
+
+
+class _NoAllowlist(_Provider):
+    supports_tool_allowlist = False
+
+
+def test_run_turn_refuses_a_provider_that_cannot_limit_its_tools(monkeypatch):
+    provider = _NoAllowlist([{"type": "done", "text": GOOD}])
+    monkeypatch.setattr("ghostbrain.llm.providers.get_provider", lambda cfg=None: provider)
+    with pytest.raises(generate.ProviderCannotDraft) as e:
+        run_turn("p", turn_key="k")
+    assert provider.requests == []
+    assert str(e.value) == generate.CANNOT_DRAFT_MESSAGE
+
+
+def test_the_refusal_names_exactly_the_providers_that_can_draft():
+    from ghostbrain.llm.providers.claude_cli import ClaudeCli
+    from ghostbrain.llm.providers.codex_cli import CodexCli
+    from ghostbrain.llm.providers.gemini_cli import GeminiCli
+    from ghostbrain.llm.providers.openai_http import OpenAiHttp
+
+    assert [c.id for c in (ClaudeCli, CodexCli, GeminiCli, OpenAiHttp) if c.supports_tool_allowlist] == [
+        "claude", "openai_http"]
+    assert generate.CANNOT_DRAFT_MESSAGE == (
+        "AI templates need a provider that can run without tools: switch to claude or a "
+        "local/OpenAI-compatible model in settings")

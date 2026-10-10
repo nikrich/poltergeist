@@ -213,15 +213,40 @@ def test_run_chat_turn_errors_when_mcp_binary_missing(monkeypatch):
     assert events == [{"type": "error", "message": MCP_BINARY_MISSING_MESSAGE}]
 
 
-def test_build_chat_command_can_disallow_every_builtin_tool():
-    plain = build_chat_command("/bin/claude", "hi", mcp_binary="/m")
-    assert "--disallowedTools" not in plain
-    cmd = build_chat_command("/bin/claude", "hi", mcp_binary="/m", no_builtin_tools=True)
-    i = cmd.index("--disallowedTools")
-    denied = cmd[i + 1].split(",")
+def test_default_chat_command_is_unchanged():
+    """Chat and docs-assist turns: the argv is exactly what it was before the
+    drafting allowlist existed."""
+    from ghostbrain.llm.agent import CHAT_BUDGET_USD, DEFAULT_CHAT_MODEL
+
+    assert build_chat_command("/bin/claude", "hi", mcp_binary="/m", allowed_tools="a,b") == [
+        "/bin/claude", "--print", "--output-format", "stream-json", "--include-partial-messages",
+        "--verbose", "--model", DEFAULT_CHAT_MODEL, "--system-prompt", CHAT_SYSTEM_PROMPT,
+        "--exclude-dynamic-system-prompt-sections", "--max-budget-usd", f"{CHAT_BUDGET_USD:.4f}",
+        "--mcp-config", json.dumps({"mcpServers": {"poltergeist": {"command": "/m"}}}),
+        "--strict-mcp-config", "--allowedTools", "a,b", "--", "hi",
+    ]
+
+
+def test_allowlist_only_command_exposes_nothing_but_the_allowed_vault_tools():
+    search = "mcp__poltergeist__poltergeist_search"
+    mem = {"name": "mem", "command": "npx", "args": ["mem"], "env": {}, "tools": ""}
+    cmd = build_chat_command("/bin/claude", "hi", mcp_binary="/m", allowed_tools=search,
+                             user_servers=[mem], tool_allowlist_only=True)
+    end = cmd.index("--")
+    assert cmd[end:] == ["--", "hi"]
+    head = cmd[:end]
+    i = head.index("--tools")
+    assert head[i + 1] == ""
+    assert head[head.index("--allowedTools") + 1] == search
+    assert json.loads(head[head.index("--mcp-config") + 1]) == {
+        "mcpServers": {"poltergeist": {"command": "/m"}}}  # user servers dropped
+    assert "--strict-mcp-config" in head
+    denied = head[head.index("--disallowedTools") + 1].split(",")
     for tool in ("Bash", "Read", "Glob", "Grep", "LS", "Edit", "MultiEdit", "Write", "NotebookEdit",
                  "NotebookRead", "WebFetch", "WebSearch", "Task", "TodoWrite", "BashOutput",
-                 "KillShell", "KillBash", "SlashCommand", "ExitPlanMode"):
+                 "KillShell", "KillBash", "SlashCommand", "ExitPlanMode",
+                 "mcp__poltergeist__poltergeist_get_note", "mcp__poltergeist__poltergeist_ask",
+                 "mcp__poltergeist__poltergeist_write_doc"):
         assert tool in denied
-    assert not any(t.startswith("mcp__") for t in denied)
-    assert i < cmd.index("--") and cmd[-2:] == ["--", "hi"]
+    assert search not in denied
+    assert head.count("--disallowedTools") == 1

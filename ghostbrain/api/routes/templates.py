@@ -33,8 +33,10 @@ from ghostbrain.templates.generate import (
     MAX_DESCRIPTION_CHARS,
     DraftInvalid,
     GenerateError,
+    ProviderCannotDraft,
     clean_description,
     draft_template,
+    drafting_provider,
 )
 from ghostbrain.templates.lang import MAX_TEMPLATE_CHARS
 from ghostbrain.templates.lint import lint
@@ -194,7 +196,10 @@ def generate_template(body: GenerateBody, actor: Actor = Depends(request_actor))
     except ProviderUnavailable as e:
         raise HTTPException(status_code=412, detail=str(e)) from e
     try:
+        drafting_provider()  # refuse before any turn on a provider that cannot limit its tools
         draft = draft_template(description)
+    except ProviderCannotDraft as e:
+        raise HTTPException(status_code=412, detail=str(e)) from e
     except GenerateError as e:
         raise HTTPException(status_code=502, detail=f"template generation failed — {e}") from e
     except DraftInvalid as e:

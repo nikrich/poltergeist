@@ -201,6 +201,9 @@ class CodexChatParser:
 
 class CodexCli:
     id = "codex"
+    # The config this adapter writes cannot switch off codex's shell, and the
+    # read-only sandbox still lets it read any file: allowlist-only refused.
+    supports_tool_allowlist = False
 
     def __init__(self, models: dict[str, str], binary: str | None = None) -> None:
         self._models = dict(models)
@@ -267,6 +270,9 @@ class CodexCli:
         return base.ProviderProbe(True, last_line, {"binary": b, "tiers": self.models()})
 
     def chat(self, req: base.ChatRequest) -> Iterator[dict]:
+        if req.tool_allowlist_only:
+            yield {"type": "error", "message": base.ALLOWLIST_REFUSED}
+            return
         b = self._binary or find_codex_binary()
         if b is None:
             yield {"type": "error", "message": "`codex` CLI not found; install it (`npm i -g @openai/codex`) and run `codex login`"}
@@ -303,23 +309,9 @@ class CodexCli:
                 return [{"type": "done", "text": "".join(text_parts), "session_id": session}]
             return [{"type": "error", "message": _error_message(err, f"codex exited {rc}: {err[-300:]}")}]
 
-        def _events(cwd: str | None) -> Iterator[dict]:
-            yield from stream_subprocess(cmd, timeout_s=req.timeout_s, turn_key=req.turn_key,
-                                         parse=parser.feed, on_exit=_on_exit,
-                                         env={"CODEX_HOME": str(home)}, stdin_text=stdin, cwd=cwd)
-
-        def _turn() -> Iterator[dict]:
-            if not req.no_builtin_tools:
-                yield from _events(None)
-                return
-            # codex has no config switch for its shell tool that this adapter
-            # knows of, so a no-built-in-tools turn starts in an empty scratch
-            # dir with the read-only sandbox. Residual risk: the shell can
-            # still read files by absolute path.
-            with tempfile.TemporaryDirectory(prefix="ghostbrain-codex-turn-") as d:
-                yield from _events(d)
-
-        for ev in _turn():
+        for ev in stream_subprocess(cmd, timeout_s=req.timeout_s, turn_key=req.turn_key, parse=parser.feed,
+                                    on_exit=_on_exit,
+                                    env={"CODEX_HOME": str(home)}, stdin_text=stdin):
             if ev["type"] == "session":
                 session = ev["session_id"]
             elif ev["type"] == "delta":

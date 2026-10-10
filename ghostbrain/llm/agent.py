@@ -198,12 +198,13 @@ def _user_allowed_tools(server: dict) -> list[str]:
     return [f"mcp__{server['name']}__{t}" for t in tools]
 
 
-# Every Claude Code built-in tool, denied for turns that must reach nothing
-# but the vault MCP tools (ChatRequest.no_builtin_tools).
+# The Claude Code built-ins known to read, run or fetch, denied on
+# allowlist-only turns (ChatRequest.tool_allowlist_only). The real guarantee
+# is `--tools ""` (no built-ins at all); this list is a second fence.
 BUILTIN_TOOLS = (
     "Bash", "BashOutput", "KillShell", "KillBash", "Read", "Glob", "Grep", "LS", "Edit", "MultiEdit",
     "Write", "NotebookEdit", "NotebookRead", "WebFetch", "WebSearch", "Task", "TodoWrite",
-    "SlashCommand", "ExitPlanMode",
+    "SlashCommand", "ExitPlanMode", "Skill",
 )
 
 
@@ -217,7 +218,7 @@ def build_chat_command(
     system_prompt: str | None = None,
     allowed_tools: str | None = None,
     user_servers: list[dict] | None = None,
-    no_builtin_tools: bool = False,
+    tool_allowlist_only: bool = False,
 ) -> list[str]:
     cmd = [
         binary,
@@ -237,6 +238,8 @@ def build_chat_command(
     # explicitly opted in (settings → mcp-servers.json) merge into the SAME
     # pinned config and are allowlisted; the vault server is set last so a user
     # server can never shadow it.
+    if tool_allowlist_only:
+        user_servers = None  # the vault tools in allowed_tools, nothing else
     servers: dict[str, dict] = {
         s["name"]: _user_server_config(s) for s in user_servers or []
     }
@@ -261,9 +264,14 @@ def build_chat_command(
     ]
     if grants:
         cmd += ["--allowedTools", ",".join(grants)]
-    if no_builtin_tools:
-        # --allowedTools only pre-approves; it does not remove the built-ins.
-        cmd += ["--disallowedTools", ",".join(BUILTIN_TOOLS)]
+    if tool_allowlist_only:
+        # --allowedTools only pre-approves; it does not remove anything.
+        # `--tools ""` turns every built-in off (a CLI without the flag exits
+        # non-zero, so the turn fails closed); the deny list also covers the
+        # vault tools outside the allowlist.
+        allowed = set((allowed_tools or ALLOWED_TOOLS).split(","))
+        other_vault = [t for t in TOOL_SUMMARIES if t.startswith("mcp__poltergeist__") and t not in allowed]
+        cmd += ["--tools", "", "--disallowedTools", ",".join([*BUILTIN_TOOLS, *other_vault])]
     if session_id:
         cmd += ["--resume", session_id]
     # `--` terminates option parsing — without it a variadic flag like

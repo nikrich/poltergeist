@@ -97,6 +97,8 @@ def test_model_failure_is_502(client, auth_headers, monkeypatch):
 
 
 class _Broken:
+    supports_tool_allowlist = True
+
     def chat(self, req):
         yield {"type": "delta", "text": "---"}
         raise OSError("connection reset")
@@ -198,3 +200,20 @@ def test_approving_the_change_on_the_changes_screen_makes_it_usable(client, auth
     assert (tmp_vault / body["path"]).read_text(encoding="utf-8") == GOOD
     names = [t["name"] for t in client.get("/v1/templates", headers=auth_headers).json()["templates"]]
     assert "Standup" in names
+
+
+class _CannotDraft:
+    supports_tool_allowlist = False
+
+    def chat(self, req):
+        raise AssertionError("a turn ran on a provider that cannot limit its tools")
+
+
+def test_a_provider_that_cannot_limit_its_tools_is_412(client, auth_headers, monkeypatch):
+    prompts = _model(monkeypatch, GOOD)
+    monkeypatch.setattr("ghostbrain.llm.providers.get_provider", lambda cfg=None: _CannotDraft())
+    r = _post(client, auth_headers)
+    assert r.status_code == 412
+    assert r.json()["detail"] == ("AI templates need a provider that can run without tools: switch to "
+                                  "claude or a local/OpenAI-compatible model in settings")
+    assert prompts == [] and change_log.list_changes() == []
