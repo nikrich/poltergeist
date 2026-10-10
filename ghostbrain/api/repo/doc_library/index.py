@@ -55,6 +55,12 @@ def unmark_active(doc_id: str) -> None:
     invalidate()
 
 
+def active_doc_ids() -> set[str]:
+    """A snapshot of the doc_ids whose extraction is running in this process."""
+    with _active_lock:
+        return set(_active)
+
+
 def _is_active(doc_id: str) -> bool:
     with _active_lock:
         return doc_id in _active

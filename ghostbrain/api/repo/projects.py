@@ -18,7 +18,7 @@ import yaml
 
 from ghostbrain import routing_config, vault_write
 from ghostbrain.paths import vault_path
-from ghostbrain.vault_write import USER
+from ghostbrain.vault_write import USER, WriteConflict, compute_etag
 
 log = logging.getLogger("ghostbrain.projects")
 
@@ -32,6 +32,11 @@ class UnknownContext(ValueError):
 
 class ProjectExists(ValueError):
     pass
+
+
+class ProjectBusy(Exception):
+    """A doc of the project is being indexed or summarised; renaming now would
+    pull its files out from under the background job."""
 
 
 def _registry_path() -> Path:
@@ -125,15 +130,18 @@ def update_project(
     return None
 
 
-_HIDDEN = re.compile(r"(^|/)\.")
-
-
 def _rel(p: Path) -> str:
     return p.relative_to(vault_path()).as_posix()
 
 
 def _front_project(path: Path) -> str | None:
     """The note's frontmatter ``project`` value, or None when unreadable."""
+    front = _front_matter(path)
+    return front.get("project") if front else None
+
+
+def _front_matter(path: Path) -> dict | None:
+    """The note's frontmatter mapping, or None when absent or unreadable."""
     try:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
@@ -147,7 +155,7 @@ def _front_project(path: Path) -> str | None:
         front = yaml.safe_load(text[4:end])
     except yaml.YAMLError:
         return None
-    return front.get("project") if isinstance(front, dict) else None
+    return front if isinstance(front, dict) else None
 
 
 def _link_pattern(context: str, slug: str) -> re.Pattern[str]:
@@ -160,31 +168,98 @@ def _link_pattern(context: str, slug: str) -> re.Pattern[str]:
 
 def _rmdir_tree_if_empty(d: Path) -> None:
     """Remove ``d`` and its subfolders, but only when no file is left anywhere in it."""
-    if not d.is_dir() or any(not p.is_dir() or p.is_symlink() for p in d.rglob("*")):
+    if not d.is_dir():
+        return
+    left = [p for p in d.rglob("*") if not p.is_dir() or p.is_symlink()]
+    if left:
+        log.warning("%d file(s) left in %s; keeping the folder", len(left), d)
         return
     for sub in sorted((p for p in d.rglob("*")), key=lambda p: len(p.parts), reverse=True):
         sub.rmdir()
     d.rmdir()
 
 
-def _move_note(src: Path, dst: Path, *, fields: dict | None, reason: str) -> Callable[[], None]:
+def _move_note(
+    src: Path, dst: Path, *, fields: dict | None, reason: str, etags: dict[str, str | None]
+) -> Callable[[], None]:
     """Move one note through vault_write (history follows it) and return its undo.
 
     The undo moves the file back and, if the move changed its bytes (project
     re-stamp, ``updated`` bump), restores the original bytes exactly."""
     src_rel, dst_rel = _rel(src), _rel(dst)
     original = src.read_bytes()
-    vault_write.write(src_rel, op="move", dest=dst_rel, fields=fields, actor=USER, reason=reason)
+    moved = vault_write.write(
+        src_rel, op="move", dest=dst_rel, fields=fields, actor=USER, reason=reason,
+        base_etag=compute_etag(original),
+    )
+    etags[dst_rel] = moved.etag
 
     def undo() -> None:
-        vault_write.write(dst_rel, op="move", dest=src_rel, actor=USER, reason=f"undo {reason}")
-        if src.read_bytes() != original:
-            vault_write.write(
-                src_rel, op="modify", content=original.decode("utf-8"), actor=USER,
-                reason=f"undo {reason}",
-            )
+        # base_etag = the last bytes the rename itself wrote there: a note edited
+        # since then stays where it is (the user's edit wins; the conflict is logged).
+        back = vault_write.write(
+            dst_rel, op="move", dest=src_rel, actor=USER, reason=f"undo {reason}",
+            base_etag=etags.get(dst_rel),
+        )
+        etags[src_rel] = back.etag
+        if back.etag != compute_etag(original):
+            _restore(src_rel, original, etags=etags, reason=f"undo {reason}")
 
     return undo
+
+
+def _restore(rel: str, original: bytes, *, etags: dict[str, str | None], reason: str) -> None:
+    """Put back a note's original bytes unless someone changed it since the
+    rename last wrote it (``etags[rel]``)."""
+    try:
+        res = vault_write.write(
+            rel, op="modify", content=original.decode("utf-8"), actor=USER, reason=reason,
+            base_etag=etags.get(rel),
+        )
+    except WriteConflict:
+        log.warning("not restoring %s: it was edited during the project rename", rel)
+        return
+    etags[rel] = res.etag
+
+
+def _iter_vault_notes(root: Path):
+    """Every ``.md`` (any case) under the vault, pruning dot-folders and dot-files
+    (.obsidian, .trash, writer temp files) and never following symlinks."""
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
+        for f in sorted(filenames):
+            if f.startswith(".") or not f.lower().endswith(".md"):
+                continue
+            p = Path(dirpath) / f
+            if p.is_symlink() or not p.is_file():
+                continue
+            yield p
+
+
+def _check_not_busy(old_dir: Path) -> None:
+    """Refuse when any doc of the project is being indexed or summarised.
+
+    Membership is the folder on disk (doc notes under ``old_dir``). An indexing
+    doc the library cannot place yet (an upload whose note is not written) has
+    an unknown project, so it blocks too — that window is milliseconds."""
+    from ghostbrain.api.repo.doc_library import ai_summary
+    from ghostbrain.api.repo.doc_library import index as library_index
+
+    project_ids: set[str] = set()
+    if old_dir.is_dir():
+        for note in old_dir.rglob("*"):
+            if note.suffix.lower() != ".md" or note.is_symlink() or not note.is_file():
+                continue
+            front = _front_matter(note)
+            doc_id = front.get("doc_id") if front else None
+            if isinstance(doc_id, str) and doc_id:
+                project_ids.add(doc_id)
+    active = library_index.active_doc_ids()
+    if active - set(library_index.all_docs()):
+        raise ProjectBusy("a doc upload is still being indexed")
+    for doc_id in project_ids:
+        if doc_id in active or ai_summary.is_summarising(doc_id):
+            raise ProjectBusy(f"doc {doc_id} is still being indexed or summarised")
 
 
 def rename_project(
@@ -204,9 +279,13 @@ def rename_project(
     to the project, and updates the registry last. Any failure undoes the
     completed steps in reverse and re-raises.
 
+    Notes edited concurrently keep the user's edit: link rewrites and rollback
+    restores carry a base etag and skip the note on WriteConflict.
+
     Returns the updated project, or None when it is unknown. Raises
-    ProjectExists when the new slug is taken (registry or folder on disk) and
-    ValueError for a blank name.
+    ProjectExists when the new slug is taken (registry or folder on disk),
+    ProjectBusy when a doc of the project is being indexed or summarised, and
+    ValueError for a name without letters or digits.
     """
     current = get_project(context, slug)
     if current is None:
@@ -217,8 +296,9 @@ def rename_project(
         raise ValueError("project name must not be blank")
     new_name = name.strip() if name is not None else current["name"]
     new_slug = make_slug(new_name) if name is not None else slug
-    if not new_slug:
-        raise ValueError("project name produces an empty slug")
+    if not new_slug or (name is not None and not re.search(r"[a-z0-9]", new_name.lower())):
+        # make_slug falls back to "untitled" for names with no a-z/0-9.
+        raise ValueError("project name must contain a letter or digit")
     if new_slug == slug:
         return update_project(context, slug, name=name, description=description, archived=archived)
 
@@ -227,10 +307,12 @@ def rename_project(
     new_dir = root / PROJECT_DIR_TEMPLATE.format(context=context, slug=new_slug)
     if get_project(context, new_slug) is not None or new_dir.exists() or new_dir.is_symlink():
         raise ProjectExists(f"{context}/{new_slug}")
+    _check_not_busy(old_dir)
 
     old_id, new_id = f"{context}/{slug}", f"{context}/{new_slug}"
     reason = f"rename project {slug} → {new_slug}"
     undo: list[Callable[[], None]] = []  # run in reverse on failure
+    etags: dict[str, str | None] = {}  # rel → etag of the last bytes this rename wrote there
     result: dict | None = None
     try:
         # 1. Move the folder's contents. Symlinks move as links (os.replace),
@@ -246,7 +328,7 @@ def rename_project(
             dst.parent.mkdir(parents=True, exist_ok=True)
             if not src.is_symlink() and src.suffix.lower() in vault_write.WRITABLE_SUFFIXES:
                 stamp = {"project": new_slug} if _front_project(src) == slug else None
-                undo.append(_move_note(src, dst, fields=stamp, reason=reason))
+                undo.append(_move_note(src, dst, fields=stamp, reason=reason, etags=etags))
             else:
                 os.replace(src, dst)
                 undo.append(lambda a=dst, b=src: os.replace(a, b))
@@ -255,20 +337,27 @@ def rename_project(
         #    the moved notes); dot-folders (.obsidian, .trash, …) are left alone.
         pattern = _link_pattern(context, slug)
         replacement = PROJECT_DIR_TEMPLATE.format(context=context, slug=new_slug)
-        for note in sorted(root.rglob("*.md")):
+        for note in _iter_vault_notes(root):
             rel = _rel(note)
-            if _HIDDEN.search(rel) or note.is_symlink() or not note.is_file():
-                continue
             try:
-                text = note.read_text(encoding="utf-8")
+                original = note.read_bytes()
+                text = original.decode("utf-8")
             except (OSError, UnicodeDecodeError):
                 continue
             updated = pattern.sub(replacement, text)
-            if updated != text:
-                original = note.read_bytes()
-                vault_write.write(rel, op="modify", content=updated, actor=USER, reason=reason)
-                undo.append(lambda r=rel, b=original: vault_write.write(
-                    r, op="modify", content=b.decode("utf-8"), actor=USER, reason=f"undo {reason}"))
+            if updated == text:
+                continue
+            try:
+                # base_etag = the bytes just read: an edit made in between wins.
+                wrote = vault_write.write(
+                    rel, op="modify", content=updated, actor=USER, reason=reason,
+                    base_etag=compute_etag(original),
+                )
+            except WriteConflict:
+                log.warning("skipped link rewrite in %s: it changed during the project rename", rel)
+                continue
+            etags[rel] = wrote.etag
+            undo.append(lambda r=rel, b=original: _restore(r, b, etags=etags, reason=f"undo {reason}"))
 
         # 3. Chats scoped to the project.
         from ghostbrain.api.repo import chat_store
@@ -303,7 +392,10 @@ def rename_project(
 
         library_index.invalidate()
 
-    _rmdir_tree_if_empty(old_dir)
+    try:
+        _rmdir_tree_if_empty(old_dir)  # keeps (and warns) if a writer filed into it meanwhile
+    except OSError:
+        log.exception("could not remove old project folder %s", old_dir)
     return result
 
 

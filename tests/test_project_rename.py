@@ -153,3 +153,183 @@ def test_unarchive_and_unknown(vault: Path):
     projects.update_project("work", "pay", archived=True)
     assert projects.rename_project("work", "pay", archived=False)["archived"] is False
     assert projects.rename_project("work", "ghost", name="X") is None
+
+
+# --- fix round 1 -------------------------------------------------------------
+
+
+def test_concurrent_edit_during_link_rewrite_wins(vault: Path, monkeypatch):
+    """A note edited between the rename's read and its write keeps the user's edit."""
+    racy = vault / "20-contexts/personal/racy.md"
+    calm = vault / "20-contexts/personal/calm.md"
+    _note(racy, {}, f"[[{OLD}/a.md]]")
+    _note(calm, {}, f"[[{OLD}/a.md]]")
+    real = projects.vault_write.write
+    raced = {"done": False}
+
+    def racing(rel, **kw):
+        if kw.get("op") == "modify" and rel.endswith("racy.md") and not raced["done"]:
+            raced["done"] = True
+            racy.write_text("user typed this meanwhile\n", encoding="utf-8")
+        return real(rel, **kw)
+
+    monkeypatch.setattr(projects.vault_write, "write", racing)
+    p = projects.rename_project("work", "paymnets", name="Payments")
+    assert p["slug"] == "payments"
+    assert raced["done"]
+    assert racy.read_text(encoding="utf-8") == "user typed this meanwhile\n"
+    assert f"[[{NEW}/a.md]]" in calm.read_text(encoding="utf-8")
+
+
+def test_rollback_does_not_clobber_edit_made_after_rewrite(vault: Path, monkeypatch):
+    """Undo of a link rewrite is skipped when the note changed after the rename wrote it."""
+    edited = vault / "20-contexts/personal/edited.md"
+    _note(edited, {}, f"[[{OLD}/a.md]]")
+    real_write = projects._write
+
+    def edit_then_fail(items):
+        edited.write_text("user edit after rewrite\n", encoding="utf-8")
+        raise OSError("registry write failed")
+
+    monkeypatch.setattr(projects, "_write", edit_then_fail)
+    with pytest.raises(OSError):
+        projects.rename_project("work", "paymnets", name="Payments")
+    monkeypatch.setattr(projects, "_write", real_write)
+    assert edited.read_text(encoding="utf-8") == "user edit after rewrite\n"
+    assert projects.get_project("work", "paymnets") is not None
+
+
+def test_prefix_siblings_are_not_rewritten(vault: Path):
+    projects.create_project("work", "Payments")
+    links = vault / "20-contexts/personal/links.md"
+    _note(links, {}, (
+        "[[20-contexts/work/projects/paymnets/a.md]] "
+        "[[20-contexts/work/projects/payments/b.md]] "
+        "[[20-contexts/work/projects/pay/c.md]] "
+        "[[20-contexts/work/projects/pay]]"
+    ))
+    projects.rename_project("work", "pay", name="Paid")
+    text = links.read_text(encoding="utf-8")
+    assert "[[20-contexts/work/projects/paymnets/a.md]]" in text
+    assert "[[20-contexts/work/projects/payments/b.md]]" in text
+    assert "[[20-contexts/work/projects/paid/c.md]]" in text
+    assert "[[20-contexts/work/projects/paid]]" in text
+    assert "projects/pay/" not in text and "projects/pay]" not in text
+
+
+def _doc(vault: Path, doc_id: str) -> None:
+    _note(vault / OLD / "docs" / f"spec-{doc_id[:6]}.md",
+          {"doc_id": doc_id, "source": "doc-library", "original": "Spec.pdf",
+           "project": "paymnets", "context": "work", "index_status": "ok"})
+    (vault / OLD / "docs" / "Spec.pdf").write_bytes(b"%PDF")
+
+
+def test_busy_while_doc_is_indexing(vault: Path):
+    from ghostbrain.api.repo.doc_library import index
+    _doc(vault, "bbbbbbbbbbbb")
+    index.mark_active("bbbbbbbbbbbb")
+    try:
+        with pytest.raises(projects.ProjectBusy):
+            projects.rename_project("work", "paymnets", name="Payments")
+    finally:
+        index.unmark_active("bbbbbbbbbbbb")
+    assert (vault / OLD / "docs" / "spec-bbbbbb.md").exists()
+    assert not (vault / NEW).exists()
+    assert projects.rename_project("work", "paymnets", name="Payments")["slug"] == "payments"
+
+
+def test_busy_while_upload_has_no_note_yet(vault: Path):
+    """An upload is marked active before its note exists — its project is unknown, so refuse."""
+    from ghostbrain.api.repo.doc_library import index
+    index.mark_active("cccccccccccc")
+    try:
+        with pytest.raises(projects.ProjectBusy):
+            projects.rename_project("work", "paymnets", name="Payments")
+    finally:
+        index.unmark_active("cccccccccccc")
+
+
+def test_busy_while_doc_is_summarising(vault: Path, monkeypatch):
+    from ghostbrain.api.repo.doc_library import ai_summary
+    _doc(vault, "dddddddddddd")
+    monkeypatch.setattr(ai_summary, "is_summarising", lambda doc_id: doc_id == "dddddddddddd")
+    with pytest.raises(projects.ProjectBusy) as exc:
+        projects.rename_project("work", "paymnets", name="Payments")
+    assert not isinstance(exc.value, projects.ProjectExists)
+    assert not (vault / NEW).exists()
+
+
+def test_busy_elsewhere_does_not_block(vault: Path, monkeypatch):
+    from ghostbrain.api.repo.doc_library import ai_summary
+    _note(vault / "20-contexts/work/projects/pay/docs/other-eeeeee.md",
+          {"doc_id": "eeeeeeeeeeee", "source": "doc-library", "original": "O.pdf",
+           "project": "pay", "context": "work", "index_status": "ok"})
+    (vault / "20-contexts/work/projects/pay/docs/O.pdf").write_bytes(b"%PDF")
+    monkeypatch.setattr(ai_summary, "is_summarising", lambda doc_id: doc_id == "eeeeeeeeeeee")
+    assert projects.rename_project("work", "paymnets", name="Payments")["slug"] == "payments"
+
+
+def test_file_left_in_old_dir_keeps_dir_and_succeeds(vault: Path, monkeypatch, caplog):
+    _note(vault / OLD / "a.md", {"project": "paymnets"})
+    real = projects.vault_write.write
+
+    def worker_files_late(rel, **kw):
+        out = real(rel, **kw)
+        if kw.get("op") == "move" and not (vault / OLD / "late.md").exists():
+            _note(vault / OLD / "late.md", {"project": "paymnets"})
+        return out
+
+    monkeypatch.setattr(projects.vault_write, "write", worker_files_late)
+    with caplog.at_level("WARNING", logger="ghostbrain.projects"):
+        p = projects.rename_project("work", "paymnets", name="Payments")
+    assert p["slug"] == "payments"
+    assert (vault / OLD / "late.md").exists()
+    assert (vault / NEW / "a.md").exists()
+    assert any("left in" in r.getMessage() for r in caplog.records)
+
+
+def test_old_dir_cleanup_error_does_not_fail_rename(vault: Path, monkeypatch):
+    def boom(d):
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(projects, "_rmdir_tree_if_empty", boom)
+    p = projects.rename_project("work", "paymnets", name="Payments")
+    assert p["slug"] == "payments"
+    assert projects.get_project("work", "payments") is not None
+
+
+@pytest.mark.parametrize("bad", ["!!!", "—", "  ...  "])
+def test_name_without_alphanumerics_is_rejected(vault: Path, bad: str):
+    with pytest.raises(ValueError):
+        projects.rename_project("work", "paymnets", name=bad)
+    assert projects.get_project("work", "paymnets")["name"] == "Paymnets"
+
+
+def test_link_scan_matches_uppercase_md_and_skips_dot_dirs(vault: Path):
+    upper = vault / "20-contexts/personal/UPPER.MD"
+    upper.parent.mkdir(parents=True, exist_ok=True)
+    upper.write_text(f"[[{OLD}/a.md]]\n", encoding="utf-8")
+    hidden = vault / ".obsidian/deep/x.md"
+    _note(hidden, {}, f"[[{OLD}/a.md]]")
+    projects.rename_project("work", "paymnets", name="Payments")
+    assert f"[[{NEW}/a.md]]" in upper.read_text(encoding="utf-8")
+    assert f"[[{OLD}/a.md]]" in hidden.read_text(encoding="utf-8")
+
+
+def test_rollback_moves_back_self_linked_note_without_trailing_newline(vault: Path, monkeypatch):
+    """Rollback restores the link rewrite first, then moves the note back — even when
+    the restore cannot be byte-identical (vault_write appends a final newline)."""
+    note = vault / OLD / "self.md"
+    note.parent.mkdir(parents=True, exist_ok=True)
+    note.write_text(f"---\nproject: paymnets\n---\n\n[[{OLD}/self.md]]", encoding="utf-8")
+
+    def boom(items):
+        raise OSError("registry write failed")
+
+    monkeypatch.setattr(projects, "_write", boom)
+    with pytest.raises(OSError):
+        projects.rename_project("work", "paymnets", name="Payments")
+    assert note.exists()
+    assert _front(note)["project"] == "paymnets"
+    assert f"[[{OLD}/self.md]]" in note.read_text(encoding="utf-8")
+    assert not (vault / NEW).exists()
