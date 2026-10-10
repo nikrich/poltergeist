@@ -16,10 +16,15 @@ interface Props {
   /** Vault-relative `.md` path of the note being viewed. */
   path: string;
   onOpen: (path: string) => void;
+  /** Controlled open state (A7 page byline). Omit both for the old behaviour. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
-export function BacklinksPanel({ path, onOpen }: Props) {
-  const [open, setOpen] = useState(true);
+export function BacklinksPanel({ path, onOpen, open: openProp, onOpenChange }: Props) {
+  const [ownOpen, setOwnOpen] = useState(true);
+  const open = openProp ?? ownOpen;
+  const setOpen = (next: boolean) => (onOpenChange ? onOpenChange(next) : setOwnOpen(next));
   const query = useBacklinks(path);
   const items = Array.isArray(query.data?.items) ? query.data.items : [];
   const indexing = query.data?.indexing === true;
@@ -30,7 +35,7 @@ export function BacklinksPanel({ path, onOpen }: Props) {
       <button
         type="button"
         aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => setOpen(!open)}
         className="flex w-full items-center gap-2 px-4 py-2 font-mono text-10 uppercase tracking-wide text-ink-3 hover:text-ink-1"
       >
         <Lucide name={open ? 'chevron-down' : 'chevron-right'} size={11} />
