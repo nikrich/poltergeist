@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { Editor } from '@tiptap/core';
-import { filterSlashItems, SLASH_ITEMS } from '../lib/editor/slash';
+import { filterSlashItems, slashItemsFor, SLASH_ITEMS } from '../lib/editor/slash';
 import { buildEditorExtensions } from '../lib/editor/extensions';
 import { onGb } from '../lib/editor/events';
-import { makeEditor, markdownOf } from './helpers/editor';
+import { makeEditor, markdownOf, textPos } from './helpers/editor';
 
 describe('filterSlashItems', () => {
   it('returns all items for empty query', () => {
@@ -73,5 +73,28 @@ describe('A1 slash items', () => {
     SLASH_ITEMS.find((i) => i.key === 'status')!.run(editor, { from: 1, to: 2 });
     expect(markdownOf(editor)).toBe('`status:To do/grey`');
     expect(spy).toHaveBeenCalledWith({ pos: 1 });
+  });
+});
+
+describe('slash items inside a table', () => {
+  const BLOCK_ONLY = ['info', 'note', 'tip', 'warning', 'expand', 'toc', 'diagram', 'divider', 'table'];
+
+  it('hides block-only items while the cursor is in a table cell', () => {
+    const editor = makeEditor('| a | b |\n| --- | --- |\n| alpha | 1 |');
+    editor.commands.setTextSelection(textPos(editor, 'alpha'));
+    const keys = slashItemsFor(editor, '').map((i) => i.key);
+    for (const k of BLOCK_ONLY) expect(keys).not.toContain(k);
+    for (const k of ['status', 'h1', 'h2', 'h3', 'bullet', 'task', 'quote', 'code', 'photo']) {
+      expect(keys).toContain(k);
+    }
+    expect(slashItemsFor(editor, 'panel')).toEqual([]);
+    expect(slashItemsFor(editor, 'stat').map((i) => i.key)).toEqual(['status']);
+  });
+
+  it('lists every item outside a table', () => {
+    const editor = makeEditor('plain\n\n| a |\n| --- |\n| 1 |');
+    editor.commands.setTextSelection(textPos(editor, 'plain'));
+    expect(slashItemsFor(editor, '').map((i) => i.key)).toEqual(SLASH_ITEMS.map((i) => i.key));
+    expect(slashItemsFor(editor, 'panel')).toEqual(filterSlashItems('panel'));
   });
 });
