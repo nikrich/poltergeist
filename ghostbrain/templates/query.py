@@ -10,15 +10,19 @@ as untrusted input.
 from __future__ import annotations
 
 import re
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date, timedelta
-from pathlib import PurePosixPath
+from datetime import UTC, date, datetime, timedelta
+from pathlib import Path, PurePosixPath
 from typing import Any, Literal
 
 from ghostbrain.templates.functions import QUERY_KEYS
 from ghostbrain.templates.lang import Placeholder, TemplateLimitError, tokenize
 from ghostbrain.templates.parse import Diagnostic
-from ghostbrain.vault_index.parse import normalize_target
+from ghostbrain.vault_index.links import LinkIndex, link_key
+from ghostbrain.vault_index.parse import SNIPPET_MAX, NoteEntry, normalize_target, split_frontmatter
+from ghostbrain.vault_write.etag import compute_etag
 
 MAX_QUERY_CHARS = 2_000
 MAX_QUERY_LINES = 40
@@ -38,6 +42,8 @@ _SINCE_REL_RE = re.compile(r"(\d{1,4})([dw])")
 _SORT_RE = re.compile(r"(created|updated)(?:[ \t]+(asc|desc))?")
 _STATUS_RE = re.compile(r"[a-z0-9_-]{1,32}")
 _LIMIT_RE = re.compile(r"\d{1,9}")
+_H1_RE = re.compile(r"#[ \t]+(.+?)[ \t#]*")
+_QUERY_FENCE_RE = re.compile(r"^```query[^\n]*\n.*?^```[ \t]*$", re.MULTILINE | re.DOTALL)
 
 SortField = Literal["created", "updated"]
 
@@ -205,3 +211,189 @@ def parse_query_block(text: str, *, today: date | None = None) -> tuple[Query | 
     if any(d.severity == "error" for d in diags):
         return None, diags
     return Query(**fields), diags
+
+
+@dataclass(frozen=True)
+class QueryRow:
+    path: str
+    title: str
+    context: str
+    status: str | None
+    created: str | None
+    snippet: str
+    etag: str | None
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "path": self.path, "title": self.title, "context": self.context, "status": self.status,
+            "created": self.created, "snippet": self.snippet, "etag": self.etag,
+        }
+
+
+@dataclass(frozen=True)
+class QueryRun:
+    rows: tuple[QueryRow, ...]
+    partial: bool
+
+
+@dataclass(frozen=True)
+class _Target:
+    page: str | None                  # the mentioned note's own path, if it exists
+    key: str                          # link_key of the resolved target
+    pattern: re.Pattern[str] | None   # whole-word names for the body-text fallback
+
+
+def _opt(value: Any) -> str | None:
+    return None if value is None or value == "" else str(value)
+
+
+def _timestamp(value: str | None, mtime_ns: int) -> float:
+    if value:
+        try:
+            parsed = datetime.fromisoformat(value.strip())  # 3.11+: accepts Z
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=UTC)
+            return parsed.timestamp()
+        except (ValueError, OverflowError, OSError):
+            pass
+    return mtime_ns / 1_000_000_000
+
+
+def _day(value: str | None, mtime_ns: int) -> date:
+    try:
+        return datetime.fromtimestamp(_timestamp(value, mtime_ns), tz=UTC).date()
+    except (ValueError, OverflowError, OSError):
+        return date.min
+
+
+def _matches_fields(q: Query, e: NoteEntry) -> bool:
+    if q.type is not None and q.type not in {(e.artifact_type or "").lower(), (e.type or "").lower()}:
+        return False
+    if q.context is not None and e.context.lower() != q.context:
+        return False
+    if q.tag is not None and q.tag not in {t.lower().lstrip("#") for t in (*e.tags, *e.hashtags)}:
+        return False
+    if q.status is not None:
+        status = (e.status or "").lower()
+        if q.status == "open":
+            if status in CLOSED_STATUSES:
+                return False
+        elif status != q.status:
+            return False
+    return q.since is None or _day(e.created, e.mtime_ns) >= q.since
+
+
+def _sort_key(e: NoteEntry, q: Query) -> tuple[float, str]:
+    ts = _timestamp(e.created if q.sort == "created" else e.updated, e.mtime_ns)
+    return (-ts if q.descending else ts, e.path)
+
+
+def _resolve_mention(mention: Mention, index: LinkIndex) -> _Target:
+    resolved = index.resolve(mention.target)
+    page = index.get(resolved)
+    names = {mention.name.strip()}
+    if page is not None:
+        names.add(page.title.strip())
+    usable = sorted((n for n in names if len(n) >= MIN_NAME_CHARS), key=len, reverse=True)
+    pattern = (
+        re.compile(r"(?<!\w)(?:" + "|".join(re.escape(n) for n in usable) + r")(?!\w)", re.IGNORECASE)
+        if usable else None
+    )
+    return _Target(page=resolved if page is not None else None, key=link_key(resolved), pattern=pattern)
+
+
+def _links_to(e: NoteEntry, target: _Target, index: LinkIndex) -> bool:
+    return any(link_key(index.resolve(link.target)) == target.key for link in e.links)
+
+
+def _read_bytes(root: Path, rel: str) -> bytes | None:
+    """Bytes of an indexed note; None if gone, unreadable or over MAX_NOTE_BYTES."""
+    try:
+        path = root / rel
+        if path.stat().st_size > MAX_NOTE_BYTES:
+            return None
+        return path.read_bytes()
+    except OSError:
+        return None
+
+
+def _body_text(root: Path, rel: str) -> str | None:
+    data = _read_bytes(root, rel)
+    if data is None:
+        return None
+    _, body = split_frontmatter(data.decode("utf-8", errors="replace"))
+    return _QUERY_FENCE_RE.sub("", body)
+
+
+def _first_heading(body: str) -> str | None:
+    for line in body.splitlines()[:50]:
+        m = _H1_RE.fullmatch(line.strip())
+        if m:
+            return m.group(1).strip()
+    return None
+
+
+def _first_line(body: str) -> str:
+    in_fence = False
+    for line in body.splitlines():
+        s = line.strip()
+        if s.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence or not s or s.startswith("#"):
+            continue
+        return s[:SNIPPET_MAX]
+    return ""
+
+
+def _row(root: Path, e: NoteEntry) -> QueryRow | None:
+    if not (root / e.path).is_file():
+        return None  # deleted since it was indexed
+    data = _read_bytes(root, e.path)
+    if data is None:  # too large (or vanished mid-read): index data only, no etag
+        return QueryRow(e.path, e.title, e.context, e.status, e.created, "", None)
+    meta, body = split_frontmatter(data.decode("utf-8", errors="replace"))
+    title = _opt(meta.get("title")) or _first_heading(body) or e.title
+    return QueryRow(
+        path=e.path, title=title, context=e.context, status=_opt(meta.get("status")),
+        created=e.created, snippet=_first_line(body), etag=compute_etag(data),
+    )
+
+
+def run_query(
+    query: Query,
+    index: LinkIndex,
+    *,
+    clock: Callable[[], float] = time.monotonic,
+    deadline_s: float = DEADLINE_S,
+    max_text_reads: int = MAX_TEXT_READS,
+) -> QueryRun:
+    """Filter → sort → (mentions) → first ``query.limit`` rows. Bounded:
+    body reads for the name fallback stop at ``max_text_reads`` or
+    ``deadline_s`` and the run reports ``partial``."""
+    started = clock()
+    candidates = [e for e in index.entries() if _matches_fields(query, e)]
+    candidates.sort(key=lambda e: _sort_key(e, query))
+    target = _resolve_mention(query.mentions, index) if query.mentions is not None else None
+    picked: list[NoteEntry] = []
+    reads = 0
+    partial = False
+    for entry in candidates:
+        if len(picked) >= query.limit:
+            break
+        if target is not None:
+            if entry.path == target.page:
+                continue
+            if not _links_to(entry, target, index):
+                if target.pattern is None:
+                    continue
+                if reads >= max_text_reads or clock() - started > deadline_s:
+                    partial = True
+                    break
+                reads += 1
+                body = _body_text(index.root, entry.path)
+                if body is None or not target.pattern.search(body):
+                    continue
+        picked.append(entry)
+    rows = tuple(row for row in (_row(index.root, e) for e in picked) if row is not None)
+    return QueryRun(rows=rows, partial=partial)

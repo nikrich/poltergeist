@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 
 import pytest
 
@@ -148,3 +148,211 @@ def test_rendered_one_on_one_starter_query_parses():
     q, diags = _parse(fences[0])
     assert diags == []
     assert q == Query(type="action_item", mentions=Mention("Alex.md", "Alex"), status="open")
+
+
+import os
+from pathlib import Path
+
+from ghostbrain.templates.query import QueryRow, QueryRun, run_query
+from ghostbrain.vault_index.links import LinkIndex
+from ghostbrain.vault_write.etag import compute_etag
+
+AI = "20-contexts/work/calendar/artifacts/action_items"
+PEOPLE = "30-cross-context/people"
+OLD_MTIME = 1_700_000_000  # 2023-11-14
+
+
+def _ts(y: int, m: int, d: int) -> int:
+    return int(datetime(y, m, d, tzinfo=UTC).timestamp())
+
+
+def _note(root: Path, rel: str, text: str, mtime: int = OLD_MTIME) -> Path:
+    p = root / rel
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(text, encoding="utf-8")
+    os.utime(p, (mtime, mtime))
+    return p
+
+
+def _item(title: str, *, created: str = "2026-10-01T09:00:00+00:00", status: str | None = None,
+          body: str = "") -> str:
+    """An action item shaped like worker/extractor.py writes them."""
+    lines = ["---", "type: artifact", "artifactType: action_item", f"created: '{created}'"]
+    if status is not None:
+        lines.append(f"status: {status}")
+    lines += ["---", "", f"# {title}", "", body or f"{title}.", ""]
+    return "\n".join(lines)
+
+
+def _index(root: Path) -> LinkIndex:
+    index = LinkIndex(root, refresh_interval=0)
+    index.refresh()
+    return index
+
+
+def _run(root: Path, text: str, **kw) -> QueryRun:
+    q, diags = parse_query_block(text, today=TODAY)
+    assert q is not None, diags
+    return run_query(q, _index(root), **kw)
+
+
+def _paths(run: QueryRun) -> list[str]:
+    return [r.path for r in run.rows]
+
+
+def test_type_matches_artifact_type_or_type(tmp_path):
+    _note(tmp_path, f"{AI}/a.md", _item("Send the budget"))
+    _note(tmp_path, "20-contexts/work/meetings/m.md", "---\ntype: meeting\n---\n# Planning\n")
+    _note(tmp_path, "20-contexts/work/d.md", "---\ntype: artifact\nartifactType: decision\n---\nx")
+    assert _paths(_run(tmp_path, "type: action_item")) == [f"{AI}/a.md"]
+    assert _paths(_run(tmp_path, "type: meeting")) == ["20-contexts/work/meetings/m.md"]
+    assert len(_run(tmp_path, "type: artifact").rows) == 2
+
+
+def test_open_includes_notes_without_status_and_excludes_done_or_closed(tmp_path):
+    _note(tmp_path, f"{AI}/none.md", _item("No status", created="2026-10-04"))
+    _note(tmp_path, f"{AI}/open.md", _item("Open", status="open", created="2026-10-03"))
+    _note(tmp_path, f"{AI}/done.md", _item("Done", status="Done", created="2026-10-02"))
+    _note(tmp_path, f"{AI}/closed.md", _item("Closed", status="closed", created="2026-10-01"))
+    _note(tmp_path, f"{AI}/blocked.md", _item("Blocked", status="blocked", created="2026-09-30"))
+    assert _paths(_run(tmp_path, "type: action_item\nstatus: open")) == [
+        f"{AI}/none.md", f"{AI}/open.md", f"{AI}/blocked.md",
+    ]
+    assert _paths(_run(tmp_path, "type: action_item\nstatus: done")) == [f"{AI}/done.md"]
+
+
+def test_context_and_tag(tmp_path):
+    _note(tmp_path, "20-contexts/work/a.md", "---\ntags: [Roadmap]\n---\nx")
+    _note(tmp_path, "20-contexts/personal/b.md", "plan #roadmap")
+    _note(tmp_path, "20-contexts/personal/c.md", "nothing")
+    assert sorted(_paths(_run(tmp_path, "tag: roadmap"))) == [
+        "20-contexts/personal/b.md", "20-contexts/work/a.md",
+    ]
+    assert sorted(_paths(_run(tmp_path, "context: personal"))) == [
+        "20-contexts/personal/b.md", "20-contexts/personal/c.md",
+    ]
+
+
+def _mention_vault(root: Path) -> None:
+    _note(root, f"{PEOPLE}/alex.md", "---\ntitle: Alex\n---\nperson page")
+    _note(root, f"{AI}/link.md", _item("Linked", created="2026-10-05",
+                                       body="ask [[30-cross-context/people/alex|@Alex]]"))
+    _note(root, f"{AI}/bare.md", _item("Bare link", created="2026-10-04", body="ask [[alex]]"))
+    _note(root, f"{AI}/text.md", _item("Text only", created="2026-10-03", body="Alex to send the numbers."))
+    _note(root, f"{AI}/longer.md", _item("Other name", created="2026-10-02", body="Alexander will check."))
+    _note(root, f"{AI}/fence.md", _item("Fence only", created="2026-10-01",
+                                        body="```query\nmentions: Alex\n```"))
+    _note(root, f"{AI}/nobody.md", _item("Nobody", created="2026-09-30"))
+
+
+def test_mentions_matches_links_then_body_text(tmp_path):
+    _mention_vault(tmp_path)
+    expected = [f"{AI}/link.md", f"{AI}/bare.md", f"{AI}/text.md"]
+    assert _paths(_run(tmp_path, 'type: action_item\nmentions: "[[30-cross-context/people/alex]]"')) == expected
+    assert _paths(_run(tmp_path, "type: action_item\nmentions: Alex")) == expected
+    assert _paths(_run(tmp_path, 'type: action_item\nmentions: "[[Alex]]"')) == expected
+
+
+def test_mentions_excludes_the_person_page_itself(tmp_path):
+    _note(tmp_path, f"{PEOPLE}/alex.md", "---\ntitle: Alex\n---\nAlex works on [[alex]]")
+    _note(tmp_path, "20-contexts/work/n.md", "met Alex today")
+    assert _paths(_run(tmp_path, "mentions: Alex")) == ["20-contexts/work/n.md"]
+
+
+def test_mentions_a_name_with_no_page_falls_back_to_text(tmp_path):
+    _note(tmp_path, f"{AI}/a.md", _item("Call", created="2026-10-02", body="Robin to call the vendor"))
+    _note(tmp_path, f"{AI}/b.md", _item("Ask", created="2026-10-01", body="ask [[Robin]] later"))
+    _note(tmp_path, f"{AI}/c.md", _item("Robinson", created="2026-09-30", body="Robinson owns it"))
+    assert _paths(_run(tmp_path, 'type: action_item\nmentions: "[[Robin]]"')) == [f"{AI}/a.md", f"{AI}/b.md"]
+
+
+def test_mentions_value_is_literal_not_a_pattern(tmp_path):
+    _note(tmp_path, "20-contexts/work/a.md", "abc and a.c")
+    _note(tmp_path, "20-contexts/work/b.md", "abc only")
+    assert _paths(_run(tmp_path, "mentions: a.c")) == ["20-contexts/work/a.md"]
+
+
+def test_since_uses_created_then_file_time(tmp_path):
+    _note(tmp_path, f"{AI}/new.md", _item("New", created="2026-10-08"))
+    _note(tmp_path, f"{AI}/old.md", _item("Old", created="2026-09-01"))
+    _note(tmp_path, "20-contexts/work/plain.md", "no frontmatter", mtime=_ts(2026, 10, 9))
+    _note(tmp_path, "20-contexts/work/stale.md", "no frontmatter", mtime=_ts(2026, 1, 1))
+    assert _paths(_run(tmp_path, "since: 7d")) == ["20-contexts/work/plain.md", f"{AI}/new.md"]
+
+
+def test_sort_orders_and_mixed_date_formats(tmp_path):
+    w = "20-contexts/work"
+    _note(tmp_path, f"{w}/a.md", "---\ncreated: 2026-10-02\nupdated: 2026-10-09T08:00:00Z\n---\na")
+    _note(tmp_path, f"{w}/b.md", "---\ncreated: 2026-10-03 10:00:00\n---\nb")
+    _note(tmp_path, f"{w}/c.md", "---\ncreated: 'not a date'\n---\nc", mtime=_ts(2026, 9, 1))
+    _note(tmp_path, f"{w}/d.md", "---\ncreated: '2026-10-01T23:00:00-05:00'\n---\nd")
+    assert _paths(_run(tmp_path, "context: work")) == [f"{w}/b.md", f"{w}/d.md", f"{w}/a.md", f"{w}/c.md"]
+    assert _paths(_run(tmp_path, "context: work\nsort: created asc")) == [
+        f"{w}/c.md", f"{w}/a.md", f"{w}/d.md", f"{w}/b.md",
+    ]
+    assert _paths(_run(tmp_path, "context: work\nsort: updated")) == [
+        f"{w}/a.md", f"{w}/c.md", f"{w}/b.md", f"{w}/d.md",
+    ]
+
+
+def test_limit_and_cap(tmp_path):
+    for i in range(130):
+        _note(tmp_path, f"20-contexts/work/n{i:03}.md", "x")
+    assert len(_run(tmp_path, "context: work").rows) == DEFAULT_LIMIT
+    run = _run(tmp_path, "context: work\nlimit: 500")
+    assert len(run.rows) == MAX_LIMIT
+    assert run.rows[0].path == "20-contexts/work/n000.md"  # equal times → path order
+
+
+def test_rows_carry_title_snippet_fresh_status_and_etag(tmp_path):
+    rel = f"{AI}/send-the-budget-1a2b3c4d.md"
+    p = _note(tmp_path, rel, _item("Send Alex the budget", body="Alex to review the numbers by Friday."))
+    _note(tmp_path, "20-contexts/work/titled.md",
+          "---\ntitle: Planning\ncreated: '2026-09-01'\n---\n# Ignored heading\n\nfirst line")
+    _note(tmp_path, "20-contexts/work/bare-stem.md", "```\ncode\n```\n\n## Sub\nprose here")
+    rows = {r.path: r for r in _run(tmp_path, "context: work").rows}
+    item = rows[rel]
+    assert item == QueryRow(
+        path=rel, title="Send Alex the budget", context="work", status=None,
+        created="2026-10-01T09:00:00+00:00", snippet="Alex to review the numbers by Friday.",
+        etag=compute_etag(p.read_bytes()),
+    )
+    assert item.to_json() == {
+        "path": rel, "title": "Send Alex the budget", "context": "work", "status": None,
+        "created": "2026-10-01T09:00:00+00:00", "snippet": "Alex to review the numbers by Friday.",
+        "etag": compute_etag(p.read_bytes()),
+    }
+    assert (rows["20-contexts/work/titled.md"].title, rows["20-contexts/work/titled.md"].snippet) == (
+        "Planning", "first line")
+    assert (rows["20-contexts/work/bare-stem.md"].title, rows["20-contexts/work/bare-stem.md"].snippet) == (
+        "bare-stem", "prose here")
+
+
+def test_row_status_and_etag_are_read_from_the_file_not_the_index(tmp_path):
+    p = _note(tmp_path, f"{AI}/a.md", _item("A"))
+    q, _ = parse_query_block("type: action_item", today=TODAY)
+    index = _index(tmp_path)
+    p.write_text(_item("A", status="done"), encoding="utf-8")  # changed after indexing
+    row = run_query(q, index).rows[0]
+    assert row.status == "done"
+    assert row.etag == compute_etag(p.read_bytes())
+
+
+def test_note_deleted_after_indexing_is_skipped(tmp_path):
+    gone = _note(tmp_path, f"{AI}/gone.md", _item("Gone", created="2026-10-02"))
+    _note(tmp_path, f"{AI}/kept.md", _item("Kept", created="2026-10-01"))
+    q, _ = parse_query_block("type: action_item", today=TODAY)
+    index = _index(tmp_path)
+    gone.unlink()
+    assert _paths(run_query(q, index)) == [f"{AI}/kept.md"]
+
+
+def test_text_scan_is_bounded_and_reports_partial(tmp_path):
+    for i in range(10):
+        _note(tmp_path, f"20-contexts/work/n{i}.md", "nothing here")
+    run = _run(tmp_path, "mentions: Alex", max_text_reads=3)
+    assert run.rows == () and run.partial is True
+    ticks = iter([0.0] + [5.0] * 20)
+    run = _run(tmp_path, "mentions: Alex", clock=lambda: next(ticks))
+    assert run.rows == () and run.partial is True
+    assert _run(tmp_path, "mentions: Alex").partial is False
