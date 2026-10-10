@@ -87,6 +87,11 @@ const FIXTURES: Record<string, string> = {
   'image with width and no alt': '![|320](90-meta/assets/jots/2026/06/abc-2.jpg)',
   'image alt with a non-width pipe': '![a|b](90-meta/assets/jots/2026/06/abc-3.jpg)',
   'image with width inside callout': '> [!info] T\n> ![a|240](90-meta/assets/x.jpg)',
+  'table with column alignment': '| left | centre | right |\n| :--- | :---: | ---: |\n| a | b | c |',
+  'headerless table (empty header row)': '|  |  |\n| --- | --- |\n| a | b |\n| c | d |',
+  'table cell with escaped pipe': '| a \\| b | c |\n| --- | --- |\n| 1 | 2 |',
+  'table cell with inline marks': '| **bold** | `code` |\n| --- | --- |\n| [x](https://e.com) | *it* |',
+  'table inside callout': '> [!info] T\n> | a | b |\n> | --- | --- |\n> | 1 | 2 |',
 };
 
 describe('markdown round-trip (serialize(deserialize(md)))', () => {

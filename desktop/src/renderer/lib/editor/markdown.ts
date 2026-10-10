@@ -18,12 +18,14 @@ function mdStorage(editor: Editor): MarkdownStorage {
 // punctuation INSIDE the [[...]] span. Intraword underscores, #hashtags and
 // bare pipes are not escaped by the serializer (verified) — no handling
 // needed outside wikilinks.
+// `\|` is deliberately NOT unescaped: inside a GFM table cell the table
+// serializer writes `[[note\|alias]]`, and unescaping it would split the cell.
 const ESCAPED_WIKILINK_RE = /\\\[\\\[(.+?)\\\]\\\]/g;
 
 export function restoreWikilinks(md: string): string {
   return md.replace(
     ESCAPED_WIKILINK_RE,
-    (_m, inner: string) => `[[${inner.replace(/\\([\\_*[\]|`~#])/g, '$1')}]]`,
+    (_m, inner: string) => `[[${inner.replace(/\\([\\_*[\]`~#])/g, '$1')}]]`,
   );
 }
 
