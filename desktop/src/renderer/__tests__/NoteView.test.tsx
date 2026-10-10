@@ -6,7 +6,7 @@ import type { EditorView } from '@tiptap/pm/view';
 import { NoteView } from '../components/NoteView';
 import { useNoteView } from '../stores/note-view';
 import { useSettings } from '../stores/settings';
-import { useFocusSurfaces } from '../lib/focus-mode';
+import { useFocusModeShortcuts, useFocusSurfaces } from '../lib/focus-mode';
 import type { Note } from '../../shared/api-types';
 
 const apiRequest = vi.fn();
@@ -326,4 +326,45 @@ describe('NoteView', () => {
     await waitFor(() => expect(useSettings.getState().focusMode).toBe(true));
     expect(await screen.findByTestId('focus-bar')).toBeInTheDocument();
   });
+});
+
+function FocusShortcuts() {
+  useFocusModeShortcuts();
+  return null;
+}
+
+describe('NoteView Esc precedence with the focus-mode shortcuts mounted', () => {
+  // App mounts the shortcut hook once, before any note opens (its listener
+  // runs first); the reverse order is covered too so neither order regresses.
+  it.each(['shortcuts first (App order)', 'viewer first'])(
+    'first Esc leaves focus mode, second Esc closes the viewer (%s)',
+    async (order) => {
+      apiRequest.mockResolvedValue({ ok: true, data: manualNote });
+      useSettings.setState({ focusMode: true });
+      if (order === 'viewer first') {
+        render(withQuery(<NoteView />));
+        act(() => useNoteView.getState().open(manualNote.path));
+        await screen.findByText('hand-written');
+        render(<FocusShortcuts />);
+      } else {
+        render(
+          withQuery(
+            <>
+              <FocusShortcuts />
+              <NoteView />
+            </>,
+          ),
+        );
+        act(() => useNoteView.getState().open(manualNote.path));
+        await screen.findByText('hand-written');
+      }
+
+      fireEvent.keyDown(window, { key: 'Escape' });
+      await waitFor(() => expect(useSettings.getState().focusMode).toBe(false));
+      expect(useNoteView.getState().path).toBe(manualNote.path);
+
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(useNoteView.getState().path).toBeNull();
+    },
+  );
 });
