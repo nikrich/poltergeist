@@ -174,6 +174,7 @@ def test_refresh_prunes_entries_for_moved_and_deleted_notes(vault: Path, index_d
     path that no longer exists (e.g. after a project rename, the moved note
     links to its own old path)."""
     import frontmatter
+
     from ghostbrain.semantic.index import load
     from ghostbrain.semantic.refresh import refresh
 
