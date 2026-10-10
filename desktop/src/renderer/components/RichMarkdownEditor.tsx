@@ -9,6 +9,7 @@ import { Btn } from './Btn';
 import { EditorToolbar } from './EditorToolbar';
 import { JotEditor } from './JotEditor';
 import { Lucide } from './Lucide';
+import { ReadAloudControls } from './ReadAloudControls';
 import { WebcamCaptureModal } from './WebcamCaptureModal';
 
 export interface EditorHandle {
@@ -419,6 +420,7 @@ export function RichMarkdownEditor({
             copy formatted
           </Btn>
         )}
+        {mode === 'rich' && editor && <ReadAloudControls editor={editor} />}
         <div className="ml-auto flex items-center gap-1 font-mono text-10 text-ink-3">
           <button
             type="button"
