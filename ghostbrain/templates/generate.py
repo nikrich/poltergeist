@@ -1,12 +1,14 @@
 """AI-drafted templates (spec C4).
 
 One agent turn through the configured LLM provider (``get_provider()``),
-with tools limited to reading the vault. The draft is untrusted: it must
-parse (C1), use only registry placeholders, carry no HTML or executable
-code, and render with sample answers to a folder inside the vault. An
-invalid draft gets exactly one repair turn; a second failure is reported
-with the draft and nothing is saved. A valid draft is saved by
-``ai_save.save_ai_template`` as a pending change for the user to approve.
+with tools limited to searching the vault. The draft is untrusted: it must
+parse (C1), use only registry placeholders, and carry nothing live (see
+``draft_rules``), both as written and as rendered, once with sample answers
+and once with every optional prompt left blank, to a folder inside the
+vault. An invalid draft gets exactly one repair turn; a second failure is
+reported with the draft and nothing is saved. A valid draft is saved by
+``ai_save.save_ai_template`` as a pending change for the user to approve,
+after ``verify_exact`` re-checks the exact text it writes.
 """
 from __future__ import annotations
 
@@ -16,11 +18,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from ghostbrain.templates import draft_rules
 from ghostbrain.templates.functions import registry_json
 from ghostbrain.templates.lang import Placeholder, TemplateLimitError, tokenize
 from ghostbrain.templates.parse import Diagnostic, Template, parse_template
 from ghostbrain.templates.render import (
     AnswerError,
+    RenderedNote,
     RenderEnv,
     RenderError,
     Scope,
@@ -30,15 +34,14 @@ from ghostbrain.templates.render import (
 )
 from ghostbrain.templates.starters import ONE_ON_ONE
 from ghostbrain.templates.values import ProjectValue
-from ghostbrain.vault_write import html_live
 
 MAX_DESCRIPTION_CHARS = 2_000
 MAX_DRAFT_CHARS = 20_000
 MAX_PROBLEMS = 20
 GENERATE_TIER = "balanced"
 GENERATE_TIMEOUT_S = 180
-TEMPLATE_TOOLS = "mcp__poltergeist__poltergeist_search,mcp__poltergeist__poltergeist_get_note"
-ALLOWED_FENCES = frozenset({"", "query", "mermaid", "text", "markdown", "md"})
+# Search only: its snippets are bounded, so little vault text reaches the draft.
+TEMPLATE_TOOLS = "mcp__poltergeist__poltergeist_search"
 
 SAMPLE_ENV = RenderEnv(
     now=datetime(2026, 1, 15, 9, 30, tzinfo=UTC),
@@ -55,20 +58,6 @@ _SAMPLE_BY_TYPE = {
     "project": "sample",
 }
 
-_FENCE_RE = re.compile(r" {0,3}(?:`{3,}|~{3,})[ \t]*([^\s`]*)")
-_HTML_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
-    (re.compile(r"<\s*(script|iframe|object|embed|style|link|meta|form)\b", re.IGNORECASE),
-     "HTML <{0}> tags are not allowed in a template"),
-    (re.compile(r"<[^>]*\son[a-z]+\s*=", re.IGNORECASE), "HTML event handlers (on…=) are not allowed"),
-    (re.compile(r"javascript\s*:", re.IGNORECASE), "javascript: links are not allowed"),
-)
-# Remote images load on view, so a {{placeholder}} in the URL would send
-# answers out. Inline ![…](url), and ![…][label] / ![label] via a definition.
-_REMOTE_URL = r"<?(?:https?:)?//"
-_REMOTE_IMAGE_RE = re.compile(r"!\[[^\]]*\]\(\s*" + _REMOTE_URL, re.IGNORECASE)
-_IMAGE_REF_RE = re.compile(r"!\[([^\]]*)\](?:\[([^\]]*)\])?(?!\()")
-_REMOTE_DEFINITION_RE = re.compile(r" {0,3}\[([^\]]+)\]:\s*" + _REMOTE_URL, re.IGNORECASE)
-_REMOTE_IMAGE_MESSAGE = "remote images are not allowed in a template"
 
 
 class GenerateError(RuntimeError):
@@ -130,9 +119,11 @@ def system_prompt() -> str:
         "Nothing else may appear inside {{ }}. There are no loops, conditions or expressions."),
         ("3. `template.file.folder` must be under 20-contexts/{{context}}/… and never under "
         "90-meta or 80-profile."),
-        "4. No HTML, no scripts, and no code blocks except ```query (live lists) and ```mermaid.",
-        ("5. You may search and read the user's notes to match how they structure similar notes. "
-        "Never copy private details from them into the template."),
+        ("4. No raw HTML tags at all (not even <b> or <!-- -->), no scripts, no images from "
+         "the web, no URLs built from placeholders, and no code blocks except ```query "
+         "(live lists) and ```mermaid (with no links or URLs)."),
+        ("5. You may search the user's notes to see how they structure similar notes; "
+         "never copy text from them."),
         "6. Keep it short: at most 4 prompts.",
         "",
         "Format reference (a complete, valid template):",
@@ -161,7 +152,7 @@ def repair_prompt(description: str, draft: str, problems: tuple[Diagnostic, ...]
 def extract_draft(text: str) -> str:
     """The template file inside a model answer: strips a fence wrapped around
     the whole answer and any chatter before the opening `---`."""
-    t = text.strip().replace("\r\n", "\n")
+    t = text.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n").strip()
     lines = t.split("\n")
     if len(lines) >= 2 and re.fullmatch(r"`{3,}\s*(markdown|md|yaml)?\s*", lines[0]) and lines[-1].strip() == "```":
         t = "\n".join(lines[1:-1]).strip()
@@ -179,81 +170,6 @@ def sample_answers(template: Template) -> dict[str, str]:
     }
 
 
-def _label(text: str) -> str:
-    return " ".join(text.split()).casefold()
-
-
-def _outside_fences(lines: list[str]) -> list[int]:
-    """Indices of the lines not inside a fenced code block."""
-    out: list[int] = []
-    fence = ""
-    for i, line in enumerate(lines):
-        m = re.match(r" {0,3}(`{3,}|~{3,})", line)
-        if fence:
-            if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence) \
-                    and not line[m.end():].strip():
-                fence = ""
-        elif m and not (m.group(1)[0] == "`" and "`" in line[m.end():]):
-            fence = m.group(1)
-        else:
-            out.append(i)
-    return out
-
-
-def _raw_html(lines: list[str], outside: list[int], flagged: set[int]) -> list[Diagnostic]:
-    """Raw HTML that B3's markdown reader finds live, located best-effort
-    to the lines outside fences that look like HTML."""
-    if not html_live.markdown_findings(None, lines, list(range(len(lines))), {}):
-        return []
-    located = []
-    for i in outside:
-        line = lines[i]
-        m = html_live.RAW_TAG_RE.search(line) or html_live.HANDLER_RE.search(line)
-        if m or html_live.js_url(line):
-            located.append((i + 1, m.start() + 1 if m else 1))
-    if not located and flagged:
-        return []
-    return [Diagnostic(n, col, "error", "raw HTML is not allowed in a template", "forbidden")
-            for n, col in located or [(1, 1)] if n not in flagged]
-
-
-def _remote_images(lines: list[str], outside: list[int]) -> list[Diagnostic]:
-    remote = {_label(m.group(1)) for i in outside
-              if (m := _REMOTE_DEFINITION_RE.match(lines[i]))}
-    out = []
-    for i in outside:
-        line = lines[i]
-        m = _REMOTE_IMAGE_RE.search(line)
-        if m is None and remote:
-            m = next((r for r in _IMAGE_REF_RE.finditer(line)
-                      if _label(r.group(2) or r.group(1)) in remote), None)
-        if m:
-            out.append(Diagnostic(i + 1, m.start() + 1, "error", _REMOTE_IMAGE_MESSAGE, "forbidden"))
-    return out
-
-
-def _forbidden_content(draft: str) -> list[Diagnostic]:
-    out: list[Diagnostic] = []
-    html_lines: set[int] = set()
-    lines = draft.split("\n")
-    for n, line in enumerate(lines, start=1):
-        for pattern, message in _HTML_RULES:
-            m = pattern.search(line)
-            if m:
-                html_lines.add(n)
-                out.append(Diagnostic(n, m.start() + 1, "error",
-                                      message.format(*(g.lower() for g in m.groups())), "forbidden"))
-        fence = _FENCE_RE.match(line)
-        if fence and fence.group(1).lower() not in ALLOWED_FENCES:
-            out.append(Diagnostic(n, 1, "error",
-                                  f"```{fence.group(1)} code blocks are not allowed in a template",
-                                  "forbidden"))
-    outside = _outside_fences(lines)
-    out += _raw_html(lines, outside, html_lines)
-    out += _remote_images(lines, outside)
-    return out
-
-
 def _unknown_placeholders(draft: str, template: Template) -> list[Diagnostic]:
     base = scope_for(template, sample_answers(template), SAMPLE_ENV)
     scope = Scope({**base, "title": "Sample"}, {**base.types, "title": "text"})
@@ -269,6 +185,45 @@ def _unknown_placeholders(draft: str, template: Template) -> list[Diagnostic]:
     return out
 
 
+def blank_answers(template: Template) -> dict[str, str]:
+    """Sample answers with every optional prompt (and every prompt with a
+    default) left blank, so ``default`` filters and prompt defaults render."""
+    return {
+        p.id: "" if p.optional or p.default is not None else answer
+        for p, answer in zip(template.prompts, sample_answers(template).values(), strict=True)
+    }
+
+
+def _rendered_problems(draft: str, template: Template) -> list[Diagnostic]:
+    """The content rules over each note the template renders: body,
+    frontmatter, title, folder and filename. Body problems are mapped back to
+    the template's body lines; the rest are reported on line 1."""
+    out: list[Diagnostic] = []
+    static = draft_rules.urls(draft)
+    render_errors: set[str] = set()
+    checked: set[str] = set()
+    for answers in (sample_answers(template), blank_answers(template)):
+        try:
+            note: RenderedNote = render(template, answers, SAMPLE_ENV)
+        except (AnswerError, RenderError) as e:
+            if str(e) not in render_errors:
+                render_errors.add(str(e))
+                out.append(Diagnostic(1, 1, "error", f"the template does not render: {e}", "render"))
+            continue
+        full = note.markdown()
+        head = full[: len(full) - len(note.body)]
+        for text, offset in ((note.body, template.body_line - 1), (head, None)):
+            if text in checked:
+                continue
+            checked.add(text)
+            for d in (*draft_rules.content_problems(text),
+                      *draft_rules.dynamic_url_problems(text, static)):
+                line = 1 if offset is None else d.line + offset
+                out.append(Diagnostic(line, d.col, d.severity,
+                                      f"in the note it creates: {d.message}", d.code))
+    return out
+
+
 def check_draft(draft: str, template_id: str = "draft") -> DraftCheck:
     """Everything wrong with a draft, as line-numbered problems."""
     if len(draft) > MAX_DRAFT_CHARS:
@@ -276,22 +231,41 @@ def check_draft(draft: str, template_id: str = "draft") -> DraftCheck:
                                             f"the template is longer than {MAX_DRAFT_CHARS} characters",
                                             "too-long"),))
     parsed = parse_template(draft, template_id)
-    problems = [d for d in parsed.diagnostics if d.severity == "error"]
-    problems += _forbidden_content(draft)
+    problems = draft_rules.control_problems(draft)
+    problems += [d for d in parsed.diagnostics if d.severity == "error"]
+    problems += draft_rules.content_problems(draft)
+    problems += draft_rules.literal_problems(draft)
     template = parsed.template
     if template is not None:
+        problems += draft_rules.structure_problems(draft)
+        problems += draft_rules.prompt_value_problems(template, draft.split("\n"))
         problems += _unknown_placeholders(draft, template)
-        try:
-            render(template, sample_answers(template), SAMPLE_ENV)
-        except (AnswerError, RenderError) as e:
-            problems.append(Diagnostic(1, 1, "error", f"the template does not render: {e}", "render"))
+        # A rendered problem on a line the source already flags adds nothing.
+        located = {(d.line, d.code) for d in problems}
+        for d in _rendered_problems(draft, template):
+            if (d.line, d.code) not in located:
+                located.add((d.line, d.code))
+                problems.append(d)
     problems.sort(key=lambda d: (d.line, d.col))
     return DraftCheck(template, tuple(problems[:MAX_PROBLEMS]))
 
 
+def verify_exact(source: str, template: Template) -> None:
+    """Re-check the exact text about to be written. Raises DraftInvalid if it
+    has any problem or parses to anything but the template that was
+    validated (``ai_save`` calls this right before its verbatim write)."""
+    check = check_draft(source, template.id)
+    if not check.ok:
+        raise DraftInvalid(source, check.problems)
+    if check.template != template:
+        raise DraftInvalid(source, (Diagnostic(1, 1, "error",
+                                               "the template changed after it was checked",
+                                               "changed"),))
+
+
 def run_turn(prompt: str, *, turn_key: str) -> str:
     """One read-only agent turn: no session, no user MCP servers, vault
-    search and read only."""
+    search only."""
     from ghostbrain.llm.client import LLMError
     from ghostbrain.llm.providers import get_provider
     from ghostbrain.llm.providers.base import ChatRequest, to_tier

