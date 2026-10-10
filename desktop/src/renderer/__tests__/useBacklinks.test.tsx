@@ -2,7 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { useBacklinks, useCreateJot, useUpdateJot, useUpdateNoteByPath } from '../lib/api/hooks';
+import {
+  useBacklinks,
+  useCreateJot,
+  useDeleteJot,
+  useExtractPhoto,
+  useRouteJot,
+  useUpdateJot,
+  useUpdateNoteByPath,
+} from '../lib/api/hooks';
 
 const request = vi.fn();
 beforeEach(() => {
@@ -59,5 +67,29 @@ describe('saves invalidate backlinks', () => {
     const u = renderHook(() => useUpdateJot(), { wrapper: update.w });
     await u.result.current.mutateAsync({ id: 'manual-1', body: 'y' });
     expect(backlinksInvalidated(update.spy)).toBe(true);
+  });
+
+  it('after a jot re-route', async () => {
+    request.mockResolvedValue({ ok: true, data: { id: 'manual-1', path: 'b.md', context: 'work' } });
+    const { spy, w } = spyClient();
+    const { result } = renderHook(() => useRouteJot(), { wrapper: w });
+    await result.current.mutateAsync({ id: 'manual-1', context: 'work' });
+    expect(backlinksInvalidated(spy)).toBe(true);
+  });
+
+  it('after a jot delete', async () => {
+    request.mockResolvedValue({ ok: true, data: null });
+    const { spy, w } = spyClient();
+    const { result } = renderHook(() => useDeleteJot(), { wrapper: w });
+    await result.current.mutateAsync('manual-1');
+    expect(backlinksInvalidated(spy)).toBe(true);
+  });
+
+  it('after a photo extract', async () => {
+    request.mockResolvedValue({ ok: true, data: { id: 'manual-1', path: 'a.md', body: 'x', extracted: true } });
+    const { spy, w } = spyClient();
+    const { result } = renderHook(() => useExtractPhoto(), { wrapper: w });
+    await result.current.mutateAsync({ jotId: 'manual-1', assetPath: 'assets/a.png' });
+    expect(backlinksInvalidated(spy)).toBe(true);
   });
 });
