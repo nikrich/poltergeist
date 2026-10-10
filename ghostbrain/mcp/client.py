@@ -13,6 +13,9 @@ NOT_RUNNING_MESSAGE = "Poltergeist isn't running — open the Poltergeist app to
 # answer can take ~5-15s on sonnet; allow generous headroom.
 DEFAULT_TIMEOUT = 60.0
 
+# Spec B §2: every vault write the agent makes is attributed to the MCP actor.
+ACTOR_HEADER = "X-Poltergeist-Actor"
+
 
 class SidecarNotRunning(RuntimeError):
     """Raised when no live sidecar can be reached."""
@@ -27,9 +30,11 @@ class SidecarClient:
         loader: Callable[[], dict | None] = load_descriptor,
         http_client: httpx.Client | None = None,
         timeout: float = DEFAULT_TIMEOUT,
+        actor: str = "mcp",
     ) -> None:
         self._loader = loader
         self._http = http_client or httpx.Client(timeout=timeout)
+        self._actor = actor
 
     def close(self) -> None:
         """Release the underlying HTTP connection pool. Callers that build a
@@ -43,7 +48,7 @@ class SidecarClient:
         if not descriptor:
             raise SidecarNotRunning(NOT_RUNNING_MESSAGE)
         url = f"http://127.0.0.1:{descriptor['port']}{path}"
-        headers = {"Authorization": f"Bearer {descriptor['token']}"}
+        headers = {"Authorization": f"Bearer {descriptor['token']}", ACTOR_HEADER: self._actor}
         try:
             resp = self._http.request(method, url, headers=headers, **kwargs)
         except httpx.ConnectError as e:

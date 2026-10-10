@@ -66,3 +66,30 @@ def test_connection_refused_raises_not_running():
 
     with pytest.raises(SidecarNotRunning):
         _client(handler, DESCRIPTOR).search("x", limit=1)
+
+
+def test_every_request_carries_the_mcp_actor_header():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["actor"] = request.headers.get("x-poltergeist-actor")
+        return httpx.Response(200, json={"path": "p.html", "title": "t"})
+
+    _client(handler, DESCRIPTOR).write_doc("t", "<p>x</p>")
+    assert seen["actor"] == "mcp"
+
+
+def test_the_actor_can_be_set_per_client():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["actor"] = request.headers.get("x-poltergeist-actor")
+        return httpx.Response(200, json={"items": [], "total": 0, "query": "x"})
+
+    client = SidecarClient(
+        loader=lambda: DESCRIPTOR,
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        actor="assistant",
+    )
+    client.search("x")
+    assert seen["actor"] == "assistant"
