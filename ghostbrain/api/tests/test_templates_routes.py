@@ -37,6 +37,9 @@ def test_functions_registry(client, auth_headers):
     data = client.get("/v1/templates/functions", headers=auth_headers).json()
     assert {f["name"] for f in data["filters"]} == {"format", "slug", "upper", "lower", "default"}
     assert any(f["owner"] == "person" and f["name"] == "link" for f in data["fields"])
+    assert [k["name"] for k in data["queryKeys"]] == [
+        "type", "context", "tag", "mentions", "status", "since", "sort", "limit",
+    ]
 
 
 def test_create_one_on_one(client, auth_headers, tmp_vault):
