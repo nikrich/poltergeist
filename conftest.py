@@ -70,5 +70,8 @@ def _no_real_whisper_server(monkeypatch: pytest.MonkeyPatch) -> None:
     from ghostbrain.recorder import live, whisper_server
 
     monkeypatch.setattr(whisper_server, "BINARY", "ghostbrain-test-no-whisper-server")
+    # Nor start a design session for every recording a test begins; design
+    # tests drive the listener explicitly.
+    monkeypatch.setattr(live, "_on_begin", [])
     yield
     live.stop_all()

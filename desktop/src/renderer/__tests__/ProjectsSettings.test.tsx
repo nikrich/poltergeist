@@ -7,6 +7,7 @@ import * as client from '../lib/api/client';
 import { useUpdateProject } from '../lib/api/hooks';
 import { ProjectsSettings } from '../screens/settings';
 import type { Project } from '../../shared/api-types';
+import type { DesignPack } from '../../shared/design-types';
 
 const projects: Project[] = [
   {
@@ -38,6 +39,8 @@ const projects: Project[] = [
   },
 ];
 
+let designPacks: DesignPack[] = [];
+
 vi.mock('../lib/api/client', () => ({
   get: vi.fn(),
   post: vi.fn(),
@@ -49,7 +52,9 @@ function renderSection() {
   vi.mocked(client.get).mockImplementation(((path: string) =>
     path === '/v1/vault/contexts'
       ? Promise.resolve({ contexts: ['work', 'consulting', 'side-project', 'personal'] })
-      : Promise.resolve(projects)) as never);
+      : path === '/v1/design/packs'
+        ? Promise.resolve(designPacks)
+        : Promise.resolve(projects)) as never);
   vi.mocked(client.post).mockResolvedValue(projects[0] as never);
   vi.mocked(client.patch).mockResolvedValue(projects[0] as never);
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -62,6 +67,7 @@ function renderSection() {
 
 describe('ProjectsSettings', () => {
   beforeEach(() => {
+    designPacks = [];
     vi.clearAllMocks();
     useToasts.setState({ toasts: [] });
   });
@@ -243,5 +249,21 @@ describe('useUpdateProject', () => {
     const keys = spy.mock.calls.map(([f]) => JSON.stringify(f?.queryKey));
     expect(keys).toContain('["note-history"]');
     expect(keys).toContain('["projects"]');
+  });
+
+  it('sets a per-project design system', async () => {
+    designPacks = [
+      { id: 'poltergeist-neutral', name: 'Neutral', source: 'builtin', imported_at: null, builtin: true },
+      { id: 'acme', name: 'Acme DS', source: 'https://acme.design', imported_at: '2026-10-01', builtin: false },
+    ];
+    renderSection();
+    const select = await screen.findByLabelText('design system work/paymnets');
+    await screen.findAllByRole('option', { name: 'Acme DS' });
+    fireEvent.change(select, { target: { value: 'acme' } });
+    await waitFor(() =>
+      expect(vi.mocked(client.patch)).toHaveBeenCalledWith('/v1/projects/work/paymnets', {
+        design_system: 'acme',
+      }),
+    );
   });
 });

@@ -73,6 +73,18 @@ const stubBridge: GbBridge = {
     levelsSubscribe: () => new Promise(() => {}),
     levelsUnsubscribe: async () => ({ ok: true }),
   },
+  design: {
+    // An open stream that never sends anything; tests drive events themselves.
+    liveSubscribe: () => new Promise(() => {}),
+    liveUnsubscribe: async () => ({ ok: true }),
+    build: async (_dir: string, rev: number) => ({ ok: true as const, rev, url: `gbproto://prototype/index.html?rev=${rev}` }),
+    openPopout: async () => ({ ok: true }),
+    devserver: {
+      ensure: async () => ({ ok: true as const, url: 'http://127.0.0.1:5555/', errors: [] }),
+      release: async () => ({ ok: true as const }),
+    },
+    openPath: async () => ({ ok: true }),
+  },
   chat: {
     send: async () => ({ ok: true }),
     stop: async () => ({ ok: true }),

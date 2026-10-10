@@ -36,6 +36,23 @@ class ProjectExists(ValueError):
     pass
 
 
+class UnknownDesignSystem(ValueError):
+    pass
+
+
+# Default for update/rename's ``design_system``: leave it as is (None clears it).
+UNSET = object()
+
+
+def _check_design_system(design_system) -> None:
+    if design_system is UNSET or design_system is None:
+        return
+    from ghostbrain.design import packs  # function-level: keeps registry imports light
+
+    if packs.get_pack(design_system) is None:
+        raise UnknownDesignSystem(f"unknown design system: {design_system!r}")
+
+
 class ProjectBusy(Exception):
     """A doc of the project is being indexed or summarised; renaming now would
     pull its files out from under the background job."""
@@ -142,7 +159,9 @@ def update_project(
     name: str | None = None,
     description: str | None = None,
     archived: bool | None = None,
+    design_system: str | None | object = UNSET,
 ) -> dict | None:
+    _check_design_system(design_system)
     items = _read()
     for p in items:
         if p["context"] == context and p["slug"] == slug:
@@ -152,6 +171,8 @@ def update_project(
                 p["description"] = description.strip()
             if archived is not None:
                 p["archived"] = bool(archived)
+            if design_system is not UNSET:
+                p["design_system"] = design_system
             _write(items)
             return p
     return None
@@ -318,6 +339,7 @@ def rename_project(
     name: str | None = None,
     description: str | None = None,
     archived: bool | None = None,
+    design_system: str | None | object = UNSET,
 ) -> dict | None:
     """Edit a project; a name whose slug differs is a full rename.
 
@@ -343,6 +365,7 @@ def rename_project(
     current = get_project(context, slug)
     if current is None:
         return None
+    _check_design_system(design_system)
     from ghostbrain.api.repo.notes_manual import make_slug  # function-level: import cycle
 
     if name is not None and not name.strip():
@@ -353,7 +376,10 @@ def rename_project(
         # make_slug falls back to "untitled" for names with no a-z/0-9.
         raise ValueError("project name must contain a letter or digit")
     if new_slug == slug:
-        return update_project(context, slug, name=name, description=description, archived=archived)
+        return update_project(
+            context, slug, name=name, description=description, archived=archived,
+            design_system=design_system,
+        )
 
     root = vault_path()
     old_dir = root / PROJECT_DIR_TEMPLATE.format(context=context, slug=slug)
@@ -433,6 +459,8 @@ def rename_project(
                     p["description"] = description.strip()
                 if archived is not None:
                     p["archived"] = bool(archived)
+                if design_system is not UNSET:
+                    p["design_system"] = design_system
                 result = dict(p)
         if result is None:
             raise LookupError(f"project {old_id} vanished from the registry mid-rename")

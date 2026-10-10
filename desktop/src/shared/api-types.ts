@@ -603,6 +603,8 @@ export interface Project {
   description: string;
   archived: boolean;
   created_at: number;
+  /** Design-system pack id for live design sessions; null = the default. */
+  design_system?: string | null;
 }
 
 export interface CreateProjectRequest {
@@ -615,6 +617,8 @@ export interface UpdateProjectRequest {
   name?: string;
   description?: string;
   archived?: boolean;
+  /** null clears it back to the default pack. */
+  design_system?: string | null;
 }
 
 export interface ChatExportResponse {

@@ -33,6 +33,8 @@ export interface NavigationGuardOptions {
 
 export interface NavigationGuardDeps {
   openExternal: (url: string) => Promise<unknown> | unknown;
+  /** True for the origin of a worktree dev server main is running. */
+  isKnownDevServer?: (origin: string) => boolean;
 }
 
 function parse(url: string): URL | null {
@@ -77,6 +79,58 @@ export function isAppUrl(url: string, opts: NavigationGuardOptions): boolean {
   return false;
 }
 
+/** Origin of a worktree dev server URL (`http://127.0.0.1:<port>` or
+ *  `http://localhost:<port>`), else null. */
+export function devServerOrigin(url: string): string | null {
+  const u = parse(url);
+  if (!u || u.protocol !== 'http:') return null;
+  return u.hostname === '127.0.0.1' || u.hostname === 'localhost' ? u.origin : null;
+}
+
+/** Subframe rule for live-design frames: prototypes (gbproto:) stay on
+ *  gbproto:, worktree dev-server frames stay on their own origin. Null when
+ *  the frame is neither (no opinion). */
+function frameMayGo(from: string, to: string): boolean | null {
+  // No about:blank: once blank, the frame would no longer be recognisable as
+  // a prototype and could go anywhere next.
+  if (from.startsWith('gbproto:')) return to.startsWith('gbproto:');
+  const origin = devServerOrigin(from);
+  if (origin) return devServerOrigin(to) === origin;
+  return null;
+}
+
+/** Prototype / dev-server content: its popups are dropped, never opened. */
+function isPrototypeUrl(url: string): boolean {
+  return url.startsWith('gbproto:') || devServerOrigin(url) !== null;
+}
+
+const FONT_HOSTS = new Set(['fonts.googleapis.com', 'fonts.gstatic.com']);
+
+/** Network-layer rule for requests made by prototype frames (the CSP is the
+ *  first line; this also covers what CSP doesn't, like pings and beacons).
+ *  `frameUrl` is the requesting frame's current URL. Null = not a prototype
+ *  frame (no opinion). */
+export function prototypeRequestAllowed(
+  frameUrl: string,
+  requestUrl: string,
+  isKnownDevServer: (origin: string) => boolean,
+): boolean | null {
+  const fromProto = frameUrl.startsWith('gbproto:');
+  // Only servers main started: the app's own dev renderer is localhost too.
+  const candidate = devServerOrigin(frameUrl);
+  const origin = candidate && isKnownDevServer(candidate) ? candidate : null;
+  if (!fromProto && !origin) return null;
+  const u = parse(requestUrl);
+  if (!u) return false;
+  if (u.protocol === 'data:' || u.protocol === 'blob:') return true;
+  if (u.protocol === 'https:' && FONT_HOSTS.has(u.hostname)) return true;
+  if (fromProto) return u.protocol === 'gbproto:';
+  const own = parse(origin as string) as URL;
+  if (u.protocol === 'http:') return u.origin === origin;
+  if (u.protocol === 'ws:') return u.host === own.host;
+  return false;
+}
+
 /** The URL if it is safe to hand to the OS (http/https/mailto), else null. */
 export function externalOpenTarget(url: string): string | null {
   if (typeof url !== 'string' || url === '') return null;
@@ -111,9 +165,41 @@ export function installNavigationGuard(
   };
 
   contents.on('will-navigate', (event, url) => guard(event, url));
-  contents.on('will-redirect', (event, url) => guard(event, url));
+  contents.on('will-redirect', (event, url) => {
+    // A worktree dev server may redirect inside its own origin (e.g. / ->
+    // /login). Mid-navigation the frame still shows its previous document,
+    // so a blank frame's first load may redirect within any dev-server origin.
+    // Other subframe redirects are cancelled without opening anything.
+    const e = event as typeof event & { isMainFrame?: boolean; frame?: { url?: string } | null };
+    if (e.isMainFrame === false) {
+      const from = e.frame?.url ?? '';
+      const origin = devServerOrigin(url);
+      const may =
+        from === '' || from === 'about:blank'
+          ? origin !== null && (deps.isKnownDevServer?.(origin) ?? false)
+          : frameMayGo(from, url);
+      if (may === true) return;
+      if (may === false) {
+        event.preventDefault();
+        return;
+      }
+    }
+    guard(event, url);
+  });
 
-  contents.setWindowOpenHandler(({ url }) => {
+  // Live-design prototypes (gbproto://) run generated, untrusted code. Their
+  // CSP blocks fetch/images/forms but not navigation, so a frame could carry
+  // meeting content out as `location = 'https://…?d=…'`. Keep them home.
+  // Worktree dev-server frames (http://127.0.0.1:<port>) run agent-edited
+  // code too: same-origin only.
+  contents.on('will-frame-navigate', (event) => {
+    if (event.isMainFrame) return;
+    if (frameMayGo(event.frame?.url ?? '', event.url) === false) event.preventDefault();
+  });
+
+  contents.setWindowOpenHandler(({ url, referrer }) => {
+    // A prototype could carry meeting content out through a popup URL.
+    if (isPrototypeUrl(referrer?.url ?? '')) return { action: 'deny' };
     // Never let a renderer spawn a window: a child window would get the
     // preload bridge. Web links open in the OS browser instead. App-origin
     // URLs are denied too (no feature needs them) and not opened externally.

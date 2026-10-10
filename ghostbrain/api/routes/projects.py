@@ -42,6 +42,9 @@ def update_project(context: str, slug: str, payload: UpdateProjectRequest) -> di
             name=payload.name,
             description=payload.description,
             archived=payload.archived,
+            design_system=(
+                payload.design_system if "design_system" in payload.model_fields_set else repo.UNSET
+            ),
         )
     except repo.ProjectExists as e:
         raise HTTPException(status_code=409, detail=f"a project with that name already exists: {e}")

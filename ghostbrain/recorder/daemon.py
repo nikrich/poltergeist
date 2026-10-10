@@ -36,6 +36,7 @@ import yaml
 
 from ghostbrain.paths import vault_path
 from ghostbrain.recorder import config as rcfg
+from ghostbrain.recorder import hooks
 from ghostbrain.recorder import slides as slides_mod
 from ghostbrain.recorder import state as state_mod
 from ghostbrain.recorder.audio import get_backend
@@ -377,6 +378,11 @@ def _finalize(
     if n_slides:
         audit_log("slides_linked", active.event_id, count=n_slides,
                   transcript=str(result.transcript_note))
+
+    try:
+        hooks.fire_transcribed(wav, result.transcript_note)
+    except Exception:  # noqa: BLE001
+        log.exception("on_transcribed hooks failed for %s", active.event_id)
 
     # Cleanup audio + raw .txt; the artifact note has the content.
     try:

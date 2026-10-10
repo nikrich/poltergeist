@@ -11,6 +11,8 @@ import { LiveTranscriptPanel } from '../components/LiveTranscriptPanel';
 import { Waveform } from '../components/Waveform';
 import { useMeeting } from '../stores/meeting';
 import { useLiveTranscriptStream } from '../stores/live-transcript';
+import { isDesignOpen, useDesignSession, useDesignSessionStream } from '../stores/design-session';
+import { DesignPanel } from '../components/design/DesignPanel';
 import { useNavigation } from '../stores/navigation';
 import { useNoteView } from '../stores/note-view';
 import { stub, toast } from '../stores/toast';
@@ -79,6 +81,7 @@ export function MeetingsScreen() {
   } = useMeeting();
   // Live text keeps streaming through "transcribing" (the finalising state).
   useLiveTranscriptStream(phase === 'recording' || phase === 'transcribing');
+  useDesignSessionStream(phase === 'recording' || phase === 'transcribing');
   const agenda = useAgenda();
   const meetings = useMeetings({ limit: 1 });
 
@@ -537,6 +540,7 @@ export function ActiveRecording({
 }: ActiveRecordingProps) {
   const [elapsed, setElapsed] = useState(0);
   const [stopping, setStopping] = useState(false);
+  const designOpen = useDesignSession((s) => isDesignOpen(s.session));
   useEffect(() => {
     const tick = () => setElapsed(Math.floor((Date.now() - startedAt) / 1000));
     tick();
@@ -555,7 +559,7 @@ export function ActiveRecording({
   };
 
   return (
-    <div className="mx-auto max-w-[1100px] px-8 py-6">
+    <div className={`mx-auto px-8 py-6 ${designOpen ? 'max-w-[1600px]' : 'max-w-[1100px]'}`}>
       <div
         className="mb-4 grid grid-cols-[auto_1fr_auto] items-center gap-6 rounded-lg border border-oxblood/30 p-5"
         style={{
@@ -605,13 +609,32 @@ export function ActiveRecording({
 
       {awaitingTargetChoice && <TargetChoiceCard windows={captureWindows} />}
 
-      <div className="grid grid-cols-[1.4fr_1fr] gap-4">
-        <LiveTranscriptPanel />
-        <div className="rounded-lg border border-hairline bg-vellum p-4">
-          <Eyebrow className="mb-2">sources</Eyebrow>
-          <CaptureSources statusBackend={captureBackend} />
+      {designOpen ? (
+        // Side by side when there's room for a usable prototype, stacked otherwise.
+        <div className="grid grid-cols-1 gap-4 min-[1280px]:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+          <div className="flex min-w-0 flex-col gap-4">
+            <LiveTranscriptPanel />
+            <div className="rounded-lg border border-hairline bg-vellum p-4">
+              <Eyebrow className="mb-2">sources</Eyebrow>
+              <CaptureSources statusBackend={captureBackend} />
+            </div>
+          </div>
+          <DesignPanel />
         </div>
-      </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-[1.4fr_1fr] gap-4">
+            <LiveTranscriptPanel />
+            <div className="rounded-lg border border-hairline bg-vellum p-4">
+              <Eyebrow className="mb-2">sources</Eyebrow>
+              <CaptureSources statusBackend={captureBackend} />
+            </div>
+          </div>
+          <div className="mt-4">
+            <DesignPanel />
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -622,6 +645,7 @@ interface TranscribingProps {
 }
 
 function Transcribing({ title, startedAt }: TranscribingProps) {
+  const designOpen = useDesignSession((s) => isDesignOpen(s.session));
   const recordedSeconds =
     startedAt !== null ? Math.max(0, Math.floor((Date.now() - startedAt) / 1000)) : null;
   return (
@@ -647,6 +671,11 @@ function Transcribing({ title, startedAt }: TranscribingProps) {
       <div className="mt-4">
         <LiveTranscriptPanel />
       </div>
+      {designOpen && (
+        <div className="mt-4">
+          <DesignPanel />
+        </div>
+      )}
     </div>
   );
 }

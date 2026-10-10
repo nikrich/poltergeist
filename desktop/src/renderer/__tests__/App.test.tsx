@@ -40,6 +40,14 @@ describe('App', () => {
     ).toBeInTheDocument();
   });
 
+  it('navigates to the artefacts screen from the sidebar', async () => {
+    wrap();
+    fireEvent.click(await screen.findByRole('button', { name: 'artefacts' }));
+    expect(
+      await screen.findByRole('heading', { name: 'artefacts', level: 1 }),
+    ).toBeInTheDocument();
+  });
+
   it('focus mode hides the sidebar and status bar only while an editor surface is up', async () => {
     wrap();
     await screen.findByRole('button', { name: 'activity' });

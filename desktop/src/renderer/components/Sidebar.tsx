@@ -17,6 +17,7 @@ const NAV_ITEMS: Array<{ id: ScreenId; icon: string; label: string }> = [
   { id: 'chat', icon: 'message-circle', label: 'chat' },
   { id: 'connectors', icon: 'plug', label: 'connectors' },
   { id: 'meetings', icon: 'mic', label: 'meetings' },
+  { id: 'artefacts', icon: 'layers', label: 'artefacts' },
   { id: 'capture', icon: 'inbox', label: 'capture' },
   { id: 'jots', icon: 'pencil', label: 'jots' },
   { id: 'docs', icon: 'library', label: 'docs' },

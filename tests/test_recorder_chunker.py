@@ -126,3 +126,27 @@ def test_iter_chunks_respects_start_and_end_bounds(tmp_path: Path) -> None:
 def test_is_silent() -> None:
     assert chunker.is_silent(_silence(1.0))
     assert not chunker.is_silent(_silence(0.5) + _tone(0.2))
+
+
+# -- whisper's silence hallucinations ---------------------------------------------
+
+def _click_in_quiet(seconds: float = 5.0) -> bytes:
+    """Near-silence with a 0.2 s key click — enough to pass is_silent."""
+    return _silence(seconds / 2) + _tone(0.2) + _silence(seconds / 2)
+
+
+def test_click_in_quiet_still_reaches_whisper() -> None:
+    assert not chunker.is_silent(_click_in_quiet())
+
+
+def test_stock_phrase_on_quiet_audio_is_a_hallucination() -> None:
+    for text in ("Thank you.", " thank you", "Thanks for watching!", "you", "Bye."):
+        assert chunker.is_hallucination(text, _click_in_quiet()), text
+
+
+def test_stock_phrase_with_real_speech_is_kept() -> None:
+    assert not chunker.is_hallucination("Thank you.", _tone(2.0))
+
+
+def test_other_text_on_quiet_audio_is_kept() -> None:
+    assert not chunker.is_hallucination("Hello, are you listening?", _click_in_quiet())

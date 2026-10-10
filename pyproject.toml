@@ -113,6 +113,11 @@ ghostbrain-session-end = "ghostbrain.hooks.session_end:main"
 [tool.setuptools.packages.find]
 include = ["ghostbrain*"]
 
+[tool.setuptools.package-data]
+# Non-Python files the live design session reads at runtime. The PyInstaller
+# sidecar picks them up via collect_data_files('ghostbrain') in packaging/sidecar.spec.
+"ghostbrain.design" = ["builtin/**/*", "scaffold_template/**/*"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

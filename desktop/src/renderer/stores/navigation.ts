@@ -6,6 +6,7 @@ export type ScreenId =
   | 'chat'
   | 'connectors'
   | 'meetings'
+  | 'artefacts'
   | 'capture'
   | 'vault'
   | 'daily'

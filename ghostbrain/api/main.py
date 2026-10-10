@@ -15,6 +15,9 @@ from ghostbrain.api.routes import chat as chat_routes
 from ghostbrain.api.routes import connector_auth as connector_auth_routes
 from ghostbrain.api.routes import connectors as connectors_routes
 from ghostbrain.api.routes import daily as daily_routes
+from ghostbrain.api.routes import design as design_routes
+from ghostbrain.api.routes import design_artefacts as design_artefacts_routes
+from ghostbrain.api.routes import design_packs as design_packs_routes
 from ghostbrain.api.routes import docs as docs_routes
 from ghostbrain.api.routes import doctor as doctor_routes
 from ghostbrain.api.routes import health as health_routes
@@ -115,6 +118,9 @@ def create_app(token: str) -> FastAPI:
     app.include_router(llm_providers_routes.router)
     app.include_router(suggestions_routes.router)
     app.include_router(projects_routes.router)
+    app.include_router(design_packs_routes.router)
+    app.include_router(design_routes.router)
+    app.include_router(design_artefacts_routes.router)
     app.include_router(library_routes.router)
     app.include_router(templates_routes.router)
     app.include_router(changes_routes.router)

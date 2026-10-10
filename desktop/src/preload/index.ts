@@ -32,6 +32,20 @@ const bridge: GbBridge = {
     levelsSubscribe: () => ipcRenderer.invoke('gb:recorder:levels:subscribe'),
     levelsUnsubscribe: () => ipcRenderer.invoke('gb:recorder:levels:unsubscribe'),
   },
+  design: {
+    liveSubscribe: () => ipcRenderer.invoke('gb:design:live:subscribe'),
+    liveUnsubscribe: () => ipcRenderer.invoke('gb:design:live:unsubscribe'),
+    build: (prototypeDir: string, rev: number) =>
+      ipcRenderer.invoke('gb:design:build', prototypeDir, rev),
+    openPopout: () => ipcRenderer.invoke('gb:design:popout'),
+    devserver: {
+      ensure: (worktree: string, appDir: string) =>
+        ipcRenderer.invoke('gb:design:devserver:ensure', worktree, appDir),
+      release: (worktree: string) => ipcRenderer.invoke('gb:design:devserver:release', worktree),
+    },
+    openPath: (path: string, how: 'editor' | 'finder') =>
+      ipcRenderer.invoke('gb:design:open-path', path, how),
+  },
   chat: {
     send: (convId, text, attachmentPaths) =>
       ipcRenderer.invoke('gb:chat:send', convId, text, attachmentPaths),
