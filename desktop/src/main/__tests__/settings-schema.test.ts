@@ -25,3 +25,12 @@ describe('settings schema — editor keys (A4)', () => {
     expect(settingsSchema.shape.readAloudRate.safeParse('1').success).toBe(false);
   });
 });
+
+describe('settings schema — page width (A7)', () => {
+  it('pageWidth is fixed or full', () => {
+    expect(settingsSchema.shape.pageWidth.safeParse('fixed').success).toBe(true);
+    expect(settingsSchema.shape.pageWidth.safeParse('full').success).toBe(true);
+    expect(settingsSchema.shape.pageWidth.safeParse('wide').success).toBe(false);
+    expect(settingsSchema.shape.pageWidth.safeParse(true).success).toBe(false);
+  });
+});

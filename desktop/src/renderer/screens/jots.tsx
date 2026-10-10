@@ -15,7 +15,8 @@ import { setFocusMode, useFocusActive, useFocusSurface } from '../lib/focus-mode
 import { shortcutLabel } from '../lib/editor-shortcuts';
 import { get } from '../lib/api/client';
 import { BacklinksPanel } from '../components/BacklinksPanel';
-import { NoteHistoryButton } from '../components/NoteHistory';
+import { PageByline } from '../components/page/PageByline';
+import { pageAuthor, pageBreadcrumb } from '../lib/page-meta';
 import { openWikilink } from '../lib/open-wikilink';
 import {
   useAutoRouteJot,
@@ -46,6 +47,15 @@ export function JotsScreen() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showConfluenceDialog, setShowConfluenceDialog] = useState(false);
   const [cameraSignal, setCameraSignal] = useState(0);
+  // A7: backlinks recede — collapsed until the byline (or their header) opens them.
+  const [backlinksOpen, setBacklinksOpen] = useState(false);
+  const backlinksRef = useRef<HTMLDivElement | null>(null);
+  // ...and every page starts that way: switching jots collapses them again.
+  useEffect(() => setBacklinksOpen(false), [selectedId]);
+  const showBacklinks = () => {
+    setBacklinksOpen(true);
+    backlinksRef.current?.scrollIntoView?.({ block: 'nearest' });
+  };
 
   const assistOpen = useDocsAssist((s) => s.open);
   const toggleAssist = useDocsAssist((s) => s.toggleOpen);
@@ -288,9 +298,6 @@ export function JotsScreen() {
               >
                 templates
               </Btn>
-              {selectedItem && (
-                <NoteHistoryButton key={selectedItem.path} path={selectedItem.path} guardRef={guardRef} />
-              )}
               <Btn
                 variant="ghost"
                 size="sm"
@@ -368,10 +375,12 @@ export function JotsScreen() {
             />
           </aside>
         )}
-        <main className="flex flex-1 flex-col">
+        <main className="flex min-w-0 flex-1 flex-col">
           {editorInitial !== undefined ? (
             <>
-              <div className="flex-1 overflow-auto">
+              {/* No scroller here: the editor owns the one scroll container
+                  (page header + body scroll together, toolbar stays put). */}
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 {/* key={selectedId} remounts the editor on jot switch, wiping
                     internal debounce timers. The markdown prop is frozen to
                     the initial fetch so mid-session RQ refetches never reset
@@ -389,6 +398,25 @@ export function JotsScreen() {
                   onSaveError={(err) => toast.error(`save failed: ${err.message}`)}
                   guardRef={guardRef}
                   navigationScope="screen"
+                  page={{
+                    titleRule: 'jot',
+                    fallbackTitle: '',
+                    breadcrumb: selectedItem
+                      ? pageBreadcrumb(selectedItem.path, {
+                          context: selectedItem.context,
+                          project: selectedItem.project ?? null,
+                        })
+                      : [],
+                    byline: selectedItem ? (
+                      <PageByline
+                        author={pageAuthor({ source: 'manual' })}
+                        updated={selectedItem.updated || null}
+                        path={selectedItem.path}
+                        guardRef={guardRef}
+                        onShowBacklinks={showBacklinks}
+                      />
+                    ) : undefined,
+                  }}
                   editorProps={{
                     focus: focusActive,
                     onWikilinkClick: (target) => openWikilink(target, openNote),
@@ -407,9 +435,10 @@ export function JotsScreen() {
                             // The server wrote the callout: take its etag before
                             // the editor's own autosave of the same text — unless
                             // the user has since switched to another jot.
+                            // reload, not replaceWith: res.body is the whole
+                            // note, title line included (A7 page title).
                             if (selectedIdRef.current === jotId) {
-                              guardRef.current?.adopt(res.etag ?? null, res.body);
-                              editorHandle.current?.replaceWith(res.body, 'doc');
+                              guardRef.current?.reload(res.etag ?? null, res.body);
                             }
                             toast.success('photo text extracted');
                           } else {
@@ -423,16 +452,17 @@ export function JotsScreen() {
                 />
               </div>
               {selectedItem && !focusActive && (
-                <BacklinksPanel path={selectedItem.path} onOpen={openNote} />
+                <div ref={backlinksRef}>
+                  <BacklinksPanel
+                    path={selectedItem.path}
+                    onOpen={openNote}
+                    open={backlinksOpen}
+                    onOpenChange={setBacklinksOpen}
+                  />
+                </div>
               )}
               {!focusActive && (
                 <footer className="flex items-center gap-2 border-t border-hairline px-4 py-2 text-11 text-ink-2">
-                  {selectedItem?.context && (
-                    <Pill>
-                      {selectedItem.context}
-                      {selectedItem.project ? ` / ${selectedItem.project}` : ''}
-                    </Pill>
-                  )}
                   {selectedItem?.routingStatus && <Pill>{selectedItem.routingStatus}</Pill>}
                   <div className="ml-auto flex items-center gap-2">
                     {selectedItem && (

@@ -38,6 +38,7 @@ export const useSettings = create<SettingsState>((set) => ({
   focusMode: false,
   readAloudVoice: '',
   readAloudRate: 1,
+  pageWidth: 'fixed',
 
   hotkeys: {
     jotOverlay: 'Alt+J',

@@ -256,7 +256,7 @@ body[data-theme='light'] {
 .gb-prose li { margin: 0.2em 0; }
 .gb-prose code {
   font-family: var(--font-mono, ui-monospace, monospace);
-  background: var(--vellum);
+  background: var(--bg-fog);
   border: 1px solid var(--hairline);
   padding: 1px 5px;
   border-radius: 3px;
@@ -264,7 +264,7 @@ body[data-theme='light'] {
   color: var(--ink-0);
 }
 .gb-prose pre {
-  background: var(--vellum);
+  background: var(--bg-vellum);
   border: 1px solid var(--hairline);
   border-radius: 6px;
   padding: 12px 14px;
@@ -297,19 +297,110 @@ body[data-theme='light'] {
 }
 .gb-prose th,
 .gb-prose td { border: 1px solid var(--hairline); padding: 6px 10px; text-align: left; }
-.gb-prose th { background: var(--vellum); font-weight: 600; color: var(--ink-0); }
+.gb-prose th { background: var(--bg-vellum); font-weight: 600; color: var(--ink-0); }
 .gb-prose em { color: var(--ink-1); }
 .gb-prose strong { color: var(--ink-0); }
 .gb-jot-img { max-width: 100%; border-radius: 8px; border: 1px solid var(--hairline-2); margin: 6px 0; }
 
-/* A4 focus mode: the page alone, centred at a reading measure. */
-[data-focus='on'] .ProseMirror {
-  max-width: 72ch;
-  margin-left: auto;
-  margin-right: auto;
-  padding-top: 24px;
-  padding-bottom: 30vh;
+/* ── A7 page canvas ───────────────────────────────────────────────────
+   A centred document column on bg-paper: no card, border or shadow. Width
+   is the global `pageWidth` setting; focus mode (A4) always uses the fixed
+   measure. The canvas sits inside the editor's one scroll container, so
+   header and body scroll together as one document. */
+.gb-page {
+  --gb-page-measure: 44rem; /* ≈80 characters of 16px body text */
+  --gb-page-gutter: clamp(20px, 6%, 56px);
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0 auto;
+  padding: 40px var(--gb-page-gutter) 0;
 }
+.gb-page[data-width='fixed'] {
+  max-width: calc(var(--gb-page-measure) + 2 * var(--gb-page-gutter));
+}
+.gb-page[data-width='full'] { max-width: none; }
+[data-focus='on'] .gb-page { padding-top: 56px; }
+
+.gb-page-header { margin-bottom: 28px; }
+/* The page's one bold element (Task 7's title textarea). */
+.gb-page-title {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  /* Height follows the wrapped text at any width (PageTitle falls back to
+     measuring in JS where this is unsupported). */
+  field-sizing: content;
+  min-height: 1.15em;
+  background: transparent;
+  color: var(--ink-0);
+  font-family: var(--font-display);
+  font-size: 34px;
+  line-height: 1.15;
+  font-weight: 640;
+  letter-spacing: -0.025em;
+  font-variation-settings: 'opsz' 48;
+}
+.gb-page-title::placeholder { color: var(--ink-3); }
+.gb-page-title:not([readonly]):focus-visible { box-shadow: 0 2px 0 0 var(--hairline-3); }
+.gb-page-title[readonly] { cursor: default; }
+
+/* Body: 16px / 1.7. These rules follow the `.gb-prose` ones above and
+   share their specificity, so they win and rescale the 14px rhythm. */
+.gb-page-body { font-size: 16px; line-height: 1.7; }
+/* The editor's own bottom padding is the "click below to keep writing"
+   area: clicks there land in ProseMirror and put the caret at the end. */
+.gb-page-body .ProseMirror { padding-bottom: 30vh; }
+.gb-page-body .ProseMirror > :first-child { margin-top: 0; }
+.gb-page-body h1,
+.gb-page-body h2,
+.gb-page-body h3,
+.gb-page-body h4 {
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 1.6em 0 0.45em;
+}
+.gb-page-body h1 { font-size: 26px; letter-spacing: -0.02em; }
+.gb-page-body h2 { font-size: 21px; letter-spacing: -0.015em; }
+.gb-page-body h3 { font-size: 18px; letter-spacing: -0.01em; }
+.gb-page-body h4 { font-size: 16px; letter-spacing: 0; }
+.gb-page-body p { margin: 0 0 0.85em; }
+.gb-page-body ul,
+.gb-page-body ol { margin: 0 0 0.85em 1.5em; }
+.gb-page-body li { margin: 0.25em 0; }
+.gb-page-body li > p { margin: 0; }
+.gb-page-body ul[data-type='taskList'] { margin-left: 0.2em; }
+.gb-page-body ul[data-type='taskList'] li { gap: 8px; }
+/* Task items as tight as bullets: TipTap wraps each item's text in <div><p>. */
+.gb-page-body ul[data-type='taskList'] li > div > p { margin: 0; }
+.gb-page-body code { font-size: 0.875em; }
+.gb-page-body pre { padding: 14px 16px; margin: 0 0 1.1em; line-height: 1.55; }
+.gb-page-body pre code { font-size: 13px; }
+.gb-page-body blockquote { margin: 0 0 1.1em; padding: 0.1em 1.1em; }
+.gb-page-body hr { margin: 2em 0; }
+.gb-page-body table { font-size: 14px; line-height: 1.5; margin: 0 0 1.1em; }
+.gb-page-body th,
+.gb-page-body td { padding: 8px 12px; vertical-align: top; }
+.gb-page-body th > p,
+.gb-page-body td > p { margin: 0; }
+.gb-page-body .gb-jot-img { margin: 8px 0; }
+/* A1 block spacing at 16px lives after the A1 block section below. */
+
+/* Source mode (CodeMirror) inside the canvas: the same column, framed as
+   one block so its own theme background reads as intentional. */
+.gb-page-source { padding-bottom: 48px; }
+.gb-page-source .cm-editor {
+  min-height: 40vh;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.gb-page-source .cm-editor.cm-focused { outline: none; border-color: var(--hairline-3); }
+.gb-page-source .cm-content { padding: 14px 4px; }
 
 /* A4 read-aloud: the sentence being spoken. */
 .gb-read-aloud-current {
@@ -482,7 +573,7 @@ body[data-theme='light'] {
   border: 1px solid var(--hairline);
   border-radius: 6px;
   margin: 0 0 1em;
-  background: var(--vellum);
+  background: var(--bg-vellum);
 }
 .gb-query-bar {
   position: relative;
@@ -519,7 +610,7 @@ body[data-theme='light'] {
   padding: 4px;
   border: 1px solid var(--hairline);
   border-radius: 4px;
-  background: var(--vellum);
+  background: var(--bg-vellum);
 }
 .gb-query-menu[hidden] { display: none; }
 .gb-query-menuitem { text-align: left; padding: 2px 6px; }
@@ -569,3 +660,28 @@ body[data-theme='light'] {
   color: var(--ink-3);
   background: none;
 }
+
+/* ── A7 page canvas: A1 blocks at 16px ─────────────────────────────────
+   Kept after the A1 rules and prefixed with `.gb-prose.gb-page-body`
+   (EditorContent carries both classes) so these win by specificity
+   (0,3,0 over A1's 0,2,0 `.gb-prose .gb-callout`) and by order. A1's
+   colours, borders and lozenges are untouched; only spacing scales. */
+.gb-prose.gb-page-body .gb-callout { padding: 10px 16px 4px; margin: 0 0 1.1em; }
+.gb-prose.gb-page-body .gb-callout-header { font-size: 13px; }
+.gb-prose.gb-page-body .gb-toc { padding: 10px 16px; margin: 0 0 1.1em; }
+.gb-prose.gb-page-body .gb-toc-list { font-size: 14px; line-height: 1.6; }
+.gb-prose.gb-page-body .gb-mermaid { margin: 0 0 1.1em; }
+
+/* ── C2 live query blocks inside rich prose ─────────────────────────────
+   The query view's results are plain ul/li/p/pre elements, so the
+   `.gb-prose` and A7 `.gb-page-body` element rules (0,1,1) would restyle
+   them. These (0,2,0 and up) keep the query block's own compact look in
+   every rich editor, page canvas or not. */
+.gb-prose .gb-query-list { list-style: none; margin: 0; padding: 0; }
+.gb-prose .gb-query-row { margin: 0; }
+.gb-prose .gb-query-status,
+.gb-prose .gb-query-warning,
+.gb-prose .gb-query-notice { margin: 4px 0 0; color: var(--ink-2); }
+.gb-prose .gb-query-error p { margin: 0; }
+.gb-prose .gb-query-error pre { margin: 6px 0 0; }
+.gb-prose .gb-query > pre { margin: 0; }

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, act, fireEvent, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Editor } from '@tiptap/core';
 import type { EditorView } from '@tiptap/pm/view';
@@ -286,6 +286,10 @@ describe('NoteView', () => {
     expect(screen.getByText(/my tail/)).toBeInTheDocument();
 
     // In-view links ask exactly once too (no double prompt).
+    // A7: backlinks start collapsed; the byline opens them (not a navigation).
+    fireEvent.click(await screen.findByRole('button', { name: '1 backlink' }));
+    await screen.findByText('Standup');
+    expect(confirm).toHaveBeenCalledTimes(1);
     act(() => {
       screen.getByText('Standup').click();
     });
@@ -319,15 +323,25 @@ describe('NoteView', () => {
     });
     render(withQuery(<NoteView />));
     act(() => useNoteView.getState().open(manualNote.path));
+    // A7: backlinks start collapsed; the byline opens them.
+    fireEvent.click(await screen.findByRole('button', { name: '1 backlink' }));
     expect(await screen.findByText('Standup')).toBeInTheDocument();
     expect(screen.getByText('see manual note')).toBeInTheDocument();
     act(() => {
       screen.getByText('Standup').click();
     });
     expect(useNoteView.getState().path).toBe('20-contexts/work/notes/standup.md');
+    // A7 spec: backlinks start collapsed on every page, not just the first.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^backlinks/i })).toHaveAttribute(
+        'aria-expanded',
+        'false',
+      ),
+    );
+    expect(screen.queryByText('see manual note')).toBeNull();
   });
 
-  it('offers page history in the header', async () => {
+  it('offers page history in the byline', async () => {
     apiRequest.mockResolvedValue({ ok: true, data: manualNote });
     render(withQuery(<NoteView />));
     act(() => useNoteView.getState().open(manualNote.path));
@@ -386,7 +400,12 @@ describe('NoteView', () => {
   });
 
   it('inline ai in the viewer targets the note path and saves as the assistant', async () => {
-    apiRequest.mockResolvedValue({ ok: true, data: { ...manualNote, etag: '0123456789abcdef' } });
+    // A7: a manual note's first line is its page title, so the editable body
+    // (where inline AI works) is the line below it.
+    apiRequest.mockResolvedValue({
+      ok: true,
+      data: { ...manualNote, body: 'manual note\n\nhand-written', etag: '0123456789abcdef' },
+    });
     // A holder object, not a `let`: TS would narrow a local `let` to null here.
     const bus: { listener: ((p: { key?: string; jotId: string; event: DocsAssistEvent }) => void) | null } = {
       listener: null,
@@ -405,7 +424,11 @@ describe('NoteView', () => {
     render(withQuery(<NoteView onEditorReady={(e) => { editor = e; }} />));
     act(() => useNoteView.getState().open(manualNote.path));
     await waitFor(() => expect(editor).toBeDefined());
-    expect(screen.getByRole('button', { name: 'inline ai' })).toBeInTheDocument();
+    // A7: the viewer's one inline AI entry is the Insert menu's Ask AI row.
+    fireEvent.click(screen.getByRole('button', { name: 'insert' }));
+    expect(screen.getByRole('menuitem', { name: /^Ask AI/ })).toBeInTheDocument();
+    fireEvent.keyDown(screen.getAllByRole('menuitem')[0]!, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
     const from = textPos(editor!, 'hand');
     act(() => {
       editor!.commands.setTextSelection({ from, to: from + 4 });
@@ -421,10 +444,51 @@ describe('NoteView', () => {
       expect(apiRequest).toHaveBeenCalledWith(
         'PATCH',
         '/v1/notes/body',
-        { path: manualNote.path, body: expect.stringContaining('Hand-written') },
+        { path: manualNote.path, body: expect.stringMatching(/^manual note\n\nHand-written/) },
         { ifMatch: '0123456789abcdef', actor: 'assistant' },
       ),
     );
+  });
+
+  it('renders a vault note as a page: breadcrumb, H1 title, byline', async () => {
+    apiRequest.mockImplementation(async (_m: string, p: string) =>
+      p.startsWith('/v1/vault/backlinks')
+        ? { ok: true, data: { items: [], indexing: false } }
+        : { ok: true, data: syncedNote },
+    );
+    render(withQuery(<NoteView />));
+    act(() => useNoteView.getState().open(syncedNote.path));
+    await screen.findByText('from gmail');
+    expect(screen.getByLabelText('page title')).toHaveValue('synced');
+    const crumbs = screen.getByRole('navigation', { name: 'breadcrumb' });
+    expect(within(crumbs).getByText('work')).toBeInTheDocument();
+    expect(within(screen.getByTestId('page-byline')).getByText('gmail')).toBeInTheDocument();
+    expect(within(screen.getByTestId('page-byline')).getByRole('button', { name: 'history' })).toBeInTheDocument();
+  });
+
+  it('renaming the title saves the new H1 through PATCH /v1/notes/body', async () => {
+    apiRequest.mockResolvedValue({ ok: true, data: syncedNote });
+    render(withQuery(<NoteView />));
+    act(() => useNoteView.getState().open(syncedNote.path));
+    await screen.findByText('from gmail');
+    fireEvent.change(screen.getByLabelText('page title'), { target: { value: 'synced v2' } });
+    fireEvent.blur(screen.getByLabelText('page title'));
+    await waitFor(() =>
+      expect(apiRequest).toHaveBeenCalledWith('PATCH', '/v1/notes/body', {
+        path: syncedNote.path,
+        body: '# synced v2\n\nfrom gmail',
+      }),
+    );
+  });
+
+  it('Esc in an open insert menu does not close the viewer', async () => {
+    apiRequest.mockResolvedValue({ ok: true, data: manualNote });
+    render(withQuery(<NoteView />));
+    act(() => useNoteView.getState().open(manualNote.path));
+    fireEvent.click(await screen.findByRole('button', { name: 'insert' }));
+    fireEvent.keyDown(screen.getAllByRole('menuitem')[0]!, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(useNoteView.getState().path).toBe(manualNote.path);
   });
 });
 

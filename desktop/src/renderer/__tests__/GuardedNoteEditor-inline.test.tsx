@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type React from 'react';
 import type { Editor } from '@tiptap/core';
 import { GuardedNoteEditor, type GuardHandle } from '../components/GuardedNoteEditor';
+import type { EditorHandle } from '../components/RichMarkdownEditor';
 import { isMac } from '../lib/platform';
 import type { DocsAssistEvent, DocsAssistRequest } from '../../shared/api-types';
 import { textPos } from './helpers/editor';
@@ -71,5 +72,54 @@ describe('GuardedNoteEditor + inline ai', () => {
     expect((body as string).trim()).toBe('alpha BETA');
     expect(ifMatch).toBe('e1');
     expect(actor).toBe('assistant');
+  });
+
+  it('page mode: the handle forwards startInlineAssist and accept never touches the title (A7)', async () => {
+    const send = vi.fn().mockResolvedValue({ etag: 'e2' });
+    const guardRef = { current: null } as React.MutableRefObject<GuardHandle | null>;
+    const handleRef = { current: null } as React.MutableRefObject<EditorHandle | null>;
+    let editor!: Editor;
+    render(
+      <GuardedNoteEditor
+        initialBody={'# Plan\n\nalpha beta'}
+        initialEtag="e1"
+        send={send}
+        fetchLatest={vi.fn()}
+        guardRef={guardRef}
+        page={{ titleRule: 'note', fallbackTitle: '', breadcrumb: ['work'] }}
+        editorProps={{
+          jotId: 'n.md',
+          debounceMs: 60_000,
+          handleRef,
+          onEditorReady: (e) => {
+            editor = e;
+          },
+          inlineAssist: {
+            target: { path: 'n.md' },
+            onAccept: () => guardRef.current?.attributeNext('assistant'),
+          },
+        }}
+      />,
+    );
+    await waitFor(() => expect(handleRef.current).not.toBeNull());
+    const from = textPos(editor, 'beta');
+    act(() => {
+      editor.commands.setTextSelection({ from, to: from + 4 });
+    });
+    let started = false;
+    act(() => {
+      started = handleRef.current!.startInlineAssist!({ mode: 'polish' });
+    });
+    expect(started).toBe(true);
+    const req = assist.mock.calls[0]![0] as DocsAssistRequest;
+    expect(req.selection).toBe('beta');
+    act(() => listener?.({ key: req.stream_id!, jotId: req.stream_id!, event: { type: 'done', text: 'BETA' } }));
+    fireEvent.click(screen.getByRole('button', { name: /accept/ }));
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    const [body, ifMatch, actor] = send.mock.calls[0]!;
+    expect((body as string).trim()).toBe('# Plan\n\nalpha BETA');
+    expect(ifMatch).toBe('e1');
+    expect(actor).toBe('assistant');
+    expect(screen.getByLabelText('page title')).toHaveValue('Plan');
   });
 });

@@ -22,6 +22,7 @@ import {
 } from '../lib/editor/inline-assist';
 import { matchesShortcut } from '../lib/editor-shortcuts';
 import { isMac } from '../lib/platform';
+import { useSettings } from '../stores/settings';
 import { toast } from '../stores/toast';
 import { Btn } from './Btn';
 import { DiagramModal } from './DiagramModal';
@@ -46,10 +47,10 @@ export interface EditorHandle {
   getMarkdown: () => string;
   /** Open inline AI on the current selection and run `action` at once (the
    * docs panel hands selection-level actions here); with no action it opens
-   * the empty popover, like ⌘J / ✦ (true without restarting when already
+   * the empty popover, like ⌘J or the Insert menu's Ask AI (true without restarting when already
    * open). False when inline AI is unavailable: source mode, read-only, no
    * target, or a cell selection (refused silently; the caller decides).
-   * This is the entry point other UI (e.g. an Insert-menu "Ask AI") calls. */
+   * This is the entry point the Insert menu's Ask AI row calls. */
   startInlineAssist?: (action?: InlineAction) => boolean;
 }
 
@@ -95,12 +96,20 @@ export interface RichMarkdownEditorProps {
   openCameraSignal?: number;
   /** Focus mode (A4): hide the formatting toolbar and centre the page. */
   focus?: boolean;
-  /** Enables inline AI (⌘J / ✦, spec A5): the note the assist reads, and a
-   * hook called right before an accepted suggestion is saved (the caller
-   * marks that save as the assistant's — B2 attributeNext). Other entry
-   * points (e.g. an Insert-menu "Ask AI") go through
-   * `EditorHandle.startInlineAssist`; they work only while this is set. */
+  /** Enables inline AI (⌘J / the Insert menu's Ask AI, spec A5): the note
+   * the assist reads, and a hook called right before an accepted suggestion
+   * is saved (the caller marks that save as the assistant's — B2
+   * attributeNext). Entry points outside the editor (the Insert menu's Ask
+   * AI) go through `EditorHandle.startInlineAssist`; they work only while
+   * this is set. */
   inlineAssist?: { target: InlineAssistTarget; onAccept?: () => void };
+  /** A7: page header (breadcrumb, title, byline) shown above the document
+   * inside the page canvas. GuardedNoteEditor supplies it in page mode. */
+  pageHeader?: React.ReactNode;
+  /** A7: `page` (default) lays the document out on the centred page canvas;
+   * `plain` keeps the compact full-width prose for embedded previews such as
+   * the C3 template test run. */
+  canvas?: 'page' | 'plain';
 }
 
 type Mode = 'rich' | 'source';
@@ -131,11 +140,14 @@ export function RichMarkdownEditor({
   openCameraSignal,
   focus = false,
   inlineAssist,
+  pageHeader,
+  canvas = 'page',
 }: RichMarkdownEditorProps) {
   // Evaluated once per mount; parents remount per note via key={...}.
   const [parseFailed] = useState(() => !parsesAsRich(markdown));
   const [mode, setMode] = useState<Mode>(parseFailed ? 'source' : 'rich');
   const [camOpen, setCamOpen] = useState(false);
+  const pageWidth = useSettings((s) => s.pageWidth);
   const [templateOpen, setTemplateOpen] = useState(false);
   const [statusPos, setStatusPos] = useState<number | null>(null);
   const closeStatus = useCallback(() => setStatusPos(null), []);
@@ -360,7 +372,7 @@ export function RichMarkdownEditor({
   function openInline(initial?: InlineAction): boolean {
     if (!editor || editor.isDestroyed || mode !== 'rich' || readOnly || !inlineAssist) return false;
     if (editor.state.selection instanceof CellSelection) {
-      // Only ⌘J / ✦ explain themselves; a hand-off caller gets a silent false.
+      // Only ⌘J / the Insert menu's Ask AI explain themselves; a hand-off caller gets a silent false.
       if (!initial) toast.error('select text inside one table cell for inline ai');
       return false;
     }
@@ -527,6 +539,13 @@ export function RichMarkdownEditor({
     };
   }, []);
 
+  function insertPickedImage(file: File) {
+    if (!editorRef.current || !editorRef.current.isEditable) return;
+    void insertImageFile(editorRef.current, jotIdRef.current, file).catch((e: Error) =>
+      toast.error(`image insert failed: ${e.message}`),
+    );
+  }
+
   function switchMode(next: Mode) {
     if (next === mode) return;
     setStatusPos(null);
@@ -546,6 +565,19 @@ export function RichMarkdownEditor({
     }
   }
 
+  const sourceEditor = (
+    <JotEditor
+      body={current.current}
+      debounceMs={debounceMs}
+      readOnly={readOnly}
+      onSave={(next) => {
+        current.current = next;
+        lastSaved.current = next;
+        onSave(next);
+      }}
+    />
+  );
+
   return (
     <div
       className="flex h-full flex-col"
@@ -555,28 +587,42 @@ export function RichMarkdownEditor({
       {mode === 'rich' && editor && !focus && !readOnly && (
         <EditorToolbar
           editor={editor}
-          onPhoto={() => setCamOpen(true)}
+          onImageFile={insertPickedImage}
           onAssist={inlineAssist ? () => void openInline() : undefined}
         />
       )}
+      {/* One scroll container: the page header and body scroll together as a
+          single document while the toolbar above stays put. */}
       <div className="flex-1 overflow-auto">
-        {mode === 'rich' && editor && !readOnly && <TableToolbar editor={editor} />}
-        {mode === 'rich' ? (
-          <EditorContent
-            editor={editor}
-            className="gb-prose h-full px-4 py-3 text-14 leading-[1.65] text-ink-0 [&_.ProseMirror]:min-h-full [&_.ProseMirror]:outline-none"
-          />
+        {mode === 'rich' && editor && !readOnly && !focus && <TableToolbar editor={editor} />}
+        {canvas === 'page' ? (
+          <div
+            className="gb-page"
+            data-testid="page-canvas"
+            data-width={focus ? 'fixed' : pageWidth}
+          >
+            {pageHeader}
+            {mode === 'rich' ? (
+              <EditorContent
+                editor={editor}
+                className="gb-prose gb-page-body text-ink-0 [&_.ProseMirror]:min-h-[40vh] [&_.ProseMirror]:outline-none"
+              />
+            ) : (
+              <div className="gb-page-body gb-page-source">{sourceEditor}</div>
+            )}
+          </div>
         ) : (
-          <JotEditor
-            body={current.current}
-            debounceMs={debounceMs}
-            readOnly={readOnly}
-            onSave={(next) => {
-              current.current = next;
-              lastSaved.current = next;
-              onSave(next);
-            }}
-          />
+          <>
+            {pageHeader}
+            {mode === 'rich' ? (
+              <EditorContent
+                editor={editor}
+                className="gb-prose h-full px-4 py-3 text-14 leading-[1.65] text-ink-0 [&_.ProseMirror]:min-h-full [&_.ProseMirror]:outline-none"
+              />
+            ) : (
+              sourceEditor
+            )}
+          </>
         )}
       </div>
       <div className="flex flex-shrink-0 items-center gap-2 border-t border-hairline px-3 py-[6px]">

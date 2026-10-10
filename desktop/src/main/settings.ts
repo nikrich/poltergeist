@@ -50,6 +50,7 @@ export const DEFAULT_SETTINGS: Settings = {
   focusMode: false,
   readAloudVoice: '',
   readAloudRate: 1,
+  pageWidth: 'fixed',
 
   hotkeys: {
     jotOverlay: 'Alt+J',

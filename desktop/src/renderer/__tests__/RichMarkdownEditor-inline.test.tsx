@@ -6,6 +6,7 @@ import { CellSelection } from '@tiptap/pm/tables';
 import { RichMarkdownEditor, type EditorHandle } from '../components/RichMarkdownEditor';
 import { getAiSuggestion } from '../lib/editor/ai-suggestion';
 import { isMac } from '../lib/platform';
+import { shortcutLabel } from '../lib/editor-shortcuts';
 import { useToasts } from '../stores/toast';
 import type { DocsAssistEvent, DocsAssistRequest } from '../../shared/api-types';
 import { markdownOf, textPos } from './helpers/editor';
@@ -69,6 +70,8 @@ function select(editor: Editor, text: string) {
   });
 }
 
+const openInsert = () => fireEvent.click(screen.getByRole('button', { name: 'insert' }));
+
 function pressModJ(editor: Editor) {
   fireEvent.keyDown(editor.view.dom, { key: 'j', ...mod });
 }
@@ -100,14 +103,20 @@ describe('RichMarkdownEditor inline ai', () => {
     const { editor } = setup('alpha', { inlineAssist: undefined });
     pressModJ(editor());
     expect(screen.queryByRole('dialog', { name: 'inline ai' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'inline ai' })).toBeNull();
+    // A7: the one entry is the Insert menu's Ask AI row; absent without the prop.
+    openInsert();
+    expect(screen.queryByRole('menuitem', { name: /^Ask AI/ })).toBeNull();
+    expect(screen.getByRole('menu')).toBeInTheDocument();
   });
 
   it('is off in a read-only editor even with the inlineAssist prop', () => {
     useToasts.setState({ toasts: [] });
     const { editor, handleRef } = setup('alpha beta gamma', { readOnly: true });
     select(editor(), 'beta');
-    expect(screen.queryByRole('button', { name: 'inline ai' })).toBeNull();
+    // A7: no formatting toolbar (so no Insert menu, no Ask AI row) when read-only.
+    expect(screen.queryByRole('toolbar', { name: 'formatting' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'insert' })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: /^Ask AI/ })).toBeNull();
     pressModJ(editor());
     let opened = true;
     let handedOff = true;
@@ -123,10 +132,50 @@ describe('RichMarkdownEditor inline ai', () => {
     expect(useToasts.getState().toasts).toHaveLength(0);
   });
 
-  it('the toolbar ✦ button opens it', async () => {
+  it('the Insert menu\'s Ask AI row opens it (A7 toolbar)', async () => {
+    const { editor, handleRef } = setup();
+    select(editor(), 'beta');
+    openInsert();
+    const row = screen.getByRole('menuitem', { name: /^Ask AI/ });
+    // A5 binds ⌘J to the same inline AI; the row shows it.
+    expect(row).toHaveTextContent(shortcutLabel('inlineAi'));
+    fireEvent.click(row);
+    // A5's real popover, on the selection, through the same path as ⌘J.
+    const dialog = await screen.findByRole('dialog', { name: 'inline ai' });
+    expect(dialog).toBeInTheDocument();
+    expect(screen.queryByRole('menu')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'polish' }));
+    expect(lastRequest().selection).toBe('beta');
+    // Same open popover the handle reports (startInlineAssist() → true, no restart).
+    let again = false;
+    act(() => {
+      again = handleRef.current!.startInlineAssist!();
+    });
+    expect(again).toBe(true);
+  });
+
+  it('renders exactly one Ask AI affordance: no ✦ button, one sparkles row', () => {
     setup();
-    fireEvent.click(screen.getByRole('button', { name: 'inline ai' }));
-    expect(await screen.findByRole('dialog', { name: 'inline ai' })).toBeInTheDocument();
+    const root = screen.getByTestId('rich-markdown-editor');
+    expect(screen.queryByRole('button', { name: 'inline ai' })).toBeNull();
+    expect(root.textContent).not.toContain('✦');
+    expect(root.querySelectorAll('.lucide-sparkles')).toHaveLength(0);
+    openInsert();
+    expect(screen.getAllByRole('menuitem', { name: /Ask AI/ })).toHaveLength(1);
+    expect(document.querySelectorAll('.lucide-sparkles')).toHaveLength(1);
+    expect(document.body.textContent).not.toContain('✦');
+  });
+
+  it('source mode has no Ask AI path', () => {
+    const { handleRef } = setup();
+    fireEvent.click(screen.getByRole('button', { name: 'src' }));
+    expect(screen.queryByRole('button', { name: 'insert' })).toBeNull();
+    let opened = true;
+    act(() => {
+      opened = handleRef.current!.startInlineAssist!();
+    });
+    expect(opened).toBe(false);
+    expect(screen.queryByRole('dialog', { name: 'inline ai' })).toBeNull();
   });
 
   it('accept saves at once and attributes only that save', async () => {

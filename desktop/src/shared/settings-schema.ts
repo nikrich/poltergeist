@@ -33,6 +33,8 @@ export const settingsSchema = z.object({
   focusMode: z.boolean(),
   readAloudVoice: z.string().max(512),
   readAloudRate: z.number().min(0.5).max(2),
+  // Page (A7): fixed reading measure or full editor width.
+  pageWidth: z.enum(['fixed', 'full']),
 
   // Global hotkeys (Electron accelerator format).
   // Note: Electron uses 'Alt' rather than 'Option' even on macOS.

@@ -43,7 +43,7 @@ describe('BacklinksPanel', () => {
     render(withQuery(<BacklinksPanel path="20-contexts/work/alpha-plan.md" onOpen={onOpen} />));
     expect(await screen.findByText('Standup')).toBeInTheDocument();
     expect(screen.getByText('ask Alpha plan owner')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /backlinks · 1/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Backlinks 1' })).toBeInTheDocument();
     expect(getMock).toHaveBeenCalledWith('/v1/vault/backlinks?path=20-contexts%2Fwork%2Falpha-plan.md');
     fireEvent.click(screen.getByText('Standup'));
     expect(onOpen).toHaveBeenCalledWith('20-contexts/work/notes/standup.md');
@@ -74,7 +74,7 @@ describe('BacklinksPanel', () => {
     getMock.mockResolvedValue(ok([STANDUP]));
     render(withQuery(<BacklinksPanel path="20-contexts/work/a.md" onOpen={() => {}} />));
     await screen.findByText('Standup');
-    const header = screen.getByRole('button', { name: /backlinks/ });
+    const header = screen.getByRole('button', { name: /^backlinks/i });
     fireEvent.click(header);
     await waitFor(() => expect(screen.queryByText('Standup')).toBeNull());
     expect(header).toHaveAttribute('aria-expanded', 'false');
