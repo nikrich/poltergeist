@@ -874,3 +874,217 @@ def test_b4_semantic_related_links_apply(vault):
     res = jobs.update_fields(rel, lambda _m: {"related": links},
                              actor=worker_actor("semantic-refresh"), reason="related")
     assert res is not None and res.status == "applied"
+
+
+# ── Task 10 round 1: read markdown as CommonMark does, or hold (R16, R17) ──
+
+X = "<img src=x onerror=alert(1)>"
+HTML_REASONS = {risk.REASON_RAW_HTML, risk.REASON_HANDLER, risk.REASON_SCRIPT, risk.REASON_JS_URL}
+
+
+def _held(before: str | None, after: str) -> list[str]:
+    reasons = risk.evaluate(_p(before=None if before is None else before.encode(),
+                               after=after.encode()))
+    assert reasons and set(reasons) <= HTML_REASONS, (before, after, reasons)
+    return reasons
+
+
+D = V1.decode()
+# (before, after): every bypass row of the task 10 review (C1-C4, I1, I2, m2).
+REVIEW_BYPASSES = [
+    # C1: CommonMark pairs code spans across the lines of a paragraph
+    (D, D + "x ` y\n` " + X + " `\n"),
+    (D + "x ` y\n", D + "x ` y\n` " + X + " `\n"),
+    # C2: inside an HTML block, code spans and escapes are raw text
+    (D + "<div>\n</div>\n", D + "<div>\n` " + X + " `\n</div>\n"),
+    (D + "<details>\n<summary>s</summary>\n", D + "<details>\n<summary>s</summary>\n\\" + X + "\n"),
+    (D + "<pre>\n", D + "<pre>\n`" + X + "`\n"),
+    (D + "<!--\n", D + "<!--\n--> ` " + X + " `\n"),
+    (D + "<?php\n", D + "<?php\n`" + X + "`\n"),
+    # C3: an indented fence is closed by a column-0 fence, which opens nothing
+    (D, D + "  ```\ncode\n```\n" + X + "\n"),
+    (D, D + " ~~~\ncode\n~~~\n" + X + "\n"),
+    # C4: no fence inside YAML front matter
+    (None, '---\nnote: "a\n```\n"\n---\n\n' + X + "\n"),
+    # I1: the change makes a kept line live without touching it
+    (D + "```html\n" + X + "\n```\n", D + X + "\n```\n"),
+    (D + "```html\n" + X + "\n```\n", D + "``` a`b\n" + X + "\n```\n"),
+    (D + "```\na\n" + X + "\n", D + "```\na\n```\n" + X + "\n"),
+    (D + "```\na\n```\nb\n```\n" + X + "\n```\n", D + "```\na\nb\n```\n" + X + "\n```\n"),
+    (D + "\n    " + X + "\n", D + "\nx\n    " + X + "\n"),
+    (D + "<textarea>\n" + X + "\n</textarea>\n", D + X + "\n</textarea>\n"),
+    (D + "<!--\n" + X + "\n-->\n", D + X + "\n-->\n"),
+    (D + "x\n\n<img src=x\n\nonerror=alert(1)>\n", D + "x\n\n<img src=x\nonerror=alert(1)>\n"),
+    # I2: reference definitions with a script link
+    (D, D + "intro\n\n[a]:\njavascript:alert(1)\n"),
+    (D, D + "> [a]: javascript:alert(1)\n"),
+    (D, D + "intro\n\n[a\nb]: javascript:alert(1)\n"),
+    # m2: Obsidian comment and math blocks hide a fence
+    (D, D + "%%\n```\n%%\n" + X + "\n"),
+    (D, D + "$$\n```\n$$\n" + X + "\n"),
+]
+
+
+@pytest.mark.parametrize("before,after", REVIEW_BYPASSES)
+def test_review_bypasses_are_held(before, after):
+    _held(before, after)
+
+
+# Places a renderer (markdown-it, then the browser) hides HTML in: a change
+# that takes the cover away makes kept HTML live (found by fuzzing R17).
+HIDING_CONTEXTS = [
+    ("x\n\n[x](" + X + "\n)\n", "x\n\n[x](" + X + "\n"),  # a link destination
+    ("x\n\n[a]:\n" + X + "\n", "x\n\n" + X + "\n"),  # a definition's destination
+    ("x\n\n![" + X + "](a.png\n)\n", "x\n\n![" + X + "](a.png\n"),  # image alt text
+    ('x\n\n<details>\n<a href=<a href="javascript:alert(1)">x</a>\n',
+     'x\n\n<a href=<a href="javascript:alert(1)">x</a>\n'),  # the first of two hrefs wins
+    ("x\n\n[a]: javascript:alert(1)\n",
+     "x\n\nsee [a]\n\n[a]: javascript:alert(1)\n"),  # a definition nothing used
+    ("x\n\na <!DOCTYPE\n<script>a\n\n\"\n" + X + "\n",
+     "x\n\na <!DOCTYPE\n\n\"\n" + X + "\n"),  # a raw-text element
+    ("x <!--\n" + X + "\n-->\n", "x <!--\n" + X + "\n"),  # an inline comment
+    ('| a | b |\n|---|---|\n| <img src="x|y" onerror=alert(1)> | c |\n',
+     '| a | b |\n| <img src="x|y" onerror=alert(1)> | c |\n'),  # table cells split a tag
+    ('x\n\n<div title="\n\n' + X + '\n\n">\n', "x\n\n\n" + X + '\n\n">\n'),  # an attribute value
+]
+
+
+@pytest.mark.parametrize("before,after", HIDING_CONTEXTS)
+def test_html_a_change_uncovers_is_held(before, after):
+    _held(D + before, D + after)
+
+
+def test_reference_definition_script_links_name_the_link():
+    for text in ("intro\n\n[a]:\njavascript:alert(1)\n", "> [a]: javascript:alert(1)\n",
+                 "- [a]: javascript:alert(1)\n", "intro\n\n[a\nb]: javascript:alert(1)\n"):
+        assert risk.REASON_JS_URL in _held(D, D + text), text
+
+
+PAYLOADS = ["<script>alert(1)</script>", X, '<iframe src="https://example.com"></iframe>']
+# Fences CommonMark may not read as code where the change lands (R16).
+AMBIGUOUS_FENCES = [
+    "```\n{x}\n",                            # unclosed
+    "- item\n\n  ```\n  {x}\n  ```\n",       # in a list item
+    "> ```\n> {x}\n> ```\n",                 # in a blockquote
+    "    ```\n    {x}\n    ```\n",           # indented 4: code or a list's fence
+    "```\n{x}\n~~~\n",                       # closed by the other character
+    "```a`b\n{x}\n```\n",                    # a backtick in a backtick info string
+    " ```\n{x}\n```\n",                      # indented opener
+]
+
+
+@pytest.mark.parametrize("payload", PAYLOADS)
+@pytest.mark.parametrize("shape", AMBIGUOUS_FENCES)
+def test_html_in_an_ambiguous_fence_is_held(shape, payload):
+    _held(D, D + shape.replace("{x}", payload))
+
+
+@pytest.mark.parametrize("actor", [ASSISTANT, FAMILIAR])
+@pytest.mark.parametrize("before,after", [r for r in REVIEW_BYPASSES if r[0] is not None])
+def test_review_bypasses_through_the_writer_wait(vault, actor, before, after):
+    write(NOTE, content=before, actor=USER, base_etag=compute_etag(V1))
+    kept = (vault / NOTE).read_bytes()
+    res = write(NOTE, content=after, actor=actor, base_etag=compute_etag(kept))
+    assert res.status == "pending", (before, after)
+    assert (vault / NOTE).read_bytes() == kept
+
+
+@pytest.mark.parametrize("actor", [ASSISTANT, FAMILIAR])
+def test_html_after_a_fence_in_front_matter_waits_on_create(vault, actor):
+    rel = "20-contexts/work/new.md"
+    res = write_new(rel, '---\nnote: "a\n```\n"\n---\n\n' + X + "\n", actor=actor)
+    assert res.status == "pending"
+    assert not (vault / rel).exists()
+
+
+# A note the user wrote with live HTML, code and fences of every kind.
+LIVE_NOTE = D + (
+    "Press <kbd>Ctrl</kbd> and see `<div>` or ``a `<b>` c``.\n\n"
+    "<details>\n<summary>More</summary>\n\nHidden <b>x</b>\n</details>\n\n"
+    '<img src="cat.png" onerror="this.remove()">\n\n'
+    "[x](javascript:void(0))\n\n"
+    "1. Install:\n   ```bash\n   npm i left-pad\n   ```\n2. Then:\n\n"
+    "```ts\nconst m: Map<K, V> = new Map();\n```\n\n"
+    "> [!note]\n> ```js\n> run()\n> ```\n\n"
+    "```html\n<div onclick=go()>x</div>\n```\n\n<!-- todo: tidy -->\n\n"
+    "the end\n"
+)
+
+
+@pytest.mark.parametrize("after", [
+    LIVE_NOTE + "a new prose line\n",
+    LIVE_NOTE.replace("the end", "the very end"),
+    LIVE_NOTE.replace("2. Then:", "2. Then run it:"),
+    LIVE_NOTE.replace("title: Plan", "title: Plan v2"),
+])
+def test_an_unrelated_edit_to_a_note_with_live_html_is_not_held(after):
+    assert risk.evaluate(_p(before=LIVE_NOTE.encode(), after=after.encode())) == []
+
+
+def test_an_unrelated_edit_through_the_writer_applies(vault):
+    write(NOTE, content=LIVE_NOTE, actor=USER, base_etag=compute_etag(V1))
+    res = write(NOTE, content=LIVE_NOTE + "more\n", actor=FAMILIAR,
+                base_etag=compute_etag(LIVE_NOTE.encode()))
+    assert res.status == "applied"
+
+
+@pytest.mark.parametrize("text", [
+    "```html\n<div onclick=alert(1)>x</div>\n```\n",
+    # a cleanly closed nested fence: later top-level fences are trusted again
+    "1. Run:\n   ```python\n   print(1)\n   ```\n\n```html\n<b>x</b>\n```\n",
+    "- a\n  ```\n  b\n\n  c\n  ```\n- d\n\n~~~\n<b>x</b>\n~~~\n",
+    "Use `<div>` here, ``a `<b>` c``, and <https://example.com>.\n",
+    "a < b, <3, 1 <2, x <= y, a <- b, a << b\n",
+    "> [!tip]\n> ```js\n> run()\n> ```\n\n```html\n<b>x</b>\n```\n",
+])
+def test_code_prose_and_autolinks_stay_unheld(text):
+    assert _md(text) == []
+
+
+@pytest.mark.parametrize("fenced", [
+    "1. Run:\n   ```html\n   <b>x</b>\n   ```\n",
+    "> ```html\n> <b>x</b>\n> ```\n",
+])
+def test_an_edit_to_a_note_with_html_in_a_nested_fence_waits(fenced):
+    """R16/R17 cost: a nested fence is never trusted as code in the after
+    text, but is code in the before text, so its HTML counts as new."""
+    before = D + fenced
+    assert risk.evaluate(_p(before=before.encode(), after=(before + "more\n").encode())) == [
+        risk.REASON_RAW_HTML]
+
+
+def test_html_documents_still_ignore_markdown_structure():
+    doc = b"<!doctype html>\n<p>Report</p>\n```\n<details><summary>x</summary></details>\n"
+    assert risk.evaluate(_p(HTML_DOC, op="create", before=None, after=doc)) == []
+    edit = b"<!doctype html>\n<p>Report</p>\n<p>more</p>\n"
+    assert risk.evaluate(_p(HTML_DOC, before=doc, after=edit)) == []
+
+
+# B4 workers on a note that already has live HTML and code: they apply.
+
+def test_b4_reversal_on_a_note_with_live_html_applies(vault):
+    rel = "20-contexts/work/decisions/old.md"
+    write(rel, content=USER_NOTE.decode() + "\n<details>\n<summary>Why</summary>\n\n"
+          "Cost of `Vec<T>`.\n</details>\n", op="create", actor=USER)
+    res = jobs.update_fields(rel, lambda _m: {"reversed_by": ["[[new-decision]]"],
+                                              "status": "reversed"},
+                             actor=worker_actor("reversal"), reason="reversed")
+    assert res is not None and res.status == "applied"
+
+
+def test_b4_profile_apply_on_a_note_with_live_html_applies(vault):
+    rel = "80-profile/current-projects.md"
+    (vault / rel).parent.mkdir(parents=True, exist_ok=True)
+    old = "# Current projects\n\n<kbd>Cmd</kbd>-K opens search\n\n```ts\nconst a: Array<T> = [];\n```\n"
+    (vault / rel).write_text(old)
+    res = jobs.rewrite_text(rel, lambda t: t + "\n- Billing: p95 < 200ms, 50% -> 100%\n",
+                            actor=worker_actor("profile-apply"), reason="weekly")
+    assert res is not None and res.status == "applied", res
+
+
+def test_b4_semantic_related_on_a_note_with_live_html_applies(vault):
+    rel = "20-contexts/work/decisions/old.md"
+    write(rel, content=USER_NOTE.decode() + "\nSee <kbd>Ctrl</kbd>.\n", op="create", actor=USER)
+    res = jobs.update_fields(rel, lambda _m: {"related": ["[[20-contexts/work/plan]]"]},
+                             actor=worker_actor("semantic-refresh"), reason="related")
+    assert res is not None and res.status == "applied"
