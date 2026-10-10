@@ -60,6 +60,7 @@ def test_plain_prose_is_not_held():
     prose = (
         b"Learn javascript: the basics.\nWe use {{ in Go templates.\n"
         b"Move the onboarding doc.\n```python\nprint(1)\n```\nthe <scripted> plan\n"
+        b"```python\none = \"two\"\nonly = 'x'\n```\nA {{ nested { brace }} aside.\n"
     )
     assert risk.evaluate(_p(op="create", before=None, after=prose)) == []
 
@@ -117,6 +118,25 @@ def test_moving_a_note_into_90_meta_is_held():
     ("Hello {{ person.name }}", risk.REASON_TEMPLATE_EXPR),
     ("{{date | format: YYYY-MM-DD}}", risk.REASON_TEMPLATE_EXPR),
     ("```dataviewjs", risk.REASON_EXEC_FENCE),
+    # "/" separates attributes too
+    ("<svg/onload=alert(1)>", risk.REASON_HANDLER),
+    ("<img src=x/onerror=alert(1)>", risk.REASON_HANDLER),
+    # an unquoted handler continuing a tag opened on the line above
+    ("<img src=x\nonerror=alert(1)>", risk.REASON_HANDLER),
+    # browsers decode entities and drop tab/CR/LF inside URLs
+    ('<a href="&#106;avascript:alert(1)">x</a>', risk.REASON_JS_URL),
+    ('<a href="&#x6A;avascript:alert(1)">x</a>', risk.REASON_JS_URL),
+    ('<a href="javascript&colon;alert(1)">x</a>', risk.REASON_JS_URL),
+    ('<a href="java&Tab;script:alert(1)">x</a>', risk.REASON_JS_URL),
+    ('<a href="java\tscript:alert(1)">x</a>', risk.REASON_JS_URL),
+    ('<a href=\n"javascript:alert(1)">x</a>', risk.REASON_JS_URL),
+    ('<object data="javascript:alert(1)"></object>', risk.REASON_JS_URL),
+    ("[1]: javascript:alert(1)", risk.REASON_JS_URL),
+    ("[1]: <javascript:alert(1)>", risk.REASON_JS_URL),
+    # quoted filter arguments may hold braces; a placeholder may span lines
+    ('{{ title | default: "}" }}', risk.REASON_TEMPLATE_EXPR),
+    ('{{ title | default: "{" }}', risk.REASON_TEMPLATE_EXPR),
+    ("{{\ndate\n}}", risk.REASON_TEMPLATE_EXPR),
 ])
 def test_content_rules_on_added_lines(line, reason):
     assert risk.evaluate(_p(after=V1 + line.encode() + b"\n")) == [reason]
@@ -151,6 +171,17 @@ def test_the_jot_router_may_move_your_jots():
     p = _p("00-inbox/raw/manual/j.md", actor=ROUTER, op="move",
            dest="20-contexts/work/j.md", after=V1)
     assert risk.evaluate(p) == []
+
+
+def test_the_jot_router_may_not_delete_notes_it_did_not_create():
+    p = _p("00-inbox/raw/manual/j.md", actor=ROUTER, op="delete", after=None)
+    assert risk.evaluate(p) == [risk.REASON_DELETE]
+
+
+def test_a_tag_opened_on_a_kept_line_still_counts():
+    before = V1 + b"<img src=x\n>\n"
+    after = V1 + b"<img src=x\nonerror=alert(1)\n>\n"
+    assert risk.evaluate(_p(before=before, after=after)) == [risk.REASON_HANDLER]
 
 
 def test_unknown_ownership_fails_closed(monkeypatch):

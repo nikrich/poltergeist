@@ -12,6 +12,7 @@ through this hold (decision 3).
 from __future__ import annotations
 
 import difflib
+import html
 import logging
 import re
 import unicodedata
@@ -39,15 +40,25 @@ REASON_DELETE = "deletes a note it didn't create"
 REASON_MOVE = "moves a note it didn't create"
 
 _SCRIPT_RE = re.compile(r"<\s*script\b", re.IGNORECASE)
-_HANDLER_RE = re.compile(r"<[a-z][^>]*\son[a-z]+\s*=|^\s*on[a-z]+\s*=\s*[\"']", re.IGNORECASE)
+# HTML parsers accept "/" as well as whitespace before an attribute.
+_HANDLER_RE = re.compile(r"<[a-z][^>]*[\s/]on[a-z]+\s*=", re.IGNORECASE)
+# A tag still open at the end of a line: the next line continues its attributes.
+_OPEN_TAG_RE = re.compile(r"<[a-z][^>]*$", re.IGNORECASE)
 _JS_URL_RE = re.compile(
-    r"(?:href|src|action|formaction|xlink:href)\s*=\s*[\"']?\s*javascript\s*:"
+    r"(?:href|src|action|formaction|xlink:href|data)\s*=\s*[\"']?\s*javascript\s*:"
     r"|\]\(\s*<?\s*javascript\s*:"
-    r"|<\s*javascript\s*:",
+    r"|<\s*javascript\s*:"
+    r"|^\s*\[[^\]]+\]:\s*<?\s*javascript\s*:",  # markdown reference definition
     re.IGNORECASE,
 )
-# Spec C placeholders: {{ name }}, {{ a.b }}, {{ a | filter: arg }}.
-_TEMPLATE_EXPR_RE = re.compile(r"\{\{\s*[A-Za-z_][\w.]*\s*(?:\|[^{}]*)?\}\}")
+# Browsers drop these inside a URL: java<TAB>script: is javascript:.
+_URL_IGNORED_RE = re.compile(r"[\t\r\n]")
+# Spec C placeholders: {{ name }}, {{ a.b }}, {{ a | filter: "arg" }}; quoted
+# arguments may hold braces, and a placeholder may span lines.
+_TEMPLATE_EXPR_RE = re.compile(
+    r"\{\{\s*[A-Za-z_][\w.]*\s*"
+    r"(?:\|(?:\"(?:[^\"\\]|\\.)*\"|'[^']*'|[^{}\"'])*)?\}\}"
+)
 _FENCE_RE = re.compile(r"^\s*(?:`{3,}|~{3,})\s*([A-Za-z]+)")
 _ALWAYS_EXECUTABLE = frozenset({"dataviewjs"})
 _EXECUTABLE_IN_TEMPLATES = frozenset({"js", "javascript"})
@@ -95,45 +106,84 @@ def _path_reasons(change: ProposedChange) -> list[str]:
     return reasons
 
 
+def _lines(data: bytes) -> list[str]:
+    return data.decode("utf-8", errors="replace").splitlines()
+
+
+def _added_indices(before: bytes | None, after: bytes) -> list[int]:
+    new = _lines(after)
+    if before is None:
+        return list(range(len(new)))
+    matcher = difflib.SequenceMatcher(a=_lines(before), b=new, autojunk=False)
+    out: list[int] = []
+    for tag, _i1, _i2, j1, j2 in matcher.get_opcodes():
+        if tag in ("replace", "insert"):
+            out.extend(range(j1, j2))
+    return out
+
+
 def added_lines(before: bytes | None, after: bytes | None) -> list[str]:
     """The lines ``after`` adds or replaces relative to ``before`` (spec B §3:
     only lines the change adds are checked)."""
     if after is None:
         return []
-    new = after.decode("utf-8", errors="replace").splitlines()
-    if before is None:
-        return new
-    old = before.decode("utf-8", errors="replace").splitlines()
-    out: list[str] = []
-    matcher = difflib.SequenceMatcher(a=old, b=new, autojunk=False)
-    for tag, _i1, _i2, j1, j2 in matcher.get_opcodes():
-        if tag in ("replace", "insert"):
-            out.extend(new[j1:j2])
-    return out
+    new = _lines(after)
+    return [new[j] for j in _added_indices(before, after)]
+
+
+def _js_url(text: str) -> bool:
+    """``javascript:`` as a browser reads it: entities decoded (``&#106;``,
+    ``&colon;``), tab/CR/LF removed."""
+    return _JS_URL_RE.search(_URL_IGNORED_RE.sub("", html.unescape(text))) is not None
 
 
 def _content_reasons(change: ProposedChange) -> list[str]:
+    if change.after is None:
+        return []
     in_template = any(p.startswith(_TEMPLATES_FOLDED) for p in _paths(change))
+    new = _lines(change.after)
+    added = _added_indices(change.before, change.after)
+    added_set = set(added)
     reasons: list[str] = []
-    for line in added_lines(change.before, change.after):
+    tag_open = False  # tracked over the whole file: a kept line can open the tag
+    for i, line in enumerate(new):
+        # A line inside an unclosed tag is more of its attributes.
+        scan = "<x " + line if tag_open else line
+        tag_open = _OPEN_TAG_RE.search(scan) is not None
+        if i not in added_set:
+            continue
         if _SCRIPT_RE.search(line):
             _add(reasons, REASON_SCRIPT)
-        if _HANDLER_RE.search(line):
+        if _HANDLER_RE.search(scan):
             _add(reasons, REASON_HANDLER)
-        if _JS_URL_RE.search(line):
+        if _js_url(line) or _js_url(scan):
             _add(reasons, REASON_JS_URL)
-        if _TEMPLATE_EXPR_RE.search(line):
-            _add(reasons, REASON_TEMPLATE_EXPR)
         fence = _FENCE_RE.match(line)
         if fence is not None:
             lang = fence.group(1).lower()
             if lang in _ALWAYS_EXECUTABLE or (in_template and lang in _EXECUTABLE_IN_TEMPLATES):
                 _add(reasons, REASON_EXEC_FENCE)
-    return reasons
+    joined = "\n".join(new[i] for i in added)
+    if REASON_JS_URL not in reasons and _js_url(joined):  # an attribute split across lines
+        _add(reasons, REASON_JS_URL)
+    if _TEMPLATE_EXPR_RE.search(joined):  # per-line matches included; may span lines
+        _add(reasons, REASON_TEMPLATE_EXPR)
+    return _in_rule_order(reasons)
+
+
+_CONTENT_ORDER = (
+    REASON_SCRIPT, REASON_HANDLER, REASON_JS_URL, REASON_TEMPLATE_EXPR, REASON_EXEC_FENCE,
+)
+
+
+def _in_rule_order(reasons: list[str]) -> list[str]:
+    return [r for r in _CONTENT_ORDER if r in reasons]
 
 
 def _ownership_reasons(change: ProposedChange) -> list[str]:
-    if change.op not in ("delete", "move") or change.actor in ROUTINE_MOVERS:
+    if change.op not in ("delete", "move"):
+        return []
+    if change.op == "move" and change.actor in ROUTINE_MOVERS:
         return []
     try:
         mine = _changes.created_by(change.rel_path, change.actor)

@@ -1,5 +1,6 @@
 """The single vault write path (spec 2026-10-09-ai-changes-revert-design.md, slice B1)."""
 from ghostbrain.history.store import HistoryUnavailable
+from ghostbrain.vault_write import risk
 from ghostbrain.vault_write.actor import (
     ASSISTANT,
     MCP,
@@ -46,7 +47,6 @@ from ghostbrain.vault_write.writer import (
     write,
     write_new,
 )
-from ghostbrain.vault_write import risk  # noqa: E402  (imports writer; must come after it)
 
 __all__ = [
     "ASSISTANT", "DELETE_FIELD", "MCP", "RESTORE", "USER", "UNLISTED_ACTORS", "WRITABLE_SUFFIXES",
