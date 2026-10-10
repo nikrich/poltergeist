@@ -45,6 +45,7 @@ function setup(
   getMock.mockImplementation(async (path: string) => {
     if (path.startsWith('/v1/changes?')) return listResponse;
     if (path === '/v1/changes/2') return detail();
+    if (path === '/v1/changes/9') return { ...DETAIL, id: 9, status: 'pending', changedSince: false };
     throw new Error(`unexpected GET ${path}`);
   });
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });

@@ -18,12 +18,16 @@ const PROPOSED_OP: Record<ChangeOp, string> = {
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
+/** The stale-approval prompt. The drift is re-read after the 409, so forcing is
+ * only offered over what is on disk now, never over the detail cached at mount. */
+type Drift = { state: 'loading' } | { state: 'ready' } | { state: 'error'; message: string };
+
 function PendingCard({ change }: { change: ChangeSummary }) {
   const detail = useChange(change.id);
   const approve = useApproveChange();
   const reject = useRejectChange();
   const openNote = useNoteView((s) => s.open);
-  const [stale, setStale] = useState(false);
+  const [drift, setDrift] = useState<Drift | null>(null);
   const busy = approve.isPending || reject.isPending;
   const canOpen = change.op !== 'create' && change.path.endsWith('.md');
   const d = detail.data;
@@ -34,8 +38,13 @@ function PendingCard({ change }: { change: ChangeSummary }) {
       toast.success('approved — the change is in your notes now');
     } catch (err) {
       if (!force && err instanceof ApiError && err.status === 409) {
-        setStale(true);
-        void detail.refetch();
+        setDrift({ state: 'loading' });
+        const fresh = await detail.refetch();
+        const next: Drift = fresh.isError
+          ? { state: 'error', message: message(fresh.error) }
+          : { state: 'ready' };
+        // A cancel while the drift was being re-read keeps the prompt closed.
+        setDrift((cur) => (cur ? next : null));
         return;
       }
       toast.error(`approve failed: ${message(err)}`);
@@ -52,7 +61,10 @@ function PendingCard({ change }: { change: ChangeSummary }) {
   };
 
   return (
-    <li data-testid={`pending-${change.id}`} className="rounded-sm border border-hairline bg-paper p-3">
+    <li
+      data-testid={`pending-${change.id}`}
+      className="rounded-sm border border-hairline bg-paper p-3"
+    >
       <div className="flex items-center gap-3 text-12">
         <span className="flex-shrink-0 rounded-sm bg-fog px-[6px] py-[1px] font-mono text-10 text-ink-1">
           {actorLabel(change.actor)}
@@ -73,7 +85,9 @@ function PendingCard({ change }: { change: ChangeSummary }) {
           {change.destPath ? ` → ${change.destPath}` : ''}
         </span>
         <span className="min-w-0 flex-1 truncate text-ink-2">{change.reason}</span>
-        <span className="flex-shrink-0 font-mono text-10 text-ink-3">{formatRelativeTime(change.ts)}</span>
+        <span className="flex-shrink-0 font-mono text-10 text-ink-3">
+          {formatRelativeTime(change.ts)}
+        </span>
       </div>
       <ul aria-label="why it waits" className="m-0 mt-2 flex list-none flex-wrap gap-2 p-0">
         {change.riskReasons.map((r) => (
@@ -82,7 +96,7 @@ function PendingCard({ change }: { change: ChangeSummary }) {
           </li>
         ))}
       </ul>
-      {d && (
+      {d ? (
         <LineDiffView
           testId={`pending-diff-${change.id}`}
           className="mt-2 max-h-[320px]"
@@ -90,17 +104,28 @@ function PendingCard({ change }: { change: ChangeSummary }) {
           newText={d.after ?? ''}
           legend="- now · + proposed"
         />
+      ) : detail.isError ? (
+        <p className="m-0 mt-2 text-11 text-ink-2">
+          couldn&apos;t load the proposed change: {detail.error.message}
+        </p>
+      ) : (
+        <p className="m-0 mt-2 text-11 text-ink-2">loading…</p>
       )}
-      {d?.changedSince && !stale && (
-        <p className="m-0 mt-2 text-11 text-ink-2">this note changed since the change was proposed</p>
+      {d?.changedSince && !drift && (
+        <p className="m-0 mt-2 text-11 text-ink-2">
+          this note changed since the change was proposed
+        </p>
       )}
-      {stale ? (
-        <div role="alert" className="mt-2 rounded-sm border border-oxblood/30 bg-oxblood/10 p-2 text-12">
+      {drift ? (
+        <div
+          role="alert"
+          className="mt-2 rounded-sm border border-oxblood/30 bg-oxblood/10 p-2 text-12"
+        >
           <p className="m-0 mb-2 text-ink-0">
-            This note changed since the change was proposed. Approve anyway? The current version stays
-            in page history.
+            This note changed since the change was proposed. Approve anyway? The current version
+            stays in page history.
           </p>
-          {d ? (
+          {drift.state === 'ready' && d ? (
             <LineDiffView
               testId={`pending-drift-${change.id}`}
               className="mb-2 max-h-[240px]"
@@ -108,29 +133,38 @@ function PendingCard({ change }: { change: ChangeSummary }) {
               newText={d.current ?? ''}
               legend="- when proposed · + on disk now"
             />
-          ) : detail.isError ? (
-            <p className="m-0 mb-2 text-ink-2">
-              couldn&apos;t load what changed: {detail.error.message}
-            </p>
+          ) : drift.state === 'error' ? (
+            <p className="m-0 mb-2 text-ink-2">couldn&apos;t load what changed: {drift.message}</p>
           ) : (
             <p className="m-0 mb-2 text-ink-2">loading…</p>
           )}
           <div className="flex gap-2">
             {/* Forcing is only offered once the user can see what it replaces. */}
-            <Btn variant="danger" size="sm" disabled={busy || !d} onClick={() => void onApprove(true)}>
+            <Btn
+              variant="danger"
+              size="sm"
+              disabled={busy || drift.state !== 'ready' || !d}
+              onClick={() => void onApprove(true)}
+            >
               approve anyway
             </Btn>
             <Btn variant="ghost" size="sm" disabled={busy} onClick={() => void onReject()}>
               reject
             </Btn>
-            <Btn variant="ghost" size="sm" onClick={() => setStale(false)}>
+            <Btn variant="ghost" size="sm" onClick={() => setDrift(null)}>
               cancel
             </Btn>
           </div>
         </div>
       ) : (
         <div className="mt-2 flex gap-2">
-          <Btn variant="primary" size="sm" disabled={busy} onClick={() => void onApprove(false)}>
+          {/* Approval is only offered once the user can see what it writes. */}
+          <Btn
+            variant="primary"
+            size="sm"
+            disabled={busy || !d}
+            onClick={() => void onApprove(false)}
+          >
             approve
           </Btn>
           <Btn variant="ghost" size="sm" disabled={busy} onClick={() => void onReject()}>
