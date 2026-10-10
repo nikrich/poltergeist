@@ -1,17 +1,27 @@
-"""GET /v1/vault/stats, /graph, /contexts, /suggest, /backlinks and /resolve."""
+"""GET /v1/vault/stats, /graph, /contexts, /suggest, /backlinks and /resolve;
+POST /query; PATCH /status."""
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 
 from ghostbrain import routing_config
 from ghostbrain.api.models.graph import EgoGraphResponse, GraphResponse
 from ghostbrain.api.models.linking import BacklinksResponse, ResolveResponse, SuggestResponse
 from ghostbrain.api.models.vault import VaultStats
+from ghostbrain.api.models.vault_query import (
+    NoteStatusRequest,
+    NoteStatusResponse,
+    VaultQueryRequest,
+    VaultQueryResponse,
+)
 from ghostbrain.api.repo.ego_graph import FocusNotFound, ego_graph
 from ghostbrain.api.repo.graph import build_graph
 from ghostbrain.api.repo.linking import InvalidLinkPath, backlinks, resolve_link, suggest
 from ghostbrain.api.repo.vault import get_vault_stats
+from ghostbrain.api.repo.vault_query import query_vault, set_note_status
+from ghostbrain.api.vault_http import if_match, request_actor
+from ghostbrain.vault_write import Actor
 
 router = APIRouter(prefix="/v1/vault", tags=["vault"])
 
@@ -113,3 +123,23 @@ def vault_resolve(target: str = Query(..., min_length=1, max_length=500)) -> dic
         return resolve_link(target)
     except InvalidLinkPath as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.post("/query", response_model=VaultQueryResponse)
+def vault_query(body: VaultQueryRequest) -> dict:
+    """Run a ```query``` block. Always 200: parse problems come back as
+    `diagnostics` so the editor can show them inline; `indexing: true` = cold
+    index, retry soon."""
+    return query_vault(body.query)
+
+
+@router.patch("/status", response_model=NoteStatusResponse)
+def vault_set_status(
+    body: NoteStatusRequest,
+    base_etag: str | None = Depends(if_match),
+    actor: Actor = Depends(request_actor),
+) -> dict:
+    """Tick-to-done from a query block: sets frontmatter `status` via the
+    write path (as the user unless X-Poltergeist-Actor says otherwise).
+    `If-Match` → 409 when the note changed since."""
+    return set_note_status(body.path, body.status, base_etag=base_etag, actor=actor)
