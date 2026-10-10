@@ -103,6 +103,26 @@ describe('RichMarkdownEditor inline ai', () => {
     expect(screen.queryByRole('button', { name: 'inline ai' })).toBeNull();
   });
 
+  it('is off in a read-only editor even with the inlineAssist prop', () => {
+    useToasts.setState({ toasts: [] });
+    const { editor, handleRef } = setup('alpha beta gamma', { readOnly: true });
+    select(editor(), 'beta');
+    expect(screen.queryByRole('button', { name: 'inline ai' })).toBeNull();
+    pressModJ(editor());
+    let opened = true;
+    let handedOff = true;
+    act(() => {
+      opened = handleRef.current!.startInlineAssist!();
+      handedOff = handleRef.current!.startInlineAssist!({ mode: 'polish' });
+    });
+    expect(opened).toBe(false);
+    expect(handedOff).toBe(false);
+    expect(screen.queryByRole('dialog', { name: 'inline ai' })).toBeNull();
+    expect(getAiSuggestion(editor())).toBeNull();
+    expect(assist).not.toHaveBeenCalled();
+    expect(useToasts.getState().toasts).toHaveLength(0);
+  });
+
   it('the toolbar ✦ button opens it', async () => {
     setup();
     fireEvent.click(screen.getByRole('button', { name: 'inline ai' }));
