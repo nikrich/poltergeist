@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { NoteKind } from '../../shared/api-types';
-import { FIT_BOUNDS, GraphCanvas } from '../components/GraphCanvas';
+import { DOUBLE_CLICK_MS, FIT_BOUNDS, GraphCanvas } from '../components/GraphCanvas';
 import { fitCamera, nodeRadius, toScreen } from '../lib/constellation-engine';
 import type { Scene, SceneNode } from '../lib/graph/layout';
 
@@ -34,10 +34,14 @@ function click(el: Element, x: number, y: number) {
 }
 
 let ops: string[];
+/** performance.now() for the canvas: tests set it, so double-click timing never depends on the runner. */
+let clock: number;
 const originalGetContext = HTMLCanvasElement.prototype.getContext;
 
 beforeEach(() => {
   ops = [];
+  clock = 1000;
+  vi.spyOn(performance, 'now').mockImplementation(() => clock);
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
     cb(0);
     return 1;
@@ -92,8 +96,20 @@ describe('GraphCanvas', () => {
     click(canvas, x, y);
     expect(onRecenter).toHaveBeenCalledWith(SCENE.nodes[1]);
     expect(onOpen).not.toHaveBeenCalled();
+    clock += DOUBLE_CLICK_MS;
     click(canvas, x, y);
     expect(onOpen).toHaveBeenCalledWith(SCENE.nodes[1]);
+  });
+
+  it('a second click after the double-click window recentres again instead of opening', () => {
+    const { canvas, onRecenter, onOpen } = renderCanvas();
+    const [x, y] = screenPoint(SCENE, 1);
+    click(canvas, x, y);
+    clock += DOUBLE_CLICK_MS + 1;
+    click(canvas, x, y);
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(onRecenter).toHaveBeenCalledTimes(2);
+    expect(onRecenter).toHaveBeenLastCalledWith(SCENE.nodes[1]);
   });
 
   it('the second click opens the first node even after the scene changed', () => {
@@ -102,6 +118,7 @@ describe('GraphCanvas', () => {
     click(canvas, x, y);
     const recentred: Scene = { ...SCENE, focus: 1, nodes: [sn('beta.md', 0, 0, { hop: 0 }), sn('gamma.md', 300, 300)], edges: [] };
     rerender(<GraphCanvas scene={recentred} hiddenKinds={NONE} onRecenter={onRecenter} onOpen={onOpen} />);
+    clock += DOUBLE_CLICK_MS - 1;
     click(canvas, x, y);
     expect(onOpen).toHaveBeenCalledWith(SCENE.nodes[1]);
   });
