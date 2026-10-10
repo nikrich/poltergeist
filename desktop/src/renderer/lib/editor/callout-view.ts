@@ -118,6 +118,12 @@ export function createCalloutView(
       e.preventDefault();
       commitTitle();
       editor.commands.focus();
+    } else if (e.key === 'Escape') {
+      // Revert the draft and keep Escape from reaching NoteView's close-note listener.
+      e.preventDefault();
+      e.stopPropagation();
+      titleInput.value = attrs().title ?? '';
+      editor.commands.focus();
     }
   });
 

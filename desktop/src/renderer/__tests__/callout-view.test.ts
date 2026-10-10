@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { fireEvent } from '@testing-library/react';
 import { makeEditor, markdownOf } from './helpers/editor';
 import { nextFoldable } from '../lib/editor/callout-view';
@@ -55,6 +55,31 @@ describe('callout node view', () => {
     expect(markdownOf(editor)).toBe('> [!note]+ Details\n> body');
     expect(q<HTMLElement>(editor.view.dom, '.gb-callout').dataset.collapsed).toBe('true');
     expect(q<HTMLInputElement>(editor.view.dom, '[aria-label="callout title"]').readOnly).toBe(true);
+  });
+
+  it('Escape in the title reverts the draft, stays inside the editor and returns focus', async () => {
+    const editor = makeEditor('> [!info] Old\n> body');
+    const host = editor.options.element;
+    document.body.appendChild(host);
+    const outer = vi.fn();
+    window.addEventListener('keydown', outer);
+    try {
+      const input = q<HTMLInputElement>(editor.view.dom, '[aria-label="callout title"]');
+      input.focus();
+      input.value = 'Draft';
+      const notCancelled = fireEvent.keyDown(input, { key: 'Escape' });
+      expect(notCancelled).toBe(false);
+      expect(outer).not.toHaveBeenCalled();
+      expect(input.value).toBe('Old');
+      // Tiptap's focus command lands on the next animation frame.
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      expect(document.activeElement).not.toBe(input);
+      expect(editor.view.dom.contains(document.activeElement)).toBe(true);
+      expect(markdownOf(editor)).toBe('> [!info] Old\n> body');
+    } finally {
+      window.removeEventListener('keydown', outer);
+      host.remove();
+    }
   });
 
   it('nextFoldable flips open/closed', () => {
