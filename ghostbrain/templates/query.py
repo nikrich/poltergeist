@@ -33,6 +33,7 @@ MAX_TEXT_READS = 2_000
 MAX_NOTE_BYTES = 2_000_000
 DEADLINE_S = 2.0
 MIN_NAME_CHARS = 2
+MAX_HEADING_LINE_CHARS = 500
 CLOSED_STATUSES = frozenset({"done", "closed"})
 QUERY_KEY_NAMES: tuple[str, ...] = tuple(s.name for s in QUERY_KEYS)
 
@@ -42,8 +43,7 @@ _SINCE_REL_RE = re.compile(r"(\d{1,4})([dw])")
 _SORT_RE = re.compile(r"(created|updated)(?:[ \t]+(asc|desc))?")
 _STATUS_RE = re.compile(r"[a-z0-9_-]{1,32}")
 _LIMIT_RE = re.compile(r"\d{1,9}")
-_H1_RE = re.compile(r"#[ \t]+(.+?)[ \t#]*")
-_QUERY_FENCE_RE = re.compile(r"^```query[^\n]*\n.*?^```[ \t]*$", re.MULTILINE | re.DOTALL)
+_H1_RE = re.compile(r"#[ \t]+(.+)")
 
 SortField = Literal["created", "updated"]
 
@@ -322,14 +322,38 @@ def _body_text(root: Path, rel: str) -> str | None:
     if data is None:
         return None
     _, body = split_frontmatter(data.decode("utf-8", errors="replace"))
-    return _QUERY_FENCE_RE.sub("", body)
+    return _strip_query_fences(body)
+
+
+def _strip_query_fences(body: str) -> str:
+    """Drop each ```query fence, opening line through closing ``` line, in one
+    linear pass. An unclosed fence runs to the end of the note, as in
+    CommonMark, so a half-typed block never counts as body text."""
+    out: list[str] = []
+    in_fence = False
+    for line in body.split("\n"):
+        if in_fence:
+            if line.startswith("```") and not line[3:].strip(" \t"):
+                in_fence = False
+            continue
+        if line.startswith("```query"):
+            in_fence = True
+            out.append("")
+            continue
+        out.append(line)
+    return "\n".join(out)
 
 
 def _first_heading(body: str) -> str | None:
     for line in body.splitlines()[:50]:
-        m = _H1_RE.fullmatch(line.strip())
+        line = line.strip()
+        if len(line) > MAX_HEADING_LINE_CHARS:
+            continue
+        m = _H1_RE.fullmatch(line)
         if m:
-            return m.group(1).strip()
+            title = m.group(1).rstrip(" \t#").strip()
+            if title:
+                return title
     return None
 
 

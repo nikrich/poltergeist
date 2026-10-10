@@ -45,4 +45,7 @@ def set_note_status(
         reason=f"query block: mark {status}",
         base_etag=base_etag,
     )
+    # TODO(B3): a held/pending non-user write (result.status == "pending") is
+    # echoed here as applied; once B3 installs a hold policy, surface
+    # result.status and the change id instead.
     return {"path": result.path, "status": status, "etag": result.etag}

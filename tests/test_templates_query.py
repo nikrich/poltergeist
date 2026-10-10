@@ -356,3 +356,33 @@ def test_text_scan_is_bounded_and_reports_partial(tmp_path):
     run = _run(tmp_path, "mentions: Alex", clock=lambda: next(ticks))
     assert run.rows == () and run.partial is True
     assert _run(tmp_path, "mentions: Alex").partial is False
+
+
+import time
+
+from ghostbrain.templates.query import _body_text, _first_heading
+
+
+def test_first_heading_strips_closing_hashes():
+    assert _first_heading("# Send Alex the budget ##\n") == "Send Alex the budget"
+    assert _first_heading("intro\n#\tRobin's notes\t#\n") == "Robin's notes"
+    assert _first_heading("## Sub\n#nospace\n") is None
+
+
+def test_first_heading_is_linear_on_hostile_lines():
+    hostile = "# a" + " #" * 100_000 + "b"  # ~200k chars on one line
+    start = time.perf_counter()
+    assert _first_heading(hostile + "\n# Real title") == "Real title"
+    assert time.perf_counter() - start < 1.0
+
+
+def test_body_text_strips_query_fences_and_unclosed_runs_to_end(tmp_path):
+    _note(tmp_path, "n.md", "a\n```query\nmentions: Alex\n```\nb\n```python\nx\n```\nc\n```query\nmentions: Robin\n")
+    assert _body_text(tmp_path, "n.md") == "a\n\nb\n```python\nx\n```\nc\n"
+
+
+def test_body_text_is_linear_on_unclosed_fences(tmp_path):
+    _note(tmp_path, "n.md", "keep Alex\n" + "```query\n" * 22_000)  # ~200k chars, no closing fence
+    start = time.perf_counter()
+    assert _body_text(tmp_path, "n.md") == "keep Alex\n"
+    assert time.perf_counter() - start < 1.0
