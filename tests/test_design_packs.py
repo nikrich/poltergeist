@@ -259,7 +259,7 @@ def test_get_import_unknown(vault: Path):
 def test_settings_defaults(vault: Path):
     assert design_settings.load() == {
         "listen": True, "budget_usd": 2.0, "default_pack": packs.BUILTIN_PACK_ID,
-        "code_roots": ["~/development"],
+        "code_roots": ["~/development"], "web": True,
     }
 
 
@@ -269,7 +269,7 @@ def test_settings_update_persists_and_preserves_other_config(vault: Path):
     _make_pack(vault, "acme")
     out = design_settings.update(listen=False, budget_usd=5, default_pack="acme")
     assert out == {
-        "listen": False, "budget_usd": 5.0, "default_pack": "acme", "code_roots": ["~/development"],
+        "listen": False, "budget_usd": 5.0, "default_pack": "acme", "code_roots": ["~/development"], "web": True,
     }
     assert design_settings.load() == out
     import yaml
@@ -294,7 +294,7 @@ def test_settings_load_tolerates_garbage_and_deleted_pack(vault: Path):
     )
     assert design_settings.load() == {
         "listen": True, "budget_usd": 2.0, "default_pack": packs.BUILTIN_PACK_ID,
-        "code_roots": ["~/development"],
+        "code_roots": ["~/development"], "web": True,
     }
 
 

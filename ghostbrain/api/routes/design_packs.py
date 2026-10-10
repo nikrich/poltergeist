@@ -39,6 +39,7 @@ class DesignSettings(BaseModel):
     budget_usd: float
     default_pack: str
     code_roots: list[str]
+    web: bool = True
 
 
 class UpdateDesignSettingsRequest(BaseModel):
@@ -46,6 +47,7 @@ class UpdateDesignSettingsRequest(BaseModel):
     budget_usd: float | None = None
     default_pack: str | None = None
     code_roots: list[str] | None = None
+    web: bool | None = None
 
 
 @router.get("/packs", response_model=list[DesignPack])

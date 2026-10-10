@@ -5,6 +5,7 @@
       budget_usd: 2.0       # max spend per UI/board agent run
       default_pack: poltergeist-neutral
       code_roots: [~/development]   # folders searched for existing codebases
+      web: true             # the prototype agent may search and read the web
 
 Reads never fail: a missing or malformed value falls back to its default,
 and a default pack that has since been deleted falls back to the built-in.
@@ -26,6 +27,7 @@ DEFAULTS: dict[str, Any] = {
     "budget_usd": 2.0,
     "default_pack": packs.BUILTIN_PACK_ID,
     "code_roots": ["~/development"],
+    "web": True,
 }
 BUDGET_MIN_USD = 0.1
 BUDGET_MAX_USD = 20.0
@@ -51,6 +53,8 @@ def load() -> dict:
     out = dict(DEFAULTS)
     if isinstance(raw.get("listen"), bool):
         out["listen"] = raw["listen"]
+    if isinstance(raw.get("web"), bool):
+        out["web"] = raw["web"]
     budget = raw.get("budget_usd")
     if (
         isinstance(budget, (int, float)) and not isinstance(budget, bool)
@@ -91,6 +95,8 @@ def update(**fields) -> dict:
 
     if fields.get("listen") is not None:
         block["listen"] = bool(fields["listen"])
+    if fields.get("web") is not None:
+        block["web"] = bool(fields["web"])
     if fields.get("budget_usd") is not None:
         budget = fields["budget_usd"]
         if isinstance(budget, bool) or not isinstance(budget, (int, float)):

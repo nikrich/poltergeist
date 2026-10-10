@@ -52,8 +52,8 @@ def test_run_ui_builds_the_command(tmp_path):
     # Meeting speech is untrusted: writes stay inside src/, everything not
     # allowed is denied without asking, and no MCP connectors ride along.
     assert _flag(cmd, "--permission-mode") == "dontAsk"
-    assert _flag(cmd, "--allowedTools") == "Read,Glob,Grep,Edit(src/**),Write(src/**)"
-    assert _flag(cmd, "--disallowedTools") == "Bash,WebFetch,WebSearch"
+    assert _flag(cmd, "--allowedTools") == "Read(./**),Glob,Grep,Edit(src/**),Write(src/**)"
+    assert _flag(cmd, "--disallowedTools") == "Bash,WebFetch,WebSearch,Read(.env*),Read(**/.env*)"
     assert "--strict-mcp-config" in cmd
     assert _flag(cmd, "--max-budget-usd") == "2.00"
     assert "src/App.tsx" in _flag(cmd, "--append-system-prompt")
@@ -131,10 +131,10 @@ def test_bootstrap_mode_has_no_transcript_and_may_edit_the_worktree(tmp_path):
     assert "unreachable" in prompt and "Google Fonts" in prompt
     assert "{HOST_SNIPPET}" not in prompt
     assert _flag(cmd, "--permission-mode") == "dontAsk"
-    assert _flag(cmd, "--allowedTools") == "Read,Glob,Grep,Edit(./**),Write(./**)"
+    assert _flag(cmd, "--allowedTools") == "Read(./**),Glob,Grep,Edit(./**),Write(./**)"
     denied = _flag(cmd, "--disallowedTools").split(",")
-    assert denied[:7] == ["Bash", "WebFetch", "WebSearch", "Edit(.git)", "Write(.git)",
-                          "Edit(.git/**)", "Write(.git/**)"]
+    assert denied[:9] == ["Bash", "WebFetch", "WebSearch", "Read(.env*)", "Read(**/.env*)",
+                          "Edit(.git)", "Write(.git)", "Edit(.git/**)", "Write(.git/**)"]
     # No new dependencies, ever: only .poltergeist/ is open to the bootstrap.
     for rule in ("Edit(**/package.json)", "Write(**/package.json)", "Edit(package.json)",
                  "Write(**/yarn.lock)", "Edit(**/.npmrc)", "Edit(**/*.config.ts)", "Write(**/.husky/**)"):
@@ -152,7 +152,7 @@ def test_worktree_mode_denies_protected_files(tmp_path):
     ui_agent.run_ui(tmp_path, excerpt="we need a status filter", nudges=["make it sortable"],
                     pack_readme="", session_id="boot-1", budget_usd=2.0, runner=runner, mode="worktree")
     cmd = runner.calls[0]["cmd"]
-    assert _flag(cmd, "--allowedTools") == "Read,Glob,Grep,Edit(./**),Write(./**)"
+    assert _flag(cmd, "--allowedTools") == "Read(./**),Glob,Grep,Edit(./**),Write(./**)"
     denied = _flag(cmd, "--disallowedTools").split(",")
     assert denied[:3] == ["Bash", "WebFetch", "WebSearch"]
     for rule in ("Edit(.git)", "Write(.git)", "Edit(.git/**)", "Write(.git/**)"):
@@ -279,3 +279,28 @@ def test_worktree_modes_deny_node_modules_edits():
     for mode in ("bootstrap", "worktree"):
         _allowed, disallowed, _rules = ui_agent._tools(mode)
         assert "Edit(**/node_modules/**)" in disallowed and "Write(node_modules/**)" in disallowed
+
+
+
+def test_web_access_for_meeting_runs_but_never_the_bootstrap():
+    from ghostbrain.design import ui_agent
+
+    for mode in ("scratch", "worktree"):
+        allowed, disallowed, rules = ui_agent._tools(mode, web=True)
+        assert "WebSearch" in allowed and "WebFetch" in allowed
+        assert "WebSearch" not in disallowed and "WebFetch" not in disallowed
+        assert "never put meeting content" in rules
+    allowed, disallowed, _ = ui_agent._tools("bootstrap", web=True)
+    assert "WebFetch" not in allowed and "WebFetch" in disallowed
+    allowed, disallowed, _ = ui_agent._tools("scratch", web=False)
+    assert "WebSearch" not in allowed and "WebSearch" in disallowed
+
+
+
+def test_reading_is_limited_to_the_agents_folder_and_never_env_files():
+    from ghostbrain.design import ui_agent
+
+    for mode in ("scratch", "worktree", "bootstrap"):
+        allowed, disallowed, _ = ui_agent._tools(mode, web=True)
+        assert "Read(./**)" in allowed.split(",") and "Read" not in allowed.split(",")
+        assert "Read(**/.env*)" in disallowed

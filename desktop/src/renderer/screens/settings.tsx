@@ -1477,6 +1477,17 @@ export function LiveDesignSettings() {
             }
           />
           <SettingRow
+            label="Let the prototype agent use the web"
+            sub="It can search and read sites to look up design systems and reference material. Turn off for sensitive meetings."
+            control={
+              <Toggle
+                ariaLabel="Let the prototype agent use the web"
+                on={current.web}
+                onChange={(v) => save({ web: v })}
+              />
+            }
+          />
+          <SettingRow
             label="Budget per run"
             sub="The most one prototype or board update may spend, in US dollars."
             control={
