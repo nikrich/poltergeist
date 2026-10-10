@@ -126,8 +126,8 @@ const bridge: GbBridge = {
       set: (key: string, v: unknown) => ipcRenderer.invoke('gb:plugins:data:set', id, key, v),
     },
     sidecar: {
-      request: (method: string, path: string, body?: unknown) =>
-        ipcRenderer.invoke('gb:plugins:sidecar', method, path, body),
+      request: (method: string, path: string, body?: unknown, opts?: { ifMatch?: string }) =>
+        ipcRenderer.invoke('gb:plugins:sidecar', id, method, path, body, opts),
     },
   }),
   on: ((channel: string, listener: (...args: unknown[]) => void) => {

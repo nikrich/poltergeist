@@ -1,7 +1,7 @@
 {
   "id": "script-writer",
   "name": "Script Writer",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Write industry-standard screenplays in Fountain with a live formatted page, exact pagination, PDF export, AI co-writer grounded in your vault, one-click Polish, and your vault projects on hand.",
   "apiVersion": 1,
   "icon": "clapperboard",

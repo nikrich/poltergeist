@@ -101,6 +101,21 @@ def test_restore_snapshots_current_then_writes_the_version(tmp_vault, client, au
     assert newest["blob"] == store.blob_id(before_restore)
 
 
+def test_restore_is_user_only(tmp_vault, client, auth_headers):
+    note = write_note(tmp_vault, REL, V1)
+    _save(client, auth_headers, "second draft")
+    current = note.read_bytes()
+    blob = store.blob_id(V1.encode())
+    r = client.post("/v1/notes/history/restore", json={"path": REL, "blob": blob},
+                    headers={**auth_headers, "X-Poltergeist-Actor": "plugin:x"})
+    assert r.status_code == 403
+    assert note.read_bytes() == current
+    r = client.post("/v1/notes/history/restore", json={"path": REL, "blob": blob},
+                    headers=auth_headers)
+    assert r.status_code == 200
+    assert note.read_bytes() == V1.encode()
+
+
 def test_restore_with_stale_if_match_is_409_and_leaves_the_file(tmp_vault, client, auth_headers):
     note = write_note(tmp_vault, REL, V1)
     _save(client, auth_headers, "second draft")
@@ -160,7 +175,7 @@ def test_plugin_write_is_refused_when_history_fails(tmp_vault, client, auth_head
 
     monkeypatch.setattr(store, "snapshot", boom)
     r = client.put("/v1/notes", json={"path": REL, "content": "plugin text"},
-                   headers=auth_headers)
+                   headers={**auth_headers, "If-Match": f'"{compute_etag(V1.encode())}"'})
     assert r.status_code == 500
     assert r.json()["detail"] == "history unavailable"
     assert note.read_bytes() == V1.encode()

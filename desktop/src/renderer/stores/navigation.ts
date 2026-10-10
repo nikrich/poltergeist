@@ -12,6 +12,7 @@ export type ScreenId =
   | 'settings'
   | 'jots'
   | 'docs'
+  | 'changes'
   | 'plugins'
   | 'onboarding'
   | `plugin:${string}`;

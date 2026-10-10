@@ -1,3 +1,5 @@
+import type { WriteActor } from '../../../shared/types';
+
 /** Error from the sidecar API, carrying the HTTP status when one exists.
  * The main-process forwarder already extracts FastAPI's `detail` string and
  * the status code; previously the renderer threw a plain Error and dropped
@@ -38,13 +40,17 @@ export async function post<T>(path: string, body?: unknown): Promise<T> {
 export async function patch<T>(
   path: string,
   body?: unknown,
-  opts?: { ifMatch?: string | null },
+  opts?: { ifMatch?: string | null; actor?: WriteActor },
 ): Promise<T> {
-  // Only send the 4th bridge arg when there is an etag — keeps the common
-  // call shape (and existing assertions on it) unchanged.
-  const result = opts?.ifMatch
-    ? await window.gb.api.request<T>('PATCH', path, body, { ifMatch: opts.ifMatch })
-    : await window.gb.api.request<T>('PATCH', path, body);
+  // Only send the 4th bridge arg when it carries something — keeps the
+  // common call shape (and existing assertions on it) unchanged.
+  const bridgeOpts: { ifMatch?: string; actor?: WriteActor } = {};
+  if (opts?.ifMatch) bridgeOpts.ifMatch = opts.ifMatch;
+  if (opts?.actor) bridgeOpts.actor = opts.actor;
+  const result =
+    Object.keys(bridgeOpts).length > 0
+      ? await window.gb.api.request<T>('PATCH', path, body, bridgeOpts)
+      : await window.gb.api.request<T>('PATCH', path, body);
   if (!result.ok) throw new ApiError(result.error, result.status);
   return result.data;
 }

@@ -66,7 +66,12 @@ def get_note(rel_path: str) -> dict:
 
 
 def save_note_body(
-    rel_path: str, body: str, *, actor: Actor = USER, base_etag: str | None = None
+    rel_path: str,
+    body: str,
+    *,
+    actor: Actor = USER,
+    base_etag: str | None = None,
+    reason: str = "edited in the editor",
 ) -> dict:
     """Rewrite only the markdown body; the frontmatter block's bytes are kept
     exactly (spec B1). ``updated`` is bumped only when the key already exists.
@@ -75,7 +80,7 @@ def save_note_body(
     if not target.exists() or not target.is_file():
         raise NoteNotFound(rel_path)
     res = vault_write.write(
-        rel_path, body=body, actor=actor, base_etag=base_etag, reason="edited in the editor",
+        rel_path, body=body, actor=actor, base_etag=base_etag, reason=reason,
     )
     return {"path": rel_path, "updated": res.updated, "etag": res.etag,
             "historyOk": res.history_ok}

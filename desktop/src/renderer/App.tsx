@@ -23,6 +23,7 @@ import { DailyScreen } from './screens/daily';
 import { SettingsScreen } from './screens/settings';
 import { JotsScreen } from './screens/jots';
 import { DocsScreen } from './screens/docs';
+import { ChangesScreen } from './screens/changes';
 import { OnboardingScreen } from './screens/onboarding';
 import { PluginsScreen, useActivePlugins } from './screens/plugins';
 import { PluginHost } from './components/PluginHost';
@@ -144,6 +145,7 @@ export default function App() {
           {active === 'settings' && <SettingsScreen />}
           {active === 'jots' && <JotsScreen />}
           {active === 'docs' && <DocsScreen />}
+          {active === 'changes' && <ChangesScreen />}
           {active === 'plugins' && <PluginsScreen />}
           {active === 'onboarding' && <OnboardingScreen />}
           {active.startsWith('plugin:') && (

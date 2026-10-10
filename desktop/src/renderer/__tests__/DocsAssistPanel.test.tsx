@@ -281,4 +281,47 @@ describe('DocsAssistPanel', () => {
     );
     expect(useDocsAssist.getState().phase).toBe('idle');
   });
+
+  it('Accept that changes the text marks the next save as the assistant’s', async () => {
+    const { fire } = captureDocsListener();
+    const order: string[] = [];
+    let text = 'draft';
+    const handle = makeHandle({
+      getMarkdown: vi.fn(() => text),
+      replaceWith: vi.fn((md: string) => {
+        text = md;
+        order.push('replace');
+      }),
+    });
+    const onAccept = vi.fn(() => order.push('attribute'));
+    render(<DocsAssistPanel jotId={JOTID} editorHandle={handle} onAccept={onAccept} />);
+    fireEvent.click(screen.getByRole('button', { name: 'polish' }));
+    await waitFor(() => expect(useDocsAssist.getState().phase).toBe('streaming'));
+    act(() => {
+      fire({ jotId: JOTID, event: { type: 'done', text: 'polished' } });
+    });
+    fireEvent.click(await screen.findByRole('button', { name: /accept/i }));
+    expect(order).toEqual(['replace', 'attribute']);
+  });
+
+  it('Accept that leaves the text unchanged does not mark a save', async () => {
+    const { fire } = captureDocsListener();
+    let text = 'same';
+    const handle = makeHandle({
+      getMarkdown: vi.fn(() => text),
+      replaceWith: vi.fn((md: string) => {
+        text = md;
+      }),
+    });
+    const onAccept = vi.fn();
+    render(<DocsAssistPanel jotId={JOTID} editorHandle={handle} onAccept={onAccept} />);
+    fireEvent.click(screen.getByRole('button', { name: 'polish' }));
+    await waitFor(() => expect(useDocsAssist.getState().phase).toBe('streaming'));
+    act(() => {
+      fire({ jotId: JOTID, event: { type: 'done', text: 'same' } });
+    });
+    fireEvent.click(await screen.findByRole('button', { name: /accept/i }));
+    expect(handle.current?.replaceWith).toHaveBeenCalled();
+    expect(onAccept).not.toHaveBeenCalled();
+  });
 });

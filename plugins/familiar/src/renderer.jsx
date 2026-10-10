@@ -20,6 +20,7 @@ import { TopBar } from '../../../desktop/src/renderer/components/TopBar';
 import { parseOpenLoops, renderOpenLoops, parseDecisions } from './lib/trackers.js';
 import { splitBriefingSections, ageDays, sectionIcon, historyFromRuns } from './lib/briefing.js';
 import { scheduleFields, briefingSubtitle } from './lib/ui.js';
+import { createNoteIO } from './lib/notes-io.js';
 
 // LLM/connector-derived content is untrusted: markdown renders, raw HTML does not.
 marked.use({ renderer: { html: () => '' } });
@@ -28,17 +29,20 @@ const LOOPS_PATH = 'Familiar/open-loops.md';
 const DECISIONS_PATH = 'Familiar/decisions.md';
 
 // ---------------------------------------------------------------- data access
-async function readNote(api, path) {
-  const r = await api.sidecar.request('GET', `/v1/notes?path=${encodeURIComponent(path)}`);
-  if (r.ok) return r.data.body;
-  if (r.status === 404) return null;
-  throw new Error(r.error);
+// One etag-tracking note io per plugin api, so a rewrite sends the etag of
+// the version this view last read or wrote (see lib/notes-io.js).
+const noteIOs = new WeakMap();
+function noteIO(api) {
+  let io = noteIOs.get(api);
+  if (!io) {
+    io = createNoteIO((...a) => api.sidecar.request(...a));
+    noteIOs.set(api, io);
+  }
+  return io;
 }
 
-async function writeNote(api, path, content) {
-  const r = await api.sidecar.request('PUT', '/v1/notes', { path, content });
-  if (!r.ok) throw new Error(r.error);
-}
+const readNote = (api, path) => noteIO(api).readNote(path);
+const writeNote = (api, path, content) => noteIO(api).writeNote(path, content);
 
 function fmtWhen(iso) {
   if (!iso) return '—';

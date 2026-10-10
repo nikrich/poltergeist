@@ -283,4 +283,92 @@ describe('useGuardedSave', () => {
     await expect(result.current.runExclusive(perform)).rejects.toThrow(RESTORE_BLOCKED);
     expect(perform).not.toHaveBeenCalled();
   });
+
+  it('attributeNext marks only the next save', async () => {
+    const send = vi.fn().mockResolvedValueOnce({ etag: 'e2' }).mockResolvedValueOnce({ etag: 'e3' });
+    const { result } = renderHook(() =>
+      useGuardedSave({ body: 'a', etag: 'e1' }, { send, fetchLatest: vi.fn() }),
+    );
+    act(() => {
+      result.current.attributeNext('assistant');
+      result.current.save('ai text');
+    });
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    await act(async () => {});
+    act(() => result.current.save('typed after'));
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+    expect(send.mock.calls).toEqual([
+      ['ai text', 'e1', 'assistant'],
+      ['typed after', 'e2'],
+    ]);
+  });
+
+  it('an attributed save queued behind an in-flight save keeps its mark', async () => {
+    const first = deferred<{ etag: string }>();
+    const send = vi.fn().mockReturnValueOnce(first.promise).mockResolvedValueOnce({ etag: 'e3' });
+    const { result } = renderHook(() =>
+      useGuardedSave({ body: 'a', etag: 'e1' }, { send, fetchLatest: vi.fn() }),
+    );
+    act(() => result.current.save('typing'));
+    act(() => {
+      result.current.attributeNext('assistant');
+      result.current.save('ai text');
+    });
+    act(() => result.current.save('ai text + a keystroke'));
+    await act(async () => first.resolve({ etag: 'e2' }));
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+    expect(send.mock.calls[1]).toEqual(['ai text + a keystroke', 'e2', 'assistant']);
+  });
+
+  it('the auto-resolve resend after a frontmatter-only change keeps the mark', async () => {
+    const send = vi.fn().mockRejectedValueOnce(conflict()).mockResolvedValueOnce({ etag: 'e9' });
+    const fetchLatest = vi.fn().mockResolvedValue({ body: 'a', etag: 'e5' });
+    const { result } = renderHook(() =>
+      useGuardedSave({ body: 'a', etag: 'e1' }, { send, fetchLatest }),
+    );
+    act(() => {
+      result.current.attributeNext('assistant');
+      result.current.save('ai text');
+    });
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+    expect(send.mock.calls[1]).toEqual(['ai text', 'e5', 'assistant']);
+  });
+
+  it('an attributed save that lands in a conflict drops its mark', async () => {
+    const send = vi.fn().mockRejectedValueOnce(conflict()).mockResolvedValueOnce({ etag: 'e9' });
+    const fetchLatest = vi.fn().mockResolvedValue({ body: 'theirs', etag: 'e5' });
+    const { result } = renderHook(() =>
+      useGuardedSave({ body: 'a', etag: 'e1' }, { send, fetchLatest }),
+    );
+    act(() => {
+      result.current.attributeNext('assistant');
+      result.current.save('ai text');
+    });
+    await waitFor(() => expect(result.current.conflict).not.toBeNull());
+    await act(async () => result.current.keepMine());
+    expect(send.mock.calls).toEqual([
+      ['ai text', 'e1', 'assistant'],
+      ['ai text', 'e5'],
+    ]);
+  });
+
+  it('save() during a conflict consumes and discards a fresh mark', async () => {
+    const send = vi.fn().mockRejectedValueOnce(conflict()).mockResolvedValueOnce({ etag: 'e9' });
+    const fetchLatest = vi.fn().mockResolvedValue({ body: 'theirs', etag: 'e5' });
+    const { result } = renderHook(() =>
+      useGuardedSave({ body: 'a', etag: 'e1' }, { send, fetchLatest }),
+    );
+    act(() => result.current.save('mine'));
+    await waitFor(() => expect(result.current.conflict).not.toBeNull());
+    act(() => {
+      result.current.attributeNext('assistant');
+      result.current.save('ai text');
+    });
+    expect(result.current.conflict?.mine).toBe('ai text');
+    await act(async () => result.current.keepMine());
+    expect(send.mock.calls).toEqual([
+      ['mine', 'e1'],
+      ['ai text', 'e5'],
+    ]);
+  });
 });

@@ -32,4 +32,15 @@ describe('patch', () => {
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).status).toBe(409);
   });
+
+  it('passes the assistant actor as a bridge option', async () => {
+    apiRequest.mockResolvedValue({ ok: true, data: {} });
+    await patch('/v1/notes/x', { body: 'b' }, { ifMatch: 'aaaaaaaaaaaaaaaa', actor: 'assistant' });
+    expect(apiRequest).toHaveBeenLastCalledWith('PATCH', '/v1/notes/x', { body: 'b' }, {
+      ifMatch: 'aaaaaaaaaaaaaaaa',
+      actor: 'assistant',
+    });
+    await patch('/v1/notes/x', { body: 'b' }, { actor: 'assistant' });
+    expect(apiRequest).toHaveBeenLastCalledWith('PATCH', '/v1/notes/x', { body: 'b' }, { actor: 'assistant' });
+  });
 });

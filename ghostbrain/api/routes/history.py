@@ -10,8 +10,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 import ghostbrain.paths as _paths
 from ghostbrain import history, vault_write
 from ghostbrain.api.models.history import BLOB_PATTERN, RestoreRequest
-from ghostbrain.api.vault_http import if_match
-from ghostbrain.vault_write import RESTORE
+from ghostbrain.api.vault_http import if_match, request_actor
+from ghostbrain.vault_write import RESTORE, USER, Actor
 
 router = APIRouter(prefix="/v1/notes/history", tags=["history"])
 
@@ -71,7 +71,15 @@ def get_version(
 
 
 @router.post("/restore")
-def restore_version(req: RestoreRequest, base_etag: str | None = Depends(if_match)) -> dict:
+def restore_version(
+    req: RestoreRequest,
+    base_etag: str | None = Depends(if_match),
+    actor: Actor = Depends(request_actor),
+) -> dict:
+    # Restore writes as ``restore`` (no etag rule, no change row), so only
+    # the user may do it, like revert/undo (B2).
+    if actor != USER:
+        raise HTTPException(status_code=403, detail="only you can restore a version")
     rel = _canonical(req.path)
     match = _find(rel, req.blob)
     text = _blob_text(req.blob)

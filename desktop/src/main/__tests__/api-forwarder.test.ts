@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
-import { forward, isAllowedMethod, isSafeApiPath, requestHeadersFrom } from '../api-forwarder';
+import { ACTOR_HEADER, forward, isAllowedMethod, isSafeApiPath, pluginHeadersFrom, requestHeadersFrom } from '../api-forwarder';
 import type { Sidecar } from '../sidecar';
 
 // forward() must not ride on global fetch: undici's dispatcher enforces a
@@ -143,17 +143,51 @@ describe('If-Match passthrough', () => {
     expect(lastReq.headers.authorization).toBe('Bearer test-token');
   });
 
-  it('requestHeadersFrom maps a 16-hex etag to a quoted If-Match', () => {
+  it('requestHeadersFrom maps a 16-hex etag to a quoted If-Match and stamps the user', () => {
     expect(requestHeadersFrom({ ifMatch: '0123456789abcdef' })).toEqual({
       'If-Match': '"0123456789abcdef"',
+      [ACTOR_HEADER]: 'user',
     });
   });
 
-  it('requestHeadersFrom drops everything else', () => {
-    expect(requestHeadersFrom(undefined)).toEqual({});
-    expect(requestHeadersFrom(null)).toEqual({});
-    expect(requestHeadersFrom({ ifMatch: 'x\r\nX-Evil: 1' })).toEqual({});
-    expect(requestHeadersFrom({ ifMatch: 'ABCDEF0123456789' })).toEqual({});
-    expect(requestHeadersFrom({ authorization: 'Bearer x' })).toEqual({});
+  it('requestHeadersFrom drops everything else but always names the actor', () => {
+    const userOnly = { [ACTOR_HEADER]: 'user' };
+    expect(requestHeadersFrom(undefined)).toEqual(userOnly);
+    expect(requestHeadersFrom(null)).toEqual(userOnly);
+    expect(requestHeadersFrom({ ifMatch: 'x\r\nX-Evil: 1' })).toEqual(userOnly);
+    expect(requestHeadersFrom({ ifMatch: 'ABCDEF0123456789' })).toEqual(userOnly);
+    expect(requestHeadersFrom({ authorization: 'Bearer x' })).toEqual(userOnly);
+  });
+});
+
+describe('actor attribution (spec B §2)', () => {
+  it('lets the renderer claim only the assistant', () => {
+    expect(requestHeadersFrom({ actor: 'assistant' })).toEqual({ [ACTOR_HEADER]: 'assistant' });
+    for (const forged of ['mcp', 'plugin:familiar', 'worker:reversal', 'restore', 'user ', 7]) {
+      expect(requestHeadersFrom({ actor: forged })).toEqual({ [ACTOR_HEADER]: 'user' });
+    }
+  });
+
+  it('stamps plugin calls with the plugin id and passes If-Match', () => {
+    expect(pluginHeadersFrom('familiar')).toEqual({ [ACTOR_HEADER]: 'plugin:familiar' });
+    expect(pluginHeadersFrom('familiar', { ifMatch: '0123456789abcdef' })).toEqual({
+      [ACTOR_HEADER]: 'plugin:familiar',
+      'If-Match': '"0123456789abcdef"',
+    });
+    expect(pluginHeadersFrom('familiar', { actor: 'assistant' })).toEqual({
+      [ACTOR_HEADER]: 'plugin:familiar',
+    });
+  });
+
+  it('refuses ids that are not plugin ids', () => {
+    for (const bad of ['', 'Familiar', '../x', 'a', 'x:y', 'a'.repeat(40)]) {
+      expect(pluginHeadersFrom(bad)).toBeNull();
+    }
+  });
+
+  it('sends the actor header to the sidecar', async () => {
+    await forward(sidecar(), 'PUT', '/v1/notes', { path: 'a.md', content: 'x' }, undefined,
+      pluginHeadersFrom('familiar')!);
+    expect(lastReq.headers['x-poltergeist-actor']).toBe('plugin:familiar');
   });
 });

@@ -11,6 +11,7 @@ from ghostbrain.vault_write.actor import (
     worker_actor,
 )
 from ghostbrain.vault_write.errors import (
+    EtagRequired,
     FileMissing,
     InvalidPath,
     MalformedNote,
@@ -30,21 +31,28 @@ from ghostbrain.vault_write.text import (
 )
 from ghostbrain.vault_write.writer import (
     WRITABLE_SUFFIXES,
+    HoldPolicy,
     NoteSnapshot,
     Op,
+    ProposedChange,
     WriteResult,
     current_etag,
+    needs_base_etag,
     read,
+    records_change,
     resolve_safe,
+    set_hold_policy,
     write,
     write_new,
 )
 
 __all__ = [
     "ASSISTANT", "DELETE_FIELD", "MCP", "RESTORE", "USER", "WRITABLE_SUFFIXES",
-    "Actor", "FileMissing", "HistoryUnavailable", "InvalidPath", "MalformedNote",
-    "NoteSnapshot", "Op", "ParsedNote", "VaultWriteError", "WriteConflict", "WriteResult",
+    "Actor", "EtagRequired", "FileMissing", "HistoryUnavailable", "HoldPolicy",
+    "InvalidPath", "MalformedNote", "NoteSnapshot", "Op", "ParsedNote", "ProposedChange",
+    "VaultWriteError", "WriteConflict", "WriteResult",
     "apply_fields", "compute_etag", "current_etag", "find_key_block", "lines_of",
-    "load_metadata", "normalize_if_match", "parse_actor", "parse_note", "plugin_actor",
-    "read", "resolve_safe", "splice_body", "worker_actor", "write", "write_new",
+    "load_metadata", "needs_base_etag", "normalize_if_match", "parse_actor", "parse_note",
+    "plugin_actor", "read", "records_change", "resolve_safe", "set_hold_policy",
+    "splice_body", "worker_actor", "write", "write_new",
 ]

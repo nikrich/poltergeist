@@ -200,12 +200,13 @@ def _gdrive_backfill_job() -> RunResult:
 
 
 def _history_prune_job() -> RunResult:
-    """Daily page-history retention + blob GC (spec A3). Lazy import keeps
-    sidecar start cheap; prune only touches app state, never the vault."""
+    """Daily page-history + change-log retention and blob GC (specs A3, B §4).
+    Lazy import keeps sidecar start cheap; prune only touches app state, never
+    the vault."""
     def work() -> dict:
-        from ghostbrain.history import store
+        from ghostbrain.changes.maintenance import run_prune
 
-        return store.prune().to_details()
+        return run_prune()
 
     return _wrap_job("history-prune", work)
 

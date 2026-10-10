@@ -26,6 +26,8 @@ export interface PluginApi {
       method: string,
       path: string,
       body?: unknown,
+      /** `ifMatch`: a 16-hex etag from a GET/PUT of the note, sent as If-Match. */
+      opts?: { ifMatch?: string },
     ): Promise<{ ok: true; data: unknown } | { ok: false; error: string; status?: number }>;
   };
   openExternal(url: string): void;

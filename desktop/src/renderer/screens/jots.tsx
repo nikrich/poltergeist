@@ -366,7 +366,9 @@ export function JotsScreen() {
                   key={selectedId!}
                   initialBody={editorInitial.body}
                   initialEtag={editorInitial.etag}
-                  send={(body, ifMatch) => updateJot.mutateAsync({ id: selectedId!, body, ifMatch })}
+                  send={(body, ifMatch, actor) =>
+                    updateJot.mutateAsync({ id: selectedId!, body, ifMatch, actor })
+                  }
                   fetchLatest={() =>
                     get<Note>(`/v1/notes?path=${encodeURIComponent(selectedPathRef.current ?? '')}`)
                   }
@@ -511,7 +513,11 @@ export function JotsScreen() {
         {/* Docs assist panel — right aside, only when open and a jot is selected */}
         {assistOpen && selectedId && !focusActive && (
           <aside className="w-[320px] flex-shrink-0 overflow-y-auto border-l border-hairline">
-            <DocsAssistPanel jotId={selectedId} editorHandle={editorHandle} />
+            <DocsAssistPanel
+              jotId={selectedId}
+              editorHandle={editorHandle}
+              onAccept={() => guardRef.current?.attributeNext('assistant')}
+            />
           </aside>
         )}
       </div>

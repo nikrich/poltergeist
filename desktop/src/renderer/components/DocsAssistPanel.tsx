@@ -11,6 +11,9 @@ import { PanelError } from './PanelError';
 interface Props {
   jotId: string;
   editorHandle: React.MutableRefObject<EditorHandle | null>;
+  /** Called after an accepted proposal changed the editor text (before its
+   * debounced save), so that save is recorded as the assistant's (spec B §2). */
+  onAccept?: () => void;
 }
 
 // Quick-action mode buttons rendered at the top of the panel.
@@ -20,7 +23,7 @@ const QUICK_ACTIONS: { mode: DocsAssistMode; label: string }[] = [
   { mode: 'summarize', label: 'summarize' },
 ];
 
-export function DocsAssistPanel({ jotId, editorHandle }: Props) {
+export function DocsAssistPanel({ jotId, editorHandle, onAccept }: Props) {
   const phase = useDocsAssist((s) => s.phase);
   const streamed = useDocsAssist((s) => s.streamed);
   const error = useDocsAssist((s) => s.error);
@@ -131,7 +134,13 @@ export function DocsAssistPanel({ jotId, editorHandle }: Props) {
   }
 
   function handleAccept() {
-    editorHandle.current?.replaceWith(streamed, target);
+    const editor = editorHandle.current;
+    const before = editor?.getMarkdown();
+    editor?.replaceWith(streamed, target);
+    // Mark the save only when the replacement changed the text: an unchanged
+    // editor schedules no save, and the mark would then land on the user's
+    // next keystroke. The save is debounced, so marking now still precedes it.
+    if (editor && editor.getMarkdown() !== before) onAccept?.();
     reset();
     setToolHint(null);
     setInstruction('');

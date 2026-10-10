@@ -247,6 +247,38 @@ function parseSweepOutput(res) {
   return data;
 }
 
+// src/lib/notes-io.js
+function createNoteIO(request) {
+  const etags = /* @__PURE__ */ new Map();
+  const remember = (path, etag) => {
+    if (typeof etag === "string" && etag) etags.set(path, etag);
+    else etags.delete(path);
+  };
+  async function readNoteData(path) {
+    const r = await request("GET", `/v1/notes?path=${encodeURIComponent(path)}`);
+    if (r.ok) {
+      remember(path, r.data?.etag);
+      return r.data;
+    }
+    if (r.status === 404) {
+      etags.delete(path);
+      return null;
+    }
+    throw new Error(`read ${path}: ${r.error}`);
+  }
+  async function readNote(path) {
+    const data = await readNoteData(path);
+    return data ? data.body : null;
+  }
+  async function writeNote(path, content) {
+    const etag = etags.get(path);
+    const r = etag ? await request("PUT", "/v1/notes", { path, content }, { ifMatch: etag }) : await request("PUT", "/v1/notes", { path, content });
+    if (!r.ok) throw new Error(`write ${path}: ${r.error}`);
+    remember(path, r.data?.etag);
+  }
+  return { readNoteData, readNote, writeNote };
+}
+
 // src/lib/trackers.js
 var OWED_SEP = " \u2014 owed to ";
 var LOOP_RE = new RegExp(
@@ -350,22 +382,9 @@ async function getJson(api, path) {
   if (!r.ok) throw new Error(`GET ${path}: ${r.error}`);
   return r.data;
 }
-async function readNoteData(api, notePath) {
-  const r = await api.fetch("GET", `/v1/notes?path=${encodeURIComponent(notePath)}`);
-  if (r.ok) return r.data;
-  if (r.status === 404) return null;
-  throw new Error(`read ${notePath}: ${r.error}`);
-}
-async function readNote(api, notePath) {
-  const data = await readNoteData(api, notePath);
-  return data ? data.body : null;
-}
-async function writeNote(api, notePath, content) {
-  const r = await api.fetch("PUT", "/v1/notes", { path: notePath, content });
-  if (!r.ok) throw new Error(`write ${notePath}: ${r.error}`);
-}
 async function runSweep(deps) {
   const { api, settings, state, now, log } = deps;
+  const { readNoteData, readNote, writeNote } = createNoteIO((...a) => api.fetch(...a));
   const windowStart = state.lastSuccessfulRunAt ?? new Date(now.getTime() - 7 * 24 * 3600 * 1e3).toISOString();
   const windowEnd = now.toISOString();
   const report = {
@@ -385,7 +404,7 @@ async function runSweep(deps) {
     const paths = extractPaths(pathSet);
     const notes = [];
     for (const p of paths) {
-      const data = await readNoteData(api, p);
+      const data = await readNoteData(p);
       if (data !== null) {
         const modified = data.frontmatter?.updated ?? data.frontmatter?.created ?? "";
         notes.push({ path: p, modified, text: data.body });
@@ -394,9 +413,9 @@ async function runSweep(deps) {
     const { kept, dropped } = trimToBudget(notes, settings.budgetChars);
     report.noteCount = kept.length;
     report.droppedCount = dropped.length;
-    const memoryMd = await readNote(api, MEMORY_PATH) ?? "";
-    const loopsMd = await readNote(api, LOOPS_PATH) ?? "";
-    const decisionsMd = await readNote(api, DECISIONS_PATH) ?? "";
+    const memoryMd = await readNote(MEMORY_PATH) ?? "";
+    const loopsMd = await readNote(LOOPS_PATH) ?? "";
+    const decisionsMd = await readNote(DECISIONS_PATH) ?? "";
     const userPrompt = buildUserPrompt({
       memoryMd,
       openLoopsMd: loopsMd,
@@ -439,11 +458,12 @@ Your previous output was rejected: ${lastErr}. Return ONLY the JSON object.` : u
       report.rawOutput = lastRawText;
       throw new Error(`output contract violated twice: ${lastErr}`);
     }
-    const freshLoops = parseOpenLoops(await readNote(api, LOOPS_PATH) ?? "");
+    const freshLoops = parseOpenLoops(await readNote(LOOPS_PATH) ?? "");
     const mergedLoops = mergeLoops(freshLoops.loops, output.openLoops);
-    const freshDecisions = parseDecisions(await readNote(api, DECISIONS_PATH) ?? "");
+    const freshDecisions = parseDecisions(await readNote(DECISIONS_PATH) ?? "");
     const mergedDecisions = mergeDecisions(freshDecisions, output.decisions);
     const ymd = localYmd2(now);
+    await readNoteData(briefingPath(ymd));
     const briefing = [
       "---",
       "type: familiar-briefing",
@@ -455,10 +475,10 @@ Your previous output was rejected: ${lastErr}. Return ONLY the JSON object.` : u
       "",
       output.briefingMarkdown
     ].join("\n");
-    await writeNote(api, briefingPath(ymd), briefing);
-    await writeNote(api, MEMORY_PATH, output.memoryMarkdown);
-    await writeNote(api, LOOPS_PATH, renderOpenLoops(mergedLoops, freshLoops.unparsed));
-    await writeNote(api, DECISIONS_PATH, renderDecisions(mergedDecisions));
+    await writeNote(briefingPath(ymd), briefing);
+    await writeNote(MEMORY_PATH, output.memoryMarkdown);
+    await writeNote(LOOPS_PATH, renderOpenLoops(mergedLoops, freshLoops.unparsed));
+    await writeNote(DECISIONS_PATH, renderDecisions(mergedDecisions));
     report.ok = true;
     report.briefingPath = briefingPath(ymd);
     return report;

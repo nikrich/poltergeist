@@ -9362,10 +9362,11 @@ var toneClasses = {
   fog: "bg-fog text-ink-1",
   outline: "bg-transparent text-ink-2 border border-hairline-2"
 };
-function Pill({ tone = "neon", children, className = "" }) {
+function Pill({ tone = "neon", children, className = "", title }) {
   return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
     "span",
     {
+      title,
       className: `inline-flex items-center gap-[5px] whitespace-nowrap rounded-sm px-[7px] py-[2px] font-mono text-10 font-medium lowercase ${toneClasses[tone]} ${className}`,
       children
     }
@@ -38433,21 +38434,54 @@ function briefingSubtitle(cadence) {
   return `${cadence === "daily" ? "daily" : "weekly"} briefing \xB7 your chief of staff`;
 }
 
+// src/lib/notes-io.js
+function createNoteIO(request) {
+  const etags = /* @__PURE__ */ new Map();
+  const remember = (path, etag) => {
+    if (typeof etag === "string" && etag) etags.set(path, etag);
+    else etags.delete(path);
+  };
+  async function readNoteData(path) {
+    const r = await request("GET", `/v1/notes?path=${encodeURIComponent(path)}`);
+    if (r.ok) {
+      remember(path, r.data?.etag);
+      return r.data;
+    }
+    if (r.status === 404) {
+      etags.delete(path);
+      return null;
+    }
+    throw new Error(`read ${path}: ${r.error}`);
+  }
+  async function readNote2(path) {
+    const data = await readNoteData(path);
+    return data ? data.body : null;
+  }
+  async function writeNote2(path, content) {
+    const etag = etags.get(path);
+    const r = etag ? await request("PUT", "/v1/notes", { path, content }, { ifMatch: etag }) : await request("PUT", "/v1/notes", { path, content });
+    if (!r.ok) throw new Error(`write ${path}: ${r.error}`);
+    remember(path, r.data?.etag);
+  }
+  return { readNoteData, readNote: readNote2, writeNote: writeNote2 };
+}
+
 // src/renderer.jsx
 var import_jsx_runtime11 = __toESM(require_jsx_runtime(), 1);
 marked.use({ renderer: { html: () => "" } });
 var LOOPS_PATH = "Familiar/open-loops.md";
 var DECISIONS_PATH = "Familiar/decisions.md";
-async function readNote(api, path) {
-  const r = await api.sidecar.request("GET", `/v1/notes?path=${encodeURIComponent(path)}`);
-  if (r.ok) return r.data.body;
-  if (r.status === 404) return null;
-  throw new Error(r.error);
+var noteIOs = /* @__PURE__ */ new WeakMap();
+function noteIO(api) {
+  let io = noteIOs.get(api);
+  if (!io) {
+    io = createNoteIO((...a) => api.sidecar.request(...a));
+    noteIOs.set(api, io);
+  }
+  return io;
 }
-async function writeNote(api, path, content) {
-  const r = await api.sidecar.request("PUT", "/v1/notes", { path, content });
-  if (!r.ok) throw new Error(r.error);
-}
+var readNote = (api, path) => noteIO(api).readNote(path);
+var writeNote = (api, path, content) => noteIO(api).writeNote(path, content);
 function fmtWhen(iso) {
   if (!iso) return "\u2014";
   const d = new Date(iso);

@@ -79,7 +79,7 @@ def test_autosaves_coalesce_but_an_outside_edit_is_kept(hv):
 def test_assistant_writes_snapshot_every_time(hv):
     _, advance = hv
     for i in range(3):
-        write(REL, body=f"ai {i}", actor=ASSISTANT)
+        write(REL, body=f"ai {i}", actor=ASSISTANT, base_etag=vault_write.current_etag(REL))
         advance(seconds=1)
     assert len(store.list_snapshots(REL)) == 3
 
@@ -92,7 +92,7 @@ def test_non_user_write_is_refused_when_history_fails(hv, monkeypatch):
 
     monkeypatch.setattr(store, "snapshot", boom)
     with pytest.raises(HistoryUnavailable):
-        write(REL, body="ai edit", actor=ASSISTANT)
+        write(REL, body="ai edit", actor=ASSISTANT, base_etag=compute_etag(V1))
     assert note.read_bytes() == V1
 
 
