@@ -257,7 +257,8 @@ def update_jot_body(
         base_etag=base_etag,
         reason="edited jot",
     )
-    return {"id": jot_id, "path": res.path, "updated": now, "etag": res.etag}
+    return {"id": jot_id, "path": res.path, "updated": now, "etag": res.etag,
+            "historyOk": res.history_ok}
 
 
 def move_jot(
