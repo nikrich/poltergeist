@@ -260,7 +260,7 @@ def _with_source_spelling(template: Any, root: yaml.Node | None) -> Any:
 def _compose(fm_inner: str) -> yaml.Node | None:
     try:
         return yaml.compose(fm_inner, Loader=yaml.SafeLoader)
-    except (yaml.YAMLError, RecursionError):
+    except Exception:  # noqa: BLE001 - compose builds nodes only; locations just degrade
         return None
 
 
@@ -329,10 +329,12 @@ def parse_template(source: str, template_id: str) -> ParseResult:
         return fail(fm_line, 1, f"frontmatter is not valid YAML: {e}", "yaml")
     except RecursionError:
         return fail(fm_line, 1, "frontmatter is nested too deeply", "limit")
-    except (ValueError, OverflowError) as e:
-        # SafeConstructor raises these for e.g. 2026-02-30, a >4300-digit int
-        # or an overflowing sexagesimal float.
-        return fail(fm_line, 1, f"frontmatter has a value YAML cannot read: {e}", "yaml")
+    except Exception as e:  # noqa: BLE001 - untrusted input, see below
+        # A template is untrusted input, and SafeConstructor raises plain
+        # exceptions for bad scalars: ValueError (2026-02-30, >4300-digit int),
+        # OverflowError (sexagesimal float), KeyError (!!bool maybe),
+        # AttributeError (!!timestamp foo), IndexError (!!int ''), ...
+        return fail(fm_line, 1, f"frontmatter has a value YAML cannot read: {e!r}", "yaml")
     if not isinstance(meta, dict) or not isinstance(meta.get("template"), dict):
         return fail(fm_line, 1, "frontmatter needs a `template:` mapping", "no-template")
     problem = _tree_problem(meta)

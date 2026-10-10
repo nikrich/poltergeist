@@ -181,8 +181,14 @@ def test_sec_many_schema_errors_finish_fast():
         "9" * 5_000,
         "1" + ":59" * 5_000,
         "1" + ":59" * 2_000 + ".5",
+        "!!bool maybe",
+        "!!timestamp foo",
+        "!!int ''",
     ],
-    ids=["bad-date", "month-13", "5000-digit-int", "long-sexagesimal", "sexagesimal-float"],
+    ids=[
+        "bad-date", "month-13", "5000-digit-int", "long-sexagesimal", "sexagesimal-float",
+        "bool-tag", "timestamp-tag", "empty-int-tag",
+    ],
 )
 def test_sec_unconstructable_scalars_are_a_diagnostic(value):
     src = f"---\ntemplate:\n  name: X\n  frontmatter:\n    v: {value}\n---\n"
@@ -217,3 +223,13 @@ def test_sec_early_limit_reports_the_column():
     r = parse_template("---\ntemplate:\n  name: X\n  frontmatter:\n    v: &a 1\n---\n", "x")
     d = r.diagnostics[0]
     assert d.code == "limit" and (d.line, d.col) == (5, 8)
+
+
+@pytest.mark.parametrize("value", ["!!bool maybe", "!!timestamp foo", "!!int ''", "2026-02-30"])
+def test_sec_unconstructable_prompt_defaults_are_a_diagnostic(value):
+    src = (
+        "---\ntemplate:\n  name: X\n  prompts:\n    - id: s\n      ask: S\n"
+        f"      type: choice\n      options: [{value}]\n      default: {value}\n---\n"
+    )
+    r = parse_template(src, "x")
+    assert not r.ok and r.diagnostics[0].code == "yaml"
