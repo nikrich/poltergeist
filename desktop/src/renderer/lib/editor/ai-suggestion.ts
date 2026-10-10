@@ -57,6 +57,21 @@ function clampRange(doc: PMNode, from: number, to: number): { from: number; to: 
   return { from: f, to: Math.max(f, Math.min(to, size)) };
 }
 
+/** A range reaching into a code block (C2 query, mermaid, plain code) from
+ * outside it takes the whole block: replacing only part of it would splice the
+ * fence's source into the neighbouring paragraph. A range inside one code
+ * block stays as it is (that edits the source and keeps the fence). */
+export function wholeCodeBlocks(doc: PMNode, from: number, to: number): { from: number; to: number } {
+  const r = clampRange(doc, from, to);
+  const $from = doc.resolve(r.from);
+  const $to = doc.resolve(r.to);
+  if ($from.sameParent($to)) return r;
+  return {
+    from: $from.parent.type.spec.code ? $from.before() : r.from,
+    to: $to.parent.type.spec.code ? $to.after() : r.to,
+  };
+}
+
 /** Markdown → schema nodes through the same tiptap-markdown parser (and A1's
  * parse hooks) the editor uses, so callouts/status/etc. come back as nodes. */
 export function markdownToFragment(editor: Editor, md: string): Fragment {
@@ -199,7 +214,7 @@ function aiSuggestionPlugin(editor: Editor, opts: AiSuggestionOptions): Plugin<A
         const action = tr.getMeta(aiSuggestionKey) as Action | undefined;
         if (action?.type === 'clear') return null;
         if (action?.type === 'start') {
-          const r = clampRange(tr.doc, action.from, action.to);
+          const r = wholeCodeBlocks(tr.doc, action.from, action.to);
           return { ...r, text: '', status: 'streaming', joinWithSpace: action.joinWithSpace };
         }
         if (!value) return null;

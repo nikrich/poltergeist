@@ -1,5 +1,6 @@
 import type { Editor } from '@tiptap/core';
 import type { DocsAssistMode, DocsAssistRequest } from '../../../shared/api-types';
+import { wholeCodeBlocks } from './ai-suggestion';
 import { rangeMarkdown } from './markdown';
 
 /** Spec: continue sends the text before the cursor, capped at 8k chars. */
@@ -53,7 +54,10 @@ export function isLanguageName(value: string): boolean {
 }
 
 export function captureInlineContext(editor: Editor): InlineContext {
-  const { from, to, empty } = editor.state.selection;
+  const { selection, doc } = editor.state;
+  const { empty } = selection;
+  // The model sees exactly the range the suggestion will replace.
+  const { from, to } = empty ? selection : wholeCodeBlocks(doc, selection.from, selection.to);
   return {
     from,
     to,

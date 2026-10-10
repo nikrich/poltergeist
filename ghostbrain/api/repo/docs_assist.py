@@ -57,7 +57,7 @@ CANNED_INSTRUCTIONS = {
 BLOCK_SYNTAX_RULES = """Keep Poltergeist's block syntax exactly as written:
 - callout headers such as `> [!info] Title` (keep the `[!kind]` marker and any `-`/`+` after it; the title may change);
 - status lozenges such as `status:In progress/yellow` inside backticks (keep `status:` and `/colour`; the label may change);
-- ```toc and ```mermaid fences (copy them unchanged);
+- ```toc, ```mermaid and ```query fences (copy them unchanged);
 - images such as `![alt|480](path)` (keep the path and the width);
 - wikilinks such as `[[path|Alias]]` (keep the path; the alias may change)."""
 

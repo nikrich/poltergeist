@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Editor } from '@tiptap/core';
+
+// C2 query blocks run their query on mount; never let them reach the sidecar.
+const { runVaultQuery, setNoteStatus } = vi.hoisted(() => ({
+  runVaultQuery: vi.fn(() => new Promise(() => {})),
+  setNoteStatus: vi.fn(),
+}));
+vi.mock('../lib/editor/query-api', () => ({ runVaultQuery, setNoteStatus }));
+
 import {
   DEL_BLOCK_CLASS,
   DEL_CLASS,
@@ -12,6 +20,9 @@ import {
   startAiSuggestion,
 } from '../lib/editor/ai-suggestion';
 import { makeEditor, markdownOf, textPos } from './helpers/editor';
+
+const QUERY = '```query\ntype: action_item\nstatus: open\n```';
+const WITH_QUERY = `alpha beta\n\n${QUERY}\n\nomega`;
 
 let editor: Editor;
 const onKey = vi.fn(() => true);
@@ -196,6 +207,45 @@ describe('ai-suggestion plugin', () => {
     expect(editor.view.dom.querySelectorAll(`.${DEL_BLOCK_CLASS}`).length).toBeGreaterThan(0);
     acceptAiSuggestion(editor);
     expect(markdownOf(editor)).toBe('merged');
+  });
+
+  it('accepting next to a C2 query block leaves its fence byte-identical', () => {
+    setup(WITH_QUERY);
+    suggest(range('beta'), 'BETA **bold**');
+    expect(markdownOf(editor)).toBe(WITH_QUERY);
+    expect(acceptAiSuggestion(editor)).toBe(true);
+    expect(markdownOf(editor)).toBe(`alpha BETA **bold**\n\n${QUERY}\n\nomega`);
+  });
+
+  it('a range covering a query block removes it as one whole block', () => {
+    setup(WITH_QUERY);
+    suggest({ from: 1, to: editor.state.doc.content.size - 1 }, 'merged');
+    expect(editor.view.dom.querySelectorAll(`.${DEL_BLOCK_CLASS}`).length).toBeGreaterThan(0);
+    acceptAiSuggestion(editor);
+    expect(markdownOf(editor)).toBe('merged');
+  });
+
+  it('a range ending inside a query source takes the whole block, never splicing it', () => {
+    setup(WITH_QUERY);
+    const from = textPos(editor, 'beta');
+    suggest({ from, to: textPos(editor, 'action_item') }, 'merged');
+    expect(editor.view.dom.querySelector(`.gb-query.${DEL_BLOCK_CLASS}, .${DEL_BLOCK_CLASS} .gb-query`)).not.toBeNull();
+    acceptAiSuggestion(editor);
+    expect(markdownOf(editor)).toBe('alpha merged\n\nomega');
+  });
+
+  it('a range starting inside a query source takes the whole block, never splicing it', () => {
+    setup(WITH_QUERY);
+    suggest({ from: textPos(editor, 'open'), to: textPos(editor, 'omega') + 'omega'.length }, 'merged');
+    acceptAiSuggestion(editor);
+    expect(markdownOf(editor)).toBe('alpha beta\n\nmerged');
+  });
+
+  it('a range inside one query source edits the source and keeps the fence', () => {
+    setup(WITH_QUERY);
+    suggest(range('open'), 'done');
+    acceptAiSuggestion(editor);
+    expect(markdownOf(editor)).toBe(WITH_QUERY.replace('status: open', 'status: done'));
   });
 
   it('Tab inside a list accepts instead of indenting; Esc rejects', () => {

@@ -116,3 +116,11 @@ def test_panel_prompts_are_unchanged_without_inline_fields():
     sel = docs_assist.build_prompt(body="# Doc\n\nintro text", instruction=None, selection="intro text", mode="polish")
     assert "ONLY the replacement markdown for the SELECTION" in sel
     assert docs_assist.CANNED_INSTRUCTIONS["polish"] in sel
+
+
+def test_block_syntax_rules_protect_c2_query_fences():
+    p = docs_assist.build_prompt(
+        body="b", instruction=None, selection="```query\ntype: action_item\n```",
+        mode="polish", placement="selection",
+    )
+    assert "```toc, ```mermaid and ```query fences (copy them unchanged)" in p

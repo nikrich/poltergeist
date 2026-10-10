@@ -1,5 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Editor } from '@tiptap/core';
+
+// C2 query blocks run their query on mount; never let them reach the sidecar.
+const { runVaultQuery, setNoteStatus } = vi.hoisted(() => ({
+  runVaultQuery: vi.fn(() => new Promise(() => {})),
+  setNoteStatus: vi.fn(),
+}));
+vi.mock('../lib/editor/query-api', () => ({ runVaultQuery, setNoteStatus }));
 import {
   BEFORE_CAP,
   buildInlineRequest,
@@ -37,6 +44,17 @@ describe('captureInlineContext', () => {
     expect(normalizeMd(ctx.selection)).toBe('**beta**');
     expect(normalizeMd(ctx.before)).toBe('alpha **beta**');
     expect(ctx.charBefore).toBe('a');
+  });
+
+  it('a selection reaching into a C2 query block takes the whole fence', () => {
+    const query = '```query\ntype: action_item\nstatus: open\n```';
+    editor = makeEditor(`alpha beta\n\n${query}\n\nomega`);
+    const from = textPos(editor, 'beta');
+    editor.commands.setTextSelection({ from, to: textPos(editor, 'action_item') });
+    const ctx = captureInlineContext(editor);
+    expect(ctx.from).toBe(from);
+    expect(editor.state.doc.resolve(ctx.to).nodeBefore?.type.name).toBe('codeBlock');
+    expect(normalizeMd(ctx.selection)).toBe(`beta\n\n${query}`);
   });
 
   it('caps the text before the cursor at 8k characters', () => {
