@@ -116,7 +116,8 @@ def test_build_env_bad_config_gives_empty_user(tpl_vault: Path, raw: bytes):
 @pytest.mark.parametrize("raw", [
     json.dumps([1, {"id": "work/alpha", "context": "work", "slug": "alpha", "name": "Alpha"}]).encode(),
     b"[\xff\xfe]",
-], ids=["non-dict-row", "invalid-bytes"])
+    b"[" * 200000 + b"]" * 200000,
+], ids=["non-dict-row", "invalid-bytes", "deep-nesting"])
 def test_build_env_broken_projects_registry_gives_no_projects(tpl_vault: Path, raw: bytes):
     (tpl_vault / "90-meta/projects.json").write_bytes(raw)
     assert env_mod.build_env().projects == {}

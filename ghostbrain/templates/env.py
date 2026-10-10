@@ -66,7 +66,7 @@ def _projects() -> dict[str, ProjectValue]:
     """Active projects by id; a broken registry gives none rather than failing a create."""
     try:
         rows = projects_repo.list_projects()
-    except (AttributeError, TypeError, ValueError, OSError) as exc:
+    except (AttributeError, TypeError, ValueError, OSError, RecursionError) as exc:
         log.warning("unreadable projects registry; templates see no projects: %s", exc)
         return {}
     return {

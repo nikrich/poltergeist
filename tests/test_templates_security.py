@@ -301,7 +301,6 @@ def _t(folder: str, body: str = "x", name: str = "n"):
         ("{{focus}}", "D:relative"),
         ("20-contexts/./x", ""),
         ("20-contexts/{{focus}}", ".."),
-        ("20-contexts/{{focus}}", "a\x00b"),
         ("20-contexts/.hidden", ""),
         (".obsidian/plugins", ""),
         # Windows 8.3 short names resolve to protected or hidden folders.
@@ -315,11 +314,30 @@ def _t(folder: str, body: str = "x", name: str = "n"):
         ("20-contexts/COM\u00b9", ""),
         ("20-contexts/{{focus}}", "lpt\u00b2.txt"),
         ("20-contexts/{{focus}}", "a\u2028b"),
+        # Unicode compatibility forms fold onto protected names (APFS/NTFS).
+        ("80-pro\ufb01le", ""),
+        ("80-pro\ufb01le/x", ""),
+        ("\uff19\uff10-meta", ""),
+        ("{{focus}}", "\uff19\uff10-META"),
+        # Console devices and a device name with a space before the extension.
+        ("20-contexts/CONIN$", ""),
+        ("20-contexts/conout$", ""),
+        ("20-contexts/{{focus}}", "con .txt"),
+        ("20-contexts/{{focus}}", "nul  .md"),
+        ("20-contexts/{{focus}}", "\uff43\uff4f\uff4e"),
     ],
 )
 def test_sec_rendered_folder_cannot_escape_or_hit_system_areas(folder, answer):
     with pytest.raises(RenderError):
         render(_t(folder), {"focus": answer} if answer else {}, _ENV)
+
+
+def test_sec_validate_folder_rejects_control_characters():
+    # A control character in an answer is refused earlier (AnswerError); the
+    # folder check still stands on its own for template text.
+    for bad in ("20-contexts/a\x00b", "20-contexts/a\x1bb", "20-contexts/a\x7fb"):
+        with pytest.raises(RenderError):
+            validate_folder(bad)
 
 
 def test_sec_validate_folder_keeps_safe_paths_and_a_lone_percent():
@@ -503,3 +521,25 @@ def test_sec_symlinked_folder_inside_vault_cannot_write_outside(tmp_path, monkey
     with pytest.raises(InvalidPath):
         create_from_template("escape", {}, env=_ENV)
     assert list(outside.iterdir()) == []
+
+
+@pytest.mark.parametrize("bad", ["nul\x00here", "esc\x1b[31mred", "bell\x07", "del\x7f", "cr\rhere", "\x1f"])
+def test_sec_text_answers_reject_control_characters(bad):
+    with pytest.raises(AnswerError) as e:
+        render(_t("20-contexts/work", name="{{focus}}", body="{{focus}}"), {"focus": bad}, _ENV)
+    assert e.value.field == "focus"
+
+
+def test_sec_text_answers_keep_tabs_and_newlines():
+    note = render(_t("20-contexts/work", body="{{focus}}"), {"focus": "a\tb\nc"}, _ENV)
+    assert note.body == "a\tb\nc"
+
+
+def test_sec_person_path_answer_length_is_capped():
+    src = "---\ntemplate:\n  name: P\n  prompts:\n    - id: person\n      ask: W\n      type: person\n---\n{{person.link}}"
+    t = parse_template(src, "p").template
+    ok = "30-cross-context/people/" + "a" * 300
+    assert render(t, {"person": ok}, _ENV).body == f"[[{ok}]]"
+    with pytest.raises(AnswerError) as e:
+        render(t, {"person": "30-cross-context/people/" + "a" * 400}, _ENV)
+    assert e.value.field == "person"

@@ -9,6 +9,7 @@ validated before anything can be written.
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -44,6 +45,7 @@ MAX_ANSWER_CHARS = 10_000
 MAX_OUTPUT_CHARS = 1_000_000
 MAX_TITLE_CHARS = 200
 MAX_PERSON_NAME_CHARS = 200
+MAX_PERSON_PATH_CHARS = 400
 MAX_FOLDER_DEPTH = 10
 MAX_SEGMENT_CHARS = 120
 FILENAME_SLUG_MAX = 80
@@ -52,15 +54,27 @@ PROTECTED_TOP_LEVEL = frozenset({"90-meta", "80-profile"})
 # `~` blocks Windows 8.3 short names (80-PRO~1 → 80-profile, OBSIDI~1 → .obsidian).
 _BAD_SEGMENT_CHARS = frozenset('<>:"|?*\\~\x7f\x85\u2028\u2029')
 _WINDOWS_RESERVED = frozenset(
-    {"CON", "PRN", "AUX", "NUL",
+    {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$",
      *(f"{dev}{n}" for dev in ("COM", "LPT") for n in (*"123456789", "\u00b9", "\u00b2", "\u00b3"))}
 )
 RESERVED_FILENAME_SUFFIX = "-note"
+
+
+def _fold(name: str) -> str:
+    """NFKC + casefold: how case-insensitive filesystems (APFS, NTFS) compare
+    names, so a ligature (ﬁ) or fullwidth digit (９) can't slip past a check."""
+    return unicodedata.normalize("NFKC", name).casefold()
+
+
+_PROTECTED_FOLDED = frozenset(_fold(n) for n in PROTECTED_TOP_LEVEL)
+_RESERVED_FOLDED = frozenset(_fold(n) for n in _WINDOWS_RESERVED)
 _PERCENT_ESCAPE_RE = re.compile(r"%[0-9A-Fa-f]{2}")
 _DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 # Wikilink / heading / table markup, control characters and every Unicode
 # line break (NEL, LS, PS), banned in typed names and note paths alike.
 _PERSON_MARKUP_RE = re.compile("[\\[\\]|#\x00-\x1f\x7f\x85\u2028\u2029]")
+# C0 controls (bar tab and newline) and DEL: never valid in any answer.
+_ANSWER_CONTROL_RE = re.compile("[\x00-\x08\x0b-\x1f\x7f]")
 _VARIABLE_TYPES: Mapping[str, str] = {s.name: s.type for s in VARIABLES}
 _FIELD_TYPES: Mapping[tuple[str | None, str], str] = {(s.owner, s.name): s.type for s in FIELDS}
 
@@ -139,6 +153,8 @@ def _coerce_person(field_id: str, raw: str, env: RenderEnv) -> PersonValue:
     if _PERSON_MARKUP_RE.search(raw):
         raise AnswerError(field_id, "a person can't contain [ ] | #, control characters or line breaks")
     if "/" in raw or "\\" in raw or raw.lower().endswith(".md"):
+        if len(raw) > MAX_PERSON_PATH_CHARS:
+            raise AnswerError(field_id, f"a person's note path is longer than {MAX_PERSON_PATH_CHARS} characters")
         parts = raw.split("/")
         if (
             "\\" in raw
@@ -190,6 +206,8 @@ def coerce_answers(template: Template, answers: Mapping[str, str], env: RenderEn
             raise AnswerError(key, "answers must be text")
         if len(raw) > MAX_ANSWER_CHARS:
             raise AnswerError(key, f"answer is longer than {MAX_ANSWER_CHARS} characters")
+        if _ANSWER_CONTROL_RE.search(raw):
+            raise AnswerError(key, "answers can't contain control characters")
     values: dict[str, Value] = {}
     for p in template.prompts:
         raw = (answers.get(p.id) or "").strip()
@@ -308,10 +326,10 @@ def validate_folder(folder: str) -> str:
             or part != part.strip()
             or len(part) > MAX_SEGMENT_CHARS
             or any(c in _BAD_SEGMENT_CHARS or ord(c) < 32 for c in part)
-            or part.split(".")[0].upper() in _WINDOWS_RESERVED
+            or _fold(part.split(".")[0].rstrip(" ")) in _RESERVED_FOLDED
         ):
             raise RenderError(f"folder segment {part!r} is not allowed")
-    if parts[0].lower() in PROTECTED_TOP_LEVEL:
+    if _fold(parts[0]) in _PROTECTED_FOLDED:
         raise RenderError(f"templates can't file notes under {parts[0]} (protected area)")
     return "/".join(parts)
 
@@ -336,7 +354,7 @@ def _render_tree(value: Any, scope: Scope, budget: Budget, depth: int, nodes: li
 def _filename_stem(title: str) -> str:
     """The title's slug, suffixed when it is a Windows device name (con, nul, com1…)."""
     stem = slugify(title, FILENAME_SLUG_MAX)
-    return stem + RESERVED_FILENAME_SUFFIX if stem.upper() in _WINDOWS_RESERVED else stem
+    return stem + RESERVED_FILENAME_SUFFIX if _fold(stem) in _RESERVED_FOLDED else stem
 
 
 def render(template: Template, answers: Mapping[str, str], env: RenderEnv) -> RenderedNote:

@@ -112,6 +112,15 @@ def test_non_string_answers_are_rejected(client, auth_headers, tmp_vault):
     assert r.status_code == 422
 
 
+def test_control_characters_in_an_answer_are_422_and_write_nothing(client, auth_headers, tmp_vault):
+    client.get("/v1/templates", headers=auth_headers)
+    before = _files(tmp_vault)
+    r = client.post("/v1/templates/meeting-notes/create", headers=auth_headers,
+                    json={"answers": {"topic": "nul\x00here\x1b[31m"}})
+    assert r.status_code == 422 and r.json()["detail"].startswith("topic: ")
+    assert _files(tmp_vault) == before
+
+
 @pytest.mark.parametrize("tid", ["nope", ".secret", "..secret", "UPPER"])
 def test_unknown_or_unsafe_ids_are_404(client, auth_headers, tmp_vault, tid):
     for action in ("create", "render"):
