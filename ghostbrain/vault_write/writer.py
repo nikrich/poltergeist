@@ -5,7 +5,8 @@ snapshot from spec A3, change log from slice B2).
 Every write by an actor other than ``user`` / ``restore`` gets a row in the
 change log (``ghostbrain.changes``), except a ``worker:*`` create, which is
 connector ingest and stays audit-only (user decision 2026-10-09). The B3 risk
-policy plugs in through ``set_hold_policy``; B2's default never holds.
+rules (``risk.evaluate``) are the default hold policy; a held
+change is stored as a pending row and nothing is written.
 """
 from __future__ import annotations
 
@@ -94,7 +95,12 @@ def resolve_safe(rel_path: str, *, suffixes: tuple[str, ...] = WRITABLE_SUFFIXES
     if candidate.is_absolute() or any(part == ".." for part in candidate.parts):
         raise InvalidPath("path must not contain '..' or be absolute")
     root = _root()
-    target = (root / candidate).resolve()
+    try:
+        target = (root / candidate).resolve()
+    except (RuntimeError, OSError):  # a symlink loop (Python 3.11 raises RuntimeError)
+        raise InvalidPath("path is a symlink loop") from None
+    if target.is_symlink():  # 3.13+ returns a looping link unresolved
+        raise InvalidPath("path is a symlink loop")
     try:
         target.relative_to(root)
     except ValueError:
@@ -230,11 +236,13 @@ def write(
     base_etag: str | None = None,
     verbatim: bool = False,
     bump_updated: bool = True,
+    approved_change: int | None = None,
 ) -> WriteResult:
     result = _write(
         rel_path, actor=actor, content=content, body=body, fields=fields,
         op=op, dest=dest, reason=reason, base_etag=base_etag, verbatim=verbatim,
         bump_updated=bump_updated,
+        approved_change=approved_change,
     )
     _reindex(result.path, *([rel_path] if dest is not None else []))
     return result
@@ -263,23 +271,28 @@ class ProposedChange:
     before: bytes | None
     after: bytes | None
     reason: str
+    # The caller's own spelling of the paths, before symlinks are resolved: a
+    # protected name that is a symlink to a plain note is still judged by it.
+    requested: tuple[str, ...] = ()
 
 
 HoldPolicy = Callable[[ProposedChange], list[str]]
 
 
-def _never_hold(_change: ProposedChange) -> list[str]:
-    return []
+def _risk_rules(change: ProposedChange) -> list[str]:
+    from ghostbrain.vault_write.risk import evaluate  # risk imports this module
+
+    return evaluate(change)
 
 
-_hold_policy: HoldPolicy = _never_hold
+_hold_policy: HoldPolicy = _risk_rules
 
 
 def set_hold_policy(policy: HoldPolicy | None) -> None:
-    """B3 installs its risk rules here. ``None`` restores B2's default: never
-    hold (user decision 2026-10-09: new notes apply now, revert in one click)."""
+    """Swap the hold policy (tests). ``None`` restores the default: the B3
+    risk rules (spec B §3). A reset can never leave the vault unguarded."""
     global _hold_policy
-    _hold_policy = policy or _never_hold
+    _hold_policy = policy or _risk_rules
 
 
 # Derived metadata refreshed in bulk (semantic `related:` links, every 15
@@ -295,6 +308,17 @@ def records_change(actor: Actor, op: Op) -> bool:
     if actor in (USER, RESTORE) or actor in UNLISTED_ACTORS:
         return False
     return not (actor.startswith("worker:") and op == "create")
+
+
+def _refuse_protected(*paths: str | None) -> None:
+    """A write the change log doesn't record (an unlisted job, a worker
+    create) can never be held: a protected path (90-meta, templates, stable profile, by name or by where
+    a symlink lands) is refused outright instead."""
+    from ghostbrain.vault_write.risk import protected_reasons  # risk imports this module
+
+    reasons = protected_reasons(*(p for p in paths if p))
+    if reasons:
+        raise InvalidPath(f"this job may not write there ({'; '.join(reasons)})")
 
 
 def needs_base_etag(actor: Actor) -> bool:
@@ -366,6 +390,39 @@ def _record(
     return str(cid)
 
 
+def _mark_approved(
+    change_id: int, *, before_blob: str | None, after_blob: str | None, path: str
+) -> str:
+    """B3: the approved pending row becomes the applied row (no second row).
+    Like ``_record``, a failure here leaves the write standing."""
+    try:
+        ok = _changes.apply_pending(change_id, before_blob=before_blob, after_blob=after_blob)
+    except Exception as e:  # noqa: BLE001
+        log.exception("could not mark change #%s applied", change_id)
+        _changes.mark_degraded(f"approved change #{change_id} to {path} not marked: {e}")
+        return str(change_id)
+    if not ok:
+        log.warning("change #%s was no longer pending when its approval landed", change_id)
+        _changes.mark_degraded(f"approved change #{change_id} to {path} was not pending")
+    return str(change_id)
+
+
+def _check_approved(change_id: int, *, actor: Actor, op: Op, src_rel: str, dst_rel: str | None) -> None:
+    """B3: ``approved_change`` skips the hold, so it must name this very
+    write's pending row. Anything else, or an unreadable log, refuses."""
+    try:
+        row = _changes.get(change_id)
+    except Exception as e:  # noqa: BLE001
+        raise ValueError(f"cannot check approved change #{change_id}: {e}") from e
+    if row is None or row.status != "pending" or row.actor != actor:
+        raise ValueError(f"change #{change_id} is not this actor's pending change")
+    same = src_rel == row.rel_path and dst_rel == row.dest_path
+    # A forced approval of a move whose source vanished creates at the destination.
+    at_dest = op == "create" and dst_rel is None and src_rel == row.current_path
+    if not (same or at_dest):
+        raise ValueError(f"change #{change_id} is for another path")
+
+
 def _snapshot(
     rel: str, before: bytes, *, actor: Actor, reason: str, after: bytes | None
 ) -> tuple[Snapshot | None, bool]:
@@ -404,15 +461,23 @@ def _write(
     base_etag: str | None = None,
     verbatim: bool = False,
     bump_updated: bool = True,
+    approved_change: int | None = None,
 ) -> WriteResult:
     actor = parse_actor(actor)
     _check_args(op, content, body, fields, dest)
+    if approved_change is not None and not records_change(actor, op):
+        raise ValueError("only a change the log records can be approved")
     src = resolve_safe(rel_path)
     dst = resolve_safe(dest) if dest is not None else None
     if dst is not None and dst == src:
         raise ValueError("move destination equals the source")
+    if actor not in (USER, RESTORE) and not records_change(actor, op):
+        _refuse_protected(rel_path, dest, _rel(src), _rel(dst) if dst is not None else None)
     log.debug("vault write op=%s path=%s actor=%s reason=%s", op, rel_path, actor, reason)
     with _locked(src, *([dst] if dst is not None else [])):
+        if approved_change is not None:
+            _check_approved(approved_change, actor=actor, op=op, src_rel=_rel(src),
+                            dst_rel=_rel(dst) if dst is not None else None)
         current = _read_bytes(src)
         etag_now = compute_etag(current) if current is not None else None
         if base_etag is not None and base_etag != etag_now:
@@ -447,12 +512,15 @@ def _write(
                 raise WriteConflict(compute_etag(existing))
         if op == "modify" and data == current:
             return WriteResult("applied", None, etag_now, src_rel, updated)
-        proposed = ProposedChange(actor, op, src_rel, dst_rel, current, data, reason)
+        proposed = ProposedChange(
+            actor, op, src_rel, dst_rel, current, data, reason,
+            requested=(rel_path, *([dest] if dest is not None else [])),
+        )
         recorded = records_change(actor, op)
-        if recorded:
+        if recorded and approved_change is None:
             reasons = _hold_reasons(proposed)
             if reasons:
-                return _hold(proposed, reasons)  # B3: nothing is written
+                return _hold(proposed, reasons)  # held: nothing is written
         history_ok = True
         before_blob: str | None = None
         if current is not None:
@@ -469,9 +537,15 @@ def _write(
             history_ok = _move_history(src_rel, dst_rel) and history_ok
         else:
             _atomic_write(src, data)
-        change_id = (
-            _record(proposed, before_blob=before_blob, after_blob=after_blob) if recorded else None
-        )
+        change_id: str | None
+        if approved_change is not None:
+            change_id = _mark_approved(
+                approved_change, before_blob=before_blob, after_blob=after_blob, path=src_rel,
+            )
+        elif recorded:
+            change_id = _record(proposed, before_blob=before_blob, after_blob=after_blob)
+        else:
+            change_id = None
         etag = compute_etag(data) if data is not None else None
         return WriteResult("applied", change_id, etag, dst_rel or src_rel, updated, history_ok)
 

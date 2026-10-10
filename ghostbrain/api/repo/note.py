@@ -83,7 +83,7 @@ def save_note_body(
         rel_path, body=body, actor=actor, base_etag=base_etag, reason=reason,
     )
     return {"path": rel_path, "updated": res.updated, "etag": res.etag,
-            "historyOk": res.history_ok}
+            "historyOk": res.history_ok, "status": res.status, "changeId": res.change_id}
 
 
 def save_note_at_path(
@@ -101,4 +101,5 @@ def save_note_at_path(
         base_etag=base_etag,
         reason="plugin write-back",
     )
-    return {"path": rel_path, "created": created, "etag": res.etag}
+    return {"path": rel_path, "created": created, "etag": res.etag,
+            "status": res.status, "changeId": res.change_id}

@@ -1,5 +1,6 @@
 """The single vault write path (spec 2026-10-09-ai-changes-revert-design.md, slice B1)."""
 from ghostbrain.history.store import HistoryUnavailable
+from ghostbrain.vault_write import risk
 from ghostbrain.vault_write.actor import (
     ASSISTANT,
     MCP,
@@ -54,6 +55,6 @@ __all__ = [
     "VaultWriteError", "WriteConflict", "WriteResult",
     "apply_fields", "compute_etag", "current_etag", "find_key_block", "lines_of",
     "load_metadata", "needs_base_etag", "normalize_if_match", "parse_actor", "parse_note",
-    "plugin_actor", "read", "records_change", "resolve_safe", "set_hold_policy",
+    "plugin_actor", "read", "records_change", "resolve_safe", "risk", "set_hold_policy",
     "splice_body", "worker_actor", "write", "write_new",
 ]

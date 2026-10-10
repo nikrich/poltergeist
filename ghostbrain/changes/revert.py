@@ -79,11 +79,19 @@ def undo_flip(c: Change) -> Flip:
     return Flip(at=c.rel_path, expect=c.before_blob, to=c.current_path, target=c.after_blob)
 
 
+def held_flip(c: Change) -> Flip:
+    """A pending change (B3): its path should still hold the version it was
+    proposed against; approval puts the proposal at its destination."""
+    return Flip(at=c.rel_path, expect=c.before_blob, to=c.current_path, target=c.pending_bytes_blob)
+
+
 def expected_state(c: Change) -> Flip | None:
     if c.status == "applied":
         return revert_flip(c)
     if c.status == "reverted":
         return undo_flip(c)
+    if c.status == "pending":
+        return held_flip(c)
     return None
 
 

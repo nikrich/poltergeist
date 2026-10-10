@@ -5,6 +5,7 @@ import { GuardedNoteEditor, type GuardHandle } from '../components/GuardedNoteEd
 import { ApiError } from '../lib/api/client';
 import { useNavigation, type NavigationScope } from '../stores/navigation';
 import { useNoteView } from '../stores/note-view';
+import { useToasts } from '../stores/toast';
 import { RESTORE_BLOCKED } from '../lib/use-guarded-save';
 
 // Pass-through wrapper that records every onSave the editor is rendered with,
@@ -215,6 +216,20 @@ describe('GuardedNoteEditor', () => {
     const perform = vi.fn();
     await expect(guardRef.current!.restore(perform)).rejects.toThrow(RESTORE_BLOCKED);
     expect(perform).not.toHaveBeenCalled();
+  });
+
+  it('a held assistant change puts the editor back on the saved text and says why', async () => {
+    const send = vi.fn().mockResolvedValue({ etag: E1, status: 'pending' });
+    const fetchLatest = vi.fn();
+    const getEditor = setup(send, fetchLatest);
+    await typeTail(getEditor);
+    await waitFor(() => expect(send).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByText(/my tail/)).toBeNull());
+    expect(screen.getByText('original line')).toBeInTheDocument();
+    expect(useToasts.getState().toasts.map((t) => t.message)).toContain(
+      'The assistant’s change is waiting for your approval on the Changes screen. '
+        + 'Anything you typed since is part of that change.',
+    );
   });
 });
 

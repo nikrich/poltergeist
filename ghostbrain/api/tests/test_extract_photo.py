@@ -78,3 +78,27 @@ def test_extract_never_overwrites_an_edit_made_while_reading_the_photo(tmp_vault
     assert "changed" in out["reason"]
     assert out["body"] == "typed while it ran"
     assert notes_manual.read_jot(rec["id"])["body"] == "typed while it ran"
+
+
+def test_a_held_extract_does_not_claim_the_text_landed(tmp_vault):
+    # B3: a callout carrying a script is held; the renderer must not adopt it.
+    from ghostbrain.changes import log as changes
+
+    rec = notes_manual.write_inbox_jot("whiteboard shot\n\n")
+    path = tmp_vault / rec["path"]
+    before = path.read_bytes()
+    on_disk = notes_manual.read_jot(rec["id"])
+
+    class R:
+        text = "Queue feeds the handler. <script>steal()</script>"
+
+    with patch.object(notes_manual, "llm_run", return_value=R()):
+        out = notes_manual.extract_photo_into_jot(rec["id"], "90-meta/assets/jots/2026/06/s.jpg")
+
+    [row] = changes.list_changes(status="pending")
+    assert out["extracted"] is False
+    assert (out["status"], out["changeId"]) == ("pending", str(row.id))
+    assert "approval" in out["reason"]
+    assert (out["body"], out["etag"]) == (on_disk["body"], on_disk["etag"])
+    assert "<script>" not in out["body"]
+    assert path.read_bytes() == before

@@ -1,7 +1,8 @@
 """Change log routes (spec B §5; slice B2): list, detail, revert, undo.
 
-Approve / reject of pending changes are B3. Revert and undo are user-only and
-go through ``ghostbrain.changes.revert``, which writes as ``restore``."""
+Approve / reject of pending changes (B3) write through
+``ghostbrain.changes.approve``. Revert and undo are user-only and go through
+``ghostbrain.changes.revert``, which writes as ``restore``."""
 from __future__ import annotations
 
 import difflib
@@ -14,6 +15,7 @@ from fastapi.responses import Response
 from ghostbrain import history
 from ghostbrain.api.models.changes import STATUS_PATTERN, ChangeActionRequest
 from ghostbrain.api.vault_http import request_actor
+from ghostbrain.changes import approve as changes_approve
 from ghostbrain.changes import log as changes_log
 from ghostbrain.changes import revert as changes_revert
 from ghostbrain.vault_write import USER, Actor
@@ -151,3 +153,45 @@ def undo_route(
     actor: Actor = Depends(request_actor),
 ) -> dict:
     return _act(change_id, req, actor, changes_revert.undo_revert)
+
+
+def _only_user(actor: Actor) -> None:
+    if actor != USER:
+        raise HTTPException(status_code=403, detail="only you can approve or reject changes")
+
+
+@router.post("/{change_id}/approve")
+def approve_route(
+    change_id: int,
+    req: ChangeActionRequest | None = None,
+    actor: Actor = Depends(request_actor),
+) -> dict:
+    _only_user(actor)
+    force = req.force if req is not None else False
+    try:
+        res = changes_approve.approve(change_id, force=force)
+    except changes_revert.ChangeNotFound:
+        raise HTTPException(status_code=404, detail="no such change") from None
+    except changes_approve.NotApprovable as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+    except changes_approve.StaleProposal as e:
+        raise HTTPException(status_code=409, detail=str(e)) from None
+    except changes_revert.VersionGone as e:
+        raise HTTPException(status_code=410, detail=str(e)) from None
+    except changes_log.ChangeLogError:
+        raise HTTPException(status_code=503, detail=_UNAVAILABLE) from None
+    return {"id": res.change.id, "status": res.change.status, "path": res.path, "etag": res.etag}
+
+
+@router.post("/{change_id}/reject")
+def reject_route(change_id: int, actor: Actor = Depends(request_actor)) -> dict:
+    _only_user(actor)
+    try:
+        c = changes_approve.reject(change_id)
+    except changes_revert.ChangeNotFound:
+        raise HTTPException(status_code=404, detail="no such change") from None
+    except changes_approve.NotApprovable as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+    except changes_log.ChangeLogError:
+        raise HTTPException(status_code=503, detail=_UNAVAILABLE) from None
+    return {"id": c.id, "status": c.status}

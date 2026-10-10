@@ -9,6 +9,7 @@ import { unreadCount as countUnread, useReadCaptures } from '../stores/read-capt
 import { isMac } from '../lib/platform';
 import { APP_VERSION } from '../lib/version';
 import { useActivePlugins } from '../screens/plugins';
+import { PendingChangesBadge } from './PendingChangesBadge';
 
 const NAV_ITEMS: Array<{ id: ScreenId; icon: string; label: string }> = [
   { id: 'today', icon: 'sparkles', label: 'today' },
@@ -93,6 +94,8 @@ export function Sidebar() {
                 <RecordingDot />
               ) : item.id === 'capture' && captureUnread > 0 ? (
                 String(captureUnread)
+              ) : item.id === 'changes' ? (
+                <PendingChangesBadge />
               ) : null
             }
           />

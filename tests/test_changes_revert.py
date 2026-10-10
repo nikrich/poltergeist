@@ -15,6 +15,7 @@ from ghostbrain.vault_write import (
     WriteConflict,
     compute_etag,
     plugin_actor,
+    set_hold_policy,
     write,
     write_new,
 )
@@ -31,6 +32,15 @@ def vault(tmp_path: Path) -> Path:
     note.parent.mkdir(parents=True)
     note.write_bytes(V1)
     return root
+
+
+@pytest.fixture(autouse=True)
+def _revert_mechanics_only():
+    """These tests move and delete notes the actor didn't create, which B3's
+    risk rules hold. Revert mechanics are what is under test here."""
+    set_hold_policy(lambda _p: [])
+    yield
+    set_hold_policy(None)
 
 
 def _ai_edit(text: str = "polished draft") -> int:
@@ -147,7 +157,7 @@ def test_states_that_cannot_be_reverted(vault):
                          pending_bytes_blob=store.put_blob(b"x\n"))
     with pytest.raises(rv.NotRevertable):
         rv.revert(pid)
-    assert rv.expected_state(changes.get(pid)) is None
+    assert rv.expected_state(changes.get(pid)) == rv.held_flip(changes.get(pid))
 
 
 def test_a_collected_version_is_reported_gone(vault):

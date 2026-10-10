@@ -89,3 +89,5 @@ class WriteDocRequest(BaseModel):
 class WriteDocResponse(BaseModel):
     path: str
     title: str
+    status: str = "applied"  # "pending": held for approval (spec B3), nothing written
+    changeId: str | None = None

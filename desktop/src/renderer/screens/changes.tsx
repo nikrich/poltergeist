@@ -13,6 +13,7 @@ import { LineDiffView } from '../components/LineDiffView';
 import { Btn } from '../components/Btn';
 import { PanelEmpty } from '../components/PanelEmpty';
 import { PanelError } from '../components/PanelError';
+import { PendingChanges } from '../components/PendingChanges';
 import { TopBar } from '../components/TopBar';
 import { useNoteView } from '../stores/note-view';
 import { toast } from '../stores/toast';
@@ -170,8 +171,8 @@ function ChangeRow({ change }: { change: ChangeSummary }) {
   );
 }
 
-/** Spec B §6 (slice B2): every assistant / MCP / plugin / job change, with a
- * diff and one-click revert. B3 adds the Pending section above the history. */
+/** Spec B §6: changes held for approval (B3) on top, then every assistant /
+ * MCP / plugin / job change with a diff and one-click revert (B2). */
 export function ChangesScreen() {
   const [actor, setActor] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -197,6 +198,7 @@ export function ChangesScreen() {
             </Btn>
           </div>
         )}
+        <PendingChanges />
         <div className="mb-4 flex flex-wrap items-center gap-2">
           {ACTOR_FILTERS.map((f) => (
             <button

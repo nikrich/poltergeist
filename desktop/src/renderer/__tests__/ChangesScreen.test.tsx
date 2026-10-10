@@ -45,6 +45,7 @@ function setup(
   getMock.mockImplementation(async (path: string) => {
     if (path.startsWith('/v1/changes?')) return listResponse;
     if (path === '/v1/changes/2') return detail();
+    if (path === '/v1/changes/9') return { ...DETAIL, id: 9, status: 'pending', changedSince: false };
     throw new Error(`unexpected GET ${path}`);
   });
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -174,5 +175,15 @@ describe('ChangesScreen', () => {
   it('shows an empty state', async () => {
     setup(list({ items: [] }));
     expect(await screen.findByText('nothing has changed your notes yet')).toBeInTheDocument();
+  });
+
+  it('shows held changes above the history and keeps them out of it', async () => {
+    const held: ChangeSummary = {
+      ...AI, id: 9, status: 'pending', riskReasons: ['edits a template'], reason: 'held one',
+    };
+    setup(list({ items: [held, AI, PLUGIN], pendingCount: 1 }));
+    expect(await screen.findByTestId('pending-9')).toBeInTheDocument();
+    expect(screen.queryByTestId('change-9')).toBeNull();
+    expect(screen.getByTestId('change-2')).toBeInTheDocument();
   });
 });

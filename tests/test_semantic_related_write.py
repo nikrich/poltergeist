@@ -84,3 +84,29 @@ def test_missing_or_malformed_notes_are_skipped(vault: Path) -> None:
     bad.write_text("---\n- not: a mapping\n---\n\nbody\n")
     assert r._apply_related("20-contexts/work/bad.md", ["[[a]]"]) is False
     assert bad.read_text() == "---\n- not: a mapping\n---\n\nbody\n"
+
+
+@pytest.mark.skipif(not hasattr(Path, "symlink_to"), reason="symlinks unavailable")
+def test_refresh_skips_symlinked_notes(vault: Path) -> None:
+    ctx = vault / "20-contexts/work"
+    ctx.mkdir(parents=True, exist_ok=True)
+    (ctx / "plain.md").write_bytes(V1)
+    prefs = vault / "80-profile/preferences.md"
+    prefs.parent.mkdir(parents=True, exist_ok=True)
+    prefs.write_bytes(b"# Preferences\n")
+    (ctx / "a.md").symlink_to("../../80-profile/preferences.md")
+    (vault / "90-meta/templates").mkdir(parents=True, exist_ok=True)
+    (vault / "90-meta/templates/t.md").write_bytes(b"# T\n")
+    (ctx / "tpl").symlink_to(vault / "90-meta/templates", target_is_directory=True)
+    found = [p.relative_to(vault).as_posix() for p in _refresh()._iter_notes(vault / "20-contexts")]
+    assert "20-contexts/work/plain.md" in found
+    assert "20-contexts/work/a.md" not in found
+    assert not [f for f in found if f.startswith("20-contexts/work/tpl/")]
+
+
+def test_refresh_refusing_a_protected_note_is_skipped_not_raised(vault: Path) -> None:
+    prefs = vault / "80-profile/preferences.md"
+    prefs.parent.mkdir(parents=True, exist_ok=True)
+    prefs.write_bytes(b"# Preferences\n")
+    assert _refresh()._apply_related("80-profile/preferences.md", ["[[a]]"]) is False
+    assert prefs.read_bytes() == b"# Preferences\n"

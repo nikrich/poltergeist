@@ -15,6 +15,7 @@ from ghostbrain.vault_write import (
     HistoryUnavailable,
     compute_etag,
     parse_actor,
+    set_hold_policy,
     write,
 )
 
@@ -136,8 +137,12 @@ def test_move_carries_history_to_the_new_path(hv):
 
 def test_html_writes_are_snapshotted_too(hv):
     rel = "90-meta/generated/doc.html"
-    write(rel, content="<p>one</p>", op="create", actor="mcp")
-    write(rel, content="<p>two</p>", actor="mcp")
+    set_hold_policy(lambda _p: [])  # snapshot mechanics only; B3 holds mcp edits to 90-meta
+    try:
+        write(rel, content="<p>one</p>", op="create", actor="mcp")
+        write(rel, content="<p>two</p>", actor="mcp")
+    finally:
+        set_hold_policy(None)
     assert _versions(rel) == [b"<p>one</p>"]
 
 

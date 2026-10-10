@@ -228,6 +228,9 @@ export interface UpdateNoteBodyResponse {
   etag: string;
   /** false: saved, but no history version was kept (spec A3). */
   historyOk?: boolean;
+  /** 'pending': held for your approval (spec B3); nothing was written. */
+  status?: 'applied' | 'pending';
+  changeId?: string | null;
 }
 
 export interface UpdateJotResponse {
@@ -236,6 +239,9 @@ export interface UpdateJotResponse {
   updated: string;
   etag: string;
   historyOk?: boolean;
+  /** 'pending': held for your approval (spec B3); nothing was written. */
+  status?: 'applied' | 'pending';
+  changeId?: string | null;
 }
 
 /** One page-history version: the note as it was just before a write by `actor`. */
@@ -572,6 +578,9 @@ export interface ExtractPhotoResponse {
   extracted: boolean;
   reason?: string;
   etag?: string;
+  /** "pending": the callout is held for approval (B3); body is the on-disk one. */
+  status?: 'applied' | 'pending';
+  changeId?: string | null;
 }
 
 // ── Confluence space list (shared with the Confluence export dialog) ──
@@ -1048,4 +1057,9 @@ export interface NoteStatusResponse {
   path: string;
   status: NoteStatusValue;
   etag: string | null;
+}
+
+export interface ChangeRejectResponse {
+  id: number;
+  status: ChangeStatus;
 }

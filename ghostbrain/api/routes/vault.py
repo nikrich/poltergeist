@@ -3,6 +3,7 @@ POST /query; PATCH /status."""
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from ghostbrain import routing_config
@@ -138,8 +139,12 @@ def vault_set_status(
     body: NoteStatusRequest,
     base_etag: str | None = Depends(if_match),
     actor: Actor = Depends(request_actor),
-) -> dict:
+) -> dict | JSONResponse:
     """Tick-to-done from a query block: sets frontmatter `status` via the
     write path (as the user unless X-Poltergeist-Actor says otherwise).
-    `If-Match` → 409 when the note changed since."""
-    return set_note_status(body.path, body.status, base_etag=base_etag, actor=actor)
+    `If-Match` → 409 when the note changed since. 202 when the change waits
+    for approval (B3)."""
+    res = set_note_status(body.path, body.status, base_etag=base_etag, actor=actor)
+    if res["status"] == "pending":
+        return JSONResponse(status_code=202, content=res)
+    return res

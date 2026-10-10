@@ -177,3 +177,78 @@ def test_registered_as_a_history_ref_source():
     changes.register_with_history()
     changes.record(actor="assistant", rel_path="a.md", op="modify", after_blob=B)
     assert list(store._ref_sources["changes"]()) == [B]
+
+
+def test_created_by_follows_the_actors_own_moves():
+    changes.record(actor="plugin:familiar", rel_path="F/a.md", op="create", after_blob=B)
+    assert changes.created_by("F/a.md", "plugin:familiar") is True
+    assert changes.created_by("F/a.md", "plugin:other") is False
+    changes.record(actor="plugin:familiar", rel_path="F/a.md", dest_path="F/b.md", op="move",
+                   before_blob=B, after_blob=B)
+    changes.record(actor="plugin:familiar", rel_path="F/b.md", dest_path="F/c.md", op="move",
+                   before_blob=B, after_blob=B)
+    assert changes.created_by("F/c.md", "plugin:familiar") is True
+
+
+def test_moving_someone_elses_note_does_not_make_it_yours():
+    changes.record(actor="plugin:familiar", rel_path="notes/user.md", dest_path="F/user.md",
+                   op="move", before_blob=B, after_blob=B)
+    assert changes.created_by("F/user.md", "plugin:familiar") is False
+
+
+def test_a_reverted_or_pending_create_is_not_ownership():
+    cid = changes.record(actor="assistant", rel_path="a.md", op="create", after_blob=B)
+    changes.set_status(cid, "reverted", expect=("applied",))
+    changes.record(actor="assistant", rel_path="b.md", op="create", status="pending",
+                   pending_bytes_blob=B)
+    assert changes.created_by("a.md", "assistant") is False
+    assert changes.created_by("b.md", "assistant") is False
+
+
+def test_a_move_cycle_terminates():
+    changes.record(actor="mcp", rel_path="x.md", dest_path="y.md", op="move")
+    changes.record(actor="mcp", rel_path="y.md", dest_path="x.md", op="move")
+    assert changes.created_by("x.md", "mcp") is False
+
+
+def test_apply_pending_fills_the_blobs_once():
+    cid = changes.record(
+        actor="assistant", rel_path="a.md", op="modify", status="pending",
+        before_blob=B, pending_bytes_blob=C, risk_reasons=["edits a template"],
+    )
+    assert changes.apply_pending(cid, before_blob=D, after_blob=C) is True
+    row = changes.get(cid)
+    assert (row.status, row.before_blob, row.after_blob, row.pending_bytes_blob,
+            row.resolved_ts) == ("applied", D, C, C, None)
+    assert row.risk_reasons == ("edits a template",)
+    assert changes.apply_pending(cid, before_blob=D, after_blob=C) is False
+
+
+def test_a_path_vacated_by_the_actors_own_move_is_not_owned():
+    changes.record(actor="plugin:p", rel_path="F/a.md", op="create", after_blob=B)
+    changes.record(actor="plugin:p", rel_path="F/a.md", dest_path="F/b.md", op="move",
+                   before_blob=B, after_blob=B)
+    assert changes.created_by("F/a.md", "plugin:p") is False
+    assert changes.created_by("F/b.md", "plugin:p") is True
+
+
+def test_an_own_delete_ends_ownership_even_if_someone_else_recreates():
+    changes.record(actor="plugin:p", rel_path="G/x.md", op="create", after_blob=B)
+    changes.record(actor="plugin:p", rel_path="G/x.md", op="delete", before_blob=B)
+    assert changes.created_by("G/x.md", "plugin:p") is False
+    changes.record(actor="user", rel_path="G/x.md", op="create", after_blob=C)
+    assert changes.created_by("G/x.md", "plugin:p") is False
+
+
+def test_a_move_recorded_before_the_create_does_not_chain():
+    changes.record(actor="plugin:p", rel_path="notes/u.md", dest_path="F/u.md", op="move",
+                   before_blob=B, after_blob=B)
+    changes.record(actor="plugin:p", rel_path="notes/u.md", op="create", after_blob=C)
+    assert changes.created_by("F/u.md", "plugin:p") is False
+
+
+def test_another_actors_later_move_into_the_path_breaks_ownership():
+    changes.record(actor="plugin:p", rel_path="F/a.md", op="create", after_blob=B)
+    changes.record(actor="user", rel_path="notes/z.md", dest_path="F/a.md", op="move",
+                   before_blob=C, after_blob=C)
+    assert changes.created_by("F/a.md", "plugin:p") is False

@@ -5,7 +5,11 @@ import type { WriteActor } from '../../shared/types';
 export interface SaveTarget {
   /** Persist `body`; `ifMatch` is the etag the save is based on (null = unconditional).
    * `actor` is passed only for an attributed save (spec B §2: docs Accept). */
-  send: (body: string, ifMatch: string | null, actor?: WriteActor) => Promise<{ etag?: string | null }>;
+  send: (
+    body: string,
+    ifMatch: string | null,
+    actor?: WriteActor,
+  ) => Promise<{ etag?: string | null; status?: 'applied' | 'pending' }>;
   /** Re-read the note as it is on disk now. */
   fetchLatest: () => Promise<{ body: string; etag?: string | null }>;
 }
@@ -17,6 +21,9 @@ export interface Conflict {
   theirsEtag: string | null;
   /** theirs could not be re-read; keep theirs / view changes unavailable. */
   unread?: boolean;
+  /** `mine` holds an attributed write (docs Accept). Sticky until resolved, so
+   * keep mine is sent as that actor and the risk rules still apply (B3). */
+  actor?: WriteActor;
 }
 
 export interface GuardedSave {
@@ -36,8 +43,8 @@ export interface GuardedSave {
     perform: () => Promise<T>,
   ) => Promise<T>;
   /** The next save() is `actor`'s write (the docs panel's Accept), not a
-   * keystroke. Rides with that body through the queue and the auto-resolve
-   * resend; dropped if the save lands in a conflict (the user decides then). */
+   * keystroke. Rides with that body through the queue, the auto-resolve
+   * resend and a conflict (keep mine is sent as `actor`). */
   attributeNext: (actor: WriteActor) => void;
 }
 
@@ -65,6 +72,9 @@ export function useGuardedSave(
   initial: { body: string; etag: string | null },
   target: SaveTarget,
   onError?: (err: Error) => void,
+  /** A save came back held for approval (B3): nothing was written. Called
+   * with the last saved body, which is what is on disk. */
+  onHeld?: (diskBody: string) => void,
 ): GuardedSave {
   const etagRef = useRef<string | null>(initial.etag);
   const baseBodyRef = useRef(initial.body);
@@ -79,6 +89,8 @@ export function useGuardedSave(
   targetRef.current = target;
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
+  const onHeldRef = useRef(onHeld);
+  onHeldRef.current = onHeld;
 
   const setConflict = useCallback((c: Conflict | null) => {
     conflictRef.current = c;
@@ -93,51 +105,67 @@ export function useGuardedSave(
   const sendAs = (body: string, ifMatch: string | null, actor?: WriteActor) =>
     actor ? targetRef.current.send(body, ifMatch, actor) : targetRef.current.send(body, ifMatch);
 
+  /** Resolves true when the resent change was held for approval (B3). */
   const handleConflict = async (
     mine: string,
     allowAutoResolve: boolean,
     actor?: WriteActor,
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     let latest: { body: string; etag?: string | null };
     try {
       latest = await targetRef.current.fetchLatest();
     } catch (err) {
       onErrorRef.current?.(asError(err));
       // Keystrokes may have landed in the conflict while we awaited.
-      setConflict({ mine: conflictRef.current?.mine ?? mine, theirs: '', theirsEtag: null, unread: true });
-      return;
+      setConflict({
+        mine: conflictRef.current?.mine ?? mine,
+        theirs: '',
+        theirsEtag: null,
+        unread: true,
+        actor: conflictRef.current?.actor ?? actor,
+      });
+      return false;
     }
     if (sameBody(latest.body, mine)) {
       // Disk already holds my text: nothing to resolve, just take its etag.
       markSaved(mine, latest.etag);
       const c = conflictRef.current;
       if (c && sameBody(c.mine, mine)) setConflict(null);
-      return;
+      return false;
     }
     if (allowAutoResolve && sameBody(latest.body, baseBodyRef.current)) {
       try {
         const res = await sendAs(mine, latest.etag ?? null, actor);
+        if (res.status === 'pending') {
+          markSaved(baseBodyRef.current, latest.etag);
+          return true;
+        }
         markSaved(mine, res.etag);
       } catch (err) {
-        if (isConflict(err)) await handleConflict(mine, false, actor);
-        else onErrorRef.current?.(asError(err));
+        if (isConflict(err)) return handleConflict(mine, false, actor);
+        onErrorRef.current?.(asError(err));
       }
-      return;
+      return false;
     }
     setConflict({
       mine: conflictRef.current?.mine ?? mine,
       theirs: latest.body,
       theirsEtag: latest.etag ?? null,
+      actor: conflictRef.current?.actor ?? actor,
     });
+    return false;
   };
 
   const run = async (body: string, actor?: WriteActor): Promise<void> => {
     inFlightRef.current = true;
+    let held = false;
     try {
       const res = await sendAs(body, etagRef.current, actor);
-      markSaved(body, res.etag);
+      // B3: a held change wrote nothing; the disk still matches the last save.
+      if (res.status === 'pending') held = true;
+      else markSaved(body, res.etag);
     } catch (err) {
-      if (isConflict(err)) await handleConflict(body, true, actor);
+      if (isConflict(err)) held = await handleConflict(body, true, actor);
       else onErrorRef.current?.(asError(err));
     } finally {
       inFlightRef.current = false;
@@ -146,16 +174,27 @@ export function useGuardedSave(
     const nextActor = queuedActorRef.current ?? undefined;
     queuedRef.current = null;
     queuedActorRef.current = null;
+    if (held) {
+      // Text queued behind a held change still contains it. Saving that as a
+      // keystroke would write the change without approval, so drop it and
+      // put the editor back on what is on disk.
+      nextActorRef.current = null;
+      onHeldRef.current?.(baseBodyRef.current);
+      return;
+    }
     if (next === null) return;
-    if (conflictRef.current) setConflict({ ...conflictRef.current, mine: next });
+    const c = conflictRef.current;
+    if (c) setConflict({ ...c, mine: next, actor: c.actor ?? nextActor });
     else await run(next, nextActor);
   };
 
   const save = (body: string) => {
     const actor = nextActorRef.current ?? undefined;
     nextActorRef.current = null;
-    if (conflictRef.current) {
-      setConflict({ ...conflictRef.current, mine: body });
+    const c = conflictRef.current;
+    if (c) {
+      // Once assistant text is in mine, it stays there until resolved.
+      setConflict({ ...c, mine: body, actor: c.actor ?? actor });
       return;
     }
     if (inFlightRef.current) {
@@ -174,22 +213,44 @@ export function useGuardedSave(
     setResolving(true);
     inFlightRef.current = true;
     let followUp: string | null = null;
+    let followUpActor: WriteActor | undefined;
+    let held = false;
+    let actor: WriteActor | undefined;
     try {
       const latest = await targetRef.current.fetchLatest();
       const mine = conflictRef.current?.mine ?? start.mine;
-      const res = await targetRef.current.send(mine, latest.etag ?? null);
-      markSaved(mine, res.etag);
-      const newest = conflictRef.current?.mine;
+      actor = conflictRef.current?.actor ?? start.actor;
+      const res = await sendAs(mine, latest.etag ?? null, actor);
+      const end = conflictRef.current;
       setConflict(null);
-      if (newest !== undefined && newest !== mine) followUp = newest;
+      if (res.status === 'pending') {
+        // B3: held; nothing was written, so the disk still holds theirs. Text
+        // typed meanwhile still contains the held change: drop it.
+        markSaved(latest.body, latest.etag);
+        held = true;
+      } else {
+        markSaved(mine, res.etag);
+        if (end && end.mine !== mine) {
+          followUp = end.mine;
+          // Over-attributing never bypasses approval; under-attributing would.
+          followUpActor = end.actor;
+        }
+      }
     } catch (err) {
-      if (isConflict(err)) await handleConflict(conflictRef.current?.mine ?? start.mine, false);
+      if (isConflict(err)) await handleConflict(conflictRef.current?.mine ?? start.mine, false, actor);
       else onErrorRef.current?.(asError(err));
     } finally {
       inFlightRef.current = false;
       setResolving(false);
     }
-    if (followUp !== null) await run(followUp);
+    if (held) {
+      queuedRef.current = null;
+      queuedActorRef.current = null;
+      nextActorRef.current = null;
+      onHeldRef.current?.(baseBodyRef.current);
+      return;
+    }
+    if (followUp !== null) await run(followUp, followUpActor);
   };
 
   const runExclusive = async <T extends { body: string; etag?: string | null }>(
@@ -203,6 +264,8 @@ export function useGuardedSave(
     try {
       const res = await perform();
       markSaved(res.body, res.etag);
+      // The restored text replaces whatever an assistant mark covered.
+      nextActorRef.current = null;
       ok = true;
       return res;
     } finally {
