@@ -15,7 +15,7 @@ import { shortcutLabel } from '../lib/editor-shortcuts';
 import { get } from '../lib/api/client';
 import { BacklinksPanel } from '../components/BacklinksPanel';
 import { NoteHistoryButton } from '../components/NoteHistory';
-import { notePathFromTarget } from '../lib/editor/link-suggest';
+import { openWikilink } from '../lib/open-wikilink';
 import {
   useAutoRouteJot,
   useConnectors,
@@ -375,7 +375,7 @@ export function JotsScreen() {
                   navigationScope="screen"
                   editorProps={{
                     focus: focusActive,
-                    onWikilinkClick: (target) => openNote(notePathFromTarget(target)),
+                    onWikilinkClick: (target) => openWikilink(target, openNote),
                     handleRef: editorHandle,
                     jotId: selectedId!,
                     openCameraSignal: cameraSignal,

@@ -14,7 +14,7 @@ import { Pill } from './Pill';
 import { GuardedNoteEditor, confirmLeave, type GuardHandle } from './GuardedNoteEditor';
 import { SkeletonRows } from './SkeletonRows';
 import { PanelError } from './PanelError';
-import { notePathFromTarget } from '../lib/editor/link-suggest';
+import { openWikilink } from '../lib/open-wikilink';
 import { BacklinksPanel } from './BacklinksPanel';
 import { NoteHistoryButton } from './NoteHistory';
 import { FocusBar } from './FocusBar';
@@ -196,7 +196,7 @@ export function NoteView({ onEditorReady }: Props = {}) {
                     focus: focusActive,
                     jotId: path,
                     onEditorReady,
-                    onWikilinkClick: (target) => openView(notePathFromTarget(target)),
+                    onWikilinkClick: (target) => openWikilink(target, openView),
                   }}
                 />
               </div>

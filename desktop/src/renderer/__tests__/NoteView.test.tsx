@@ -108,6 +108,39 @@ describe('NoteView', () => {
     expect(useNoteView.getState().path).toBe('20-contexts/personal/_profile.md');
   });
 
+  it('a bare [[Name]] link opens the note the link index resolves it to', async () => {
+    const bare: Note = {
+      path: '20-contexts/work/notes/bare.md',
+      title: 'bare',
+      body: 'See [[Beta]] now.',
+      frontmatter: { source: 'manual', context: 'work' },
+    };
+    apiRequest.mockImplementation(async (_method: string, path: string) =>
+      path.startsWith('/v1/vault/resolve')
+        ? { ok: true, data: { path: '20-contexts/work/Beta.md', exists: true, indexing: false } }
+        : { ok: true, data: bare },
+    );
+    let editor: Editor | undefined;
+    render(withQuery(<NoteView onEditorReady={(e) => { editor = e; }} />));
+    act(() => useNoteView.getState().open(bare.path));
+    await waitFor(() => expect(editor).toBeDefined());
+    act(() => {
+      let pos = -1;
+      editor!.state.doc.descendants((node, p) => {
+        if (node.isText && node.text?.includes('[[')) {
+          pos = p + node.text.indexOf('[[') + 4;
+          return false;
+        }
+      });
+      expect(pos).toBeGreaterThan(0);
+      editor!.view.someProp('handleClick', (f: (view: EditorView, pos: number, event: MouseEvent) => boolean | void) =>
+        f(editor!.view, pos, new MouseEvent('click')),
+      );
+    });
+    await waitFor(() => expect(useNoteView.getState().path).toBe('20-contexts/work/Beta.md'));
+    expect(apiRequest).toHaveBeenCalledWith('GET', '/v1/vault/resolve?target=Beta');
+  });
+
   it('saves edits through PATCH /v1/notes/body', async () => {
     apiRequest.mockResolvedValue({ ok: true, data: syncedNote });
     let editor: Editor | undefined;
