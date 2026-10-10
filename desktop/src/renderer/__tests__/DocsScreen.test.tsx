@@ -16,6 +16,7 @@ import * as client from '../lib/api/client';
 import { DocsScreen } from '../screens/docs';
 import { useDocs } from '../stores/docs';
 import { useChat } from '../stores/chat';
+import { useToasts } from '../stores/toast';
 import { useNavigation } from '../stores/navigation';
 import { DRAG_MIME, encodeDrag } from '../components/docs/tree-model';
 import { doc, libraryFixture } from './fixtures/library';
@@ -86,6 +87,16 @@ describe('DocsScreen', () => {
     await screen.findByText('summarising…');
     const calls = vi.mocked(client.post).mock.calls.filter((c) => String(c[0]).endsWith('/summarise'));
     expect(calls).toHaveLength(1);
+    await screen.findByText(/\/ 1/);
+  });
+
+  it('toasts "nothing to summarise" when the POST queues nothing', async () => {
+    renderScreen();
+    fireEvent.click(await screen.findByText('Payments API v2'));
+    const btn = await screen.findByRole('button', { name: 'summarise' });
+    vi.mocked(client.post).mockResolvedValue({ queued: false } as never);
+    fireEvent.click(btn);
+    await waitFor(() => expect(useToasts.getState().toasts.some((t) => t.message === 'nothing to summarise')).toBe(true));
     await screen.findByText(/\/ 1/);
   });
 
@@ -235,5 +246,19 @@ describe('DocsScreen', () => {
     expect(ask?.text).toBe('summarise risks');
     expect(ask?.attachments[0]?.path).toBe(doc({}).note_path);
     expect(useChat.getState().activeId).toBe('conv9');
+    await waitFor(() => expect((input as HTMLInputElement).value).toBe(''));
+  });
+
+  it('keeps the typed question when creating the conversation fails', async () => {
+    useChat.setState({ activeId: null, pendingAsk: null });
+    renderScreen();
+    vi.mocked(client.post).mockRejectedValue(new Error('boom') as never);
+    fireEvent.click(await screen.findByText('Payments API v2'));
+    const input = (await screen.findByPlaceholderText('ask about this doc…')) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'keep me' } });
+    fireEvent.submit(input.form!);
+    await waitFor(() => expect(useToasts.getState().toasts.some((t) => t.kind === 'error')).toBe(true));
+    expect(input.value).toBe('keep me');
+    expect(useChat.getState().pendingAsk).toBeNull();
   });
 });

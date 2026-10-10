@@ -145,8 +145,8 @@ export function DocsScreen() {
   const run = (p: Promise<unknown>, ok?: string) =>
     p.then(() => ok && toast.success(ok)).catch((e: unknown) => toast.error(errMsg(e)));
 
-  const askAbout = async (d: DocSummary, question: string) => {
-    if (createConversation.isPending) return;
+  const askAbout = async (d: DocSummary, question: string): Promise<boolean> => {
+    if (createConversation.isPending) return false;
     try {
       const conv = await createConversation.mutateAsync();
       useChat.getState().queueAsk({
@@ -156,8 +156,10 @@ export function DocsScreen() {
       });
       useChat.getState().setActive(conv.id);
       useNavigation.getState().setActive('chat');
+      return true;
     } catch (e) {
       toast.error(errMsg(e));
+      return false;
     }
   };
 
@@ -330,12 +332,19 @@ export function DocsScreen() {
           onRename={(title) => run(patchDoc.mutateAsync({ docId: selectedDoc.doc_id, title }))}
           onReindex={() => run(reindex.mutateAsync(selectedDoc.doc_id))}
           summarising={summarise.isPending && summarise.variables === selectedDoc.doc_id}
-          onAsk={(q) => void askAbout(selectedDoc, q)}
+          onAsk={(q) => askAbout(selectedDoc, q)}
           onSummarise={() => {
             if (summarising.current.has(selectedDoc.doc_id)) return;
             summarising.current.add(selectedDoc.doc_id);
             const id = selectedDoc.doc_id;
-            void run(summarise.mutateAsync(id).finally(() => summarising.current.delete(id)));
+            void run(
+              summarise
+                .mutateAsync(id)
+                .then((r) => {
+                  if (!r.queued && selectedDoc.summary_state !== 'pending') toast.info('nothing to summarise');
+                })
+                .finally(() => summarising.current.delete(id)),
+            );
           }}
         />
       )}

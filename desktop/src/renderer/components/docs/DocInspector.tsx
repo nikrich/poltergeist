@@ -9,7 +9,7 @@ interface Props {
   onRename: (title: string) => void;
   onReindex: () => void;
   onSummarise: () => void;
-  onAsk: (question: string) => void;
+  onAsk: (question: string) => Promise<boolean>;
   summarising?: boolean;
   onCollapse?: () => void;
 }
@@ -20,6 +20,9 @@ const Cap = ({ children }: { children: React.ReactNode }) => (
 
 export function DocInspector({ doc, scopeName, onRename, onReindex, onSummarise, onAsk, summarising, onCollapse }: Props) {
   const [editing, setEditing] = useState(false);
+  const [question, setQuestion] = useState('');
+  const [asking, setAsking] = useState(false);
+  const canAsk = doc.kind !== 'opaque' && doc.index_status === 'ok';
   const kindLine = `${kindLabel(doc)}${doc.pages ? ` · ${doc.pages} pages` : ''}`;
   const added = new Date(doc.created).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   return (
@@ -71,7 +74,7 @@ export function DocInspector({ doc, scopeName, onRename, onReindex, onSummarise,
           <span className="mb-1.5 block font-mono text-10 uppercase tracking-[0.12em] text-neon-ink">✦ what poltergeist knows</span>
           {summarising || doc.summary_state === 'pending' ? (
             <span className="animate-pulse text-ink-3">summarising…</span>
-          ) : doc.summary ? (
+          ) : doc.summary && doc.index_status === 'ok' ? (
             <p className="break-words whitespace-pre-line">{doc.summary}</p>
           ) : doc.index_status === 'ok' ? (
             <button type="button" onClick={onSummarise} className="font-mono text-11 text-neon-ink hover:underline">
@@ -94,15 +97,26 @@ export function DocInspector({ doc, scopeName, onRename, onReindex, onSummarise,
         className="mt-auto flex items-center gap-2 rounded-[9px] border border-hairline-2 bg-paper px-2.5 py-2"
         onSubmit={(e) => {
           e.preventDefault();
-          const input = e.currentTarget.elements.namedItem('ask') as HTMLInputElement;
-          const q = input.value.trim();
-          if (!q) return;
-          onAsk(q);
-          input.value = '';
+          const q = question.trim();
+          if (!q || asking || !canAsk) return;
+          setAsking(true);
+          onAsk(q)
+            .then((ok) => {
+              if (ok) setQuestion('');
+            })
+            .catch(() => undefined)
+            .finally(() => setAsking(false));
         }}
       >
-        <input name="ask" placeholder="ask about this doc…" className="min-w-0 flex-1 bg-transparent text-12 text-ink-0 outline-none placeholder:text-ink-3" />
-        <button type="submit" aria-label="ask" className="grid h-[22px] w-[22px] place-items-center rounded-md bg-neon font-bold text-[#0E0F12]">↑</button>
+        <input
+          name="ask"
+          value={question}
+          disabled={!canAsk}
+          onChange={(e) => setQuestion(e.target.value)}
+          placeholder={canAsk ? 'ask about this doc…' : 'nothing to ask about yet'}
+          className="min-w-0 flex-1 bg-transparent text-12 text-ink-0 outline-none placeholder:text-ink-3 disabled:opacity-60"
+        />
+        <button type="submit" aria-label="ask" disabled={!canAsk || asking} className="grid h-[22px] w-[22px] place-items-center rounded-md bg-neon font-bold text-[#0E0F12] disabled:opacity-40">↑</button>
       </form>
     </aside>
   );
