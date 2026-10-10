@@ -229,7 +229,7 @@ def test_parent_gone_handler_still_exits_if_stopping_the_recording_raises() -> N
         raise RuntimeError("backend exploded")
 
     handler = sidecar_main._parent_gone_handler(
-        server, hard_exit_after_s=60, hard_exit=lambda code: None, stop_recording=boom,
+        server, hard_exit_after_s=0.01, hard_exit=lambda code: None, stop_recording=boom,
     )
     with pytest.raises(RuntimeError):
         handler()
@@ -253,6 +253,23 @@ def test_hard_exit_outlasts_capture_stop_and_graceful_budget() -> None:
     assert sidecar_main._uvicorn_kwargs(object(), 1)["timeout_graceful_shutdown"] == (
         sidecar_main.GRACEFUL_SHUTDOWN_TIMEOUT_S
     )
+
+
+def test_serve_exits_3_when_uvicorn_never_started() -> None:
+    # uvicorn.run() exits STARTUP_FAILURE (3) when startup fails (port taken,
+    # lifespan error); server.run() just returns, so _serve must report it.
+    from ghostbrain.api import __main__ as sidecar_main
+
+    class FakeServer:
+        def __init__(self, started: bool) -> None:
+            self._started = started
+            self.started = False
+
+        def run(self) -> None:
+            self.started = self._started
+
+    assert sidecar_main._serve(FakeServer(started=False)) == 3
+    assert sidecar_main._serve(FakeServer(started=True)) == 0
 
 
 # ---------------------------------------------------------------------------

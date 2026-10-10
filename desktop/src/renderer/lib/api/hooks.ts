@@ -644,6 +644,7 @@ export function useAutoRouteJot() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: JOTS_KEY });
       qc.invalidateQueries({ queryKey: ['note-by-path'] });
+      qc.invalidateQueries({ queryKey: ['vault', 'backlinks'] });
     },
   });
 }

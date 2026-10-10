@@ -3,6 +3,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import {
+  useAutoRouteJot,
   useBacklinks,
   useCreateJot,
   useDeleteJot,
@@ -74,6 +75,14 @@ describe('saves invalidate backlinks', () => {
     const { spy, w } = spyClient();
     const { result } = renderHook(() => useRouteJot(), { wrapper: w });
     await result.current.mutateAsync({ id: 'manual-1', context: 'work' });
+    expect(backlinksInvalidated(spy)).toBe(true);
+  });
+
+  it('after an auto-route', async () => {
+    request.mockResolvedValue({ ok: true, data: { id: 'manual-1', path: 'b.md', context: 'work' } });
+    const { spy, w } = spyClient();
+    const { result } = renderHook(() => useAutoRouteJot(), { wrapper: w });
+    await result.current.mutateAsync('manual-1');
     expect(backlinksInvalidated(spy)).toBe(true);
   });
 

@@ -417,8 +417,19 @@ def _run_api_server() -> int:
         flush=True,
     )
 
+    return _serve(server)
+
+
+# uvicorn's exit code for a server that never finished starting (port taken,
+# lifespan startup error; uvicorn.config.STARTUP_FAILURE). uvicorn.run() exits
+# with it, but server.run() just returns, so _serve has to report it rather
+# than exiting 0 as if the sidecar had shut down cleanly.
+STARTUP_FAILURE = 3
+
+
+def _serve(server) -> int:
     server.run()
-    return 0
+    return 0 if server.started else STARTUP_FAILURE
 
 
 if __name__ == "__main__":
