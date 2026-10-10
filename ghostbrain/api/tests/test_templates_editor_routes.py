@@ -117,3 +117,21 @@ def test_new_template_rejects_a_bad_name(client, auth_headers):
 def test_query_values_shape(client, auth_headers):
     data = client.get("/v1/templates/query-values", headers=auth_headers).json()
     assert set(data) == {"types", "statuses", "indexing"}
+
+
+def test_save_is_attributed_to_the_actor_header(client, auth_headers, tmp_vault):
+    from ghostbrain.changes import log as changes
+
+    _seed(client, auth_headers)
+    etag = client.get("/v1/templates/one-on-one/source", headers=auth_headers).json()["etag"]
+    r = client.patch("/v1/templates/one-on-one/source",
+                     headers={**auth_headers, "If-Match": etag, "X-Poltergeist-Actor": "plugin:familiar"},
+                     json={"source": ONE_ON_ONE + "\nplugin line\n"})
+    assert r.status_code == 200, r.text
+    r = client.patch("/v1/templates/one-on-one/source",
+                     headers={**auth_headers, "If-Match": r.json()["etag"]},
+                     json={"source": ONE_ON_ONE + "\nuser line\n"})
+    assert r.status_code == 200, r.text
+    # The change log records non-user writes only: the plugin save, not the user's.
+    [logged] = [c for c in changes.list_changes() if c.rel_path == REL]
+    assert (logged.actor, logged.op, logged.reason) == ("plugin:familiar", "modify", "edit template one-on-one")

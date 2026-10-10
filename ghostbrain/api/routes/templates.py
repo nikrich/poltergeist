@@ -20,7 +20,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from ghostbrain.api.vault_http import if_match
+from ghostbrain.api.vault_http import if_match, request_actor
 from ghostbrain.templates.create import create_from_template, preview_from_template
 from ghostbrain.templates.functions import registry_json
 from ghostbrain.templates.lang import MAX_TEMPLATE_CHARS
@@ -36,13 +36,7 @@ from ghostbrain.templates.source import (
     save_source,
 )
 from ghostbrain.templates.testrun import dry_run
-from ghostbrain.vault_write import USER, Actor
-
-try:  # B2 attributes HTTP writes from the X-Poltergeist-Actor header.
-    from ghostbrain.api.vault_http import request_actor
-except ImportError:  # Before B2 every HTTP write is the user's.
-    def request_actor() -> Actor:
-        return USER
+from ghostbrain.vault_write import Actor
 
 router = APIRouter(prefix="/v1/templates", tags=["templates"])
 _ERRORS = (TemplateNotFound, TemplateInvalid, AnswerError, RenderError)
