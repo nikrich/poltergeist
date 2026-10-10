@@ -8,7 +8,8 @@ import { useNavigation } from '../stores/navigation';
 import { toast } from '../stores/toast';
 import { useSettings } from '../stores/settings';
 import { useFocusSurfaces } from '../lib/focus-mode';
-import type { JotsPage, Note, AutoRouteResponse, Project, Connector } from '../../shared/api-types';
+import { useNoteView } from '../stores/note-view';
+import type { JotsPage, Note, AutoRouteResponse, Project, Connector, TemplateSummary } from '../../shared/api-types';
 
 const apiRequest = vi.fn();
 
@@ -378,6 +379,42 @@ describe('JotsScreen', () => {
     expect(apiRequest).toHaveBeenCalledWith(
       'GET',
       '/v1/vault/backlinks?path=20-contexts%2Fwork%2Fnotes%2Fmanual-20260514T093015-a.md',
+    );
+  });
+
+  it('"template" menu creates a note from a template and opens it', async () => {
+    const MEETING: TemplateSummary = {
+      id: 'meeting-notes',
+      path: '90-meta/templates/meeting-notes.md',
+      name: 'Meeting notes',
+      description: '',
+      prompts: [{ id: 'topic', ask: 'Topic', type: 'text', optional: false, default: null, options: [] }],
+      variables: ['context', 'date', 'topic'],
+      valid: true,
+      diagnostics: [],
+    };
+    useNoteView.getState().close();
+    apiRequest.mockImplementation(withConnectors(async (method, path) => {
+      if (path.includes('source=manual')) return { ok: true, status: 200, data: { items: [], total: 0 } satisfies JotsPage };
+      if (path === '/v1/templates') return { ok: true, status: 200, data: { templates: [MEETING] } };
+      if (path === '/v1/projects') return { ok: true, status: 200, data: [] };
+      if (method === 'POST' && path === '/v1/templates/meeting-notes/create')
+        return {
+          ok: true,
+          status: 201,
+          data: { path: '20-contexts/work/meetings/2026-10-09-planning.md', title: '2026-10-09 Planning', etag: 'e', status: 'applied' },
+        };
+      return { ok: true, status: 200, data: { items: [], total: 0 } };
+    }));
+
+    render(withQuery(<JotsScreen />));
+    fireEvent.click(await screen.findByRole('button', { name: 'template' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /Meeting notes/ }));
+    fireEvent.change(await screen.findByLabelText('Topic'), { target: { value: 'Planning' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'create' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'create' }));
+    await waitFor(() =>
+      expect(useNoteView.getState().path).toBe('20-contexts/work/meetings/2026-10-09-planning.md'),
     );
   });
 });

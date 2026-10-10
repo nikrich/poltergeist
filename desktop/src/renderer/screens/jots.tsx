@@ -5,6 +5,7 @@ import { ConfluenceExportDialog } from '../components/ConfluenceExportDialog';
 import { Lucide } from '../components/Lucide';
 import { Pill } from '../components/Pill';
 import { JotTree } from '../components/JotTree';
+import { TemplateMenu } from '../components/TemplatePicker';
 import { GuardedNoteEditor, confirmLeave, type GuardHandle } from '../components/GuardedNoteEditor';
 import type { EditorHandle } from '../components/RichMarkdownEditor';
 import { DocsAssistPanel } from '../components/DocsAssistPanel';
@@ -301,6 +302,16 @@ export function JotsScreen() {
                     handleNew();
                     toast.info('jot created — tap capture to add a photo');
                   }
+                }}
+              />
+              <TemplateMenu
+                onCreated={(res) => {
+                  if (res.status === 'pending') {
+                    toast.info('note saved for approval');
+                    return;
+                  }
+                  toast.success(`created — ${res.title}`);
+                  openNote(res.path);
                 }}
               />
               <Btn
