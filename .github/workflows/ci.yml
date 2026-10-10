@@ -73,6 +73,7 @@ jobs:
             tests/test_history_retention.py \
             tests/test_templates_lang.py \
             tests/test_templates_security.py \
+            tests/test_templates_functions.py \
             -q
 
   desktop:
