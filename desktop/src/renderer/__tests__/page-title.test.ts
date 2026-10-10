@@ -148,7 +148,9 @@ describe('pathological first lines parse in linear time (no ReDoS)', () => {
     fn();
     return performance.now() - t0;
   };
-  const BOUND_MS = 50;
+  // Linear runs take ~1ms; quadratic ones take seconds. 500 leaves room for
+  // slow Windows release runners without hiding a regression.
+  const BOUND_MS = 500;
   const spaces = ' '.repeat(100_000);
   const nearCap = (unit: string, end: string) =>
     unit.repeat(Math.floor((1_999 - 2 - end.length) / unit.length)) + end;
@@ -203,6 +205,18 @@ describe('pathological first lines parse in linear time (no ReDoS)', () => {
       expect(joinPageTitle(s, s.rest)).toBe(body);
     }
     expect(splitPageTitle('# ' + 'x'.repeat(1_990) + '\n\nbody', 'note').kind).toBe('h1');
+  });
+
+  it.each([
+    ['exactly 2,000 chars is still scanned', 1_998, 'h1'],
+    ['2,001 chars is past the cap', 1_999, null],
+  ] as const)('cap boundary: %s', (_name, n, kind) => {
+    const line = '# ' + 'x'.repeat(n);
+    expect(line.length).toBe(n + 2);
+    const body = line + '\n\nbody';
+    const s = splitPageTitle(body, 'note');
+    expect(s.kind).toBe(kind);
+    expect(joinPageTitle(s, s.rest)).toBe(body);
   });
 });
 

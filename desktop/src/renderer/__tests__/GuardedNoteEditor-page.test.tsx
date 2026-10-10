@@ -8,6 +8,7 @@ import {
   type PageChrome,
 } from '../components/GuardedNoteEditor';
 import type { EditorHandle } from '../components/RichMarkdownEditor';
+import { ApiError } from '../lib/api/client';
 import { getMarkdown } from '../lib/editor/markdown';
 
 const E1 = 'aaaaaaaaaaaaaaaa';
@@ -103,6 +104,21 @@ describe('GuardedNoteEditor page mode (A7)', () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it('on blur the field shows exactly what was saved (collapsed whitespace, 200-char cap)', async () => {
+    const { send } = setup('# Plan\n\nbody text', NOTE);
+    fireEvent.change(title(), { target: { value: '  Launch   plan  ' } });
+    fireEvent.blur(title());
+    expect(title()).toHaveValue('Launch plan');
+    await waitFor(() => expect(send).toHaveBeenCalledWith('# Launch plan\n\nbody text', E1));
+
+    fireEvent.change(title(), { target: { value: 'y'.repeat(250) } });
+    fireEvent.blur(title());
+    expect(title()).toHaveValue('y'.repeat(200));
+    await waitFor(() =>
+      expect(send).toHaveBeenLastCalledWith(`# ${'y'.repeat(200)}\n\nbody text`, E2),
+    );
+  });
+
   it('pasted line breaks become spaces', async () => {
     const { send } = setup('# Plan\n\nbody text', NOTE);
     fireEvent.change(title(), { target: { value: 'Two\nlines' } });
@@ -174,6 +190,52 @@ describe('GuardedNoteEditor page mode (A7)', () => {
     });
     expect(title()).toHaveValue('Old plan');
     await waitFor(() => expect(getMarkdown(getEditor()!).trim()).toBe('old body'));
+  });
+
+  it('keep theirs re-reads the title from their body, with no duplicated title line', async () => {
+    const send = vi
+      .fn()
+      .mockRejectedValueOnce(new ApiError('changed', 409))
+      .mockResolvedValue({ etag: 'dddddddddddddddd' });
+    const fetchLatest = vi.fn().mockResolvedValue({ body: '# Their plan\n\ntheir body', etag: E2 });
+    let editor: Editor | undefined;
+    render(
+      <GuardedNoteEditor
+        initialBody={'# Plan\n\nbody text'}
+        initialEtag={E1}
+        send={send}
+        fetchLatest={fetchLatest}
+        page={NOTE}
+        editorProps={{
+          jotId: 'n.md',
+          debounceMs: 10,
+          onEditorReady: (e) => {
+            editor = e;
+          },
+        }}
+      />,
+    );
+    await waitFor(() => expect(editor).toBeDefined());
+    act(() => {
+      editor!.commands.insertContentAt(editor!.state.doc.content.size, 'my tail');
+    });
+    await screen.findByRole('alert');
+    fireEvent.click(screen.getByRole('button', { name: 'keep theirs' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    expect(title()).toHaveValue('Their plan');
+    await waitFor(() => expect(getMarkdown(editor!).trim()).toBe('their body'));
+    expect(getMarkdown(editor!)).not.toContain('Their plan');
+
+    const sentBefore = send.mock.calls.length;
+    act(() => {
+      editor!.commands.insertContentAt(editor!.state.doc.content.size, 'next');
+    });
+    await waitFor(() => expect(send.mock.calls.length).toBeGreaterThan(sentBefore));
+    const [saved, etag] = send.mock.calls.at(-1)!;
+    expect((saved as string).startsWith('# Their plan\n\ntheir body')).toBe(true);
+    expect((saved as string).split('\n').filter((l) => /^#\s/.test(l))).toHaveLength(1);
+    expect(saved as string).not.toContain('my tail');
+    expect(etag).toBe(E2);
   });
 
   it('reload adopts an outside write and re-splits it', async () => {
