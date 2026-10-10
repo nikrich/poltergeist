@@ -12,6 +12,7 @@ whisper's own ``-l auto`` only detects once, from the first 30 seconds.
 """
 from __future__ import annotations
 
+import re
 import struct
 from array import array
 from collections.abc import Iterator
@@ -87,6 +88,28 @@ def is_silent(pcm: bytes) -> bool:
     """True when no 100 ms block rises above the silence floor — nothing for
     whisper to hear (it would hallucinate "Thank you." on it)."""
     return all(level < _SILENT_RMS for level in block_rms(pcm))
+
+
+# What whisper says over near-silence (a key click or a breath is enough to
+# get a chunk past is_silent). Matched on the whole segment, so real speech
+# that merely contains these words is never touched.
+_HALLUCINATIONS = re.compile(
+    r"^\W*(?:thank you(?: (?:very much|so much|for watching|for listening))?"
+    r"|thanks(?: for watching| for listening)?|you|bye|bye[- ]bye"
+    r"|i'?m sorry|please subscribe|subtitles by .*)\W*$",
+    re.IGNORECASE,
+)
+# Less loud audio than this (in 100 ms blocks) cannot hold a spoken phrase.
+_HALLUCINATION_MAX_LOUD_BLOCKS = 8
+
+
+def is_hallucination(text: str, pcm: bytes) -> bool:
+    """True when ``text`` is one of whisper's stock silence phrases and the
+    audio it came from is too quiet to have contained it."""
+    if not _HALLUCINATIONS.match(text.strip()):
+        return False
+    loud = sum(1 for level in block_rms(pcm) if level >= _SILENT_RMS)
+    return loud < _HALLUCINATION_MAX_LOUD_BLOCKS
 
 
 def find_cut(pcm: bytes, profile: Profile, *, flush: bool = False) -> int | None:

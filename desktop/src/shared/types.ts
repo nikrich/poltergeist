@@ -1,4 +1,5 @@
 import type { ChatStreamEvent, DocsAssistEvent, DocsAssistRequest, LiveTranscriptEvent, RecorderLevelsEvent } from './api-types';
+import type { DesignBuildResult, DesignLiveEvent, DevServerResult } from './design-types';
 import type { ActivePluginInfo, MarketplaceListing, PluginRecord } from './plugin-types';
 
 export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE' | 'PUT';
@@ -99,6 +100,26 @@ export interface GbBridge {
     /** Follow the recording's audio levels; events on `recorder:levels:event`. */
     levelsSubscribe(): Promise<{ ok: true } | { ok: false; error: string }>;
     levelsUnsubscribe(): Promise<{ ok: true }>;
+  };
+  design: {
+    /** Follow the live design session; events arrive on `design:live:event`.
+     *  Resolves when the stream ends or fails. */
+    liveSubscribe(): Promise<{ ok: true } | { ok: false; error: string }>;
+    liveUnsubscribe(): Promise<{ ok: true }>;
+    /** Bundle the prototype in `prototypeDir` (absolute, inside the vault) for
+     *  revision `rev` and make it the folder gbproto:// serves. Cached per rev. */
+    build(prototypeDir: string, rev: number): Promise<DesignBuildResult>;
+    /** Open (or focus) the pop-out window for screen-sharing. */
+    openPopout(): Promise<{ ok: true }>;
+    devserver: {
+      /** Start (or reuse) the dev server of a Poltergeist worktree and count
+       *  this window as a viewer. `errors` = compile errors since last call. */
+      ensure(worktree: string, appDir: string): Promise<DevServerResult>;
+      /** This window stopped showing the worktree (idle stop after 60 s). */
+      release(worktree: string): Promise<{ ok: true }>;
+    };
+    /** Open an artefact folder or worktree in the editor or Finder. */
+    openPath(path: string, how: 'editor' | 'finder'): Promise<{ ok: boolean; error?: string }>;
   };
   chat: {
     send(
@@ -201,6 +222,10 @@ export interface GbBridge {
   on(
     channel: 'recorder:live:event',
     listener: (event: LiveTranscriptEvent) => void,
+  ): () => void;
+  on(
+    channel: 'design:live:event',
+    listener: (event: DesignLiveEvent) => void,
   ): () => void;
   on(
     channel: 'docs:event',

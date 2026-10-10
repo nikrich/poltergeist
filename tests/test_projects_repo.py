@@ -84,3 +84,19 @@ def test_active_destinations_and_prompt_lines(vault: Path):
     assert {"work", "consulting", "side-project", "personal"} <= set(dests)
     lines = projects.project_prompt_lines()
     assert lines == ["consulting/poltergeist — Poltergeist: the second brain"]
+
+
+def test_design_system_round_trip_and_backward_compat(vault: Path):
+    from ghostbrain.design import packs
+
+    p = projects.create_project("work", "Shop")
+    assert "design_system" not in p  # legacy entries have no key; readers default to None
+    p = projects.update_project("work", "shop", design_system=packs.BUILTIN_PACK_ID)
+    assert p["design_system"] == packs.BUILTIN_PACK_ID
+    p = projects.update_project("work", "shop", description="d")
+    assert p["design_system"] == packs.BUILTIN_PACK_ID
+    with pytest.raises(projects.UnknownDesignSystem):
+        projects.update_project("work", "shop", design_system="nope")
+    assert projects.get_project("work", "shop")["design_system"] == packs.BUILTIN_PACK_ID
+    p = projects.update_project("work", "shop", design_system=None)
+    assert p["design_system"] is None

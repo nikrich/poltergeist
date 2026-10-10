@@ -77,6 +77,14 @@ import type {
 import { ApiError, del, get, patch, post, put } from './client';
 import { reportHistoryHealth } from '../history-health';
 import type { WriteActor } from '../../../shared/types';
+import type {
+  ArtefactDetail,
+  ArtefactSummary,
+  CodebaseCandidate,
+  DesignPack,
+  DesignPackImportJob,
+  DesignSettings,
+} from '../../../shared/design-types';
 
 export function useVaultStats() {
   return useQuery({
@@ -825,6 +833,7 @@ export function useUpdateProject() {
         name: vars.name,
         description: vars.description,
         archived: vars.archived,
+        design_system: vars.design_system,
       }),
     // A rename moves the project's folder, re-stamps its notes and rewrites
     // chat/jot/library paths, so every surface that lists them is stale —
@@ -1317,5 +1326,107 @@ export function useRejectChange() {
   return useMutation({
     mutationFn: (vars: { id: number }) => post<ChangeRejectResponse>(`/v1/changes/${vars.id}/reject`),
     onSuccess: () => invalidateAfterChange(qc),
+  });
+}
+
+// ── Live design ───────────────────────────────────────────────────────────
+
+export function useDesignPacks() {
+  return useQuery({
+    queryKey: ['design', 'packs'],
+    queryFn: () => get<DesignPack[]>('/v1/design/packs'),
+    staleTime: 30_000,
+  });
+}
+
+export function useDeleteDesignPack() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => del(`/v1/design/packs/${encodeURIComponent(id)}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['design', 'packs'] }),
+  });
+}
+
+export function useImportDesignPack() {
+  return useMutation({
+    mutationFn: (req: { source: string; name?: string }) =>
+      post<DesignPackImportJob>('/v1/design/packs/import', req),
+  });
+}
+
+/** Polls an import job every 2s until it is done or failed. */
+export function useDesignPackImportJob(id: string | null) {
+  return useQuery({
+    queryKey: ['design', 'import', id],
+    queryFn: () => get<DesignPackImportJob>(`/v1/design/packs/import/${encodeURIComponent(id!)}`),
+    enabled: id !== null,
+    refetchInterval: (query) => (query.state.data?.status === 'running' ? 2_000 : false),
+  });
+}
+
+export function useDesignSettings() {
+  return useQuery({
+    queryKey: ['design', 'settings'],
+    queryFn: () => get<DesignSettings>('/v1/design/settings'),
+  });
+}
+
+export function useUpdateDesignSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (next: DesignSettings) => put<DesignSettings>('/v1/design/settings', next),
+    onSuccess: (data) => qc.setQueryData(['design', 'settings'], data),
+  });
+}
+
+/** Repos under the code roots for the codebase picker (fetched while open). */
+export function useCodebases(q: string, opts: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: ['design', 'codebases', q],
+    queryFn: () => get<CodebaseCandidate[]>(`/v1/design/codebases?q=${encodeURIComponent(q)}`),
+    enabled: opts.enabled ?? true,
+    placeholderData: keepPreviousData,
+    staleTime: 30_000,
+  });
+}
+
+const ARTEFACTS_KEY = ['design', 'artefacts'] as const;
+
+/** Every design artefact in the vault, newest first. Polls so a running
+ *  session's revisions show up without a reload. */
+export function useArtefacts() {
+  return useQuery({
+    queryKey: ARTEFACTS_KEY,
+    queryFn: () => get<ArtefactSummary[]>('/v1/design/artefacts'),
+    refetchInterval: 15_000,
+  });
+}
+
+export function useArtefact(id: string | null) {
+  return useQuery({
+    queryKey: [...ARTEFACTS_KEY, 'detail', id],
+    queryFn: () => get<ArtefactDetail>(`/v1/design/artefact?id=${encodeURIComponent(id!)}`),
+    enabled: id !== null,
+  });
+}
+
+export interface RemoveWorktreeResult {
+  removed: boolean;
+  branch_kept: boolean;
+  reason: string | null;
+}
+
+export function useRemoveWorktree() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      post<RemoveWorktreeResult>('/v1/design/artefacts/remove-worktree', { id }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ARTEFACTS_KEY }),
+  });
+}
+
+export function useEjectArtefact() {
+  return useMutation({
+    mutationFn: (id: string) => post<{ path: string }>('/v1/design/artefacts/eject', { id }),
   });
 }

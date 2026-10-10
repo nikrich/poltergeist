@@ -40,6 +40,15 @@ ServerFactory = Callable[[], Any]  # returns a started-on-demand WhisperServer
 
 _registry_lock = threading.Lock()
 _sessions: dict[str, LiveSession] = {}
+# Called with the WAV path whenever live transcription begins for a new
+# recording (the design listener registers here). Failures are logged only.
+_on_begin: list[Callable[[Path], None]] = []
+
+
+def on_begin(callback: Callable[[Path], None]) -> None:
+    """Run ``callback(wav)`` each time live transcription begins."""
+    if callback not in _on_begin:
+        _on_begin.append(callback)
 
 
 def live_path(wav: Path) -> Path:
@@ -198,6 +207,7 @@ class LiveSession:
         self._set("unavailable", reason)
 
     def _emit(self, chunk: chunker.Chunk, segments: list) -> None:
+        segments = drop_hallucinations(chunk, segments)
         path = live_path(self.wav)
         end = chunk.start_sample + len(chunk.pcm) // chunker.BYTES_PER_SAMPLE
         # What language this stretch of audio is in (None = no speech) — the
@@ -263,6 +273,19 @@ class LiveSession:
             self._publish_locked(self._status_locked())
 
 
+def drop_hallucinations(chunk: chunker.Chunk, segments: list) -> list:
+    """``segments`` without whisper's "Thank you." on near-silent audio."""
+    if not any(chunker._HALLUCINATIONS.match(s.text.strip()) for s in segments):
+        return segments
+    kept = []
+    for seg in segments:
+        a = max(0, int((seg.t0 - chunk.start_s) * chunker.SAMPLE_RATE)) * chunker.BYTES_PER_SAMPLE
+        b = max(a, int((seg.t1 - chunk.start_s) * chunker.SAMPLE_RATE)) * chunker.BYTES_PER_SAMPLE
+        if not chunker.is_hallucination(seg.text, chunk.pcm[a:b] or chunk.pcm):
+            kept.append(seg)
+    return kept
+
+
 def begin(
     wav: Path,
     *,
@@ -279,10 +302,15 @@ def begin(
             session = LiveSession(wav, server_factory or default_server_factory, language, poll_s)
             _sessions[key] = session
         session._thread.start()
-        return session
     except Exception:
         log.exception("could not start live transcription for %s", wav.name)
         return None
+    for callback in _on_begin:
+        try:
+            callback(wav)
+        except Exception:  # listeners never affect the recording
+            log.exception("live begin hook failed for %s", wav.name)
+    return session
 
 
 def begin_from_config(

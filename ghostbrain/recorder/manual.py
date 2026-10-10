@@ -32,6 +32,7 @@ import frontmatter
 from ghostbrain.llm.client import LLMError, run as llm_run
 from ghostbrain.paths import vault_path
 from ghostbrain.recorder import config as rcfg
+from ghostbrain.recorder import hooks
 from ghostbrain.recorder import slides as slides_mod
 from ghostbrain.recorder.audio import get_backend
 from ghostbrain.recorder.transcribe import TranscribeError, transcribe
@@ -260,6 +261,10 @@ def recover_one(
         slides_mod.attach_slides(note_path, wav, min_words=config.slide_min_words)
     except Exception:  # noqa: BLE001
         log.exception("attaching slides failed for %s", wav.name)
+    try:
+        hooks.fire_transcribed(wav, note_path)
+    except Exception:  # noqa: BLE001
+        log.exception("on_transcribed hooks failed for %s", wav.name)
     return note_path
 
 

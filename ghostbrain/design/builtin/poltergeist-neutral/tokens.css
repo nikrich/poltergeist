@@ -1,0 +1,236 @@
+/* Poltergeist Neutral — a calm, product-neutral design system.
+   Tokens are CSS custom properties; base element styles below use only them.
+   Link this file before the prototype's own styles. */
+
+:root {
+  /* Colour — neutrals (warm grey) */
+  --ds-color-bg: #fbfaf8;
+  --ds-color-surface: #ffffff;
+  --ds-color-surface-muted: #f3f2ef;
+  --ds-color-surface-sunken: #ebe9e5;
+  --ds-color-border: #e2dfda;
+  --ds-color-border-strong: #c9c5be;
+  --ds-color-text: #1d1c1a;
+  --ds-color-text-muted: #5f5c57;
+  --ds-color-text-subtle: #8a867f;
+  --ds-color-text-inverse: #ffffff;
+
+  /* Colour — brand + accents */
+  --ds-color-primary: #3d5afe;
+  --ds-color-primary-hover: #2f49e0;
+  --ds-color-primary-soft: #eef1ff;
+  --ds-color-primary-text: #ffffff;
+  --ds-color-accent: #0f9d8a;
+  --ds-color-accent-soft: #e6f6f3;
+
+  /* Colour — status */
+  --ds-color-success: #1f8a4c;
+  --ds-color-success-soft: #e8f5ed;
+  --ds-color-warning: #b26a00;
+  --ds-color-warning-soft: #fdf3e2;
+  --ds-color-danger: #c62f3b;
+  --ds-color-danger-soft: #fcebec;
+  --ds-color-info: #2563c9;
+  --ds-color-info-soft: #e9f0fc;
+
+  --ds-color-focus: rgba(61, 90, 254, 0.35);
+  --ds-color-overlay: rgba(29, 28, 26, 0.45);
+
+  /* Typography */
+  --ds-font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --ds-font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --ds-font-size-xs: 0.75rem;
+  --ds-font-size-sm: 0.875rem;
+  --ds-font-size-md: 1rem;
+  --ds-font-size-lg: 1.125rem;
+  --ds-font-size-xl: 1.375rem;
+  --ds-font-size-2xl: 1.75rem;
+  --ds-font-size-3xl: 2.25rem;
+  --ds-font-weight-regular: 400;
+  --ds-font-weight-medium: 500;
+  --ds-font-weight-semibold: 600;
+  --ds-font-weight-bold: 700;
+  --ds-font-line-tight: 1.2;
+  --ds-font-line-normal: 1.5;
+
+  /* Spacing — 4px base */
+  --ds-space-0: 0;
+  --ds-space-1: 0.25rem;
+  --ds-space-2: 0.5rem;
+  --ds-space-3: 0.75rem;
+  --ds-space-4: 1rem;
+  --ds-space-5: 1.25rem;
+  --ds-space-6: 1.5rem;
+  --ds-space-8: 2rem;
+  --ds-space-10: 2.5rem;
+  --ds-space-12: 3rem;
+  --ds-space-16: 4rem;
+
+  /* Radius */
+  --ds-radius-sm: 4px;
+  --ds-radius-md: 8px;
+  --ds-radius-lg: 12px;
+  --ds-radius-xl: 16px;
+  --ds-radius-full: 999px;
+
+  /* Elevation */
+  --ds-shadow-sm: 0 1px 2px rgba(29, 28, 26, 0.06);
+  --ds-shadow-md: 0 2px 8px rgba(29, 28, 26, 0.08), 0 1px 2px rgba(29, 28, 26, 0.04);
+  --ds-shadow-lg: 0 12px 32px rgba(29, 28, 26, 0.12), 0 2px 6px rgba(29, 28, 26, 0.06);
+
+  /* Motion */
+  --ds-motion-fast: 120ms;
+  --ds-motion-normal: 200ms;
+  --ds-motion-ease: cubic-bezier(0.2, 0, 0, 1);
+
+  /* Layout */
+  --ds-layout-max-width: 1120px;
+  --ds-layout-sidebar: 240px;
+  --ds-control-height: 2.25rem;
+}
+
+/* ---------------------------------------------------------------- base */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--ds-color-bg);
+  color: var(--ds-color-text);
+  font-family: var(--ds-font-sans);
+  font-size: var(--ds-font-size-md);
+  line-height: var(--ds-font-line-normal);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4 {
+  margin: 0 0 var(--ds-space-3);
+  line-height: var(--ds-font-line-tight);
+  font-weight: var(--ds-font-weight-semibold);
+  letter-spacing: -0.01em;
+}
+h1 { font-size: var(--ds-font-size-3xl); font-weight: var(--ds-font-weight-bold); }
+h2 { font-size: var(--ds-font-size-2xl); }
+h3 { font-size: var(--ds-font-size-xl); }
+h4 { font-size: var(--ds-font-size-lg); }
+
+p { margin: 0 0 var(--ds-space-4); }
+small { font-size: var(--ds-font-size-sm); color: var(--ds-color-text-muted); }
+
+a { color: var(--ds-color-primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+code, pre { font-family: var(--ds-font-mono); font-size: 0.9em; }
+
+hr { border: 0; border-top: 1px solid var(--ds-color-border); margin: var(--ds-space-6) 0; }
+
+:focus-visible { outline: 3px solid var(--ds-color-focus); outline-offset: 1px; }
+
+/* ------------------------------------------------------------- buttons */
+
+button, .ds-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ds-space-2);
+  height: var(--ds-control-height);
+  padding: 0 var(--ds-space-4);
+  border: 1px solid var(--ds-color-border-strong);
+  border-radius: var(--ds-radius-md);
+  background: var(--ds-color-surface);
+  color: var(--ds-color-text);
+  font: inherit;
+  font-size: var(--ds-font-size-sm);
+  font-weight: var(--ds-font-weight-medium);
+  cursor: pointer;
+  transition: background var(--ds-motion-fast) var(--ds-motion-ease),
+    border-color var(--ds-motion-fast) var(--ds-motion-ease);
+}
+button:hover, .ds-button:hover { background: var(--ds-color-surface-muted); }
+button:disabled, .ds-button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+button.primary, .ds-button-primary {
+  background: var(--ds-color-primary);
+  border-color: var(--ds-color-primary);
+  color: var(--ds-color-primary-text);
+}
+button.primary:hover, .ds-button-primary:hover { background: var(--ds-color-primary-hover); }
+
+button.ghost, .ds-button-ghost { background: transparent; border-color: transparent; }
+button.ghost:hover, .ds-button-ghost:hover { background: var(--ds-color-surface-muted); }
+
+button.danger, .ds-button-danger {
+  background: var(--ds-color-danger);
+  border-color: var(--ds-color-danger);
+  color: var(--ds-color-text-inverse);
+}
+
+/* -------------------------------------------------------------- inputs */
+
+label { display: block; font-size: var(--ds-font-size-sm); font-weight: var(--ds-font-weight-medium); margin-bottom: var(--ds-space-1); }
+
+input, select, textarea {
+  width: 100%;
+  min-height: var(--ds-control-height);
+  padding: var(--ds-space-2) var(--ds-space-3);
+  border: 1px solid var(--ds-color-border-strong);
+  border-radius: var(--ds-radius-md);
+  background: var(--ds-color-surface);
+  color: var(--ds-color-text);
+  font: inherit;
+  font-size: var(--ds-font-size-sm);
+}
+textarea { min-height: 6rem; resize: vertical; }
+input::placeholder, textarea::placeholder { color: var(--ds-color-text-subtle); }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--ds-color-primary); box-shadow: 0 0 0 3px var(--ds-color-focus); }
+input[type="checkbox"], input[type="radio"] { width: auto; min-height: 0; accent-color: var(--ds-color-primary); }
+
+/* -------------------------------------------------------------- tables */
+
+table { width: 100%; border-collapse: collapse; font-size: var(--ds-font-size-sm); }
+th {
+  text-align: left;
+  font-weight: var(--ds-font-weight-semibold);
+  color: var(--ds-color-text-muted);
+  background: var(--ds-color-surface-muted);
+  padding: var(--ds-space-2) var(--ds-space-3);
+  border-bottom: 1px solid var(--ds-color-border);
+}
+td { padding: var(--ds-space-3); border-bottom: 1px solid var(--ds-color-border); }
+tbody tr:hover { background: var(--ds-color-surface-muted); }
+
+/* ---------------------------------------------------------- components */
+
+.ds-card {
+  background: var(--ds-color-surface);
+  border: 1px solid var(--ds-color-border);
+  border-radius: var(--ds-radius-lg);
+  box-shadow: var(--ds-shadow-sm);
+  padding: var(--ds-space-6);
+}
+
+.ds-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--ds-space-2);
+  height: 1.375rem;
+  border-radius: var(--ds-radius-full);
+  background: var(--ds-color-surface-sunken);
+  color: var(--ds-color-text-muted);
+  font-size: var(--ds-font-size-xs);
+  font-weight: var(--ds-font-weight-medium);
+}
+.ds-badge-success { background: var(--ds-color-success-soft); color: var(--ds-color-success); }
+.ds-badge-warning { background: var(--ds-color-warning-soft); color: var(--ds-color-warning); }
+.ds-badge-danger { background: var(--ds-color-danger-soft); color: var(--ds-color-danger); }
+.ds-badge-info { background: var(--ds-color-info-soft); color: var(--ds-color-info); }
+
+.ds-alert {
+  padding: var(--ds-space-3) var(--ds-space-4);
+  border-radius: var(--ds-radius-md);
+  border: 1px solid var(--ds-color-border);
+  background: var(--ds-color-surface-muted);
+  font-size: var(--ds-font-size-sm);
+}

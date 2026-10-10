@@ -1,13 +1,15 @@
 import { app, BrowserWindow, globalShortcut, ipcMain, session, shell } from 'electron';
+import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { realpath, stat } from 'node:fs/promises';
+import { delimiter, dirname, isAbsolute, join } from 'node:path';
 import * as settings from './settings';
 import { pickVaultFolder } from './dialogs';
 import { settingsSchema } from '../shared/settings-schema';
 import type { Settings } from '../shared/types';
 import { loadInitialState, attachStatePersistence } from './window-state';
 import { buildAppMenu } from './menu';
-import { Sidecar } from './sidecar';
+import { Sidecar, buildExtraPath } from './sidecar';
 import { forward, isAllowedMethod, requestHeadersFrom } from './api-forwarder';
 import { startChatStream, stopChatStream } from './chat-stream';
 import type { ChatStreamEvent } from '../shared/api-types';
@@ -25,7 +27,7 @@ import { installUpdater } from './updater';
 import { installClipboardBridge } from './clipboard';
 import { installCliShim } from './cli-shim';
 import { isAllowedExternalUrl } from './external-url';
-import { installNavigationGuard } from './navigation-guard';
+import { installNavigationGuard, prototypeRequestAllowed } from './navigation-guard';
 import {
   registerGbAssetScheme,
   registerAssetProtocol,
@@ -38,6 +40,17 @@ import { runDemoChatStream, stopDemoChat } from './demo/chat';
 import { createLoader, type PluginLoader } from './plugins/loader';
 import { installPluginsIpc, makeSidecarHandler } from './plugins/ipc';
 import { registerPluginScheme, installPluginProtocol } from './plugins/protocol';
+import { bundlePrototype } from './design-bundler';
+import { registerDesignScheme, registerDesignProtocol, rootUrl, serveRoot } from './design-protocol';
+import { closeDesignPopout, openDesignPopout } from './design-popout';
+import {
+  devServerCsp,
+  DevServers,
+  isAllowedWorktree,
+  isPoltergeistWorktree,
+  setSandboxVault,
+} from './design-devserver';
+import type { DesignBuildResult, DesignLiveEvent, DevServerResult } from '../shared/design-types';
 
 // Showcase recording mode: serve fully synthetic fixtures and never spawn the
 // Python sidecar or touch the real vault. Enabled by the demo driver via env.
@@ -63,8 +76,9 @@ let trayController: TrayController | null = null;
 let meetingNotifier: MeetingNotifierController | null = null;
 let pluginLoader: PluginLoader | null = null;
 
-// plugin:// must be registered as privileged before app ready.
+// plugin:// and gbproto:// must be registered as privileged before app ready.
 registerPluginScheme();
+registerDesignScheme();
 
 function installPlugins(): void {
   const pluginsRoot = join(app.getPath('userData'), 'plugins');
@@ -100,12 +114,13 @@ function installPlugins(): void {
   installPluginsIpc({ loader, pluginsRoot, sidecarBridge });
 }
 
+// The main window. Other windows (jot overlay, design pop-out) exist too, so
+// "show the app" must not just grab the first BrowserWindow.
+let mainWindow: BrowserWindow | null = null;
+
 function showWindow(): void {
-  let win = BrowserWindow.getAllWindows()[0];
-  if (!win) {
-    createWindow();
-    win = BrowserWindow.getAllWindows()[0];
-  }
+  if (!mainWindow || mainWindow.isDestroyed()) createWindow();
+  const win = mainWindow;
   if (!win) return;
   if (win.isMinimized()) win.restore();
   win.show();
@@ -141,6 +156,13 @@ function createWindow() {
       sandbox: true,
     },
   });
+  mainWindow = win;
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null;
+    // The pop-out is a companion of the main window; without this it would
+    // keep the app alive on Windows/Linux after the main window closed.
+    closeDesignPopout();
+  });
   if (initial.maximized) win.maximize();
   attachStatePersistence(win);
   win.on('ready-to-show', () => win.show());
@@ -170,10 +192,17 @@ function createWindow() {
 // window.open is always denied so no external page inherits the preload
 // bridge. Registered at module load, before any window exists.
 app.on('web-contents-created', (_event, contents) => {
-  installNavigationGuard(contents, {
-    devServerUrl: process.env.ELECTRON_RENDERER_URL,
-    rendererRoot: join(__dirname, '../renderer'),
-  });
+  installNavigationGuard(
+    contents,
+    {
+      devServerUrl: process.env.ELECTRON_RENDERER_URL,
+      rendererRoot: join(__dirname, '../renderer'),
+    },
+    {
+      openExternal: (url) => shell.openExternal(url),
+      isKnownDevServer: (origin) => devServers.isKnownOrigin(origin),
+    },
+  );
 });
 
 ipcMain.handle('gb:settings:getAll', () =>
@@ -282,14 +311,63 @@ ipcMain.handle('gb:cli:install', () => {
 app.whenReady().then(async () => {
   registerAssetProtocol(vaultRoot);
   registerDocProtocol(vaultRoot);
+  registerDesignProtocol();
+  // Worktree dev servers serve agent-edited code: pin what it may reach.
+  // Prototype frames (gbproto: and worktree dev servers) may only reach their
+  // own origin and Google Fonts, whatever their page tries.
+  session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+    let frameUrl = '';
+    try {
+      frameUrl = details.frame?.url ?? '';
+    } catch {
+      // frame already gone
+    }
+    const known = (o: string) => devServers.isKnownOrigin(o);
+    // Workers (service workers included) have no frame: judge them by their
+    // referrer. A worker that suppresses its referrer still runs under the
+    // CSP main injects into its own script response. Frameless requests
+    // from main itself (updater) have neither and pass.
+    const from = frameUrl || details.referrer || '';
+    callback({ cancel: prototypeRequestAllowed(from, details.url, known) === false });
+  });
+  // No URL filter: match patterns can't express "any port"; the origin check
+  // below does the filtering.
+  session.defaultSession.webRequest.onHeadersReceived(
+    (details, callback) => {
+      let origin = '';
+      try {
+        origin = new URL(details.url).origin;
+      } catch {
+        // fall through untouched
+      }
+      if (!origin || !devServers.isKnownOrigin(origin)) {
+        callback({});
+        return;
+      }
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [devServerCsp(origin)],
+          'X-DNS-Prefetch-Control': ['off'],
+        },
+      });
+    },
+  );
   installAssetBridge(vaultRoot);
   buildAppMenu();
   installPlugins();
   createWindow();
   // First-party renderer (loaded from our own bundle / dev server). Grant
   // camera/mic for webcam capture; deny everything else.
-  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
-    callback(permission === 'media');
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback, details) => {
+    // Generated live-design prototypes run in gbproto:// frames — never hand
+    // them the microphone or camera.
+    // Worktree dev servers (http://127.0.0.1:<port>) run agent-edited code:
+    // nothing for them either.
+    const from = details?.requestingUrl ?? '';
+    const designFrame =
+      from.startsWith('gbproto:') || from.startsWith('http://127.0.0.1:') || from.startsWith('http://localhost:');
+    callback(permission === 'media' && !designFrame);
   });
   trayController = installTray({
     onShow: showWindow,
@@ -372,6 +450,7 @@ app.on('before-quit', (event) => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  devServers.stopAll();
 });
 
 app.on('window-all-closed', () => {
@@ -472,6 +551,171 @@ for (const name of ['live', 'levels'] as const) {
     return { ok: true };
   });
 }
+
+// Live design session: follow /v1/design/live (same shape as the recorder
+// streams), bundle prototypes in-process, and open the screen-share pop-out.
+const DESIGN_LIVE_PATH = '/v1/design/live';
+
+ipcMain.handle('gb:design:live:subscribe', async (e) => {
+  if (DEMO) return { ok: false, error: 'Not available in demo mode' };
+  const wc = e.sender;
+  const key = wc.id;
+  const onDestroyed = () => stopRecorderStream(DESIGN_LIVE_PATH, key);
+  wc.once('destroyed', onDestroyed);
+  try {
+    return await startRecorderStream(sidecar, DESIGN_LIVE_PATH, key, (event: DesignLiveEvent) => {
+      if (!wc.isDestroyed()) wc.send('gb:design:live:event', event);
+    });
+  } finally {
+    wc.removeListener('destroyed', onDestroyed);
+  }
+});
+
+ipcMain.handle('gb:design:live:unsubscribe', (e) => {
+  stopRecorderStream(DESIGN_LIVE_PATH, e.sender.id);
+  return { ok: true };
+});
+
+ipcMain.handle(
+  'gb:design:build',
+  async (_e, prototypeDir: unknown, rev: unknown): Promise<DesignBuildResult> => {
+    const revNo = typeof rev === 'number' && Number.isInteger(rev) && rev >= 0 ? rev : 0;
+    if (typeof prototypeDir !== 'string' || revNo !== rev) {
+      return { ok: false, rev: revNo, error: 'Invalid request shape' };
+    }
+    if (DEMO) return { ok: false, rev: revNo, error: 'Not available in demo mode' };
+    const vault = vaultRoot();
+    if (!vault || !isAbsolute(prototypeDir)) {
+      return { ok: false, rev: revNo, error: 'Prototype folder must be inside the vault' };
+    }
+    let dir: string;
+    try {
+      dir = await realpath(prototypeDir);
+      if (!isInsideVault(await realpath(vault), dir, { allowRoot: false })) {
+        return { ok: false, rev: revNo, error: 'Prototype folder must be inside the vault' };
+      }
+    } catch {
+      return { ok: false, rev: revNo, error: 'Prototype folder not found' };
+    }
+    if (!existsSync(join(dir, 'src', 'main.tsx'))) {
+      return { ok: false, rev: revNo, error: 'Prototype has no src/main.tsx' };
+    }
+    const id = serveRoot(dir);
+    const res = await bundlePrototype(dir, revNo);
+    return res.ok ? { ...res, url: rootUrl(id, res.url) } : res;
+  },
+);
+
+ipcMain.handle('gb:design:popout', () => {
+  openDesignPopout();
+  return { ok: true };
+});
+
+// Worktree sessions preview the repo's own dev server. Each window is one
+// viewer (it calls ensure on every rev, release on unmount); a closed window
+// releases everything it was viewing.
+const devServers = new DevServers();
+const devServerViewers = new Set<number>();
+
+ipcMain.handle(
+  'gb:design:devserver:ensure',
+  async (e, worktree: unknown, appDir: unknown): Promise<DevServerResult> => {
+    if (typeof worktree !== 'string' || typeof appDir !== 'string') {
+      return { ok: false, error: 'Invalid request shape' };
+    }
+    if (DEMO) return { ok: false, error: 'Not available in demo mode' };
+    if (!isAbsolute(worktree) || !isAbsolute(appDir)) {
+      return { ok: false, error: 'Not a Poltergeist worktree' };
+    }
+    let wt: string;
+    let appReal: string;
+    try {
+      wt = await realpath(worktree);
+      appReal = await realpath(appDir);
+    } catch {
+      return { ok: false, error: 'Worktree not found' };
+    }
+    if (!isAllowedWorktree(wt, appReal)) return { ok: false, error: 'Not a Poltergeist worktree' };
+    const wc = e.sender;
+    if (!devServerViewers.has(wc.id)) {
+      devServerViewers.add(wc.id);
+      const id = wc.id;
+      wc.once('destroyed', () => {
+        devServerViewers.delete(id);
+        devServers.releaseViewer(String(id));
+      });
+    }
+    const vault = vaultRoot();
+    setSandboxVault(vault ? await realpath(vault).catch(() => vault) : null);
+    return devServers.ensure(wt, appReal, String(wc.id));
+  },
+);
+
+ipcMain.handle('gb:design:devserver:release', async (e, worktree: unknown) => {
+  if (typeof worktree === 'string' && isAbsolute(worktree)) {
+    // The worktree may already be gone (removed from the Artefacts tab).
+    const wt = await realpath(worktree).catch(() => worktree);
+    devServers.release(wt, String(e.sender.id));
+  }
+  return { ok: true };
+});
+
+/** `p` (a realpath) is a Poltergeist worktree or inside one. */
+function inPoltergeistWorktree(p: string): boolean {
+  for (let dir = p; ; dir = dirname(dir)) {
+    if (isPoltergeistWorktree(dir)) return true;
+    if (dirname(dir) === dir) return false;
+  }
+}
+
+ipcMain.handle(
+  'gb:design:open-path',
+  async (_e, path: unknown, how: unknown): Promise<{ ok: boolean; error?: string }> => {
+    if (typeof path !== 'string' || !isAbsolute(path) || (how !== 'editor' && how !== 'finder')) {
+      return { ok: false, error: 'Invalid request shape' };
+    }
+    if (DEMO) return { ok: false, error: 'Not available in demo mode' };
+    let target: string;
+    try {
+      target = await realpath(path);
+    } catch {
+      return { ok: false, error: 'Path not found' };
+    }
+    const vault = vaultRoot();
+    const vaultReal = vault ? await realpath(vault).catch(() => '') : '';
+    const allowed =
+      (vaultReal !== '' && isInsideVault(vaultReal, target, { allowRoot: false })) ||
+      inPoltergeistWorktree(target);
+    if (!allowed) return { ok: false, error: 'Only artefact folders and Poltergeist worktrees can be opened' };
+    if (how === 'finder') {
+      shell.showItemInFolder(target);
+      return { ok: true };
+    }
+    // Artefacts are folders; handing a file to the OS default opener could
+    // launch it.
+    if (!(await stat(target).then((st) => st.isDirectory()).catch(() => false))) {
+      return { ok: false, error: 'Only folders can be opened in the editor' };
+    }
+    const extra = buildExtraPath(process.platform, process.env.HOME ?? '');
+    const inherited = process.env.PATH ?? '';
+    const env = { ...process.env, PATH: inherited ? `${extra}${delimiter}${inherited}` : extra };
+    const viaCode = await new Promise<boolean>((resolveSpawn) => {
+      try {
+        const child = spawn('code', [target], { detached: true, shell: false, stdio: 'ignore', env });
+        child.once('error', () => resolveSpawn(false));
+        child.once('spawn', () => {
+          child.unref();
+          resolveSpawn(true);
+        });
+      } catch {
+        resolveSpawn(false);
+      }
+    });
+    if (viaCode) return { ok: true };
+    const err = await shell.openPath(target);
+    return err ? { ok: false, error: err } : { ok: true };
+  },
+);
 
 const stopDocsTurn = (key: string) => {
   stopDocsStream(key);

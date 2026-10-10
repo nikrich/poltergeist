@@ -8,6 +8,7 @@ const KIND_CLASSES: Record<ToastKind, string> = {
 
 export function Toaster() {
   const toasts = useToasts((s) => s.toasts);
+  const dismiss = useToasts((s) => s.dismiss);
   return (
     <div className="pointer-events-none fixed bottom-10 right-5 z-[1000] flex flex-col gap-2">
       {toasts.map((t) => (
@@ -17,6 +18,18 @@ export function Toaster() {
           className={`rounded-md border px-[14px] py-[10px] font-mono text-12 shadow-card ${KIND_CLASSES[t.kind]}`}
         >
           {t.message}
+          {t.action && (
+            <button
+              type="button"
+              onClick={() => {
+                dismiss(t.id);
+                t.action?.onClick();
+              }}
+              className="pointer-events-auto ml-3 cursor-pointer font-medium text-neon-ink underline-offset-2 hover:underline"
+            >
+              {t.action.label}
+            </button>
+          )}
         </div>
       ))}
     </div>

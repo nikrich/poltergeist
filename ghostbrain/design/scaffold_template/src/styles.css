@@ -1,0 +1,66 @@
+/* Prototype layout. Design tokens come from design-pack/tokens.css, which
+   the host links from index.html; always style with var(--ds-…). */
+
+#root { min-height: 100vh; }
+
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--ds-color-bg, #fafafa);
+  color: var(--ds-color-text, #1d1c1a);
+  font-family: var(--ds-font-sans, system-ui, sans-serif);
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-6, 1.5rem);
+  height: 56px;
+  padding: 0 var(--ds-space-6, 1.5rem);
+  background: var(--ds-color-surface, #fff);
+  border-bottom: 1px solid var(--ds-color-border, #e5e5e5);
+}
+
+.app-title { font-weight: var(--ds-font-weight-semibold, 600); }
+
+.app-nav { display: flex; gap: var(--ds-space-4, 1rem); }
+.app-nav a {
+  color: var(--ds-color-text-muted, #666);
+  font-size: var(--ds-font-size-sm, 0.875rem);
+  text-decoration: none;
+}
+.app-nav a.active { color: var(--ds-color-primary, #3d5afe); }
+
+.app-main {
+  flex: 1;
+  width: 100%;
+  max-width: var(--ds-layout-max-width, 1120px);
+  margin: 0 auto;
+  padding: var(--ds-space-8, 2rem) var(--ds-space-6, 1.5rem);
+}
+
+.placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ds-space-2, 0.5rem);
+  min-height: 60vh;
+  text-align: center;
+  color: var(--ds-color-text-muted, #666);
+}
+.placeholder h1 { color: var(--ds-color-text, #1d1c1a); }
+
+.placeholder-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--ds-radius-full, 999px);
+  background: var(--ds-color-primary, #3d5afe);
+  animation: placeholder-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes placeholder-pulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1); }
+}

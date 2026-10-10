@@ -12,6 +12,7 @@ import {
   isAppUrl,
   externalOpenTarget,
   installNavigationGuard,
+  prototypeRequestAllowed,
 } from '../navigation-guard';
 
 // Build paths with path.join/resolve + pathToFileURL so the table holds on
@@ -96,7 +97,7 @@ describe('externalOpenTarget', () => {
   });
 });
 
-type OpenHandler = (details: { url: string }) => { action: 'allow' | 'deny' };
+type OpenHandler = (details: { url: string; referrer?: { url: string } }) => { action: 'allow' | 'deny' };
 
 function fakeContents() {
   const emitter = new EventEmitter();
@@ -114,9 +115,9 @@ function fakeContents() {
   return {
     contents: contents as unknown as WebContents,
     navigate,
-    open: (url: string) => {
+    open: (url: string, referrer?: string) => {
       if (!openHandler) throw new Error('setWindowOpenHandler was not called');
-      return openHandler({ url });
+      return openHandler(referrer === undefined ? { url } : { url, referrer: { url: referrer } });
     },
   };
 }
@@ -201,5 +202,138 @@ describe('installNavigationGuard', () => {
     installNavigationGuard(f.contents, opts);
     f.navigate('will-navigate', 'https://example.com/');
     expect(shell.openExternal).toHaveBeenCalledWith('https://example.com/');
+  });
+});
+
+describe('installNavigationGuard: live-design prototype frames', () => {
+  const opts = { devServerUrl: 'http://localhost:5173', rendererRoot };
+  const frameNav = (f: ReturnType<typeof fakeContents>, from: string, to: string, isMainFrame = false) => {
+    const e = { preventDefault: vi.fn(), url: to, isMainFrame, frame: { url: from } };
+    (f.contents as unknown as EventEmitter).emit('will-frame-navigate', e);
+    return e;
+  };
+
+  it('blocks a gbproto frame from navigating away (CSP does not cover navigation)', () => {
+    const openExternal = vi.fn();
+    const f = fakeContents();
+    installNavigationGuard(f.contents, opts, { openExternal });
+    const e = frameNav(f, 'gbproto://proto/dist/index.html?rev=3', 'https://evil.example/?d=secret');
+    expect(e.preventDefault).toHaveBeenCalledTimes(1);
+    expect(openExternal).not.toHaveBeenCalled();
+  });
+
+  it('lets prototype frames load and move between prototype pages', () => {
+    const f = fakeContents();
+    installNavigationGuard(f.contents, opts, { openExternal: vi.fn() });
+    expect(frameNav(f, 'about:blank', 'gbproto://proto/dist/index.html?rev=1').preventDefault).not.toHaveBeenCalled();
+    expect(
+      frameNav(f, 'gbproto://proto/dist/index.html?rev=1', 'gbproto://proto/dist/index.html?rev=2').preventDefault,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('leaves other subframes alone', () => {
+    const f = fakeContents();
+    installNavigationGuard(f.contents, opts, { openExternal: vi.fn() });
+    expect(frameNav(f, 'about:blank', 'https://example.com/').preventDefault).not.toHaveBeenCalled();
+  });
+});
+
+describe('installNavigationGuard: worktree dev-server frames', () => {
+  const opts = { devServerUrl: 'http://localhost:5173', rendererRoot };
+  const frameNav = (f: ReturnType<typeof fakeContents>, from: string, to: string, isMainFrame = false) => {
+    const e = { preventDefault: vi.fn(), url: to, isMainFrame, frame: { url: from } };
+    (f.contents as unknown as EventEmitter).emit('will-frame-navigate', e);
+    return e;
+  };
+  const frameRedirect = (f: ReturnType<typeof fakeContents>, from: string, to: string) => {
+    const e = { preventDefault: vi.fn(), url: to, isMainFrame: false, frame: { url: from } };
+    (f.contents as unknown as EventEmitter).emit('will-redirect', e, to);
+    return e;
+  };
+
+  it.each([
+    ['http://127.0.0.1:5555/', 'http://127.0.0.1:5555/login?x=1'],
+    ['http://localhost:5174/', 'http://localhost:5174/#/settings'],
+  ])('allows same-origin navigation %s -> %s', (from, to) => {
+    const f = fakeContents();
+    installNavigationGuard(f.contents, opts, { openExternal: vi.fn() });
+    expect(frameNav(f, from, to).preventDefault).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['http://127.0.0.1:5555/', 'https://evil.example/?d=secret'],
+    ['http://127.0.0.1:5555/', 'http://127.0.0.1:8765/v1/notes'],
+    ['http://localhost:5555/', 'http://127.0.0.1:5555/'],
+    ['http://localhost:5555/', 'gbproto://proto/dist/index.html'],
+    ['http://localhost:5555/', 'file:///etc/passwd'],
+    // blank first, then anywhere: the frame must not shed its origin
+    ['http://127.0.0.1:5555/', 'about:blank'],
+    ['gbproto://proto/dist/index.html', 'about:blank'],
+  ])('blocks cross-origin navigation %s -> %s', (from, to) => {
+    const openExternal = vi.fn();
+    const f = fakeContents();
+    installNavigationGuard(f.contents, opts, { openExternal });
+    expect(frameNav(f, from, to).preventDefault).toHaveBeenCalledTimes(1);
+    expect(openExternal).not.toHaveBeenCalled();
+  });
+
+  it('lets the panel load a dev-server URL into a blank frame', () => {
+    const f = fakeContents();
+    installNavigationGuard(f.contents, opts, { openExternal: vi.fn() });
+    expect(frameNav(f, 'about:blank', 'http://127.0.0.1:5555/?gbrev=2').preventDefault).not.toHaveBeenCalled();
+  });
+
+  it('leaves the main frame to will-navigate', () => {
+    const f = fakeContents();
+    installNavigationGuard(f.contents, opts, { openExternal: vi.fn() });
+    expect(frameNav(f, 'http://localhost:5173/', 'https://example.com/', true).preventDefault).not.toHaveBeenCalled();
+  });
+
+  it('allows same-origin server redirects in a dev-server frame, blocks others without opening them', () => {
+    const openExternal = vi.fn();
+    const f = fakeContents();
+    installNavigationGuard(f.contents, opts, {
+      openExternal,
+      isKnownDevServer: (o) => o === 'http://127.0.0.1:5555',
+    });
+    expect(frameRedirect(f, 'http://127.0.0.1:5555/', 'http://127.0.0.1:5555/login').preventDefault).not.toHaveBeenCalled();
+    expect(frameRedirect(f, 'about:blank', 'http://127.0.0.1:5555/login').preventDefault).not.toHaveBeenCalled();
+    // a blank frame may only be redirected into a dev server main runs
+    expect(frameRedirect(f, 'about:blank', 'http://127.0.0.1:8765/v1/notes').preventDefault).toHaveBeenCalledTimes(1);
+    expect(frameRedirect(f, 'http://127.0.0.1:5555/', 'https://evil.example/').preventDefault).toHaveBeenCalledTimes(1);
+    expect(openExternal).not.toHaveBeenCalled();
+  });
+
+  it('drops popups opened by prototype frames instead of opening them', () => {
+    const openExternal = vi.fn();
+    const f = fakeContents();
+    installNavigationGuard(f.contents, opts, { openExternal });
+    for (const ref of ['http://127.0.0.1:5555/', 'gbproto://proto/dist/index.html']) {
+      expect(f.open('https://evil.example/?d=secret', ref)).toEqual({ action: 'deny' });
+    }
+    expect(openExternal).not.toHaveBeenCalled();
+  });
+});
+
+describe('prototypeRequestAllowed', () => {
+  it.each([
+    ['http://127.0.0.1:5555/', 'http://127.0.0.1:5555/src/main.tsx', true],
+    ['http://127.0.0.1:5555/', 'ws://127.0.0.1:5555/', true],
+    ['http://127.0.0.1:5555/', 'https://fonts.gstatic.com/s/x.woff2', true],
+    ['http://127.0.0.1:5555/', 'data:image/png;base64,AA', true],
+    ['http://127.0.0.1:5555/', 'https://evil.example/?d=secret', false],
+    ['http://127.0.0.1:5555/', 'http://127.0.0.1:8765/v1/notes', false],
+    ['http://127.0.0.1:5555/', 'ws://127.0.0.1:9000/', false],
+    ['gbproto://proto/abc/dist/index.html', 'gbproto://proto/abc/dist/app.js', true],
+    ['gbproto://proto/abc/dist/index.html', 'https://evil.example/', false],
+    ['gbproto://proto/abc/dist/index.html', 'http://127.0.0.1:5555/', false],
+  ])('%s -> %s = %s', (frame, url, ok) => {
+    expect(prototypeRequestAllowed(frame, url, (o) => o === 'http://127.0.0.1:5555')).toBe(ok);
+  });
+
+  it('has no opinion on other frames, including the app\'s own dev renderer', () => {
+    const known = (o: string) => o === 'http://127.0.0.1:5555';
+    expect(prototypeRequestAllowed('http://localhost:5173/', 'plugin://x/ui.js', known)).toBeNull();
+    expect(prototypeRequestAllowed('', 'https://example.com/', known)).toBeNull();
   });
 });

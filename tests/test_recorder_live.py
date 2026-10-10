@@ -316,3 +316,11 @@ def test_follow_reports_off_when_live_is_disabled(wav: Path) -> None:
         {"type": "status", "state": "off", "reason": None, "lag_s": 0.0},
         {"type": "end"},
     ]
+
+
+def test_hallucinated_stock_phrases_are_dropped_from_quiet_chunks() -> None:
+    quiet = b"\x00\x00" * SR * 2 + SPEECH[: SR // 5 * 2] + b"\x00\x00" * SR * 2
+    chunk = chunker.Chunk(start_sample=0, pcm=quiet)
+    segments = [Segment(t0=0.0, t1=2.0, text="Thank you.", lang="en"),
+                Segment(t0=2.0, t1=4.0, text="Hello, are you listening?", lang="en")]
+    assert [s.text for s in live.drop_hallucinations(chunk, segments)] == ["Hello, are you listening?"]

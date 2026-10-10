@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { TopBar } from '../components/TopBar';
 import { Btn } from '../components/Btn';
 import { Eyebrow } from '../components/Eyebrow';
@@ -14,6 +15,12 @@ import {
   useContexts,
   useCreateContext,
   useCreateProject,
+  useDeleteDesignPack,
+  useDesignPackImportJob,
+  useDesignPacks,
+  useDesignSettings,
+  useImportDesignPack,
+  useUpdateDesignSettings,
   useLlmProviders,
   useRecheckLlmProviders,
   useLlmSettings,
@@ -56,6 +63,7 @@ import type {
   TranscriptionLanguage,
   UpdateProjectRequest,
 } from '../../shared/api-types';
+import type { DesignPack, DesignSettings } from '../../shared/design-types';
 
 async function trySet<K extends keyof Settings>(
   setSetting: (k: K, v: Settings[K]) => Promise<{ ok: true } | { ok: false; error: string }>,
@@ -79,6 +87,7 @@ type SectionId =
   | 'account'
   | 'about'
   | 'projects'
+  | 'design'
   | 'chat';
 
 const SECTIONS: Array<{ id: SectionId; label: string; icon: string }> = [
@@ -91,6 +100,7 @@ const SECTIONS: Array<{ id: SectionId; label: string; icon: string }> = [
   { id: 'meeting', label: 'meetings', icon: 'mic' },
   { id: 'background', label: 'background', icon: 'activity' },
   { id: 'projects', label: 'projects', icon: 'folder' },
+  { id: 'design', label: 'live design', icon: 'layout-template' },
   { id: 'chat', label: 'chat', icon: 'message-square' },
   { id: 'hotkeys', label: 'hotkeys', icon: 'command' },
   { id: 'account', label: 'account', icon: 'user' },
@@ -137,6 +147,7 @@ export function SettingsScreen() {
               <ProjectsSettings />
             </>
           )}
+          {section === 'design' && <LiveDesignSettings />}
           {section === 'chat' && <McpServersPanel />}
           {section === 'hotkeys' && <HotkeySettings />}
           {section === 'account' && <AccountSettings />}
@@ -1135,6 +1146,7 @@ export function ContextsSettings() {
 
 export function ProjectsSettings() {
   const projects = useProjects({ includeArchived: true });
+  const packs = useDesignPacks().data ?? [];
   const createProject = useCreateProject();
   const updateProject = useUpdateProject();
   const projectContexts = useContexts().data?.contexts ?? [];
@@ -1231,6 +1243,7 @@ export function ProjectsSettings() {
             <ProjectRow
               key={p.id}
               project={p}
+              packs={packs}
               onUpdate={(vars) =>
                 updateProject.mutateAsync(vars).catch((e: unknown) => {
                   toast.error(e instanceof Error ? e.message : 'update failed');
@@ -1258,9 +1271,12 @@ function slugify(text: string): string {
 
 function ProjectRow({
   project,
+  packs,
   onUpdate,
 }: {
   project: Project;
+  /** Design systems for the per-project live-design pick. */
+  packs: DesignPack[];
   /** Rejects (after toasting) when the PATCH fails. */
   onUpdate: (vars: { context: string; slug: string } & UpdateProjectRequest) => Promise<unknown>;
 }) {
@@ -1358,6 +1374,30 @@ function ProjectRow({
         )}
       </div>
       <span className="font-mono text-10 text-ink-3">{project.slug}</span>
+      {packs.length > 0 && (
+        <select
+          aria-label={`design system ${label}`}
+          title="Design system for live design sessions"
+          value={project.design_system ?? ''}
+          onChange={(e) =>
+            onUpdate({
+              context: project.context,
+              slug: project.slug,
+              design_system: e.target.value || null,
+            }).catch(() => {
+              /* already toasted by the caller */
+            })
+          }
+          className="max-w-[140px] cursor-pointer truncate rounded-sm border border-hairline-2 bg-paper px-[6px] py-[2px] font-mono text-10 text-ink-1"
+        >
+          <option value="">Default design system</option>
+          {packs.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+      )}
       <button
         type="button"
         aria-label={`edit ${label}`}
@@ -1381,6 +1421,237 @@ function ProjectRow({
       >
         {project.archived ? 'unarchive' : 'archive'}
       </button>
+    </div>
+  );
+}
+
+export function LiveDesignSettings() {
+  const settings = useDesignSettings();
+  const update = useUpdateDesignSettings();
+  const packs = useDesignPacks();
+  const current = settings.data;
+
+  const save = (patch: Partial<DesignSettings>) => {
+    if (!current) return;
+    update.mutate(
+      { ...current, ...patch },
+      { onError: (e) => toast.error(`Couldn't save live design settings: ${e.message}`) },
+    );
+  };
+
+  return (
+    <div>
+      <SectionHeader
+        title="Live design"
+        sub="While a meeting is recorded, Poltergeist can build a working prototype and an event-storming board from the conversation."
+      />
+      {settings.isError && (
+        <div className="mb-4 rounded-md border border-oxblood/30 bg-oxblood/10 p-3 text-12 text-oxblood">
+          Couldn&apos;t load live design settings:{' '}
+          {settings.error instanceof Error ? settings.error.message : 'unknown error'}
+        </div>
+      )}
+      {current && (
+        <>
+          <SettingRow
+            label="Listen for spoken commands"
+            sub="Say things like “let’s kick off a frontend prototype” or “let’s stop prototyping” during a recording."
+            control={
+              <Toggle
+                ariaLabel="Listen for spoken design commands"
+                on={current.listen}
+                onChange={(v) => save({ listen: v })}
+              />
+            }
+          />
+          <SettingRow
+            label="Budget per run"
+            sub="The most one prototype or board update may spend, in US dollars."
+            control={
+              <BudgetInput value={current.budget_usd} onCommit={(v) => save({ budget_usd: v })} />
+            }
+          />
+          <SettingRow
+            label="Default design system"
+            sub="Used when the meeting's project has no design system of its own."
+            control={
+              <select
+                aria-label="Default design system"
+                value={current.default_pack}
+                onChange={(e) => save({ default_pack: e.target.value })}
+                className={selectClass}
+              >
+                {!(packs.data ?? []).some((p) => p.id === current.default_pack) && (
+                  <option value={current.default_pack}>{current.default_pack}</option>
+                )}
+                {(packs.data ?? []).map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            }
+          />
+        </>
+      )}
+      <DesignSystemLibrary packs={packs.data ?? []} />
+    </div>
+  );
+}
+
+function BudgetInput({ value, onCommit }: { value: number; onCommit: (v: number) => void }) {
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => setDraft(String(value)), [value]);
+  const commit = () => {
+    const n = Number(draft);
+    if (!Number.isFinite(n) || n <= 0) {
+      setDraft(String(value));
+      return;
+    }
+    if (n !== value) onCommit(n);
+  };
+  return (
+    <input
+      type="number"
+      min={0.1}
+      step={0.5}
+      aria-label="Budget per run (USD)"
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') commit();
+      }}
+      className="w-20 rounded-sm border border-hairline-2 bg-vellum px-2 py-[6px] text-right font-mono text-11 text-ink-0 focus:outline-none"
+    />
+  );
+}
+
+function DesignSystemLibrary({ packs }: { packs: DesignPack[] }) {
+  const qc = useQueryClient();
+  const importPack = useImportDesignPack();
+  const deletePack = useDeleteDesignPack();
+  const [source, setSource] = useState('');
+  const [name, setName] = useState('');
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<string | null>(null);
+  const job = useDesignPackImportJob(jobId);
+  const status = job.data?.status;
+
+  useEffect(() => {
+    if (status === 'done') void qc.invalidateQueries({ queryKey: ['design', 'packs'] });
+  }, [status, qc]);
+
+  const submit = () => {
+    const trimmed = source.trim();
+    if (!trimmed || importPack.isPending || status === 'running') return;
+    importPack.mutate(
+      { source: trimmed, ...(name.trim() ? { name: name.trim() } : {}) },
+      {
+        onSuccess: (started) => {
+          qc.setQueryData(['design', 'import', started.id], started);
+          setJobId(started.id);
+          setSource('');
+          setName('');
+        },
+        onError: (e) => toast.error(`Import failed: ${e.message}`),
+      },
+    );
+  };
+
+  const inputCls =
+    'rounded-sm border border-hairline-2 bg-paper px-2 py-[6px] text-12 text-ink-0 placeholder:text-ink-3 focus:outline-none';
+
+  return (
+    <div className="mt-6">
+      <Eyebrow className="mb-2">Design systems</Eyebrow>
+      <div className="mb-4 flex flex-col gap-2 rounded-md border border-hairline bg-vellum p-4">
+        <input
+          value={source}
+          onChange={(e) => setSource(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') submit();
+          }}
+          placeholder="Claude Design URL or name, folder path, URL, or Figma link"
+          className={inputCls}
+        />
+        <div className="flex gap-2">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Name (optional)"
+            className={`${inputCls} flex-1`}
+          />
+          <Btn
+            variant="primary"
+            size="sm"
+            disabled={!source.trim() || importPack.isPending || status === 'running'}
+            onClick={submit}
+          >
+            Import
+          </Btn>
+        </div>
+        {job.data && (
+          <div
+            className={`flex items-center gap-2 text-11 ${
+              status === 'error' ? 'text-oxblood' : 'text-ink-2'
+            }`}
+          >
+            {status === 'running' && (
+              <Lucide name="loader" size={12} style={{ animation: 'gb-spin 0.9s linear infinite' }} />
+            )}
+            {status === 'running' && <span>Importing {job.data.source}… {job.data.message ?? ''}</span>}
+            {status === 'done' && <span>Imported {job.data.source}.</span>}
+            {status === 'error' && (
+              <span>Import failed: {job.data.message ?? 'unknown error'}</span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {packs.map((p) => (
+        <div key={p.id} className="flex items-center gap-3 rounded-sm px-3 py-2 hover:bg-vellum">
+          <div className="min-w-0 flex-1">
+            <div className="text-13 text-ink-0">{p.name}</div>
+            <div className="truncate font-mono text-10 text-ink-3">{p.source}</div>
+          </div>
+          {p.builtin ? (
+            <Pill tone="fog">built in</Pill>
+          ) : confirming === p.id ? (
+            <>
+              <button
+                type="button"
+                aria-label={`Confirm delete ${p.name}`}
+                className="text-11 text-oxblood hover:underline"
+                onClick={() => {
+                  setConfirming(null);
+                  deletePack.mutate(p.id, {
+                    onError: (e) => toast.error(`Couldn't delete ${p.name}: ${e.message}`),
+                  });
+                }}
+              >
+                Delete
+              </button>
+              <button
+                type="button"
+                className="text-11 text-ink-2 hover:text-ink-0"
+                onClick={() => setConfirming(null)}
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              aria-label={`Delete ${p.name}`}
+              className="text-11 text-ink-2 hover:text-ink-0"
+              onClick={() => setConfirming(p.id)}
+            >
+              Delete
+            </button>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

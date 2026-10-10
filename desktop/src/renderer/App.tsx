@@ -17,6 +17,7 @@ import { ActivityScreen } from './screens/activity';
 import { ChatScreen } from './screens/chat';
 import { ConnectorsScreen } from './screens/connectors';
 import { MeetingsScreen } from './screens/meetings';
+import { ArtefactsScreen } from './screens/artefacts';
 import { CaptureScreen } from './screens/capture';
 import { VaultScreen } from './screens/vault';
 import { DailyScreen } from './screens/daily';
@@ -29,6 +30,7 @@ import { PluginsScreen, useActivePlugins } from './screens/plugins';
 import { PluginHost } from './components/PluginHost';
 import { PanelError } from './components/PanelError';
 import { useFocusActive, useFocusModeShortcuts } from './lib/focus-mode';
+import { DesignPopout, isDesignPopoutRoute } from './screens/design-popout';
 
 function PluginRoute({ id }: { id: string }) {
   const plugins = useActivePlugins();
@@ -40,6 +42,30 @@ function PluginRoute({ id }: { id: string }) {
 }
 
 export default function App() {
+  // The live-design pop-out window loads this bundle at #/design-popout and
+  // shows only the canvas — no sidebar, status bar or app-level effects.
+  return isDesignPopoutRoute() ? <DesignPopoutApp /> : <MainApp />;
+}
+
+function DesignPopoutApp() {
+  const { theme, density, ready, hydrate } = useSettings();
+  useEffect(() => {
+    hydrate();
+  }, [hydrate]);
+  useEffect(() => {
+    if (!ready) return;
+    document.body.dataset.theme = theme;
+    document.body.dataset.density = density;
+  }, [theme, density, ready]);
+  return (
+    <>
+      <DesignPopout />
+      <Toaster />
+    </>
+  );
+}
+
+function MainApp() {
   const { theme, density, ready, hydrate, onboardingComplete } = useSettings();
   const active = useNavigation((s) => s.active);
   const setActive = useNavigation((s) => s.setActive);
@@ -139,6 +165,7 @@ export default function App() {
           {active === 'chat' && <ChatScreen />}
           {active === 'connectors' && <ConnectorsScreen />}
           {active === 'meetings' && <MeetingsScreen />}
+          {active === 'artefacts' && <ArtefactsScreen />}
           {active === 'capture' && <CaptureScreen />}
           {active === 'vault' && <VaultScreen />}
           {active === 'daily' && <DailyScreen />}
