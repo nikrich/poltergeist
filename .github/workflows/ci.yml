@@ -35,6 +35,7 @@ jobs:
             tests/test_vault_write_changes.py \
             tests/test_changes_revert.py \
             tests/test_changes_maintenance.py \
+            tests/test_vault_write_jobs.py \
             tests/test_scheduler_history_prune_job.py \
             tests/test_mcp_client.py \
             tests/test_doctor_core.py \
