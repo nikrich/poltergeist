@@ -1,5 +1,152 @@
 # Changelog
 
+## [1.14.0](https://github.com/nikrich/poltergeist/compare/v1.13.0...v1.14.0) (2026-10-10)
+
+
+### Features
+
+* feat(design): let the prototype agent search and read the web (#171)
+* feat(privacy): opt-in "Load remote images" (https only); remote content blocked by default (#168)
+* feat(ontology): project ontologies with a ratification backlog and scope boundary (#167)
+* feat(design): live design sessions and artefacts (#165)
+* feat(whatsapp): select all in the chat picker; progressive first sync (#159)
+* feat(changes): risky AI writes wait for approval — risk policy, approve/reject (B3) (#164)
+* feat(editor): Confluence-style page — toolbar, Insert menu, title, breadcrumb, byline (A7) (#163)
+* feat(editor): inline ai in jots and the note viewer; panel hands selections inline (A5)
+* feat(editor): ⌘J inline ai with an immediate, attributed save on accept (A5)
+* feat(editor): inline ai popover streaming into the decoration diff (A5)
+* feat(editor): inline ai request helpers and the ⌘J shortcut (A5)
+* feat(editor): inline ai decoration diff with one-step accept (A5)
+* feat(desktop): key docs-assist streams by stream id or path (A5)
+* feat(api): keepalive SSE for assist streams; stop by stream id (A5)
+* feat(docs-assist): assist any vault note by path; vault-grounded drafts (A5)
+* feat(docs-assist): continue and translate modes, path targets and stream ids (A5)
+* feat(editor): tick-to-done, freeze and open for live query results
+* feat(editor): live query block view for query code fences
+* feat(desktop): live query types, sidecar calls and freeze markdown
+* feat(api): live vault query and tick-to-done status routes
+* feat(templates): bounded query runner over the link index
+* feat(templates): query block grammar with line-numbered diagnostics
+* feat(templates): query keys in the function registry
+* feat(desktop): templates tab in the jots screen with the template editor
+* feat(desktop): template source editor with completions, hover, lint and etag save
+* feat(desktop): template test run pane with sample answers and the rich renderer
+* feat(desktop): template hover docs and debounced sidecar lint
+* feat(desktop): template completions from the function registry
+* feat(desktop): template text analysis for the editor (prompts, fences, cursor context)
+* feat(desktop): template editor calls, pinned CodeMirror packages, remembered answers
+* feat(api): template editor routes: lint, test run, source, new, query values
+* feat(templates): template source read/save via the write path, blank templates, query hints
+* feat(templates): test run renders template source with sample answers, writes nothing
+* feat(templates): registry-driven template linter with query-block checks
+* feat(semantic): related: links write through vault_write as worker:semantic-refresh (B4)
+* feat(profile): weekly applier writes through vault_write as worker:profile-apply (B4)
+* feat(worker): reversal links write through vault_write as worker:reversal (B4)
+* feat(vault-write): etag-guarded helpers for worker jobs; bump_updated; unlisted semantic refresh (B4)
+* feat(editor): slash items for panels, expand, status, toc and diagrams
+* feat(editor): contextual table toolbar for rows, columns, header and alignment
+* feat(editor): gfm-safe tables with column alignment and headerless rows
+* feat(editor): resizable images stored as obsidian alt-pipe width
+* feat(editor): full-screen diagram view with pan and zoom
+* feat(editor): mermaid diagram preview for mermaid code fences
+* feat(editor): live table of contents stored as an empty toc fence
+* feat(editor): status popover to edit lozenge label and colour
+* feat(editor): status lozenges stored as status: inline code
+* feat(editor): callout header with kind, title and expand/collapse
+* feat(editor): callout panels with obsidian alert round-trip
+* feat(desktop): Changes screen — per-change diff, one-click revert, undo, filters (B2)
+* feat(desktop): docs-panel Accept saves as the assistant (B2)
+* feat(desktop): stamp X-Poltergeist-Actor in the forwarder and both plugin bridges (B2)
+* feat(api): /v1/changes list, detail with diff, user-only revert and undo (B2)
+* feat(api): X-Poltergeist-Actor attribution on every write route (B2)
+* feat(mcp): stamp X-Poltergeist-Actor: mcp on every sidecar call (B2)
+* feat(changes): one-year change-log retention in the daily history prune (B2)
+* feat(changes): revert and undo through the write path as restore, refused when changed since (B2)
+* feat(vault-write): record non-user changes, require base_etag for AI writers, B3 hold hook (B2)
+* feat(changes): SQLite change log in the state dir, registered as a history ref source (B2)
+* feat(projects): edit and fully rename projects (folder, notes, links, chats) + unarchive (#155)
+* feat(desktop): show in graph from the note viewer and jots
+* feat(desktop): Graph tab with focus picker, depth, whole-vault toggle and kind filter
+* feat(desktop): graph view store and canvas with recentre, open, pan and zoom
+* feat(desktop): graph frame planner with viewport culling and LOD budgets
+* feat(desktop): d3-force ego layout and whole-vault scenes; share nodeRadius
+* feat(desktop): ego-graph types, useEgoGraph, kind palette tokens
+* feat(api): ego graph on /v1/vault/graph?focus=&depth= and /v1/vault/resolve
+* feat(api): ego-graph BFS over the link index with ghost nodes and a 300-node cap
+* feat(vault-index): node kinds for the graph; whole-vault nodes carry kind
+* feat(vault-index): ![[note]] embeds are links (graph edges + backlinks)
+* feat(desktop): /template slash command inserts a rendered template
+* feat(desktop): new note from template on the Jots screen
+* feat(desktop): template prompt dialog with person suggest
+* feat(desktop): template API types and hooks
+* feat(api): /v1/templates list, functions, create and render routes
+* feat(templates): render env and create via vault_write as user
+* feat(templates): starter templates, registry and bootstrap seeding
+* feat(templates): single-pass renderer with answer coercion and folder guard
+* feat(templates): template parser with line-numbered diagnostics
+* feat(templates): typed values and the function registry
+* feat(templates): closed {{ name | filter }} tokenizer with hard limits
+* feat(desktop): light mode polish — white cards, real heatmap ramp, legible accents, black ghost
+
+### Bug Fixes
+
+* fix(design): one command and one relevance check per intake batch (#170)
+* fix(design): judge whole stretches of speech and add a spoken update command (#169)
+* fix(design): install worktree dependencies only on a pristine tree, with a minimal env (#166)
+* fix(editor): inline ai takes a code fence whole, never splicing a C2 query (A5)
+* fix(editor): continue's 8k cap never starts on a lone low surrogate
+* fix(editor): inline ai's other… language box mirrors the sidecar's rule
+* fix(editor): startInlineAssist takes an optional action; hand-offs refuse cell selections silently
+* fix(api): normalise Windows jot paths before gathering vault context
+* fix(api): a stop during draft retrieval prevents the turn; late closes spare newer runs
+* fix(editor): inline ai closes on stale edits and restarts on a new action (A5)
+* fix(editor): inline ai preview matches accept; empty answers delete nothing (A5)
+* fix(templates): close query fences in CRLF notes
+* fix(editor): freeze only rows for the query text on screen
+* fix(templates): linear heading and query-fence scans in query rows
+* fix(desktop): a pending template save does not cache the unapproved text
+* fix(api): template saves take the actor from B2's request_actor
+* fix(desktop): template editor survives failed refetches and keeps its etag
+* fix(desktop): read-only rich editor has no toolbar, camera or insert paths
+* fix(desktop): read prompt types from the template, not a hardcoded list
+* fix(templates): lint flags {{title}} inside file.name and file.folder
+* fix(worker): reversal merges contradicts/reversalReasons; drop unused new_links
+* fix(editor): hide the template slash item inside table cells
+* fix(editor): keep link suggestions out of code blocks
+* fix(editor): use the bg-vellum token in callout, toc and diagram styles
+* fix(editor): keep escape in a callout title from closing the note
+* fix(editor): close the status popover when the document or mode changes
+* fix(editor): hide block-level slash items inside table cells
+* fix(editor): flatten code blocks inside table cells to an inline code span
+* fix(editor): write a space for line breaks inside table cells
+* fix(editor): also strip smil animation and meta refresh from diagram svg
+* fix(editor): strip links and handlers from rendered mermaid svg
+* fix(editor): keep diagram escape from closing the surrounding note
+* fix(editor): prefix the closing toc fence inside callouts and lists
+* fix(editor): keep callout header separate from blocks that cannot interrupt it
+* fix(recorder): Teams meeting detection, Calendar access, Calendar.app transcript discovery (#133)
+* fix(changes): only offer a forced revert once the drift has loaded (B2)
+* fix(changes): dismissing the degraded banner is user-only (B2)
+* fix(history): restore is user-only (B2)
+* fix(desktop): arm the assistant mark only when Accept changed the text (B2)
+* fix(plugins): Familiar and Script Writer send If-Match on note rewrites (B2)
+* fix(desktop): show in graph navigates first and asks only once
+* fix(api): keep a ghost focus title in its written case
+* fix(desktop): bare [[Name]] links resolve through the link index instead of 404ing
+* fix(templates): fold Unicode in protected/device checks, reject control chars
+* fix(desktop): show person prompt defaults in the template dialog
+* fix(templates): bad config.yaml or projects registry never fails build_env
+* fix(templates): seeding survives symlink loops on 3.13+, unsearchable template folder
+* fix(templates): registry survives unreadable files, symlink loops and read-only vaults
+* fix(templates): block 8.3 names, device filenames and Unicode line breaks; typed scope by default
+* fix(templates): no YAML constructor exception escapes parse_template
+* fix(templates): parser rejects unreadable and non-JSON YAML values
+* fix(read-aloud): natural English voice by default; never macOS novelty voices
+
+### Performance
+
+* perf(api): validate /vault/graph per mode instead of through a Union
+
 ## [1.13.0](https://github.com/nikrich/poltergeist/compare/v1.12.0...v1.13.0) (2026-10-10)
 
 
