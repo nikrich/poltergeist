@@ -157,7 +157,7 @@ def test_states_that_cannot_be_reverted(vault):
                          pending_bytes_blob=store.put_blob(b"x\n"))
     with pytest.raises(rv.NotRevertable):
         rv.revert(pid)
-    assert rv.expected_state(changes.get(pid)) is None
+    assert rv.expected_state(changes.get(pid)) == rv.held_flip(changes.get(pid))
 
 
 def test_a_collected_version_is_reported_gone(vault):

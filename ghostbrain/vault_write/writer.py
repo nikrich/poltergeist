@@ -231,11 +231,13 @@ def write(
     base_etag: str | None = None,
     verbatim: bool = False,
     bump_updated: bool = True,
+    approved_change: int | None = None,
 ) -> WriteResult:
     result = _write(
         rel_path, actor=actor, content=content, body=body, fields=fields,
         op=op, dest=dest, reason=reason, base_etag=base_etag, verbatim=verbatim,
         bump_updated=bump_updated,
+        approved_change=approved_change,
     )
     _reindex(result.path, *([rel_path] if dest is not None else []))
     return result
@@ -369,6 +371,23 @@ def _record(
     return str(cid)
 
 
+def _mark_approved(
+    change_id: int, *, before_blob: str | None, after_blob: str | None, path: str
+) -> str:
+    """B3: the approved pending row becomes the applied row (no second row).
+    Like ``_record``, a failure here leaves the write standing."""
+    try:
+        ok = _changes.apply_pending(change_id, before_blob=before_blob, after_blob=after_blob)
+    except Exception as e:  # noqa: BLE001
+        log.exception("could not mark change #%s applied", change_id)
+        _changes.mark_degraded(f"approved change #{change_id} to {path} not marked: {e}")
+        return str(change_id)
+    if not ok:
+        log.warning("change #%s was no longer pending when its approval landed", change_id)
+        _changes.mark_degraded(f"approved change #{change_id} to {path} was not pending")
+    return str(change_id)
+
+
 def _snapshot(
     rel: str, before: bytes, *, actor: Actor, reason: str, after: bytes | None
 ) -> tuple[Snapshot | None, bool]:
@@ -407,9 +426,12 @@ def _write(
     base_etag: str | None = None,
     verbatim: bool = False,
     bump_updated: bool = True,
+    approved_change: int | None = None,
 ) -> WriteResult:
     actor = parse_actor(actor)
     _check_args(op, content, body, fields, dest)
+    if approved_change is not None and not records_change(actor, op):
+        raise ValueError("only a change the log records can be approved")
     src = resolve_safe(rel_path)
     dst = resolve_safe(dest) if dest is not None else None
     if dst is not None and dst == src:
@@ -452,10 +474,10 @@ def _write(
             return WriteResult("applied", None, etag_now, src_rel, updated)
         proposed = ProposedChange(actor, op, src_rel, dst_rel, current, data, reason)
         recorded = records_change(actor, op)
-        if recorded:
+        if recorded and approved_change is None:
             reasons = _hold_reasons(proposed)
             if reasons:
-                return _hold(proposed, reasons)  # B3: nothing is written
+                return _hold(proposed, reasons)  # held: nothing is written
         history_ok = True
         before_blob: str | None = None
         if current is not None:
@@ -472,9 +494,15 @@ def _write(
             history_ok = _move_history(src_rel, dst_rel) and history_ok
         else:
             _atomic_write(src, data)
-        change_id = (
-            _record(proposed, before_blob=before_blob, after_blob=after_blob) if recorded else None
-        )
+        change_id: str | None
+        if approved_change is not None:
+            change_id = _mark_approved(
+                approved_change, before_blob=before_blob, after_blob=after_blob, path=src_rel,
+            )
+        elif recorded:
+            change_id = _record(proposed, before_blob=before_blob, after_blob=after_blob)
+        else:
+            change_id = None
         etag = compute_etag(data) if data is not None else None
         return WriteResult("applied", change_id, etag, dst_rel or src_rel, updated, history_ok)
 
