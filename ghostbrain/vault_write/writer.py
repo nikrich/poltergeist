@@ -31,6 +31,7 @@ from ghostbrain.vault_write.errors import (
     FileMissing,
     InvalidPath,
     MalformedNote,
+    NotHeldError,
     WriteConflict,
 )
 from ghostbrain.vault_write.etag import compute_etag
@@ -237,12 +238,16 @@ def write(
     verbatim: bool = False,
     bump_updated: bool = True,
     approved_change: int | None = None,
+    require_hold: bool = False,
 ) -> WriteResult:
+    """``require_hold``: the write must be held as a pending change; if it
+    would not be, raise NotHeldError having written nothing (C4 Ruling B)."""
     result = _write(
         rel_path, actor=actor, content=content, body=body, fields=fields,
         op=op, dest=dest, reason=reason, base_etag=base_etag, verbatim=verbatim,
         bump_updated=bump_updated,
         approved_change=approved_change,
+        require_hold=require_hold,
     )
     _reindex(result.path, *([rel_path] if dest is not None else []))
     return result
@@ -462,6 +467,7 @@ def _write(
     verbatim: bool = False,
     bump_updated: bool = True,
     approved_change: int | None = None,
+    require_hold: bool = False,
 ) -> WriteResult:
     actor = parse_actor(actor)
     _check_args(op, content, body, fields, dest)
@@ -511,16 +517,20 @@ def _write(
             if existing is not None:
                 raise WriteConflict(compute_etag(existing))
         if op == "modify" and data == current:
+            if require_hold:
+                raise NotHeldError("the write changes nothing, so there is nothing to hold")
             return WriteResult("applied", None, etag_now, src_rel, updated)
         proposed = ProposedChange(
             actor, op, src_rel, dst_rel, current, data, reason,
             requested=(rel_path, *([dest] if dest is not None else [])),
         )
         recorded = records_change(actor, op)
-        if recorded and approved_change is None:
-            reasons = _hold_reasons(proposed)
-            if reasons:
-                return _hold(proposed, reasons)  # held: nothing is written
+        reasons = _hold_reasons(proposed) if recorded and approved_change is None else []
+        if require_hold and not reasons:
+            # Fail closed: refuse before any byte, blob or row is written.
+            raise NotHeldError(f"the change to {src_rel} would not be held for approval")
+        if reasons:
+            return _hold(proposed, reasons)  # held: nothing is written
         history_ok = True
         before_blob: str | None = None
         if current is not None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from ghostbrain.llm import client as llm_client
+from ghostbrain.llm.agent import CHAT_SYSTEM_PROMPT, build_chat_command
 from ghostbrain.llm.providers import base
 from ghostbrain.llm.providers.claude_cli import ClaudeCli
 
@@ -69,3 +70,62 @@ def test_probe_detail_names_the_tier_map_under_tiers(monkeypatch):
     assert probe.ok is True
     assert "models" not in probe.detail
     assert probe.detail["tiers"] == {"fast": "haiku", "balanced": "sonnet", "quality": "opus"}
+
+
+def test_chat_forwards_tool_allowlist_only(monkeypatch):
+    from ghostbrain.llm.providers import claude_cli
+
+    seen: list[list[str]] = []
+
+    def fake_stream(cmd, **kw):
+        seen.append(cmd)
+        return iter(())
+
+    monkeypatch.setattr(claude_cli, "stream_subprocess", fake_stream)
+    p = ClaudeCli(binary="/c", mcp_binary="/m")
+    for flag in (False, True):
+        list(p.chat(base.ChatRequest(prompt="q", tier="balanced", session_id=None, turn_key="k",
+                                     allowed_tools="mcp__poltergeist__poltergeist_search",
+                                     tool_allowlist_only=flag)))
+    assert "--tools" not in seen[0] and "--disallowedTools" not in seen[0]
+    assert "--tools" in seen[1] and "--disallowedTools" in seen[1]
+    assert ClaudeCli.supports_tool_allowlist is True
+
+
+def test_default_chat_command_is_unchanged():
+    """Chat and docs-assist turns: the argv is exactly what it was before the
+    drafting allowlist existed."""
+    from ghostbrain.llm.agent import CHAT_BUDGET_USD, DEFAULT_CHAT_MODEL
+
+    assert build_chat_command("/bin/claude", "hi", mcp_binary="/m", allowed_tools="a,b") == [
+        "/bin/claude", "--print", "--output-format", "stream-json", "--include-partial-messages",
+        "--verbose", "--model", DEFAULT_CHAT_MODEL, "--system-prompt", CHAT_SYSTEM_PROMPT,
+        "--exclude-dynamic-system-prompt-sections", "--max-budget-usd", f"{CHAT_BUDGET_USD:.4f}",
+        "--mcp-config", json.dumps({"mcpServers": {"poltergeist": {"command": "/m"}}}),
+        "--strict-mcp-config", "--allowedTools", "a,b", "--", "hi",
+    ]
+
+
+def test_allowlist_only_command_exposes_nothing_but_the_allowed_vault_tools():
+    search = "mcp__poltergeist__poltergeist_search"
+    mem = {"name": "mem", "command": "npx", "args": ["mem"], "env": {}, "tools": ""}
+    cmd = build_chat_command("/bin/claude", "hi", mcp_binary="/m", allowed_tools=search,
+                             user_servers=[mem], tool_allowlist_only=True)
+    end = cmd.index("--")
+    assert cmd[end:] == ["--", "hi"]
+    head = cmd[:end]
+    i = head.index("--tools")
+    assert head[i + 1] == ""
+    assert head[head.index("--allowedTools") + 1] == search
+    assert json.loads(head[head.index("--mcp-config") + 1]) == {
+        "mcpServers": {"poltergeist": {"command": "/m"}}}  # user servers dropped
+    assert "--strict-mcp-config" in head
+    denied = head[head.index("--disallowedTools") + 1].split(",")
+    for tool in ("Bash", "Read", "Glob", "Grep", "LS", "Edit", "MultiEdit", "Write", "NotebookEdit",
+                 "NotebookRead", "WebFetch", "WebSearch", "Task", "TodoWrite", "BashOutput",
+                 "KillShell", "KillBash", "SlashCommand", "ExitPlanMode",
+                 "mcp__poltergeist__poltergeist_get_note", "mcp__poltergeist__poltergeist_ask",
+                 "mcp__poltergeist__poltergeist_write_doc"):
+        assert tool in denied
+    assert search not in denied
+    assert head.count("--disallowedTools") == 1

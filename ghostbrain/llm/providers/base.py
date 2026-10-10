@@ -56,6 +56,11 @@ class ChatRequest:
     history: list[dict] | None = None
     timeout_s: int = 300
     allowed_tools: str | None = None
+    # True: the ONLY tools the model can see are the vault tools named in
+    # allowed_tools: no built-ins, no shell, no user MCP servers. Only a
+    # provider whose supports_tool_allowlist is True may run such a turn;
+    # the others refuse it with an error event.
+    tool_allowlist_only: bool = False
 
 
 @dataclass
@@ -67,11 +72,21 @@ class ProviderProbe:
 
 class Provider(Protocol):
     id: str
+    # True only if chat() can guarantee a ChatRequest.tool_allowlist_only turn.
+    supports_tool_allowlist: bool
 
     def models(self) -> dict[str, str]: ...
     def complete(self, req: CompletionRequest) -> LLMResult: ...
     def chat(self, req: ChatRequest) -> Iterator[dict]: ...
     def probe(self) -> ProviderProbe: ...
+
+
+def supports_tool_allowlist(provider: object) -> bool:
+    """Fail closed: only a provider that declares exactly True qualifies."""
+    return getattr(provider, "supports_tool_allowlist", False) is True
+
+
+ALLOWLIST_REFUSED = "this AI provider cannot run a turn limited to the vault tools"
 
 
 # --- running-turn registry (shared by every chat driver) ---------------------

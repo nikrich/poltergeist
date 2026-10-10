@@ -201,6 +201,9 @@ class CodexChatParser:
 
 class CodexCli:
     id = "codex"
+    # The config this adapter writes cannot switch off codex's shell, and the
+    # read-only sandbox still lets it read any file: allowlist-only refused.
+    supports_tool_allowlist = False
 
     def __init__(self, models: dict[str, str], binary: str | None = None) -> None:
         self._models = dict(models)
@@ -267,6 +270,9 @@ class CodexCli:
         return base.ProviderProbe(True, last_line, {"binary": b, "tiers": self.models()})
 
     def chat(self, req: base.ChatRequest) -> Iterator[dict]:
+        if req.tool_allowlist_only:
+            yield {"type": "error", "message": base.ALLOWLIST_REFUSED}
+            return
         b = self._binary or find_codex_binary()
         if b is None:
             yield {"type": "error", "message": "`codex` CLI not found; install it (`npm i -g @openai/codex`) and run `codex login`"}

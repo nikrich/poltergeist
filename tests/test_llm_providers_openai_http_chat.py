@@ -282,3 +282,27 @@ def test_chat_restricts_the_tool_schemas_to_the_allowed_list(server):
                                  allowed_tools=DOCS_ALLOWED_TOOLS)))
     assert [t["function"]["name"] for t in _Fake.seen[0]["tools"]] == [
         "poltergeist_search", "poltergeist_get_note", "poltergeist_write_doc"]
+
+
+def test_allowlist_only_turn_offers_and_runs_only_the_allowed_tools(server, monkeypatch):
+    called: list[str] = []
+    monkeypatch.setattr(vault_tools, "call_tool",
+                        lambda name, args, client=None: called.append(name) or "RESULT")
+    _Fake.turns = [
+        _sse([{"choices": [{"delta": {"tool_calls": [
+            {"index": 0, "id": "c1", "function": {"name": "poltergeist_write_doc",
+                                                  "arguments": "{\"title\": \"x\", \"html\": \"y\"}"}},
+            {"index": 1, "id": "c2", "function": {"name": "poltergeist_search",
+                                                  "arguments": "{\"query\": \"q\"}"}},
+        ]}, "finish_reason": "tool_calls"}]}]),
+        _sse([{"choices": [{"delta": {"content": "ok"}}]}]),
+    ]
+    p = OpenAiHttp(server, "K", M); p._ollama = False
+    assert OpenAiHttp.supports_tool_allowlist is True
+    list(p.chat(base.ChatRequest(prompt="q", tier="fast", session_id=None, turn_key="t",
+                                 allowed_tools="mcp__poltergeist__poltergeist_search",
+                                 tool_allowlist_only=True)))
+    assert [t["function"]["name"] for t in _Fake.seen[0]["tools"]] == ["poltergeist_search"]
+    assert called == ["poltergeist_search"]
+    refused = [m for m in _Fake.seen[1]["messages"] if m.get("tool_call_id") == "c1"]
+    assert refused and "not allowed" in refused[0]["content"]

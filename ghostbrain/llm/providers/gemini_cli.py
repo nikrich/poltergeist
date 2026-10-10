@@ -162,6 +162,11 @@ def parse_stream_line(line: str) -> list[dict]:
 
 class GeminiCli:
     id = "gemini"
+    # The CLI merges the user's own ~/.gemini settings (MCP servers,
+    # extensions) into the workspace one and chat() runs it with
+    # --approval-mode=yolo, so the workspace cannot guarantee a vault-only
+    # toolset: allowlist-only refused.
+    supports_tool_allowlist = False
 
     def __init__(self, models: dict[str, str], binary: str | None = None) -> None:
         self._models = dict(models)
@@ -233,6 +238,9 @@ class GeminiCli:
         return base.ProviderProbe(True, f"gemini ({auth})", {"binary": b, "auth": auth, "tiers": self.models()})
 
     def chat(self, req: base.ChatRequest) -> Iterator[dict]:
+        if req.tool_allowlist_only:
+            yield {"type": "error", "message": base.ALLOWLIST_REFUSED}
+            return
         from ghostbrain.llm import agent
         from ghostbrain.llm.agent import CHAT_SYSTEM_PROMPT, find_mcp_binary
         b = self._binary or find_gemini_binary()

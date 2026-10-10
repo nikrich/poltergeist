@@ -12,17 +12,33 @@ GET   /v1/templates/query-values    known note types and statuses for query comp
 GET   /v1/templates/{id}/source     the file's text and etag
 PATCH /v1/templates/{id}/source     save (If-Match), through the write path
 POST  /v1/templates                 new blank template
+
+Slice C4 (AI-generated templates):
+POST /v1/templates/generate         draft with the AI, validate, save as a pending change
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from ghostbrain.api.repo.settings import ProviderUnavailable, require_provider
 from ghostbrain.api.vault_http import if_match, request_actor
+from ghostbrain.changes.log import ChangeLogError
+from ghostbrain.history import HistoryUnavailable
 from ghostbrain.templates.create import create_from_template, preview_from_template
 from ghostbrain.templates.functions import registry_json
+from ghostbrain.templates.generate import (
+    MAX_DESCRIPTION_CHARS,
+    DraftInvalid,
+    GenerateError,
+    ProviderCannotDraft,
+    clean_description,
+    draft_template,
+    drafting_provider,
+)
 from ghostbrain.templates.lang import MAX_TEMPLATE_CHARS
 from ghostbrain.templates.lint import lint
 from ghostbrain.templates.registry import TemplateInvalid, TemplateNotFound, list_templates
@@ -36,8 +52,9 @@ from ghostbrain.templates.source import (
     save_source,
 )
 from ghostbrain.templates.testrun import dry_run
-from ghostbrain.vault_write import Actor
+from ghostbrain.vault_write import USER, Actor, InvalidPath, NotHeldError, WriteConflict
 
+log = logging.getLogger("ghostbrain.api.templates")
 router = APIRouter(prefix="/v1/templates", tags=["templates"])
 _ERRORS = (TemplateNotFound, TemplateInvalid, AnswerError, RenderError)
 
@@ -151,3 +168,66 @@ def new_template(body: NewTemplateBody, actor: Actor = Depends(request_actor)) -
         return create_blank(body.name, actor=actor).to_json()
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
+
+
+# ── C4: AI-generated templates ────────────────────────────────────────────
+
+
+class GenerateBody(BaseModel):
+    description: str = Field(min_length=1, max_length=MAX_DESCRIPTION_CHARS)
+
+
+@router.post("/generate")
+def generate_template(body: GenerateBody, actor: Actor = Depends(request_actor)) -> dict[str, Any]:
+    """Draft a template with the AI. 200 with ``status: "pending"`` (saved as
+    an assistant change that waits for approval) or ``status: "invalid"``
+    (failed validation twice; the draft comes back, nothing is saved).
+
+    User-only: the change is recorded as the assistant's, so only the user
+    may ask for it (a plugin proposes as itself through the write path).
+    Nothing here approves the change."""
+    from ghostbrain.templates.ai_save import NotHeld, save_ai_template
+
+    if actor != USER:
+        raise HTTPException(status_code=403, detail="only you can ask the assistant to draft a template")
+    description = clean_description(body.description)
+    if not description:
+        raise HTTPException(status_code=422, detail="describe the template you want")
+    try:
+        require_provider()
+    except ProviderUnavailable as e:
+        raise HTTPException(status_code=412, detail=str(e)) from e
+    try:
+        drafting_provider()  # refuse before any turn on a provider that cannot limit its tools
+        draft = draft_template(description)
+    except ProviderCannotDraft as e:
+        raise HTTPException(status_code=412, detail=str(e)) from e
+    except GenerateError as e:
+        raise HTTPException(status_code=502, detail=f"template generation failed — {e}") from e
+    except DraftInvalid as e:
+        return {"status": "invalid", "message": str(e), "draft": e.draft,
+                "diagnostics": [d.to_json() for d in e.problems]}
+    try:
+        saved = save_ai_template(draft.source, draft.template,
+                                 reason=f"AI template: {' '.join(description.split())[:120]}")
+    except DraftInvalid as e:  # unreachable: the draft was just checked
+        raise HTTPException(status_code=500, detail=f"the AI template was not saved: {e}") from e
+    except NotHeld as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+    except NotHeldError as e:  # unreachable defence in depth: ai_save turns it into NotHeld
+        raise HTTPException(status_code=500, detail="the AI template was not held for approval; "
+                                                    "nothing was saved") from e
+    except WriteConflict as e:
+        raise HTTPException(status_code=409, detail="no free template name — rename or delete "
+                                                    "an old template") from e
+    except InvalidPath as e:
+        log.warning("AI template not saved: %s", e)
+        raise HTTPException(status_code=409, detail="the templates folder cannot be written "
+                                                    "(is it outside the vault?)") from e
+    except HistoryUnavailable as e:
+        raise HTTPException(status_code=503, detail="history is unavailable, so the AI template "
+                                                    "was not saved; try again") from e
+    except ChangeLogError as e:
+        raise HTTPException(status_code=503, detail="the change log is unavailable, so the AI "
+                                                    "template was not saved; try again") from e
+    return saved.to_json()

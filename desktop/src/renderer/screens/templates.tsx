@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { TopBar } from '../components/TopBar';
 import { Btn } from '../components/Btn';
 import { Lucide } from '../components/Lucide';
+import { MakeTemplateDialog } from '../components/MakeTemplateDialog';
 import { DISCARD_TEMPLATE_PROMPT, TemplateSourceEditor } from '../components/TemplateSourceEditor';
 import { useTemplates } from '../lib/api/hooks';
 import { useCreateBlankTemplate } from '../lib/api/template-editor';
@@ -16,6 +17,7 @@ export function TemplatesPanel({ onBack }: { onBack: () => void }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [newName, setNewName] = useState<string | null>(null);
+  const [makeWithAi, setMakeWithAi] = useState(false);
 
   function leaveOk(): boolean {
     return !dirty || window.confirm(DISCARD_TEMPLATE_PROMPT);
@@ -58,6 +60,9 @@ export function TemplatesPanel({ onBack }: { onBack: () => void }) {
               }}
             >
               jots
+            </Btn>
+            <Btn variant="ghost" size="sm" icon={<Lucide name="sparkles" size={13} />} onClick={() => setMakeWithAi(true)}>
+              make one with ai
             </Btn>
             <Btn variant="primary" size="sm" icon={<Lucide name="plus" size={13} />} onClick={() => setNewName('')}>
               new template
@@ -120,6 +125,7 @@ export function TemplatesPanel({ onBack }: { onBack: () => void }) {
           )}
         </section>
       </div>
+      {makeWithAi && <MakeTemplateDialog onClose={() => setMakeWithAi(false)} />}
     </div>
   );
 }

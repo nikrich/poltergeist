@@ -42,6 +42,7 @@ jobs:
             tests/test_profile_apply_vault_write.py \
             tests/test_semantic_related_write.py \
             tests/test_vault_write_risk.py \
+            tests/test_vault_write_require_hold.py \
             tests/test_changes_approve.py \
             tests/test_scheduler_history_prune_job.py \
             tests/test_mcp_client.py \
@@ -100,6 +101,8 @@ jobs:
             tests/test_templates_testrun.py \
             tests/test_templates_source.py \
             tests/test_templates_query.py \
+            tests/test_templates_generate.py \
+            tests/test_templates_ai_save.py \
             -q
 
   desktop:

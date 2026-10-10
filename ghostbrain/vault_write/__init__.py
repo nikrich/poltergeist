@@ -16,6 +16,7 @@ from ghostbrain.vault_write.errors import (
     FileMissing,
     InvalidPath,
     MalformedNote,
+    NotHeldError,
     VaultWriteError,
     WriteConflict,
 )
@@ -51,7 +52,7 @@ from ghostbrain.vault_write.writer import (
 __all__ = [
     "ASSISTANT", "DELETE_FIELD", "MCP", "RESTORE", "USER", "UNLISTED_ACTORS", "WRITABLE_SUFFIXES",
     "Actor", "EtagRequired", "FileMissing", "HistoryUnavailable", "HoldPolicy",
-    "InvalidPath", "MalformedNote", "NoteSnapshot", "Op", "ParsedNote", "ProposedChange",
+    "InvalidPath", "MalformedNote", "NoteSnapshot", "NotHeldError", "Op", "ParsedNote", "ProposedChange",
     "VaultWriteError", "WriteConflict", "WriteResult",
     "apply_fields", "compute_etag", "current_etag", "find_key_block", "lines_of",
     "load_metadata", "needs_base_etag", "normalize_if_match", "parse_actor", "parse_note",

@@ -25,6 +25,9 @@ LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", "0.0.0.0"}
 
 class OpenAiHttp:
     id = "openai_http"
+    # The model sees only the vault tool schemas sent with each request, and
+    # an allowlist-only turn runs only the ones it was offered.
+    supports_tool_allowlist = True
 
     def __init__(self, base_url: str, api_key_env: str, models: dict[str, str]) -> None:
         self.base_url = base_url.rstrip("/")
@@ -151,6 +154,7 @@ class OpenAiHttp:
         # Callers that narrow the toolset (docs-assist drops poltergeist_ask)
         # must narrow it here too — this driver has no MCP allowlist to lean on.
         tools = vault_tools.schemas_for(req.allowed_tools)
+        offered = {t["function"]["name"] for t in tools}
 
         cancelled = threading.Event()
         # Holds the live httpx.Response for whichever round is currently
@@ -203,7 +207,10 @@ class OpenAiHttp:
                     args = _parse_json_tolerant(c["function"]["arguments"] or "{}")
                     yield {"type": "tool", "name": vault_tools.short_name_for(c["function"]["name"]),
                            "summary": vault_tools.summary_for(c["function"]["name"], args)}
-                    result = vault_tools.call_tool(c["function"]["name"], args, client=client)
+                    if req.tool_allowlist_only and c["function"]["name"] not in offered:
+                        result = f"error: tool {c['function']['name']} is not allowed"
+                    else:
+                        result = vault_tools.call_tool(c["function"]["name"], args, client=client)
                     if cancelled.is_set():
                         yield {"type": "error", "message": "stopped", "interrupted": True}
                         return
