@@ -644,7 +644,7 @@ function SuggestionCard({ icon, title, body, accent }: SuggestionCardProps) {
           accent ? 'bg-[rgba(197,255,61,0.15)]' : 'bg-paper'
         }`}
       >
-        <Lucide name={icon} size={13} color={accent ? 'var(--neon)' : 'var(--ink-1)'} />
+        <Lucide name={icon} size={13} color={accent ? 'var(--neon-glyph)' : 'var(--ink-1)'} />
       </div>
       <div className="min-w-0 flex-1">
         <div className="text-12 font-medium text-ink-0">{title}</div>

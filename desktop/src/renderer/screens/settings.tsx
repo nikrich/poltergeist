@@ -1401,7 +1401,7 @@ function SectionRow({
         active ? 'bg-vellum font-medium text-ink-0' : 'bg-transparent font-normal text-ink-1'
       }`}
     >
-      <Lucide name={icon} size={14} color={active ? 'var(--neon)' : 'var(--ink-2)'} />
+      <Lucide name={icon} size={14} color={active ? 'var(--neon-glyph)' : 'var(--ink-2)'} />
       {label}
     </button>
   );
