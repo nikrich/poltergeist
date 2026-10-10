@@ -185,4 +185,75 @@ describe('table pipe safety', () => {
     expect(md).not.toContain('[hardBreak]');
     expect(md).toBe('| h |\n| --- |\n| a b |');
   });
+
+  it('a code block inside a cell is flattened to an inline code span, never a raw newline', () => {
+    const editor = makeEditor('');
+    editor.commands.setContent(
+      {
+        type: 'doc',
+        content: [
+          {
+            type: 'table',
+            content: [
+              { type: 'tableRow', content: [
+                { type: 'tableHeader', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'a' }] }] },
+                { type: 'tableHeader', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'b' }] }] },
+              ] },
+              { type: 'tableRow', content: [
+                { type: 'tableCell', content: [
+                  { type: 'paragraph', content: [{ type: 'text', text: 'x' }] },
+                  {
+                    type: 'codeBlock',
+                    attrs: { language: 'mermaid' },
+                    content: [{ type: 'text', text: 'flowchart TD\n  A[Start] --> B[End]' }],
+                  },
+                ] },
+                { type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'y' }] }] },
+              ] },
+            ],
+          },
+        ],
+      },
+      false,
+    );
+    const md = markdownOf(editor);
+    expect(md).toBe('| a | b |\n| --- | --- |\n| x `flowchart TD A[Start] --> B[End]` | y |');
+    expect(md.split('\n')).toHaveLength(3);
+    expect(columnCounts(md)).toEqual([2, 2, 2]);
+    const again = makeEditor(md);
+    let rows = 0;
+    again.state.doc.descendants((n) => {
+      if (n.type.name === 'tableRow') rows++;
+      return true;
+    });
+    expect(rows).toBe(2);
+    expect(markdownOf(again)).toBe(md);
+  });
+
+  it('an empty code block inside a cell writes nothing', () => {
+    const editor = makeEditor('');
+    editor.commands.setContent(
+      {
+        type: 'doc',
+        content: [
+          {
+            type: 'table',
+            content: [
+              { type: 'tableRow', content: [
+                { type: 'tableHeader', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'h' }] }] },
+              ] },
+              { type: 'tableRow', content: [
+                { type: 'tableCell', content: [
+                  { type: 'paragraph', content: [{ type: 'text', text: 'x' }] },
+                  { type: 'codeBlock', attrs: { language: null } },
+                ] },
+              ] },
+            ],
+          },
+        ],
+      },
+      false,
+    );
+    expect(markdownOf(editor)).toBe('| h |\n| --- |\n| x |');
+  });
 });

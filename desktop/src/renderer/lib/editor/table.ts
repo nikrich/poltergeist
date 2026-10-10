@@ -4,6 +4,7 @@ import TableHeader from '@tiptap/extension-table-header';
 import { isInTable, selectedRect } from '@tiptap/pm/tables';
 import type { MarkdownSerializerState } from 'prosemirror-markdown';
 import type { Node as PMNode } from 'prosemirror-model';
+import { codeSpan } from './status';
 
 export type CellAlign = 'left' | 'center' | 'right';
 
@@ -98,7 +99,14 @@ function renderCell(state: TableState, cell: PMNode): void {
   const start = state.out.length;
   let written = 0;
   cell.forEach((child) => {
-    if (child.isTextblock) {
+    if (child.type.spec.code) {
+      // Code block: its raw newlines would end the table row — one inline code span instead.
+      const text = child.textContent.replace(/\s+/g, ' ').trim();
+      if (!text) return;
+      if (written) state.write(' ');
+      state.write(codeSpan(text));
+      written++;
+    } else if (child.isTextblock) {
       for (const segment of inlineSegments(child)) {
         if (written) state.write(' ');
         state.renderInline(segment);
@@ -118,7 +126,8 @@ function renderCell(state: TableState, cell: PMNode): void {
       written++;
     }
   });
-  state.out = state.out.slice(0, start) + escapeTablePipes(state.out.slice(start));
+  // Backstop: a newline anywhere in the cell would split the row.
+  state.out = state.out.slice(0, start) + escapeTablePipes(state.out.slice(start).replace(/\n/g, ' '));
 }
 
 /**
@@ -126,6 +135,7 @@ function renderCell(state: TableState, cell: PMNode): void {
  *  - alignment from the first row's cells → delimiter row;
  *  - no header row → an empty header row (`|  |  |`), stripped again on parse;
  *  - multi-paragraph / block cells → joined with a single space;
+ *  - code blocks → one inline code span (whitespace collapsed);
  *  - colspans → padded with empty cells.
  */
 export function serializeTable(rawState: MarkdownSerializerState, node: PMNode): void {
