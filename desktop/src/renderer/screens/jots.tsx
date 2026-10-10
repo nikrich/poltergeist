@@ -8,6 +8,9 @@ import { JotTree } from '../components/JotTree';
 import { GuardedNoteEditor, confirmLeave, type GuardHandle } from '../components/GuardedNoteEditor';
 import type { EditorHandle } from '../components/RichMarkdownEditor';
 import { DocsAssistPanel } from '../components/DocsAssistPanel';
+import { FocusBar } from '../components/FocusBar';
+import { setFocusMode, useFocusActive, useFocusSurface } from '../lib/focus-mode';
+import { shortcutLabel } from '../lib/editor-shortcuts';
 import { get } from '../lib/api/client';
 import { BacklinksPanel } from '../components/BacklinksPanel';
 import { NoteHistoryButton } from '../components/NoteHistory';
@@ -76,6 +79,9 @@ export function JotsScreen() {
   }
   const editorInitial =
     initialBodyRef.current?.id === selectedId ? initialBodyRef.current : undefined;
+  // Focus mode (A4) applies only while a jot is open in the editor.
+  useFocusSurface(editorInitial !== undefined);
+  const focusActive = useFocusActive();
 
   // Latest path for conflict re-reads: a re-route moves the file while the
   // editor stays mounted (keyed by id, not path).
@@ -257,68 +263,84 @@ export function JotsScreen() {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden bg-paper">
-      <TopBar
-        title="jots"
-        subtitle={list.data ? `${list.data.total} total` : '…'}
-        right={
-          <div className="flex gap-2">
-            {selectedItem && (
-              <NoteHistoryButton key={selectedItem.path} path={selectedItem.path} guardRef={guardRef} />
-            )}
-            <Btn
-              variant="ghost"
-              size="sm"
-              icon={<Lucide name="sparkles" size={13} />}
-              onClick={toggleAssist}
-            >
-              assist
-            </Btn>
-            <Btn
-              icon={<Lucide name="camera" size={13} />}
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                if (selectedId) {
-                  setCameraSignal((n) => n + 1);
-                } else {
-                  handleNew();
-                  toast.info('jot created — tap capture to add a photo');
-                }
-              }}
-            />
-            <Btn
-              variant="primary"
-              size="sm"
-              icon={<Lucide name="plus" size={13} />}
-              onClick={handleNew}
-              disabled={createJot.isPending}
-            >
-              new
-            </Btn>
-          </div>
-        }
-      />
-      <div className="flex flex-shrink-0 border-b border-hairline px-4 py-2">
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="search jots…"
-          className="w-full bg-transparent text-12 text-ink-0 outline-none"
-        />
-      </div>
-      <div className="flex flex-1 overflow-hidden">
-        <aside className="w-[260px] flex-shrink-0 overflow-y-auto border-r border-hairline">
-          {list.data?.items.length === 0 && !list.isLoading && (
-            <div className="flex flex-1 items-center justify-center px-4 py-8 text-center text-12 text-ink-3">
-              no jots yet — press ⌥-J to create one
+      {focusActive ? (
+        <FocusBar />
+      ) : (
+        <TopBar
+          title="jots"
+          subtitle={list.data ? `${list.data.total} total` : '…'}
+          right={
+            <div className="flex gap-2">
+              {selectedItem && (
+                <NoteHistoryButton key={selectedItem.path} path={selectedItem.path} guardRef={guardRef} />
+              )}
+              <Btn
+                variant="ghost"
+                size="sm"
+                icon={<Lucide name="maximize-2" size={13} />}
+                onClick={() => void setFocusMode(true)}
+                disabled={editorInitial === undefined}
+                ariaLabel={`focus mode (${shortcutLabel('focus')})`}
+              />
+              <Btn
+                variant="ghost"
+                size="sm"
+                icon={<Lucide name="sparkles" size={13} />}
+                onClick={toggleAssist}
+              >
+                assist
+              </Btn>
+              <Btn
+                icon={<Lucide name="camera" size={13} />}
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  if (selectedId) {
+                    setCameraSignal((n) => n + 1);
+                  } else {
+                    handleNew();
+                    toast.info('jot created — tap capture to add a photo');
+                  }
+                }}
+              />
+              <Btn
+                variant="primary"
+                size="sm"
+                icon={<Lucide name="plus" size={13} />}
+                onClick={handleNew}
+                disabled={createJot.isPending}
+              >
+                new
+              </Btn>
             </div>
-          )}
-          <JotTree
-            items={list.data?.items ?? []}
-            selectedId={selectedId}
-            onSelect={selectJot}
+          }
+        />
+      )}
+      {!focusActive && (
+        <div className="flex flex-shrink-0 border-b border-hairline px-4 py-2">
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="search jots…"
+            className="w-full bg-transparent text-12 text-ink-0 outline-none"
           />
-        </aside>
+        </div>
+      )}
+      <div className="flex flex-1 overflow-hidden">
+        {!focusActive && (
+          <aside className="w-[260px] flex-shrink-0 overflow-y-auto border-r border-hairline">
+            {list.data?.items.length === 0 && !list.isLoading && (
+              <div className="flex flex-1 items-center justify-center px-4 py-8 text-center text-12 text-ink-3">
+                no jots yet — press ⌥-J to create one
+              </div>
+            )}
+            <JotTree
+              items={list.data?.items ?? []}
+              selectedId={selectedId}
+              onSelect={selectJot}
+            />
+          </aside>
+        )}
         <main className="flex flex-1 flex-col">
           {editorInitial !== undefined ? (
             <>
@@ -339,6 +361,7 @@ export function JotsScreen() {
                   guardRef={guardRef}
                   navigationScope="screen"
                   editorProps={{
+                    focus: focusActive,
                     onWikilinkClick: (target) => openNote(notePathFromTarget(target)),
                     handleRef: editorHandle,
                     jotId: selectedId!,
@@ -366,88 +389,92 @@ export function JotsScreen() {
                   }}
                 />
               </div>
-              {selectedItem && <BacklinksPanel path={selectedItem.path} onOpen={openNote} />}
-              <footer className="flex items-center gap-2 border-t border-hairline px-4 py-2 text-11 text-ink-2">
-                {selectedItem?.context && (
-                  <Pill>
-                    {selectedItem.context}
-                    {selectedItem.project ? ` / ${selectedItem.project}` : ''}
-                  </Pill>
-                )}
-                {selectedItem?.routingStatus && <Pill>{selectedItem.routingStatus}</Pill>}
-                <div className="ml-auto flex items-center gap-2">
-                  {selectedItem?.routingStatus !== 'routed' && (
-                    <Btn
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        if (!selectedId) return;
-                        autoRoute.mutate(selectedId, {
-                          onSuccess: (res) => {
-                            if (res.routingStatus === 'routed' && res.context) {
-                              toast.info(`filed to ${res.context}`);
-                            } else {
-                              toast.info('kept for manual review — content too ambiguous');
-                            }
-                          },
-                          onError: (err) => toast.error(`auto-route failed: ${err.message}`),
-                        });
-                      }}
-                      disabled={autoRoute.isPending}
-                    >
-                      route now
-                    </Btn>
+              {selectedItem && !focusActive && (
+                <BacklinksPanel path={selectedItem.path} onOpen={openNote} />
+              )}
+              {!focusActive && (
+                <footer className="flex items-center gap-2 border-t border-hairline px-4 py-2 text-11 text-ink-2">
+                  {selectedItem?.context && (
+                    <Pill>
+                      {selectedItem.context}
+                      {selectedItem.project ? ` / ${selectedItem.project}` : ''}
+                    </Pill>
                   )}
-                  <select
-                    onChange={(e) => {
-                      if (e.target.value) {
-                        handleReroute(e.target.value);
-                        // Reset so the placeholder shows again after selection
+                  {selectedItem?.routingStatus && <Pill>{selectedItem.routingStatus}</Pill>}
+                  <div className="ml-auto flex items-center gap-2">
+                    {selectedItem?.routingStatus !== 'routed' && (
+                      <Btn
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          if (!selectedId) return;
+                          autoRoute.mutate(selectedId, {
+                            onSuccess: (res) => {
+                              if (res.routingStatus === 'routed' && res.context) {
+                                toast.info(`filed to ${res.context}`);
+                              } else {
+                                toast.info('kept for manual review — content too ambiguous');
+                              }
+                            },
+                            onError: (err) => toast.error(`auto-route failed: ${err.message}`),
+                          });
+                        }}
+                        disabled={autoRoute.isPending}
+                      >
+                        route now
+                      </Btn>
+                    )}
+                    <select
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          handleReroute(e.target.value);
+                          // Reset so the placeholder shows again after selection
+                          e.target.value = '';
+                        }
+                      }}
+                      defaultValue=""
+                      className="bg-transparent text-11 text-ink-1"
+                    >
+                      <option value="" disabled>
+                        re-route…
+                      </option>
+                      {knownContexts.map((c) => (
+                        <optgroup key={c} label={c}>
+                          <option value={c}>{c}</option>
+                          {(Array.isArray(projects.data) ? projects.data : [])
+                            .filter((p) => p.context === c)
+                            .map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {c} / {p.name}
+                              </option>
+                            ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                    <select
+                      onChange={(e) => {
+                        const v = e.target.value;
                         e.target.value = '';
-                      }
-                    }}
-                    defaultValue=""
-                    className="bg-transparent text-11 text-ink-1"
-                  >
-                    <option value="" disabled>
-                      re-route…
-                    </option>
-                    {knownContexts.map((c) => (
-                      <optgroup key={c} label={c}>
-                        <option value={c}>{c}</option>
-                        {(Array.isArray(projects.data) ? projects.data : [])
-                          .filter((p) => p.context === c)
-                          .map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {c} / {p.name}
-                            </option>
-                          ))}
-                      </optgroup>
-                    ))}
-                  </select>
-                  <select
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      e.target.value = '';
-                      handleExportSelect(v);
-                    }}
-                    defaultValue=""
-                    className="bg-transparent text-11 text-ink-1"
-                    aria-label="export…"
-                  >
-                    <option value="" disabled>
-                      export…
-                    </option>
-                    <option value="confluence" disabled={!confluenceEnabled}>
-                      confluence{!confluenceEnabled ? ' (not connected)' : ''}
-                    </option>
-                    <option value="pdf">pdf</option>
-                  </select>
-                  <Btn variant="ghost" size="sm" onClick={handleDelete}>
-                    delete
-                  </Btn>
-                </div>
-              </footer>
+                        handleExportSelect(v);
+                      }}
+                      defaultValue=""
+                      className="bg-transparent text-11 text-ink-1"
+                      aria-label="export…"
+                    >
+                      <option value="" disabled>
+                        export…
+                      </option>
+                      <option value="confluence" disabled={!confluenceEnabled}>
+                        confluence{!confluenceEnabled ? ' (not connected)' : ''}
+                      </option>
+                      <option value="pdf">pdf</option>
+                    </select>
+                    <Btn variant="ghost" size="sm" onClick={handleDelete}>
+                      delete
+                    </Btn>
+                  </div>
+                </footer>
+              )}
             </>
           ) : (
             <div className="flex flex-1 items-center justify-center text-13 text-ink-3">
@@ -458,7 +485,7 @@ export function JotsScreen() {
           )}
         </main>
         {/* Docs assist panel — right aside, only when open and a jot is selected */}
-        {assistOpen && selectedId && (
+        {assistOpen && selectedId && !focusActive && (
           <aside className="w-[320px] flex-shrink-0 overflow-y-auto border-l border-hairline">
             <DocsAssistPanel jotId={selectedId} editorHandle={editorHandle} />
           </aside>

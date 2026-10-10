@@ -9,6 +9,7 @@ import { Btn } from './Btn';
 import { EditorToolbar } from './EditorToolbar';
 import { JotEditor } from './JotEditor';
 import { Lucide } from './Lucide';
+import { ReadAloudControls } from './ReadAloudControls';
 import { WebcamCaptureModal } from './WebcamCaptureModal';
 
 export interface EditorHandle {
@@ -62,6 +63,8 @@ export interface RichMarkdownEditorProps {
   onPhotoInserted?: (jotId: string, assetPath: string) => void;
   /** Increment this number to programmatically open the webcam modal. */
   openCameraSignal?: number;
+  /** Focus mode (A4): hide the formatting toolbar and centre the page. */
+  focus?: boolean;
 }
 
 type Mode = 'rich' | 'source';
@@ -90,6 +93,7 @@ export function RichMarkdownEditor({
   jotId,
   onPhotoInserted,
   openCameraSignal,
+  focus = false,
 }: RichMarkdownEditorProps) {
   // Evaluated once per mount; parents remount per note via key={...}.
   const [parseFailed] = useState(() => !parsesAsRich(markdown));
@@ -378,8 +382,14 @@ export function RichMarkdownEditor({
   }
 
   return (
-    <div className="flex h-full flex-col" data-testid="rich-markdown-editor">
-      {mode === 'rich' && editor && <EditorToolbar editor={editor} onPhoto={() => setCamOpen(true)} />}
+    <div
+      className="flex h-full flex-col"
+      data-testid="rich-markdown-editor"
+      data-focus={focus ? 'on' : undefined}
+    >
+      {mode === 'rich' && editor && !focus && (
+        <EditorToolbar editor={editor} onPhoto={() => setCamOpen(true)} />
+      )}
       <div className="flex-1 overflow-auto">
         {mode === 'rich' ? (
           <EditorContent
@@ -410,6 +420,7 @@ export function RichMarkdownEditor({
             copy formatted
           </Btn>
         )}
+        {mode === 'rich' && editor && <ReadAloudControls editor={editor} />}
         <div className="ml-auto flex items-center gap-1 font-mono text-10 text-ink-3">
           <button
             type="button"

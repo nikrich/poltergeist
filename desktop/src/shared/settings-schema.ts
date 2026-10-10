@@ -29,6 +29,10 @@ export const settingsSchema = z.object({
   schedulerEnabled: z.boolean(),
 
   onboardingComplete: z.boolean(),
+  // Editor (A4): focus mode + read-aloud. Voice '' = auto by note language.
+  focusMode: z.boolean(),
+  readAloudVoice: z.string().max(512),
+  readAloudRate: z.number().min(0.5).max(2),
 
   // Global hotkeys (Electron accelerator format).
   // Note: Electron uses 'Alt' rather than 'Option' even on macOS.

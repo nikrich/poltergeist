@@ -5,6 +5,8 @@ import type { Editor } from '@tiptap/core';
 import type { EditorView } from '@tiptap/pm/view';
 import { NoteView } from '../components/NoteView';
 import { useNoteView } from '../stores/note-view';
+import { useSettings } from '../stores/settings';
+import { useFocusModeShortcuts, useFocusSurfaces } from '../lib/focus-mode';
 import type { Note } from '../../shared/api-types';
 
 const apiRequest = vi.fn();
@@ -12,6 +14,8 @@ const apiRequest = vi.fn();
 beforeEach(() => {
   apiRequest.mockReset();
   useNoteView.getState().close();
+  useSettings.setState({ focusMode: false });
+  useFocusSurfaces.setState({ count: 0 });
   window.gb = {
     ...window.gb,
     api: { request: apiRequest },
@@ -284,4 +288,83 @@ describe('NoteView', () => {
     await screen.findByText('hand-written');
     expect(screen.getByRole('button', { name: 'history' })).toBeInTheDocument();
   });
+
+  it('in focus mode the viewer drops its header and backlinks, and Esc does not close it', async () => {
+    apiRequest.mockResolvedValue({ ok: true, data: manualNote });
+    useSettings.setState({ focusMode: true });
+    render(withQuery(<NoteView />));
+    act(() => useNoteView.getState().open(manualNote.path));
+    await screen.findByText('hand-written');
+
+    expect(screen.getByTestId('focus-bar')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'close' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'history' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'backlinks' })).toBeNull();
+    expect(screen.getByTestId('rich-markdown-editor')).toHaveAttribute('data-focus', 'on');
+
+    // Without App's focus hook mounted, nothing leaves focus — but the viewer
+    // must still not treat this Esc as "close".
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(useNoteView.getState().path).toBe(manualNote.path);
+  });
+
+  it('without focus mode Esc still closes the viewer', async () => {
+    apiRequest.mockResolvedValue({ ok: true, data: manualNote });
+    render(withQuery(<NoteView />));
+    act(() => useNoteView.getState().open(manualNote.path));
+    await screen.findByText('hand-written');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(useNoteView.getState().path).toBeNull();
+  });
+
+  it('the header focus button turns focus mode on', async () => {
+    apiRequest.mockResolvedValue({ ok: true, data: manualNote });
+    render(withQuery(<NoteView />));
+    act(() => useNoteView.getState().open(manualNote.path));
+    await screen.findByText('hand-written');
+    fireEvent.click(screen.getByRole('button', { name: 'focus mode (⌘ .)' }));
+    await waitFor(() => expect(useSettings.getState().focusMode).toBe(true));
+    expect(await screen.findByTestId('focus-bar')).toBeInTheDocument();
+  });
+});
+
+function FocusShortcuts() {
+  useFocusModeShortcuts();
+  return null;
+}
+
+describe('NoteView Esc precedence with the focus-mode shortcuts mounted', () => {
+  // App mounts the shortcut hook once, before any note opens (its listener
+  // runs first); the reverse order is covered too so neither order regresses.
+  it.each(['shortcuts first (App order)', 'viewer first'])(
+    'first Esc leaves focus mode, second Esc closes the viewer (%s)',
+    async (order) => {
+      apiRequest.mockResolvedValue({ ok: true, data: manualNote });
+      useSettings.setState({ focusMode: true });
+      if (order === 'viewer first') {
+        render(withQuery(<NoteView />));
+        act(() => useNoteView.getState().open(manualNote.path));
+        await screen.findByText('hand-written');
+        render(<FocusShortcuts />);
+      } else {
+        render(
+          withQuery(
+            <>
+              <FocusShortcuts />
+              <NoteView />
+            </>,
+          ),
+        );
+        act(() => useNoteView.getState().open(manualNote.path));
+        await screen.findByText('hand-written');
+      }
+
+      fireEvent.keyDown(window, { key: 'Escape' });
+      await waitFor(() => expect(useSettings.getState().focusMode).toBe(false));
+      expect(useNoteView.getState().path).toBe(manualNote.path);
+
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(useNoteView.getState().path).toBeNull();
+    },
+  );
 });

@@ -6,6 +6,8 @@ import { JotsScreen } from '../screens/jots';
 import { Sidebar } from '../components/Sidebar';
 import { useNavigation } from '../stores/navigation';
 import { toast } from '../stores/toast';
+import { useSettings } from '../stores/settings';
+import { useFocusSurfaces } from '../lib/focus-mode';
 import type { JotsPage, Note, AutoRouteResponse, Project, Connector } from '../../shared/api-types';
 
 const apiRequest = vi.fn();
@@ -593,5 +595,51 @@ describe('JotsScreen conflict navigation guard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'today' }));
     expect(useNavigation.getState().active).toBe('today');
     expect(screen.queryByText(/my tail/)).toBeNull();
+  });
+});
+
+describe('JotsScreen focus mode', () => {
+  beforeEach(() => {
+    useSettings.setState({ focusMode: false });
+    useFocusSurfaces.setState({ count: 0 });
+    apiRequest.mockImplementation(
+      withConnectors(async (_m, path) => {
+        if (path.includes('source=manual')) return { ok: true, status: 200, data: page };
+        return { ok: true, status: 200, data: detail };
+      }),
+    );
+  });
+
+  afterEach(() => {
+    useSettings.setState({ focusMode: false });
+    useFocusSurfaces.setState({ count: 0 });
+  });
+
+  it('the focus button turns focus mode on', async () => {
+    render(withQuery(<JotsScreen />));
+    await waitFor(() => expect(screen.getByText(/full body here/)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'focus mode (⌘ .)' }));
+    await waitFor(() => expect(useSettings.getState().focusMode).toBe(true));
+  });
+
+  it('hides the tree, search, footer, backlinks and toolbar; exit restores them', async () => {
+    useSettings.setState({ focusMode: true });
+    render(withQuery(<JotsScreen />));
+    await waitFor(() => expect(screen.getByText(/full body here/)).toBeInTheDocument());
+
+    expect(screen.queryByPlaceholderText('search jots…')).toBeNull();
+    expect(screen.queryByRole('region', { name: 'backlinks' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'bold' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'delete' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'jots' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'history' })).toBeNull();
+    expect(screen.getByTestId('rich-markdown-editor')).toHaveAttribute('data-focus', 'on');
+
+    fireEvent.click(screen.getByRole('button', { name: 'exit focus mode' }));
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText('search jots…')).toBeInTheDocument(),
+    );
+    expect(screen.getByRole('button', { name: 'bold' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'history' })).toBeInTheDocument();
   });
 });

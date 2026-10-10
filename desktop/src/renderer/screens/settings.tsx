@@ -33,6 +33,13 @@ import { ApiError } from '../lib/api/client';
 import { formatRelativeTime } from '../lib/format';
 import { HOTKEYS, format as formatShortcut } from '../lib/shortcuts';
 import { APP_VERSION } from '../lib/version';
+import { shortcutLabel } from '../lib/editor-shortcuts';
+import {
+  isSpeechSupported,
+  pickVoice,
+  previewVoice,
+  useSpeechVoices,
+} from '../lib/read-aloud/voices';
 import { fromSidecarProvider } from '../../shared/llm-provider';
 import type {
   FolderStructure,
@@ -61,6 +68,7 @@ async function trySet<K extends keyof Settings>(
 
 type SectionId =
   | 'display'
+  | 'editor'
   | 'vault'
   | 'search'
   | 'ai-provider'
@@ -75,6 +83,7 @@ type SectionId =
 
 const SECTIONS: Array<{ id: SectionId; label: string; icon: string }> = [
   { id: 'display', label: 'display', icon: 'sun' },
+  { id: 'editor', label: 'editor', icon: 'pen-line' },
   { id: 'vault', label: 'vault', icon: 'hard-drive' },
   { id: 'search', label: 'search index', icon: 'search' },
   { id: 'ai-provider', label: 'AI provider', icon: 'cpu' },
@@ -115,6 +124,7 @@ export function SettingsScreen() {
         </nav>
         <div className="mx-auto max-w-[720px] overflow-y-auto px-8 py-6">
           {section === 'display' && <DisplaySettings />}
+          {section === 'editor' && <EditorSettings />}
           {section === 'vault' && <VaultSettings />}
           {section === 'search' && <SearchIndexSettings />}
           {section === 'ai-provider' && <AiProviderSettings />}
@@ -133,6 +143,103 @@ export function SettingsScreen() {
           {section === 'about' && <AboutSettings />}
         </div>
       </div>
+    </div>
+  );
+}
+
+const kbdClass =
+  'rounded-sm border border-hairline-2 bg-vellum px-[10px] py-1 font-mono text-11 text-ink-0';
+
+export function EditorSettings() {
+  const voiceUri = useSettings((s) => s.readAloudVoice);
+  const rate = useSettings((s) => s.readAloudRate);
+  const setSetting = useSettings((s) => s.set);
+  const voices = useSpeechVoices();
+  const supported = isSpeechSupported();
+  // Only claim "missing" once voices have loaded; they arrive asynchronously.
+  const missing =
+    voiceUri !== '' && voices.length > 0 && !voices.some((v) => v.voiceURI === voiceUri);
+  return (
+    <div>
+      <SectionHeader title="editor" sub="focus mode and read-aloud for jots and notes." />
+      <SettingRow
+        label="focus mode"
+        sub="hide everything but the page you're writing. esc leaves."
+        control={<kbd className={kbdClass}>{shortcutLabel('focus')}</kbd>}
+      />
+      {supported ? (
+        <>
+          <SettingRow
+            label="read aloud"
+            sub="reads the selection, or from the cursor to the end."
+            control={<kbd className={kbdClass}>{shortcutLabel('readAloud')}</kbd>}
+          />
+          <SettingRow
+            label="read-aloud voice"
+            sub={
+              missing
+                ? 'the chosen voice is no longer installed — using auto.'
+                : 'system voices, offline. auto matches the note language — afrikaans notes use an afrikaans voice when one is installed.'
+            }
+            control={
+              <select
+                aria-label="read-aloud voice"
+                className={selectClass}
+                value={missing ? '' : voiceUri}
+                onChange={(e) => void trySet(setSetting, 'readAloudVoice', e.target.value)}
+              >
+                <option value="">auto (match note language)</option>
+                {voices.map((v) => (
+                  <option key={v.voiceURI} value={v.voiceURI}>
+                    {v.name} — {v.lang}
+                  </option>
+                ))}
+              </select>
+            }
+          />
+          <SettingRow
+            label="read-aloud speed"
+            sub={`${rate.toFixed(1)}×`}
+            control={
+              <input
+                type="range"
+                aria-label="read-aloud speed"
+                min={0.5}
+                max={2}
+                step={0.1}
+                value={rate}
+                onChange={(e) =>
+                  void trySet(
+                    setSetting,
+                    'readAloudRate',
+                    Math.round(Number(e.target.value) * 10) / 10,
+                  )
+                }
+              />
+            }
+          />
+          <SettingRow
+            label="preview"
+            sub="hear the voice at this speed."
+            control={
+              <Btn
+                variant="secondary"
+                size="sm"
+                icon={<Lucide name="volume-2" size={12} />}
+                onClick={() => previewVoice(pickVoice(voices, voiceUri, null), rate)}
+              >
+                play sample
+              </Btn>
+            }
+          />
+        </>
+      ) : (
+        <SettingRow
+          label="read aloud"
+          sub="speech isn't available on this system, so the read button is hidden."
+          control={<Pill>unavailable</Pill>}
+        />
+      )}
     </div>
   );
 }

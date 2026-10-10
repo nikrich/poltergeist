@@ -27,6 +27,7 @@ import { OnboardingScreen } from './screens/onboarding';
 import { PluginsScreen, useActivePlugins } from './screens/plugins';
 import { PluginHost } from './components/PluginHost';
 import { PanelError } from './components/PanelError';
+import { useFocusActive, useFocusModeShortcuts } from './lib/focus-mode';
 
 function PluginRoute({ id }: { id: string }) {
   const plugins = useActivePlugins();
@@ -44,6 +45,8 @@ export default function App() {
   const sidecarStatus = useSidecar((s) => s.status);
   const setReady = useSidecar((s) => s.setReady);
   const setFailed = useSidecar((s) => s.setFailed);
+  const focusActive = useFocusActive();
+  useFocusModeShortcuts();
 
   useEffect(() => {
     hydrate();
@@ -128,7 +131,7 @@ export default function App() {
     <WindowChrome>
       <UpdateBanner />
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        <Sidebar />
+        {!focusActive && <Sidebar />}
         <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {active === 'today' && <TodayScreen />}
           {active === 'activity' && <ActivityScreen />}
@@ -148,7 +151,7 @@ export default function App() {
           )}
         </main>
       </div>
-      <StatusBar />
+      {!focusActive && <StatusBar />}
       <Toaster />
       <NoteView />
     </WindowChrome>
