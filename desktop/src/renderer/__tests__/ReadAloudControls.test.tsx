@@ -122,11 +122,15 @@ describe('ReadAloudControls', () => {
     expect(synth.texts()).toEqual(['Beta two.', 'Gamma three.']);
   });
 
-  it('auto voice picks an Afrikaans voice for an Afrikaans note', () => {
-    synth.voices = [fakeVoice('Samantha', 'en-US', { default: true }), fakeVoice('Afrikaans', 'af-ZA')];
+  it('auto voice reads every note in English, never the default-flagged novelty voice', () => {
+    synth.voices = [
+      fakeVoice('Albert', 'en-US', { default: true }),
+      fakeVoice('Afrikaans', 'af-ZA'),
+      fakeVoice('Tessa', 'en-ZA'),
+    ];
     renderEditor('Ek het die vergadering bygewoon en ons sal more weer praat.');
     fireEvent.click(readButton());
-    expect(synth.last?.voice?.lang).toBe('af-ZA');
+    expect(synth.last?.voice?.name).toBe('Tessa');
   });
 
   it('an explicit voice and rate from settings win', () => {
