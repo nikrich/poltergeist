@@ -4,7 +4,7 @@ import { EditorContent, useEditor } from '@tiptap/react';
 import { CellSelection } from '@tiptap/pm/tables';
 import { buildEditorExtensions } from '../lib/editor/extensions';
 import { onGb } from '../lib/editor/events';
-import { clipboardPayload, getMarkdown, rangeMarkdown } from '../lib/editor/markdown';
+import { clipboardPayload, getMarkdown, selectionMarkdown } from '../lib/editor/markdown';
 import { insertImageFile } from '../lib/editor/insert-image';
 import { noteTarget } from '../lib/editor/link-suggest';
 import {
@@ -422,8 +422,7 @@ export function RichMarkdownEditor({
       getSelectionMarkdown(): string {
         // Source mode has no selection concept we can extract here.
         if (!editor || editor.isDestroyed || mode !== 'rich') return '';
-        const { from, to, empty } = editor.state.selection;
-        return empty ? '' : rangeMarkdown(editor, from, to);
+        return selectionMarkdown(editor);
       },
       replaceWith(md: string, target: 'selection' | 'doc'): void {
         if (editor && !editor.isDestroyed) clearAiSuggestion(editor);

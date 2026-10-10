@@ -710,11 +710,11 @@ export function useDeleteJot() {
 export function useUpdateNoteByPath() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: UpdateNoteBodyRequest & { ifMatch?: string | null }) =>
+    mutationFn: (vars: UpdateNoteBodyRequest & { ifMatch?: string | null; actor?: WriteActor }) =>
       patch<UpdateNoteBodyResponse>(
         '/v1/notes/body',
         { path: vars.path, body: vars.body },
-        { ifMatch: vars.ifMatch },
+        { ifMatch: vars.ifMatch, ...(vars.actor ? { actor: vars.actor } : {}) },
       ),
     onSuccess: (res) => {
       reportHistoryHealth(res);

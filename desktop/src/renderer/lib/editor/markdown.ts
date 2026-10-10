@@ -1,5 +1,6 @@
 import type { Editor } from '@tiptap/core';
-import { DOMSerializer } from '@tiptap/pm/model';
+import { DOMSerializer, Fragment } from '@tiptap/pm/model';
+import { TextSelection } from '@tiptap/pm/state';
 
 /** Shape of tiptap-markdown's editor.storage.markdown (set in onBeforeCreate;
  * verified against the 0.8.10 dist source). */
@@ -44,6 +45,25 @@ export function rangeMarkdown(editor: Editor, from: number, to: number): string 
   const docNode = editor.schema.topNodeType.createAndFill(null, slice.content);
   if (docNode) return restoreWikilinks(mdStorage(editor).serializer.serialize(docNode));
   return editor.state.doc.textBetween(from, to, '\n');
+}
+
+/** Markdown for the current selection. A text selection serialises its
+ * document range; any other selection (a table CellSelection, a node) uses
+ * selection.content(), so a cell rectangle yields only the selected cells
+ * rather than every cell between the first and the last. */
+export function selectionMarkdown(editor: Editor): string {
+  const { selection } = editor.state;
+  if (selection.empty) return '';
+  if (selection instanceof TextSelection) return rangeMarkdown(editor, selection.from, selection.to);
+  // A CellSelection's content is bare table rows: re-wrap them (in a table)
+  // so the slice can form a doc.
+  let content = selection.content().content;
+  const first = content.firstChild;
+  const wrapping = first ? editor.schema.topNodeType.contentMatch.findWrapping(first.type) : null;
+  for (const type of [...(wrapping ?? [])].reverse()) content = Fragment.from(type.create(null, content));
+  const docNode = editor.schema.topNodeType.createAndFill(null, content);
+  if (docNode) return restoreWikilinks(mdStorage(editor).serializer.serialize(docNode));
+  return editor.state.doc.textBetween(selection.from, selection.to, '\n');
 }
 
 export interface ClipboardPayload {

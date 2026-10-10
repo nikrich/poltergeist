@@ -97,6 +97,19 @@ export function DocsAssistPanel({ jotId, editorHandle, onAccept }: Props) {
           : 'draft'
         : 'polish';
 
+    // Selection-level actions show as an inline diff in the editor (spec A5:
+    // replaces the panel's proposal preview for selections).
+    if (
+      sel &&
+      editorHandle.current?.startInlineAssist?.({
+        mode: resolvedMode,
+        instruction: instruction.trim() || undefined,
+      })
+    ) {
+      setInstruction('');
+      return;
+    }
+
     const req = {
       mode: resolvedMode,
       instruction: instruction.trim() || undefined,
@@ -262,7 +275,7 @@ export function DocsAssistPanel({ jotId, editorHandle, onAccept }: Props) {
           and the jot-switch effect nulls the ref before its re-render too. */}
       {isIdle && !lastRequest.current && (
         <div className="text-12 text-ink-3">
-          select text in the editor to assist a specific passage, or use the actions above to
+          select text to get an inline suggestion in the editor, or use the actions above to
           process the whole document.
         </div>
       )}
