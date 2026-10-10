@@ -32,12 +32,14 @@ import {
 import type { Note } from '../../shared/api-types';
 import { toast } from '../stores/toast';
 import { useNoteView } from '../stores/note-view';
+import { useGraphView } from '../stores/graph-view';
 import { useDocsAssist } from '../stores/docs-assist';
 
 export function JotsScreen() {
   const knownContexts = useContexts().data?.contexts ?? [];
   const [q, setQ] = useState('');
   const openNote = useNoteView((s) => s.open);
+  const showInGraph = useGraphView((s) => s.showInGraph);
   const list = useJots({ q: q || undefined });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showConfluenceDialog, setShowConfluenceDialog] = useState(false);
@@ -413,6 +415,18 @@ export function JotsScreen() {
                   )}
                   {selectedItem?.routingStatus && <Pill>{selectedItem.routingStatus}</Pill>}
                   <div className="ml-auto flex items-center gap-2">
+                    {selectedItem && (
+                      <Btn
+                        variant="ghost"
+                        size="sm"
+                        icon={<Lucide name="network" size={13} />}
+                        onClick={() => {
+                          if (confirmLeave(guardRef)) showInGraph(selectedItem.path);
+                        }}
+                      >
+                        show in graph
+                      </Btn>
+                    )}
                     {selectedItem?.routingStatus !== 'routed' && (
                       <Btn
                         variant="ghost"

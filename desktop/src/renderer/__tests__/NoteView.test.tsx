@@ -7,6 +7,8 @@ import { NoteView } from '../components/NoteView';
 import { useNoteView } from '../stores/note-view';
 import { useSettings } from '../stores/settings';
 import { useFocusModeShortcuts, useFocusSurfaces } from '../lib/focus-mode';
+import { useGraphView } from '../stores/graph-view';
+import { useNavigation } from '../stores/navigation';
 import type { Note } from '../../shared/api-types';
 
 const apiRequest = vi.fn();
@@ -16,6 +18,7 @@ beforeEach(() => {
   useNoteView.getState().close();
   useSettings.setState({ focusMode: false });
   useFocusSurfaces.setState({ count: 0 });
+  useGraphView.getState().reset();
   window.gb = {
     ...window.gb,
     api: { request: apiRequest },
@@ -299,6 +302,7 @@ describe('NoteView', () => {
     expect(screen.getByTestId('focus-bar')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'close' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'history' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /show in graph/ })).toBeNull();
     expect(screen.queryByRole('region', { name: 'backlinks' })).toBeNull();
     expect(screen.getByTestId('rich-markdown-editor')).toHaveAttribute('data-focus', 'on');
 
@@ -325,6 +329,17 @@ describe('NoteView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'focus mode (⌘ .)' }));
     await waitFor(() => expect(useSettings.getState().focusMode).toBe(true));
     expect(await screen.findByTestId('focus-bar')).toBeInTheDocument();
+  });
+
+  it('"show in graph" closes the viewer and centres the graph on the note', async () => {
+    apiRequest.mockResolvedValue({ ok: true, data: manualNote });
+    render(withQuery(<NoteView />));
+    act(() => useNoteView.getState().open(manualNote.path));
+    await screen.findByText('hand-written');
+    fireEvent.click(screen.getByRole('button', { name: /show in graph/ }));
+    expect(useNoteView.getState().path).toBeNull();
+    expect(useGraphView.getState()).toMatchObject({ tab: 'graph', focus: manualNote.path });
+    expect(useNavigation.getState().active).toBe('vault');
   });
 });
 
