@@ -1088,3 +1088,110 @@ def test_b4_semantic_related_on_a_note_with_live_html_applies(vault):
     res = jobs.update_fields(rel, lambda _m: {"related": ["[[20-contexts/work/plan]]"]},
                              actor=worker_actor("semantic-refresh"), reason="related")
     assert res is not None and res.status == "applied"
+
+
+# ── Task 10 round 2: table rows, container-opening indented code, links ───
+
+# GFM splits a table row at "|" before code spans pair (C-A).
+TABLE_SPANS = [
+    (D, D + "\n| a | b |\n|---|---|\n| `x|" + X + "` | c |\n"),
+    (D, D + "\na | b\n--|--\n`x|" + X + "` | c\n"),
+    (D, D + "\n> | a | b |\n> |---|---|\n> | `x|" + X + "` | c |\n"),
+    (D, D + "\n- | a | b |\n  |---|---|\n  | `x|" + X + "` | c |\n"),
+    (D, D + "\n| a | b |\n|---|---|\n| ``x|" + X + "`` | c |\n"),
+    (D + "\n`x|" + X + "` | c\n", D + "\n| a | b |\n|---|---|\n`x|" + X + "` | c\n"),
+]
+
+
+@pytest.mark.parametrize("before,after", TABLE_SPANS)
+def test_a_code_span_a_table_row_splits_is_not_code(before, after):
+    _held(before, after)
+
+
+def test_a_table_split_span_through_the_writer_waits(vault):
+    after = D + "\n| a | b |\n|---|---|\n| `x|" + X + "` | c |\n"
+    res = write(NOTE, content=after, actor=ASSISTANT, base_etag=compute_etag(V1))
+    assert res.status == "pending"
+    assert (vault / NOTE).read_bytes() == V1
+
+
+@pytest.mark.parametrize("text", [
+    "\n| a | b |\n|---|---|\n| `x\\|" + X + "` | c |\n",  # an escaped pipe splits nothing
+    "\n| a | b |\n|---|---|\n| `<div>` | `Vec<T>` |\n",
+])
+def test_code_spans_in_table_cells_stay_code(text):
+    assert _md(text) == []
+
+
+# A line that opens a new container starts a new block: indented content in
+# it is code before, and a paragraph continuation once the container is
+# shared with the line above (I-A).
+CONTAINER_INDENTS = [
+    (D + "\nx\n\na\n>     " + X + "\n", D + "\nx\n\n> a\n>     " + X + "\n"),
+    (D + "\nx\n\na\n-     " + X + "\n", D + "\nx\n\n- a\n      " + X + "\n"),
+    (D + "\nx\n\na\n- >     " + X + "\n", D + "\nx\n\n- > a\n  >     " + X + "\n"),
+    ("---\nt: x\n...\nmore text\n  >     " + X + "\n",
+     "---\n>| a | b |\nt: x\nmore text\n  >     " + X + "\n"),
+    ("---\nt: 1\n---\n- > a\n  1. a\n\tmore text\n\t>     " + X + "\n    `\n",
+     "---\nt: 1\n---\n- > a\n`" + X + "`\n\t>     " + X + "\n    `\n"),
+]
+
+
+@pytest.mark.parametrize("before,after", CONTAINER_INDENTS)
+def test_indented_code_in_a_new_container_is_inert_before(before, after):
+    _held(before, after)
+
+
+# A link the browser reads inside raw text (here <textarea>, <style>) was not
+# live before (m-B).
+@pytest.mark.parametrize("before,after", [
+    (D + "\nx\n\na <textarea>\n\n[a](javascript:alert(1))\n", D + "\nx\n\na\n\n[a](javascript:alert(1))\n"),
+    ("---\nt: 1\n---\n  > a <style>\n  > [a](javascript:alert(1))\n",
+     "---\nt: 1\n---\n  > [a](javascript:alert(1))\n"),
+])
+def test_a_link_in_browser_raw_text_was_not_live(before, after):
+    assert risk.REASON_JS_URL in _held(before, after)
+
+
+@pytest.mark.parametrize("item", ["- [link {n}](https://example.com/{n})", "- [open {n}](x{n}"])
+def test_a_long_list_of_links_is_judged_quickly(item):
+    """I-P: link handling stays near-linear (a 10k-link index note)."""
+    import time
+
+    body = D + "\n" + "\n".join(item.format(n=n) for n in range(10_000)) + "\n"
+    start = time.perf_counter()
+    reasons = risk.evaluate(_p(before=body.encode(), after=(body + "more\n").encode()))
+    assert reasons == []
+    assert time.perf_counter() - start < 2.0
+
+
+# markdown-it's backtick cache: once one opener finds no closer, a later
+# opener may be taken for text although its closer follows (found while
+# fixing round 2). Spans then count only where every run pairs on its line.
+BACKTICK_CACHE = [
+    (D, D + "\nx ```` x `y```z` ```" + X + "```\n"),
+    (D + "\n![``` a`b...    ```<pre\n[a]</script></pre>" + X + "\n|---|</textarea>![---1. \n"
+     "--></textarea>``` a`b<style>\n-->\n",
+     D + "\n[a]</script></pre>" + X + "\n|---|</textarea>![---1. \n"
+     "--></textarea>``` a`b<style>\n-->\n"),
+    # a backtick inside a tag pairs with nothing; the span after it is code
+    (D + '\n<div>\n\n<span title="`"> `' + X + "`\n", D + '\n<div>\n<span title="`"> `' + X + "`\n"),
+]
+
+
+@pytest.mark.parametrize("before,after", BACKTICK_CACHE)
+def test_spans_markdown_it_may_pair_differently_are_not_code(before, after):
+    _held(before, after)
+
+
+@pytest.mark.parametrize("before,after", [
+    # markdown-it tries tables first: this "fence" is a table header
+    (None, "```](\\| a |\n|---|\n-->](\n \">``\\)" + X + "| a |\n|---|\n```\n"),
+    # "\\`" is an escaped backtick: the run after it opens a span to the next line
+    ("\\``<a title=\"<span>\t\n***" + X + "` x%%  ~~~\n", "***" + X + "` x%%  ~~~\n"),
+    # markdown-it reads a link before its backticks: these runs are its destination
+    (None, "\\`![](````\t)%%" + X + "%%  ````]\">\">\n"),
+    (None, "](`\\`[](``\\`)](" + X + "~~~``\n"),
+])
+def test_table_headers_and_escaped_backticks_are_read_as_markdown_it_does(before, after):
+    _held(before, after)

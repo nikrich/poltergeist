@@ -108,6 +108,18 @@ _FENCE_SHAPE_RE = re.compile(rf"({_PREFIX})(?:(`{{3,}})[^`]*|(~{{3,}}).*)$")
 _FENCE_CLOSE_RE = re.compile(r" {0,3}(`{3,}|~{3,})[ \t]*$")
 _NESTED_CLOSE_RE = re.compile(r"( *)(`{3,}|~{3,})[ \t]*$")
 _LIST_MARKER_RE = re.compile(r"[-+*]|\d{1,9}[.)]")
+# A GFM table delimiter row. markdown-it tries tables before fences and HTML
+# blocks: a line above one may be a table header instead.
+_DELIMITER_ROW_RE = re.compile(r"[ \t]*[|:\-][|:\- \t]*$")
+
+
+def _header_row(lines: list[str], i: int) -> bool:
+    """Line ``i`` may be a table's header row: it holds a "|" and the next
+    line, inside its containers, is a delimiter row."""
+    if i + 1 >= len(lines) or "|" not in lines[i]:
+        return False
+    nxt = lines[i + 1][_PREFIX_RE.match(lines[i + 1]).end():]
+    return "-" in nxt and _DELIMITER_ROW_RE.match(nxt) is not None
 
 # CommonMark HTML blocks 1-5: (start, end, start that every renderer reads as
 # a block). markdown-it only takes an upper-case declaration for type 4.
@@ -154,12 +166,26 @@ _WINDOW = 4096
 _UNKNOWN = -1
 
 
+# What ends a comment, processing instruction, CDATA section or declaration.
+_TERMINATORS = (("<!--", "-->", 2), ("<?", "?>", 2), ("<![CDATA[", "]]>", 9), ("<!", ">", 2))
+
+
+@lru_cache(maxsize=65536)
 def _inline_html_end(text: str, pos: int) -> int | None:
     """Where the inline HTML starting at ``pos`` ends; ``_UNKNOWN`` when it
     may run past the window; None when none starts there."""
-    m = _INLINE_HTML_RE.match(text, pos, pos + _WINDOW)
-    if m is not None:
-        return m.end()
+    for start, end, skip in _TERMINATORS:
+        if text.startswith(start, pos):
+            if text.find(end, pos + skip, pos + _WINDOW) < 0:
+                break  # it can't end in the window: skip the regex
+            m = _INLINE_HTML_RE.match(text, pos, pos + _WINDOW)
+            if m is not None:
+                return m.end()
+            break
+    else:
+        m = _INLINE_HTML_RE.match(text, pos, pos + _WINDOW)
+        if m is not None:
+            return m.end()
     if pos + _WINDOW < len(text) and _INLINE_START_RE.match(text, pos):
         return _UNKNOWN
     return None
@@ -304,7 +330,7 @@ def _walk(lines: list[str]) -> _Walk:
                 block = None
         elif shape is not None and lost is None:
             prefix, run = shape.group(1), shape.group(2) or shape.group(3)
-            if region is not None or "\t" in prefix:
+            if region is not None or "\t" in prefix or _header_row(lines, i):
                 lost = walk.kind[i] = _AMBIGUOUS
             elif prefix:
                 walk.kind[i] = _NESTED
@@ -316,7 +342,8 @@ def _walk(lines: list[str]) -> _Walk:
             else:
                 lost = walk.kind[i] = _UNCLOSED
         else:
-            start = _html_start(line, lost is None and region is None, after_blank)
+            start = _html_start(line, lost is None and region is None and not _header_row(lines, i),
+                                after_blank)
             if start is not None:
                 end, sure, stays_open = start
                 if region is not None and lost is None:
@@ -331,6 +358,8 @@ def _walk(lines: list[str]) -> _Walk:
 # ── code spans ────────────────────────────────────────────────────────────
 
 _RUN_RE = re.compile(r"`+")
+# A "|" a GFM table row splits cells at (an even run of backslashes before it).
+_TABLE_PIPE_RE = re.compile(r"(?<!\\)(?:\\\\)*\|")
 Ranges = list[tuple[int, int]]
 
 
@@ -396,108 +425,155 @@ def _paragraph_text(lines: list[str], seg: list[int]) -> tuple[str, list[int]]:
     return "\n".join(parts), offsets
 
 
-def _strict_inert(lines: list[str], walk: _Walk) -> tuple[list[Ranges], list[Ranges]]:
-    """Per line: code spans that are code in every reading, and escapes and
-    safe autolinks (inert in every reading).
+class _Tails:
+    """Where links' tails (destination, title) may lie in a segment's text."""
 
-    A span counts while nothing earlier in its paragraph can change how the
-    backticks pair: once a run could pair with one on a later line, or sits in
-    raw HTML that spans lines, no later span in the segment counts (C1)."""
-    spans: list[Ranges] = [[] for _ in lines]
-    other: list[Ranges] = [[] for _ in lines]
-    for seg in _segments(lines, walk):
-        text, offsets = _paragraph_text(lines, seg)
-        later = _later_runs(lines, seg)
-        sure = True
-        for k, i in enumerate(seg):
-            line = lines[i]
-            pos = 0
-            while pos < len(line):
-                c = line[pos]
-                if c == "\\" and pos + 1 < len(line):
-                    other[i].append((pos, pos + 2))
-                    pos += 2
-                    continue
-                if c == "<":
-                    link = _safe_autolink(line, pos)
-                    if link is not None:
-                        other[i].append((pos, link))
-                        pos = link
-                        continue
-                    at = offsets[k] + pos
-                    end = _inline_html_end(text, at) if sure else None
-                    if end is not None:  # backticks in a tag pair with nothing
-                        if end == _UNKNOWN or "`" in text[at:end]:
-                            sure = False
-                        else:
-                            pos += min(end - at, len(line) - pos)
-                            continue
-                elif c == "`" and sure:
-                    end = _RUN_RE.match(line, pos).end()
-                    close = _close_run(line, end, end - pos)
-                    if close is not None:
-                        spans[i].append((pos, close))
-                        pos = close
-                        continue
-                    if end - pos in later[k]:
-                        sure = False
-                    pos = end
-                    continue
-                pos += 1
-    return spans, other
+    def __init__(self, text: str) -> None:
+        self.ranges: Ranges = []
+        at = text.find("](")
+        while at >= 0:
+            m = _LINK_TAIL_RE.match(text, at, at + _WINDOW)
+            if m is not None:
+                self.ranges.append((m.start(), m.end()))
+            elif at + _WINDOW < len(text):
+                self.ranges.append((at, len(text)))  # past the window: assume a link
+                break
+            at = text.find("](", at + 2)
+        self.starts = [a for a, _b in self.ranges]
+        self.reach: list[int] = []  # reach[k]: furthest end of ranges[:k + 1]
+        far = -1
+        for _a, b in self.ranges:
+            far = max(far, b)
+            self.reach.append(far)
+
+    def holds(self, x: int) -> bool:
+        k = bisect_right(self.starts, x) - 1
+        return k >= 0 and self.reach[k] > x
 
 
-def _lenient_inert(lines: list[str], walk: _Walk) -> list[Ranges]:
-    """Per line: whatever some pairing of the paragraph's backtick runs takes
-    for code, plus escapes and safe autolinks."""
-    out: list[Ranges] = [[] for _ in lines]
-    for seg in _segments(lines, walk):
-        later = _later_runs(lines, seg)
-        carried: set[int] = set()  # run lengths of spans that may still be open
-        for k, i in enumerate(seg):
-            still_open: set[int] = set()
-            for state in {0} | carried:  # 0: no span open (a paragraph may start here)
-                _lenient_line(lines[i], state, later[k], out[i], still_open)
-            carried = still_open
-    return out
-
-
-def _lenient_line(line: str, state: int, later: set[int], ranges: Ranges,
-                  still_open: set[int]) -> None:
+def _plain_spans(line: str, text: str, offset: int, tails: _Tails,
+                 ) -> tuple[Ranges, Ranges, bool]:
+    """Code spans paired within ``line`` read on its own (left to right, as
+    CommonMark does), its escapes and safe autolinks, and whether the line is
+    *simple*: every backtick run pairs on the line, no span holds a "|" a
+    table row would split it at, and no run sits in inline HTML or in a
+    link's destination or title (markdown-it reads links first). ``text`` is
+    the line's segment and ``offset`` maps a line position into it."""
+    spans: Ranges = []
+    other: Ranges = []
+    simple = True
     pos = 0
-    if state:
-        close = _close_run(line, 0, state)
-        if close is None:
-            ranges.append((0, len(line)))
-            still_open.add(state)
-            return
-        ranges.append((0, close))
-        pos = close
     while pos < len(line):
         c = line[pos]
         if c == "\\" and pos + 1 < len(line):
-            ranges.append((pos, pos + 2))
+            other.append((pos, pos + 2))
             pos += 2
             continue
         if c == "<":
             link = _safe_autolink(line, pos)
             if link is not None:
-                ranges.append((pos, link))
+                other.append((pos, link))
                 pos = link
                 continue
+            at = offset + pos
+            end = _inline_html_end(text, at)
+            if end is not None:  # backticks in a tag pair with nothing
+                if end == _UNKNOWN or "`" in text[at:end]:
+                    simple = False
+                else:
+                    pos += min(end - at, len(line) - pos)
+                    continue
         elif c == "`":
             end = _RUN_RE.match(line, pos).end()
             close = _close_run(line, end, end - pos)
-            if close is not None:
-                ranges.append((pos, close))
+            if (close is not None and _TABLE_PIPE_RE.search(line, pos, close) is None
+                    and not tails.holds(offset + pos) and not tails.holds(offset + close - 1)):
+                spans.append((pos, close))
                 pos = close
                 continue
-            if end - pos in later:  # it may open a span closed further down
-                ranges.append((pos, len(line)))
-                still_open.add(end - pos)
+            simple = False
             pos = end
             continue
         pos += 1
+    return spans, other, simple
+
+
+def _strict_inert(lines: list[str], walk: _Walk) -> tuple[list[Ranges], list[Ranges]]:
+    """Per line: code spans that are code in every reading, and escapes and
+    safe autolinks (inert in every reading).
+
+    Spans count only in a segment where every line is simple (see
+    _plain_spans). Anything else can re-pair them: a run that may pair with
+    one on a later line (C1), a table row splitting a span at "|" (C-A), a
+    backtick inside raw HTML, or markdown-it's backtick cache, which after
+    one opener finds no closer may take a later opener for text even though
+    its closer follows (``x ```` `y```z` ```<img>```)."""
+    spans: list[Ranges] = [[] for _ in lines]
+    other: list[Ranges] = [[] for _ in lines]
+    for seg in _segments(lines, walk):
+        text, offsets = _paragraph_text(lines, seg)
+        tails = _Tails(text)
+        found = [_plain_spans(lines[i], text, offsets[k], tails) for k, i in enumerate(seg)]
+        simple = all(ok for _s, _o, ok in found)
+        for i, (line_spans, line_other, _ok) in zip(seg, found, strict=True):
+            other[i] = line_other
+            if simple:
+                spans[i] = line_spans
+    return spans, other
+
+
+def _lenient_inert(lines: list[str], walk: _Walk) -> list[Ranges]:
+    """Per line: whatever some pairing of the paragraph's backtick runs takes
+    for code, plus escapes and safe autolinks. In a simple segment the
+    pairing is the plain one; otherwise any run may be text or open a span
+    closed by the next run of its length (every reading, markdown-it's
+    included, is one of these)."""
+    out: list[Ranges] = [[] for _ in lines]
+    for seg in _segments(lines, walk):
+        text, offsets = _paragraph_text(lines, seg)
+        tails = _Tails(text)
+        found = [_plain_spans(lines[i], text, offsets[k], tails) for k, i in enumerate(seg)]
+        if all(ok for _s, _o, ok in found):
+            for i, (line_spans, line_other, _ok) in zip(seg, found, strict=True):
+                out[i] = line_spans + line_other
+            continue
+        later = _later_runs(lines, seg)
+        open_states: set[int] = set()  # run lengths of spans that may still be open
+        for k, i in enumerate(seg):
+            out[i] = found[k][1] + _any_pairing(lines[i], open_states, later[k])
+    return out
+
+
+def _any_pairing(line: str, open_states: set[int], later: set[int]) -> Ranges:
+    """What may be code on ``line`` when any run may open a span or stay
+    text; updates ``open_states`` to the spans that may run past it."""
+    runs = [(m.start(), m.end()) for m in _RUN_RE.finditer(line)]
+    after: list[set[int]] = [set(later)]  # after[r]: run lengths after run r on
+    for a, b in reversed(runs):
+        after.append(after[-1] | {b - a})
+    after.reverse()
+    states = {0} | open_states  # 0: no span open (a paragraph may start here)
+    ranges: Ranges = []
+    pos = 0
+    for r, (a, b) in enumerate(runs):
+        if len(states) > 1 or 0 not in states:
+            ranges.append((pos, a))
+        size, nxt = b - a, set()
+        slashes = a - len(line[:a].rstrip("\\"))
+        opens = size - slashes % 2  # outside code, "\`" is an escaped backtick
+        for state in states:
+            if state == 0:
+                nxt.add(0)
+                if opens and opens in after[r + 1]:
+                    nxt.add(opens)
+            else:
+                nxt.add(0 if state == size else state)
+        states, pos = nxt, a
+    if len(states) > 1 or 0 not in states:
+        ranges.append((pos, len(line)))
+    open_states.clear()
+    open_states.update(states - {0})
+    return ranges
 
 
 def _blank(text: str, ranges: Ranges) -> str:
@@ -594,43 +670,49 @@ _LABEL_START_RE = re.compile(r"(?<![!\\])\[[^\[\]\n]*$")
 
 
 def _link_hidden(lines: list[str], walk: _Walk, code: list[Ranges],
-                 ) -> tuple[list[Ranges], list[int]]:
+                 ) -> tuple[list[Ranges], list[list[int]]]:
     """Per line: what a link's destination or title, or an image's alt text,
-    may hide (markdown-it escapes both); and the script links that surely
-    render: a whole link on one line, outside code and any other link."""
+    may hide (markdown-it escapes both); and where the script links that
+    surely render start: a whole link on one line, outside code and any other
+    link. Near-linear in the segment: ranges are sorted and merged."""
     hidden_by_line: list[Ranges] = [[] for _ in lines]
-    links = [0] * len(lines)
+    links: list[list[int]] = [[] for _ in lines]
     for seg in _segments(lines, walk):
         text, offsets = _paragraph_text(lines, seg)
         hidden: Ranges = []
-        tails: list[re.Match[str] | int] = []
+        tails: list[re.Match[str]] = []
+        tail_starts: list[int] = []
         at = text.find("](")
         while at >= 0:
             m = _LINK_TAIL_RE.match(text, at, at + _WINDOW)
             if m is not None:
                 hidden.append((m.start(), m.end()))
                 tails.append(m)
+                tail_starts.append(at)
             elif at + _WINDOW < len(text):
                 hidden.append((at, len(text)))  # past the window: assume a link
-                tails.append(at)
+                tail_starts.append(at)
+                break  # hidden to the segment's end: nothing after can count
             at = text.find("](", at + 2)
-        starts = [t if isinstance(t, int) else t.start() for t in tails]
         at = text.find("![")
         while at >= 0:
-            k = bisect_left(starts, at)
-            if k < len(starts):
-                hidden.append((at, starts[k]))
+            k = bisect_left(tail_starts, at)
+            if k < len(tail_starts):
+                hidden.append((at, tail_starts[k]))
             at = text.find("![", at + 2)
-        for start, end in hidden:
-            for kk, i in enumerate(seg):
-                lo, hi = max(start - offsets[kk], 0), min(end - offsets[kk], len(lines[i]))
-                if lo < hi:
-                    hidden_by_line[i].append((lo, hi))
+        hidden.sort()
+        _spread(_merged(hidden), seg, offsets, lines, hidden_by_line)
+        # reach[k]: the furthest end of the ranges starting before starts[k]
+        starts = [a for a, _b in hidden]
+        reach, far = [], -1
+        for _a, b in hidden:
+            reach.append(far)
+            far = max(far, b)
         content_starts = [offsets[k] + _PREFIX_RE.match(lines[i]).end() for k, i in enumerate(seg)]
         for m in tails:
-            if isinstance(m, int) or "\n" in m.group() or any(
-                    a < m.start() < b for a, b in hidden):
-                continue
+            k = bisect_left(starts, m.start())
+            if "\n" in m.group() or (k < len(reach) and reach[k] > m.start()):
+                continue  # spans lines, or inside another link's tail or alt text
             kk = bisect_right(content_starts, m.start()) - 1
             i, pos = seg[kk], m.start() - offsets[kk]
             label = _LABEL_START_RE.search(lines[i], 0, pos)
@@ -638,8 +720,33 @@ def _link_hidden(lines: list[str], walk: _Walk, code: list[Ranges],
             if (label is not None and _BAD_VALUE_RE.match(dest)
                     and not any(a < pos + len(m.group()) and label.start() < b
                                 for a, b in code[i])):
-                links[i] += 1
+                links[i].append(label.start())
     return hidden_by_line, links
+
+
+def _merged(ranges: Ranges) -> Ranges:
+    """Sorted ``ranges`` with overlapping ones joined."""
+    out: Ranges = []
+    for a, b in ranges:
+        if out and a <= out[-1][1]:
+            out[-1] = (out[-1][0], max(out[-1][1], b))
+        else:
+            out.append((a, b))
+    return out
+
+
+def _spread(ranges: Ranges, seg: list[int], offsets: list[int], lines: list[str],
+            by_line: list[Ranges]) -> None:
+    """Map disjoint, sorted segment ranges onto its lines."""
+    line_starts = [offsets[k] + _PREFIX_RE.match(lines[i]).end() for k, i in enumerate(seg)]
+    for start, end in ranges:
+        for kk in range(max(bisect_right(line_starts, start) - 1, 0), len(seg)):
+            i = seg[kk]
+            if line_starts[kk] >= end:
+                break
+            lo, hi = max(start - offsets[kk], 0), min(end - offsets[kk], len(lines[i]))
+            if lo < hi:
+                by_line[i].append((lo, hi))
 
 
 # One container marker (and the single space that belongs to it).
@@ -666,6 +773,16 @@ def _indented_code(line: str) -> bool:
         rest = rest[m.end():]
 
 
+def _container_markers(line: str) -> tuple[str, ...]:
+    """The line's own container markers: ">" for a quote, "-" for any list item."""
+    out: list[str] = []
+    rest = line
+    while (m := _ONE_MARKER_RE.match(rest)) is not None and m.end():
+        out.append(">" if ">" in m.group() else "-")
+        rest = rest[m.end():]
+    return tuple(out)
+
+
 def _starts_paragraph_text(line: str) -> bool:
     """Surely paragraph text: a letter after container markers and at most 3 spaces."""
     rest = line
@@ -684,9 +801,15 @@ def _read_before(lines: list[str]) -> tuple[list[Counter[str]], _Walk]:
     definitions = _maybe_definitions(lines, walk)
     texts: list[str | None] = []  # None: inert
     para = False  # the line above is surely paragraph text
+    markers: tuple[str, ...] = ()  # the container markers of the line above
     for i, line in enumerate(lines):
+        # Indented content continues a paragraph only inside the same
+        # containers; a new quote or list item starts a block (I-A).
+        own = _container_markers(line)
+        continues = para and own == markers and "-" not in own
+        markers = own
         if walk.kind[i] != _TEXT or i in definitions or (
-                walk.block[i] is not True and not para and _indented_code(line)):
+                walk.block[i] is not True and not continues and _indented_code(line)):
             texts.append(None)
         elif walk.block[i]:
             texts.append(line)
@@ -711,8 +834,10 @@ def _read_before(lines: list[str]) -> tuple[list[Counter[str]], _Walk]:
             continue
         counts.append(_counts(_blank(text, inert[i]), cont=False))
         url_text = _decode(_blank(url[i], url_inert[i]))
+        # a link the browser reads as raw text or a comment counts for nothing (m-B)
+        surely = sum(1 for p in links[i] if not any(a <= p < b for a, b in inert[i]))
         counts[-1][JS_URL] = _tag_js_urls(url_text) + (
-            0 if walk.block[i] is not None else links[i] + len(_AUTOLINK_JS_URL_RE.findall(url_text)))
+            0 if walk.block[i] is not None else surely + len(_AUTOLINK_JS_URL_RE.findall(url_text)))
     return counts, walk
 
 
