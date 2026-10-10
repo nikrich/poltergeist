@@ -21,6 +21,9 @@ export interface Conflict {
   theirsEtag: string | null;
   /** theirs could not be re-read; keep theirs / view changes unavailable. */
   unread?: boolean;
+  /** `mine` holds an attributed write (docs Accept). Sticky until resolved, so
+   * keep mine is sent as that actor and the risk rules still apply (B3). */
+  actor?: WriteActor;
 }
 
 export interface GuardedSave {
@@ -40,8 +43,8 @@ export interface GuardedSave {
     perform: () => Promise<T>,
   ) => Promise<T>;
   /** The next save() is `actor`'s write (the docs panel's Accept), not a
-   * keystroke. Rides with that body through the queue and the auto-resolve
-   * resend; dropped if the save lands in a conflict (the user decides then). */
+   * keystroke. Rides with that body through the queue, the auto-resolve
+   * resend and a conflict (keep mine is sent as `actor`). */
   attributeNext: (actor: WriteActor) => void;
 }
 
@@ -114,7 +117,13 @@ export function useGuardedSave(
     } catch (err) {
       onErrorRef.current?.(asError(err));
       // Keystrokes may have landed in the conflict while we awaited.
-      setConflict({ mine: conflictRef.current?.mine ?? mine, theirs: '', theirsEtag: null, unread: true });
+      setConflict({
+        mine: conflictRef.current?.mine ?? mine,
+        theirs: '',
+        theirsEtag: null,
+        unread: true,
+        actor: conflictRef.current?.actor ?? actor,
+      });
       return false;
     }
     if (sameBody(latest.body, mine)) {
@@ -142,6 +151,7 @@ export function useGuardedSave(
       mine: conflictRef.current?.mine ?? mine,
       theirs: latest.body,
       theirsEtag: latest.etag ?? null,
+      actor: conflictRef.current?.actor ?? actor,
     });
     return false;
   };
@@ -168,19 +178,23 @@ export function useGuardedSave(
       // Text queued behind a held change still contains it. Saving that as a
       // keystroke would write the change without approval, so drop it and
       // put the editor back on what is on disk.
+      nextActorRef.current = null;
       onHeldRef.current?.(baseBodyRef.current);
       return;
     }
     if (next === null) return;
-    if (conflictRef.current) setConflict({ ...conflictRef.current, mine: next });
+    const c = conflictRef.current;
+    if (c) setConflict({ ...c, mine: next, actor: c.actor ?? nextActor });
     else await run(next, nextActor);
   };
 
   const save = (body: string) => {
     const actor = nextActorRef.current ?? undefined;
     nextActorRef.current = null;
-    if (conflictRef.current) {
-      setConflict({ ...conflictRef.current, mine: body });
+    const c = conflictRef.current;
+    if (c) {
+      // Once assistant text is in mine, it stays there until resolved.
+      setConflict({ ...c, mine: body, actor: c.actor ?? actor });
       return;
     }
     if (inFlightRef.current) {
@@ -199,22 +213,44 @@ export function useGuardedSave(
     setResolving(true);
     inFlightRef.current = true;
     let followUp: string | null = null;
+    let followUpActor: WriteActor | undefined;
+    let held = false;
+    let actor: WriteActor | undefined;
     try {
       const latest = await targetRef.current.fetchLatest();
       const mine = conflictRef.current?.mine ?? start.mine;
-      const res = await targetRef.current.send(mine, latest.etag ?? null);
-      markSaved(mine, res.etag);
-      const newest = conflictRef.current?.mine;
+      actor = conflictRef.current?.actor ?? start.actor;
+      const res = await sendAs(mine, latest.etag ?? null, actor);
+      const end = conflictRef.current;
       setConflict(null);
-      if (newest !== undefined && newest !== mine) followUp = newest;
+      if (res.status === 'pending') {
+        // B3: held; nothing was written, so the disk still holds theirs. Text
+        // typed meanwhile still contains the held change: drop it.
+        markSaved(latest.body, latest.etag);
+        held = true;
+      } else {
+        markSaved(mine, res.etag);
+        if (end && end.mine !== mine) {
+          followUp = end.mine;
+          // Over-attributing never bypasses approval; under-attributing would.
+          followUpActor = end.actor;
+        }
+      }
     } catch (err) {
-      if (isConflict(err)) await handleConflict(conflictRef.current?.mine ?? start.mine, false);
+      if (isConflict(err)) await handleConflict(conflictRef.current?.mine ?? start.mine, false, actor);
       else onErrorRef.current?.(asError(err));
     } finally {
       inFlightRef.current = false;
       setResolving(false);
     }
-    if (followUp !== null) await run(followUp);
+    if (held) {
+      queuedRef.current = null;
+      queuedActorRef.current = null;
+      nextActorRef.current = null;
+      onHeldRef.current?.(baseBodyRef.current);
+      return;
+    }
+    if (followUp !== null) await run(followUp, followUpActor);
   };
 
   const runExclusive = async <T extends { body: string; etag?: string | null }>(

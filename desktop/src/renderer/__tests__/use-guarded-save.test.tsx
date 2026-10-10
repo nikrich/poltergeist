@@ -334,7 +334,7 @@ describe('useGuardedSave', () => {
     expect(send.mock.calls[1]).toEqual(['ai text', 'e5', 'assistant']);
   });
 
-  it('an attributed save that lands in a conflict drops its mark', async () => {
+  it('an attributed save that lands in a conflict keeps its mark for keep mine', async () => {
     const send = vi.fn().mockRejectedValueOnce(conflict()).mockResolvedValueOnce({ etag: 'e9' });
     const fetchLatest = vi.fn().mockResolvedValue({ body: 'theirs', etag: 'e5' });
     const { result } = renderHook(() =>
@@ -345,14 +345,16 @@ describe('useGuardedSave', () => {
       result.current.save('ai text');
     });
     await waitFor(() => expect(result.current.conflict).not.toBeNull());
+    expect(result.current.conflict?.actor).toBe('assistant');
     await act(async () => result.current.keepMine());
     expect(send.mock.calls).toEqual([
       ['ai text', 'e1', 'assistant'],
-      ['ai text', 'e5'],
+      ['ai text', 'e5', 'assistant'],
     ]);
+    expect(result.current.conflict).toBeNull();
   });
 
-  it('save() during a conflict consumes and discards a fresh mark', async () => {
+  it('an attributed save() during a conflict marks it until resolved', async () => {
     const send = vi.fn().mockRejectedValueOnce(conflict()).mockResolvedValueOnce({ etag: 'e9' });
     const fetchLatest = vi.fn().mockResolvedValue({ body: 'theirs', etag: 'e5' });
     const { result } = renderHook(() =>
@@ -360,16 +362,92 @@ describe('useGuardedSave', () => {
     );
     act(() => result.current.save('mine'));
     await waitFor(() => expect(result.current.conflict).not.toBeNull());
+    expect(result.current.conflict?.actor).toBeUndefined();
     act(() => {
       result.current.attributeNext('assistant');
       result.current.save('ai text');
     });
-    expect(result.current.conflict?.mine).toBe('ai text');
+    // A later keystroke still carries the AI text: the mark is sticky.
+    act(() => result.current.save('ai text + a keystroke'));
+    expect(result.current.conflict?.mine).toBe('ai text + a keystroke');
+    expect(result.current.conflict?.actor).toBe('assistant');
     await act(async () => result.current.keepMine());
     expect(send.mock.calls).toEqual([
       ['mine', 'e1'],
-      ['ai text', 'e5'],
+      ['ai text + a keystroke', 'e5', 'assistant'],
     ]);
+  });
+
+  it('an attributed save queued into a conflict marks it', async () => {
+    let rejectFirst!: (err: unknown) => void;
+    const first = new Promise<never>((_, reject) => (rejectFirst = reject));
+    const send = vi.fn().mockReturnValueOnce(first).mockResolvedValueOnce({ etag: 'e9' });
+    const fetchLatest = vi.fn().mockResolvedValue({ body: 'theirs', etag: 'e5' });
+    const { result } = renderHook(() =>
+      useGuardedSave({ body: 'a', etag: 'e1' }, { send, fetchLatest }),
+    );
+    act(() => result.current.save('mine'));
+    act(() => {
+      result.current.attributeNext('assistant');
+      result.current.save('ai text');
+    });
+    await act(async () => {
+      rejectFirst(conflict());
+    });
+    await waitFor(() => expect(result.current.conflict?.mine).toBe('ai text'));
+    expect(result.current.conflict?.actor).toBe('assistant');
+  });
+
+  it('a held keep mine clears the conflict and resets to the text on disk', async () => {
+    const send = vi
+      .fn()
+      .mockRejectedValueOnce(conflict())
+      .mockResolvedValueOnce({ etag: 'e5', status: 'pending' })
+      .mockResolvedValueOnce({ etag: 'e6' });
+    const fetchLatest = vi.fn().mockResolvedValue({ body: 'theirs', etag: 'e5' });
+    const onHeld = vi.fn();
+    const { result } = renderHook(() =>
+      useGuardedSave({ body: 'a', etag: 'e1' }, { send, fetchLatest }, undefined, onHeld),
+    );
+    act(() => {
+      result.current.attributeNext('assistant');
+      result.current.save('ai text');
+    });
+    await waitFor(() => expect(result.current.conflict).not.toBeNull());
+    await act(async () => result.current.keepMine());
+    expect(onHeld).toHaveBeenCalledWith('theirs');
+    expect(result.current.conflict).toBeNull();
+    expect(send).toHaveBeenCalledTimes(2);
+    act(() => result.current.save('typed later'));
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(3));
+    expect(send.mock.calls[2]).toEqual(['typed later', 'e5']);
+  });
+
+  it('a held keep mine drops text typed while it was in flight', async () => {
+    const keep = deferred<{ etag: string; status: 'pending' }>();
+    const send = vi.fn().mockRejectedValueOnce(conflict()).mockReturnValueOnce(keep.promise);
+    const fetchLatest = vi.fn().mockResolvedValue({ body: 'theirs', etag: 'e5' });
+    const onHeld = vi.fn();
+    const { result } = renderHook(() =>
+      useGuardedSave({ body: 'a', etag: 'e1' }, { send, fetchLatest }, undefined, onHeld),
+    );
+    act(() => {
+      result.current.attributeNext('assistant');
+      result.current.save('ai text');
+    });
+    await waitFor(() => expect(result.current.conflict).not.toBeNull());
+    let resolving!: Promise<void>;
+    act(() => {
+      resolving = result.current.keepMine();
+    });
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+    act(() => result.current.save('ai text + a keystroke'));
+    await act(async () => {
+      keep.resolve({ etag: 'e5', status: 'pending' });
+      await resolving;
+    });
+    expect(onHeld).toHaveBeenCalledWith('theirs');
+    expect(send).toHaveBeenCalledTimes(2);
   });
 
   it('a held change is not marked saved and drops text queued on top of it', async () => {
@@ -432,5 +510,22 @@ describe('useGuardedSave', () => {
     act(() => result.current.save('typed later'));
     await waitFor(() => expect(send).toHaveBeenCalledTimes(3));
     expect(send.mock.calls[2]).toEqual(['typed later', 'e2']);
+  });
+  it('a held save clears a mark set while it was in flight', async () => {
+    const first = deferred<{ etag: string; status: 'pending' }>();
+    const send = vi.fn().mockReturnValueOnce(first.promise).mockResolvedValueOnce({ etag: 'e2' });
+    const { result } = renderHook(() =>
+      useGuardedSave({ body: 'a', etag: 'e1' }, { send, fetchLatest: vi.fn() }, undefined, vi.fn()),
+    );
+    act(() => {
+      result.current.attributeNext('assistant');
+      result.current.save('ai text');
+    });
+    // A second Accept whose debounced save never fires (the editor remounts).
+    act(() => result.current.attributeNext('assistant'));
+    await act(async () => first.resolve({ etag: 'e1', status: 'pending' }));
+    act(() => result.current.save('typed later'));
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+    expect(send.mock.calls[1]).toEqual(['typed later', 'e1']);
   });
 });
