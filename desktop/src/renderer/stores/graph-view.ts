@@ -62,9 +62,12 @@ export const useGraphView = create<GraphViewState>((set, get) => ({
         : [...s.hiddenKinds, kind],
     })),
   showInGraph: (path) => {
+    // Navigate first: a screen guard (unsaved jot conflict) may cancel it,
+    // and then the graph must stay as it was.
+    useNavigation.getState().setActive('vault');
+    if (useNavigation.getState().active !== 'vault') return;
     get().recenter(path);
     set({ tab: 'graph' });
-    useNavigation.getState().setActive('vault');
   },
   reset: () => set(initial()),
 }));

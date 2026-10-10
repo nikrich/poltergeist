@@ -420,9 +420,8 @@ export function JotsScreen() {
                         variant="ghost"
                         size="sm"
                         icon={<Lucide name="network" size={13} />}
-                        onClick={() => {
-                          if (confirmLeave(guardRef)) showInGraph(selectedItem.path);
-                        }}
+                        // No confirmLeave: the editor's screen guard asks on setActive('vault').
+                        onClick={() => showInGraph(selectedItem.path)}
                       >
                         show in graph
                       </Btn>

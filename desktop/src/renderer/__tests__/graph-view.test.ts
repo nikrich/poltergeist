@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { GRAPH_HISTORY_LIMIT, useGraphView } from '../stores/graph-view';
-import { useNavigation } from '../stores/navigation';
+import { registerNavigationGuard, useNavigation } from '../stores/navigation';
 
 beforeEach(() => {
   useGraphView.getState().reset();
@@ -42,5 +42,21 @@ describe('graph view store', () => {
     useGraphView.getState().showInGraph('20-contexts/work/a.md');
     expect(useGraphView.getState()).toMatchObject({ tab: 'graph', focus: '20-contexts/work/a.md' });
     expect(useNavigation.getState().active).toBe('vault');
+  });
+
+  it('showInGraph leaves the graph untouched when navigation is cancelled', () => {
+    useGraphView.getState().recenter('20-contexts/work/b.md');
+    const unregister = registerNavigationGuard('screen', () => false);
+    try {
+      useGraphView.getState().showInGraph('20-contexts/work/a.md');
+    } finally {
+      unregister();
+    }
+    expect(useNavigation.getState().active).toBe('today');
+    expect(useGraphView.getState()).toMatchObject({
+      tab: 'constellation',
+      focus: '20-contexts/work/b.md',
+      back: [],
+    });
   });
 });
