@@ -128,7 +128,8 @@ def system_prompt() -> str:
         ("3. `template.file.folder` must be under 20-contexts/{{context}}/… and never under "
         "90-meta or 80-profile."),
         ("4. No URLs: templates must not contain URLs, // or :/ anywhere: not in links, "
-         "images, diagrams, code blocks, prose or frontmatter. Never write http, https, ftp, "
+         "images, diagrams, code blocks, prose or frontmatter, and no `:` followed by `/` even "
+         "across spaces or lines (not even `Path: /x`). Never write http, https, ftp, "
          "ws, wss, data, file, javascript or vbscript followed by a colon, not even in a label "
          "such as \"Raw data:\" (only the `file:` key of the frontmatter). No raw HTML tags "
          "at all (not even <b> or <!-- -->), no scripts, and no code blocks except ```query "

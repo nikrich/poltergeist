@@ -377,6 +377,7 @@ def test_system_prompt_rules_cover_html_images_urls_and_search_only():
     text = system_prompt()
     assert "no raw html tags" in text.lower()
     assert "templates must not contain URLs, // or :/" in text
+    assert "(not even `Path: /x`)" in text
     assert "You may search the user's notes" in text and "never copy text from them" in text
     assert TEMPLATE_TOOLS == "mcp__poltergeist__poltergeist_search"
 
@@ -1025,6 +1026,8 @@ def test_the_template_file_key_is_the_one_scheme_word_allowed():
         "\u2066", "\u2067", "\u2068", "\u2069", "\u180e",
         "\u0600", "\u061c", "\U000110bd", "\U0001bca0", "\U000e0001",  # other Cf
         "\x01", "\x85", "\u034f",  # controls and the grapheme joiner
+        # unassigned default-ignorables
+        "\u2065", "\U000e0000", "\U000e0002", "\U000e0080", "\U000e0fff",
     ],
 )
 def test_format_and_control_characters_hide_nothing(char):
@@ -1052,6 +1055,8 @@ def test_format_and_control_characters_hide_nothing(char):
         "\\u002f\\u002fevil.com",
         "https#58;evil.com",
         "%23104;ttps#58;evil.com",
+        "https&amp;#58;evil",  # read as decoded twice
+        "https#amp;#58;evil",
         "ｈｔｔｐｓ：evil.com",
         "https\uff1a\uff0f\uff0fevil.com",
     ],

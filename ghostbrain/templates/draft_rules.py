@@ -99,8 +99,9 @@ _WHITESPACE_RE = re.compile(r"\s+")
 
 def _invisible_class() -> str:
     """Format (Cf) and control (Cc) characters in this Python's Unicode
-    database, plus other characters readers show as nothing: the grapheme
-    joiner, Hangul fillers, Mongolian and other variation selectors."""
+    database, plus the whole Default_Ignorable_Code_Point property (the
+    grapheme joiner, Hangul fillers, variation selectors and the unassigned
+    U+2065, U+FFF0-FFF8 and U+E0000-E0FFF ranges)."""
     ranges: list[list[int]] = []
     for c in range(sys.maxunicode + 1):
         if unicodedata.category(chr(c)) in ("Cf", "Cc"):
@@ -109,8 +110,9 @@ def _invisible_class() -> str:
             else:
                 ranges.append([c, c])
     body = "".join(f"{re.escape(chr(a))}-{re.escape(chr(b))}" for a, b in ranges)
-    return (f"[{body}\u034f\u115f\u1160\u17b4\u17b5\u180b-\u180f\u3164\ufe00-\ufe0f"
-            "\uffa0\ufff0-\ufffb\U000e0100-\U000e01ef]")
+    return (f"[{body}\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f"
+            "\u200b-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0"
+            "\ufff0-\ufffb\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e0fff]")
 
 
 _INVISIBLE_RE = re.compile(_invisible_class())
@@ -154,26 +156,41 @@ def _unescape(m: re.Match[str]) -> str:
     return chr(code) if code <= 0x10FFFF else ""
 
 
-def _entities(text: str) -> str:
-    return html.unescape(_MERMAID_ENTITY_RE.sub(_mermaid_entity, text))
+def _mermaid_codes(text: str) -> str:
+    """Mermaid ``#NN;`` codes decoded left to right; a code right after an
+    ``&`` it produced is left for the next HTML decode (``#amp;#58;`` reads
+    ``&#58;``)."""
+    out, end = "", 0
+    for m in _MERMAID_ENTITY_RE.finditer(text):
+        out += text[end:m.start()]
+        out += m.group() if out.endswith("&") else html.unescape(_mermaid_entity(m))
+        end = m.end()
+    return out + text[end:]
 
 
+# Mermaid codes and HTML entities are separate stages, so one reading is
+# HTML entities alone, decoded twice (&amp;#58; then :).
 _DECODERS = (
     lambda t: unicodedata.normalize("NFKC", t),
     lambda t: _INVISIBLE_RE.sub("", t),
     lambda t: _BACKSLASH_RE.sub(_unescape, t),
-    _entities,
+    html.unescape,
+    _mermaid_codes,
+    html.unescape,
     unquote,
 )
 
 
 def _readings(text: str) -> list[str]:
-    """``text`` and every stage of decoding it, up to stable (bounded)."""
+    """``text`` and every distinct stage of decoding it, up to stable
+    (bounded)."""
     out = [text]
     for _ in range(_MAX_DECODE_ROUNDS):
         before = out[-1]
         for decoder in _DECODERS:
-            out.append(decoder(out[-1]))
+            decoded = decoder(out[-1])
+            if decoded != out[-1]:
+                out.append(decoded)
         if out[-1] == before:
             break
     return out
