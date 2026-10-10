@@ -573,7 +573,7 @@ body[data-theme='light'] {
   border: 1px solid var(--hairline);
   border-radius: 6px;
   margin: 0 0 1em;
-  background: var(--vellum);
+  background: var(--bg-vellum);
 }
 .gb-query-bar {
   position: relative;
@@ -610,7 +610,7 @@ body[data-theme='light'] {
   padding: 4px;
   border: 1px solid var(--hairline);
   border-radius: 4px;
-  background: var(--vellum);
+  background: var(--bg-vellum);
 }
 .gb-query-menu[hidden] { display: none; }
 .gb-query-menuitem { text-align: left; padding: 2px 6px; }
@@ -671,3 +671,17 @@ body[data-theme='light'] {
 .gb-prose.gb-page-body .gb-toc { padding: 10px 16px; margin: 0 0 1.1em; }
 .gb-prose.gb-page-body .gb-toc-list { font-size: 14px; line-height: 1.6; }
 .gb-prose.gb-page-body .gb-mermaid { margin: 0 0 1.1em; }
+
+/* ── C2 live query blocks inside rich prose ─────────────────────────────
+   The query view's results are plain ul/li/p/pre elements, so the
+   `.gb-prose` and A7 `.gb-page-body` element rules (0,1,1) would restyle
+   them. These (0,2,0 and up) keep the query block's own compact look in
+   every rich editor, page canvas or not. */
+.gb-prose .gb-query-list { list-style: none; margin: 0; padding: 0; }
+.gb-prose .gb-query-row { margin: 0; }
+.gb-prose .gb-query-status,
+.gb-prose .gb-query-warning,
+.gb-prose .gb-query-notice { margin: 4px 0 0; color: var(--ink-2); }
+.gb-prose .gb-query-error p { margin: 0; }
+.gb-prose .gb-query-error pre { margin: 6px 0 0; }
+.gb-prose .gb-query > pre { margin: 0; }

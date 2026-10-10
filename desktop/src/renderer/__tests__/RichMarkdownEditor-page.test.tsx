@@ -112,4 +112,44 @@ describe('page body styles (A7)', () => {
     expect(getComputedStyle(toc!).paddingLeft).toBe('16px');
     expect(getComputedStyle(toc!).marginBottom).toBe('1.1em');
   });
+
+  it('keeps C2 live query results compact inside the page body', () => {
+    // The query view's DOM (query-view.ts) inside the page body: the page's
+    // element rules (ul/li/p/pre) must not restyle the query block. jsdom
+    // cascades by source order only (no specificity), so this pins the order;
+    // the `.gb-prose .gb-query-*` selectors (0,2,0+) win by specificity too.
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <div class="gb-page"><div class="gb-prose gb-page-body"><div class="ProseMirror">
+        <div class="gb-query">
+          <div class="gb-query-results">
+            <ul class="gb-query-list"><li class="gb-query-row">row</li></ul>
+            <p class="gb-query-status">no matching notes</p>
+            <div class="gb-query-error"><p>bad</p><pre>at line 1</pre></div>
+          </div>
+          <pre><code class="language-query">type: action_item</code></pre>
+        </div>
+      </div></div></div>`;
+    document.body.appendChild(host);
+    try {
+      const list = getComputedStyle(host.querySelector('.gb-query-list')!);
+      expect(list.marginLeft).toBe('0px');
+      expect(list.marginBottom).toBe('0px');
+      expect(getComputedStyle(host.querySelector('.gb-query-row')!).marginTop).toBe('0px');
+      const status = getComputedStyle(host.querySelector('.gb-query-status')!);
+      expect(status.marginTop).toBe('4px');
+      expect(status.marginBottom).toBe('0px');
+      expect(getComputedStyle(host.querySelector('.gb-query-error p')!).marginBottom).toBe('0px');
+      expect(getComputedStyle(host.querySelector('.gb-query-error pre')!).marginTop).toBe('6px');
+      expect(getComputedStyle(host.querySelector('.gb-query > pre')!).marginBottom).toBe('0px');
+    } finally {
+      host.remove();
+    }
+  });
+
+  it('paints query blocks with a defined surface token', () => {
+    // `--vellum` is not a token (the surface is `--bg-vellum`); an undefined
+    // var leaves the query block and its menu transparent.
+    expect(stylesCss).not.toContain('var(--vellum)');
+  });
 });
