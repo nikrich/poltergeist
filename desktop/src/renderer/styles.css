@@ -382,12 +382,7 @@ body[data-theme='light'] {
 .gb-page-body th > p,
 .gb-page-body td > p { margin: 0; }
 .gb-page-body .gb-jot-img { margin: 8px 0; }
-/* A1 blocks keep their look; only their insides breathe at 16px. */
-.gb-page-body .gb-callout { padding: 10px 16px 4px; margin: 0 0 1.1em; }
-.gb-page-body .gb-callout-header { font-size: 13px; }
-.gb-page-body .gb-toc { padding: 10px 16px; margin: 0 0 1.1em; }
-.gb-page-body .gb-toc-list { font-size: 14px; line-height: 1.6; }
-.gb-page-body .gb-mermaid { margin: 0 0 1.1em; }
+/* A1 block spacing at 16px lives after the A1 block section below. */
 
 /* Source mode (CodeMirror) inside the canvas: the same column, framed as
    one block so its own theme background reads as intentional. */
@@ -659,3 +654,14 @@ body[data-theme='light'] {
   color: var(--ink-3);
   background: none;
 }
+
+/* ── A7 page canvas: A1 blocks at 16px ─────────────────────────────────
+   Kept after the A1 rules and prefixed with `.gb-prose.gb-page-body`
+   (EditorContent carries both classes) so these win by specificity
+   (0,3,0 over A1's 0,2,0 `.gb-prose .gb-callout`) and by order. A1's
+   colours, borders and lozenges are untouched; only spacing scales. */
+.gb-prose.gb-page-body .gb-callout { padding: 10px 16px 4px; margin: 0 0 1.1em; }
+.gb-prose.gb-page-body .gb-callout-header { font-size: 13px; }
+.gb-prose.gb-page-body .gb-toc { padding: 10px 16px; margin: 0 0 1.1em; }
+.gb-prose.gb-page-body .gb-toc-list { font-size: 14px; line-height: 1.6; }
+.gb-prose.gb-page-body .gb-mermaid { margin: 0 0 1.1em; }

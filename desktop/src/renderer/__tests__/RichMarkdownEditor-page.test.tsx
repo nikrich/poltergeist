@@ -1,10 +1,12 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Editor } from '@tiptap/core';
 import { RichMarkdownEditor } from '../components/RichMarkdownEditor';
 import { getMarkdown } from '../lib/editor/markdown';
 import { useSettings } from '../stores/settings';
 import { textPos } from './helpers/editor';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 afterEach(() => useSettings.setState({ pageWidth: 'fixed' }));
 
@@ -77,5 +79,37 @@ describe('RichMarkdownEditor page canvas (A7)', () => {
     await waitFor(() =>
       expect(getMarkdown(editor!)).toContain('90-meta/assets/jots/2026/06/stub-x.jpg'),
     );
+  });
+});
+
+describe('page body styles (A7)', () => {
+  // jsdom applies stylesheet rules to getComputedStyle; inject the real
+  // styles.css (read from disk: vitest strips CSS imports, even `?raw`) so
+  // the page overrides are checked against A1's block rules.
+  const stylesCss = readFileSync(resolve(__dirname, '../styles.css'), 'utf8');
+  let sheet: HTMLStyleElement;
+  beforeEach(() => {
+    sheet = document.createElement('style');
+    sheet.textContent = stylesCss;
+    document.head.appendChild(sheet);
+  });
+  afterEach(() => sheet.remove());
+
+  it('gives callouts inside the page their 16px padding over A1\'s', () => {
+    render(<RichMarkdownEditor markdown={'> [!info] Heads up\n> body text'} onSave={() => {}} jotId="t" />);
+    const callout = screen.getByTestId('page-canvas').querySelector('.gb-callout') as HTMLElement | null;
+    expect(callout).not.toBeNull();
+    const cs = getComputedStyle(callout!);
+    expect(cs.paddingTop).toBe('10px');
+    expect(cs.paddingLeft).toBe('16px');
+    expect(cs.marginBottom).toBe('1.1em');
+  });
+
+  it('gives the table of contents its 16px padding over A1\'s', () => {
+    render(<RichMarkdownEditor markdown={'```toc\n```\n\n# One'} onSave={() => {}} jotId="t" />);
+    const toc = screen.getByTestId('page-canvas').querySelector('.gb-toc') as HTMLElement | null;
+    expect(toc).not.toBeNull();
+    expect(getComputedStyle(toc!).paddingLeft).toBe('16px');
+    expect(getComputedStyle(toc!).marginBottom).toBe('1.1em');
   });
 });
