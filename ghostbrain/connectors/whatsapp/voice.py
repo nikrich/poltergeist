@@ -104,7 +104,16 @@ class VoiceTranscriber:
         self._recording_live = recording_live or _recording_live
         self._unavailable = False
 
-    def line_for(self, msg: Message) -> tuple[str, bool]:
+    def cached_line_for(self, msg: Message) -> tuple[str, bool]:
+        """The line without transcribing: a cached transcript, or a placeholder.
+
+        Lets the connector write every chat-day straight away and fill in
+        voice notes in a later pass."""
+        known = self._known(msg)
+        return known if known is not None else (PENDING, True)
+
+    def _known(self, msg: Message) -> tuple[str, bool] | None:
+        """The line when no transcription is needed, else None."""
         if msg.media_path is None or not msg.media_path.exists():
             return NOT_DOWNLOADED, False
         key = _key(msg.stanza_id)
@@ -112,9 +121,18 @@ class VoiceTranscriber:
         if cached.exists():
             return _voice(cached.read_text(encoding="utf-8").strip()), False
         failed = self.cache_dir / f"{key}.failed"
-        attempts = _attempts(failed) if failed.exists() else 0
-        if attempts >= MAX_ATTEMPTS:
+        if failed.exists() and _attempts(failed) >= MAX_ATTEMPTS:
             return FAILED, False
+        return None
+
+    def line_for(self, msg: Message) -> tuple[str, bool]:
+        known = self._known(msg)
+        if known is not None:
+            return known
+        key = _key(msg.stanza_id)
+        cached = self.cache_dir / f"{key}.txt"
+        failed = self.cache_dir / f"{key}.failed"
+        attempts = _attempts(failed) if failed.exists() else 0
         if self._unavailable:
             return UNAVAILABLE, True
         # Never compete with a live meeting recording for whisper/CPU.

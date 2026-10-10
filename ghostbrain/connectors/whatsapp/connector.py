@@ -2,7 +2,9 @@
 
 Each run finds chat-days with messages newer than the cursor (or, for a newly
 allowed chat, every day in the lookback window) and emits the *whole* day's
-transcript, so the worker can overwrite the day note in place. Today and
+transcript, so the worker can overwrite the day note in place. Days are emitted
+as they render (cached voice transcripts only), then a second pass transcribes
+pending voice notes and re-emits the days that changed. Today and
 yesterday are also re-rendered every run and emitted when their transcript
 hash changed, which catches edits and late media downloads (no new PK).
 """
@@ -62,22 +64,34 @@ class WhatsAppConnector(Connector):
         return raw
 
     def fetch(self, since: datetime) -> list[dict]:
-        events, _ = self._collect()
-        return events
+        latest: dict[str, dict] = {}
+        self._sync(lambda e: latest.__setitem__(e["id"], e))
+        return list(latest.values())
 
     def run(self) -> int:
-        events, cursor = self._collect()
-        for event in events:
-            self._enqueue(event)
-        self._save_cursor(cursor)  # last: a crash replays dirty days instead of losing them
-        return len(events)
+        sent: set[str] = set()
 
-    def _collect(self) -> tuple[list[dict], dict]:
+        def emit(event: dict) -> None:
+            self._enqueue(event)
+            sent.add(event["id"])
+
+        cursor = self._sync(emit)
+        self._save_cursor(cursor)  # last: a crash replays dirty days instead of losing them
+        return len(sent)
+
+    def _sync(self, emit: Callable[[dict], None]) -> dict:
+        """Emit changed chat-days as they render; return the cursor to save.
+
+        Pass 1 writes every changed day straight away using only cached voice
+        transcripts, so a big first sync shows notes within seconds. Pass 2 then
+        transcribes pending voice notes (newest days first, within the per-run
+        budget) and re-emits only the days whose transcript changed.
+        """
         allowed = allowlist.load(self.state_dir)
         cursor = self._load_cursor()
         if not allowed:
             log.info("whatsapp: no chats selected; pick chats in Connectors → WhatsApp")
-            return [], {**cursor, "chats": {}}
+            return {**cursor, "chats": {}}
         now = self._now()
         # Day-aligned so lookback 0 means "today onward" (events are whole days).
         floor = (now - timedelta(days=self.lookback_days)).astimezone(self.tz).replace(
@@ -88,34 +102,49 @@ class WhatsAppConnector(Connector):
         new = sorted(j for j in allowed if j not in cursor["chats"])
         known = sorted(j for j in allowed if j in cursor["chats"])
         root = store.media_root(self.store_path)
-        events: list[dict] = []
         pending: list[list[str]] = []
         hashes: dict[str, str] = {}
+        voice_days: list[tuple[str, date]] = []
         with closing(store.open_store(self.store_path)) as conn:
             store.check_schema(conn)
             max_pk = store.max_message_pk(conn)
             dirty = store.dirty_days(conn, new, after_pk=0, since=floor, tz=self.tz)
             dirty |= store.dirty_days(conn, known, after_pk=cursor["max_pk"], since=floor,
                                       tz=self.tz)
-            dirty |= {(j, date.fromisoformat(d)) for j, d in cursor["pending_days"]
-                      if j in allowed}
+            retry = {(j, date.fromisoformat(d)) for j, d in cursor["pending_days"]
+                     if j in allowed}
             chats = {c.jid: c for c in store.list_chats(conn, tz=self.tz)}
-            for jid, day in sorted(dirty | recent):
-                chat = chats.get(jid)
-                if chat is None:
-                    continue
+
+            def render(jid: str, day: date, line_for) -> tuple[list, RenderedDay, str]:
                 msgs = store.messages_for_day(conn, jid, day, tz=self.tz, media_root=root)
-                rendered = render_day(msgs, self.voice.line_for)
+                rendered = render_day(msgs, line_for)
+                return msgs, rendered, hashlib.sha256(rendered.body.encode("utf-8")).hexdigest()
+
+            # Pass 1: every candidate day, cached voice only.
+            for jid, day in sorted(dirty | recent | retry):
+                if jid not in chats:
+                    continue
+                msgs, rendered, digest = render(jid, day, self.voice.cached_line_for)
                 key = f"{jid}|{day.isoformat()}"
-                hashes[key] = hashlib.sha256(rendered.body.encode("utf-8")).hexdigest()
+                hashes[key] = digest
+                # New messages always go out; anything else only when it changed.
+                if rendered.lines and ((jid, day) in dirty
+                                       or cursor["day_hashes"].get(key) != digest):
+                    emit(_event(chats[jid], day, msgs, rendered, allowed[jid]))
+                if rendered.pending:
+                    voice_days.append((jid, day))
+
+            # Pass 2: transcribe, newest days first; re-emit what changed.
+            for jid, day in sorted(voice_days, key=lambda jd: jd[1], reverse=True):
+                msgs, rendered, digest = render(jid, day, self.voice.line_for)
+                key = f"{jid}|{day.isoformat()}"
+                if rendered.lines and digest != hashes[key]:
+                    emit(_event(chats[jid], day, msgs, rendered, allowed[jid]))
+                hashes[key] = digest
                 if rendered.pending:
                     pending.append([jid, day.isoformat()])
-                # A recent day that is not PK-dirty is only re-sent when it changed.
-                changed = (jid, day) in dirty or cursor["day_hashes"].get(key) != hashes[key]
-                if rendered.lines and changed:
-                    events.append(_event(chat, day, msgs, rendered, allowed[jid]))
         stamp = now.isoformat()
-        cursor = {
+        return {
             "max_pk": max_pk,
             # Only currently-allowed chats stay "known": a deselected chat that is
             # re-added counts as new and gets the lookback backfill.
@@ -123,10 +152,9 @@ class WhatsAppConnector(Connector):
                 **{j: v for j, v in cursor["chats"].items() if j in allowed},
                 **{j: {"first_synced_at": stamp} for j in new},
             },
-            "pending_days": pending,
+            "pending_days": sorted(pending),
             "day_hashes": hashes,
         }
-        return events, cursor
 
     def _cursor_path(self) -> Path:
         return self.state_dir / CURSOR_FILE
@@ -144,11 +172,13 @@ class WhatsAppConnector(Connector):
         return _valid_cursor(loaded if isinstance(loaded, dict) else {})
 
     def _save_cursor(self, cursor: dict) -> None:
-        # Hashes only matter for the recent window; keep the file tiny.
+        # Hashes only matter for the recent window and for days still waiting
+        # on voice notes (so they are not re-sent unchanged every run).
         recent = {d.isoformat() for d in _recent(self._now().astimezone(self.tz).date())}
+        waiting = {f"{j}|{d}" for j, d in cursor.get("pending_days", [])}
         cursor = {**cursor, "day_hashes": {
             k: v for k, v in cursor.get("day_hashes", {}).items()
-            if k.rpartition("|")[2] in recent}}
+            if k.rpartition("|")[2] in recent or k in waiting}}
         f = self._cursor_path()
         f.parent.mkdir(parents=True, exist_ok=True)
         tmp = f.with_name(f.name + ".tmp")
