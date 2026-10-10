@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
+from ghostbrain.templates import registry, starters
 from ghostbrain.templates.parse import parse_template
-from ghostbrain.templates.registry import TEMPLATES_REL
 from ghostbrain.templates.render import RenderEnv, render
 from ghostbrain.templates.starters import STARTER_TEMPLATES, seed_starter_templates
 
@@ -89,7 +89,17 @@ def test_seed_never_writes_through_a_symlinked_meta_folder(tmp_path: Path):
 
 
 def test_templates_path_is_defined_once():
-    assert TEMPLATES_REL == "90-meta/templates"
+    assert registry.TEMPLATES_REL is starters.TEMPLATES_REL
+    assert "90-meta/templates" not in Path(registry.__file__).read_text(encoding="utf-8")
+
+
+def test_seed_survives_a_symlink_loop(tmp_path: Path):
+    meta = tmp_path / "90-meta"
+    try:
+        os.symlink(meta, meta)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not permitted on this machine")
+    assert seed_starter_templates(tmp_path) == []
 
 
 def test_starters_module_imports_no_pydantic():

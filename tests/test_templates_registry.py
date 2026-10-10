@@ -1,11 +1,14 @@
 """Listing and loading templates from 90-meta/templates/."""
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
 
 import pytest
 
 from ghostbrain.templates.registry import (
+    TEMPLATES_REL,
     TemplateInvalid,
     TemplateNotFound,
     list_templates,
@@ -84,3 +87,68 @@ def test_default_root_is_the_vault(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     monkeypatch.setenv("VAULT_PATH", str(tmp_path))
     _put(tmp_path, "weekly-review.md", OK)
     assert load_template("weekly-review").name == "Weekly review"
+
+
+posix_non_root = pytest.mark.skipif(
+    sys.platform == "win32" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+    reason="permission bits are not enforced on Windows or for root",
+)
+
+
+@posix_non_root
+def test_unreadable_template_is_listed_invalid_not_fatal(tmp_path: Path):
+    _put(tmp_path, "weekly-review.md", OK)
+    locked = _put(tmp_path, "locked.md", OK)
+    locked.chmod(0)
+    try:
+        infos = {i.id: i for i in list_templates(tmp_path)}
+        assert infos["weekly-review"].valid
+        assert infos["locked"].diagnostics[0].code == "read"
+        with pytest.raises(TemplateInvalid) as e:
+            load_template("locked", tmp_path)
+        assert e.value.diagnostics[0].code == "read"
+    finally:
+        locked.chmod(0o644)
+
+
+@posix_non_root
+def test_read_only_vault_lists_without_seeding(tmp_path: Path):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    vault.chmod(0o500)
+    try:
+        assert list_templates(vault) == []
+    finally:
+        vault.chmod(0o755)
+    assert not (vault / "90-meta").exists()
+
+
+def test_symlink_loop_lists_nothing_and_loads_nothing(tmp_path: Path):
+    meta = tmp_path / "90-meta"
+    try:
+        os.symlink(meta, meta)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not permitted on this machine")
+    assert list_templates(tmp_path) == []
+    with pytest.raises(TemplateNotFound):
+        load_template("weekly-review", tmp_path)
+
+
+def test_id_must_match_the_file_name_exactly(tmp_path: Path):
+    _put(tmp_path, "Upper.md", OK)
+    assert [i.diagnostics[0].code for i in list_templates(tmp_path)] == ["file-name"]
+    with pytest.raises(TemplateNotFound):
+        load_template("upper", tmp_path)
+    with pytest.raises(TemplateNotFound):
+        read_template_source("upper", tmp_path)
+
+
+def test_oversized_file_is_rejected_without_reading_it_whole(tmp_path: Path, monkeypatch):
+    from ghostbrain.templates import registry
+
+    monkeypatch.setattr(registry, "MAX_TEMPLATE_BYTES", len(OK) - 1)
+    _put(tmp_path, "weekly-review.md", OK)
+    with pytest.raises(TemplateInvalid) as e:
+        load_template("weekly-review", tmp_path)
+    assert e.value.diagnostics[0].code == "limit"
+    assert TEMPLATES_REL == "90-meta/templates"

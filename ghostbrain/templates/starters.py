@@ -137,12 +137,17 @@ STARTER_TEMPLATES: dict[str, str] = {
 def seed_starter_templates(root: Path) -> list[str]:
     """Write the starters if <root>/90-meta/templates is missing. Returns the
     vault-relative paths written; [] when the folder already existed, or when
-    it would resolve outside the vault (a symlinked 90-meta)."""
+    it would resolve outside the vault (a symlinked 90-meta) or not at all
+    (a symlink loop)."""
     vault = Path(root)
     folder = vault / TEMPLATES_REL
     if folder.exists() or folder.is_symlink():
         return []
-    if not folder.resolve().is_relative_to(vault.resolve()):
+    try:
+        inside = folder.resolve().is_relative_to(vault.resolve())
+    except (OSError, RuntimeError):  # RuntimeError: symlink loop on Python 3.11
+        inside = False
+    if not inside:
         return []
     folder.mkdir(parents=True, exist_ok=True)
     written: list[str] = []

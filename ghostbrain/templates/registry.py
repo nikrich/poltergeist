@@ -1,4 +1,4 @@
-"""Templates on disk: <vault>/90-meta/templates/<id>.md (spec decision 1).
+"""Templates on disk: <vault>/<TEMPLATES_REL>/<id>.md (spec decision 1).
 
 Ids are file stems matching TEMPLATE_ID_RE. Symlinked template files are
 never read, and a templates folder that resolves outside the vault is
@@ -6,6 +6,8 @@ ignored, so a template id can only ever name a file inside the vault.
 """
 from __future__ import annotations
 
+import logging
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,6 +30,8 @@ __all__ = [
     "read_template_source",
     "templates_dir",
 ]
+
+log = logging.getLogger("ghostbrain.templates.registry")
 
 TEMPLATE_ID_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
 # UTF-8 is at most 4 bytes per character; parse_template enforces the char limit.
@@ -78,7 +82,7 @@ def templates_dir(root: Path | None = None) -> Path:
 def _inside_vault(base: Path, vault: Path) -> bool:
     try:
         return base.resolve().is_relative_to(vault.resolve())
-    except OSError:
+    except (OSError, RuntimeError):  # RuntimeError: symlink loop on Python 3.11
         return False
 
 
@@ -87,10 +91,15 @@ def _error(template_id: str, message: str, code: str) -> TemplateInvalid:
 
 
 def _read_source(template_id: str, path: Path) -> str:
-    if path.stat().st_size > MAX_TEMPLATE_BYTES:
+    try:
+        with open(path, "rb") as fh:
+            data = fh.read(MAX_TEMPLATE_BYTES + 1)
+    except OSError as e:
+        raise _error(template_id, f"template file cannot be read: {e.strerror or e}", "read") from None
+    if len(data) > MAX_TEMPLATE_BYTES:
         raise _error(template_id, "template file is too large", "limit")
     try:
-        return path.read_bytes().decode("utf-8")
+        return data.decode("utf-8")
     except UnicodeDecodeError:
         raise _error(template_id, "template file is not UTF-8 text", "encoding") from None
 
@@ -100,13 +109,22 @@ def _template_path(template_id: str, root: Path | None) -> Path:
         raise TemplateNotFound(template_id)
     vault = Path(root or vault_path())
     base = templates_dir(vault)
-    path = base / f"{template_id}.md"
-    if path.is_symlink() or not path.is_file() or not _inside_vault(base, vault):
+    name = f"{template_id}.md"
+    if not _inside_vault(base, vault):
+        raise TemplateNotFound(template_id)
+    try:
+        # Exact name only: on a case-insensitive disk `Upper.md` must not load as "upper".
+        exact = name in os.listdir(base)
+    except OSError:
+        exact = False
+    path = base / name
+    if not exact or path.is_symlink() or not path.is_file():
         raise TemplateNotFound(template_id)
     return path
 
 
 def read_template_source(template_id: str, root: Path | None = None) -> str:
+    """Raises TemplateNotFound, or TemplateInvalid (codes read/limit/encoding)."""
     return _read_source(template_id, _template_path(template_id, root))
 
 
@@ -137,12 +155,20 @@ def list_templates(root: Path | None = None) -> list[TemplateInfo]:
     vault = Path(root or vault_path())
     base = templates_dir(vault)
     if not base.exists() and not base.is_symlink():
-        seed_starter_templates(vault)
+        try:
+            seed_starter_templates(vault)
+        except OSError as e:  # e.g. a read-only vault: list what is there
+            log.warning("could not seed starter templates in %s: %s", base, e)
     if not base.is_dir() or not _inside_vault(base, vault):
+        return []
+    try:
+        entries = sorted(base.iterdir(), key=lambda p: p.name)
+    except OSError as e:
+        log.warning("could not list templates in %s: %s", base, e)
         return []
     infos = [
         _info(entry.stem, entry)
-        for entry in sorted(base.iterdir(), key=lambda p: p.name)
+        for entry in entries
         if entry.suffix == ".md" and not entry.name.startswith(".")
         and not entry.is_symlink() and entry.is_file()
     ]
