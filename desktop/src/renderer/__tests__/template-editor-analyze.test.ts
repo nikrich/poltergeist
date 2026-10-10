@@ -7,7 +7,7 @@ import {
 } from '../lib/template-editor/analyze';
 import { TEMPLATE } from './helpers/template-registry';
 
-/** `text` with the cursor at the `|` marker removed. */
+/** `text` with the cursor at the `‸` marker removed. */
 function at(marked: string): [string, number] {
   const pos = marked.indexOf('‸');
   return [marked.replace('‸', ''), pos];
@@ -40,6 +40,11 @@ describe('template text analysis', () => {
   it('keeps a block item whole when a string in it holds a placeholder', () => {
     const src = '---\ntemplate:\n  prompts:\n    - type: person\n      ask: "With {{context}}?"\n      id: who\n---\n';
     expect(extractPrompts(src)).toEqual([{ id: 'who', type: 'person' }]);
+  });
+
+  it('reports a prompt type the editor does not know as-is', () => {
+    const src = '---\ntemplate:\n  prompts:\n    - id: mood\n      type: rating\n---\n';
+    expect(extractPrompts(src)).toEqual([{ id: 'mood', type: 'rating' }]);
   });
 
   it('knows when a position is inside a query fence', () => {

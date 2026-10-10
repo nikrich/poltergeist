@@ -28,9 +28,9 @@ export type CursorContext =
   | { kind: 'query-key'; from: number; prefix: string }
   | { kind: 'query-value'; from: number; prefix: string; key: string };
 
-const PROMPT_TYPES = 'person|text|date|choice|context|project';
 const ID_RE = /(?:^|[\s,{])id:[ \t]*["']?([a-z][a-z0-9_]{0,31})\b/;
-const TYPE_RE = new RegExp(`(?:^|[\\s,{])type:[ \\t]*["']?(${PROMPT_TYPES})\\b`);
+// Any type word is reported as written; the registry decides which ones exist.
+const TYPE_RE = /(?:^|[\s,{])type:[ \t]*["']?([a-z_][a-z0-9_]*)\b/;
 const FENCE_OPEN_RE = /^ {0,3}(`{3,}|~{3,})[ \t]*([^\s`]*)/;
 const FENCE_CLOSE_RE = /^ {0,3}(`{3,}|~{3,})[ \t]*$/;
 
