@@ -677,7 +677,8 @@ def test_relevance_sees_the_recent_conversation(tmp_path, fakes):
     s.start("ui")
     s.on_segment(seg(1, "we built a login screen"))
     s.on_segment(seg(2, "now demo it to me"))
-    assert "we built a login screen" in fakes.relevant_contexts[-1]
+    judged = fakes.relevant_calls[-1][1] + "\n" + fakes.relevant_contexts[-1]
+    assert "we built a login screen" in judged
 
 
 def test_update_now_catches_up_on_speech_the_filter_dropped(tmp_path, fakes):
@@ -1247,3 +1248,57 @@ def test_board_agent_gets_the_brief_every_run(tmp_path, fakes, projects_fake):
     s.nudge("board", "add a hotspot for fuel")
     s.run_pending()
     assert fakes.board_briefs == ["BRIEF Orbit", "BRIEF Orbit"]
+
+
+
+# -- fragments --------------------------------------------------------------------------
+
+def test_fragments_are_judged_together_and_all_reach_the_agent(tmp_path, fakes):
+    s = make(tmp_path)
+    s.start("ui")
+    s.run_pending()
+    judged = []
+
+    def relevant(canvas, text, *, context="", run=None):
+        judged.append(text)
+        return ("summary of everything in my vault" in text and "emotionally" in text), ""
+    import ghostbrain.design.relevance as rel
+    rel_orig = rel.relevant
+    rel.relevant = relevant
+    try:
+        s.on_segment(seg(5, "a plugin that gives me a summary of", t0=40, t1=43))
+        s.on_segment(seg(6, "everything in my vault.", t0=43, t1=46))
+        s.on_segment(seg(7, "and it tells me how emotionally", t0=46, t1=49))
+        s.force_update("ui")
+        s.run_pending()
+    finally:
+        rel.relevant = rel_orig
+    assert "a plugin that gives me a summary of" in judged[-1]
+    excerpt = fakes.ui_calls[-1]["excerpt"]
+    for part in ("a plugin that gives me", "everything in my vault", "how emotionally"):
+        assert part in excerpt
+
+
+def test_speech_judged_irrelevant_still_reaches_the_next_run(tmp_path, fakes):
+    s = make(tmp_path)
+    s.start("ui")
+    s.run_pending()
+    fakes.relevant_answer = (False, "")
+    s.on_segment(seg(5, "how I feel about everything in my life", t0=50, t1=53))
+    fakes.relevant_answer = (True, "")
+    s.on_segment(seg(6, "show it as a health check card", t0=53, t1=56))
+    s.force_update("ui")
+    s.run_pending()
+    assert "how I feel about everything" in fakes.ui_calls[-1]["excerpt"]
+
+
+def test_spoken_update_runs_on_everything_since_the_last_run(tmp_path, fakes):
+    s = make(tmp_path)
+    s.start("ui")
+    s.run_pending()
+    fakes.relevant_answer = (False, "")
+    s.on_segment(seg(5, "it should summarise my vault and how I feel", t0=50, t1=53))
+    fakes.detect_answer = Command("update", "ui", None)
+    s.on_segment(seg(6, "okay please do the update", t0=60, t1=62))
+    s.run_pending()
+    assert "summarise my vault and how I feel" in fakes.ui_calls[-1]["excerpt"]

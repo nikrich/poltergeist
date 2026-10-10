@@ -21,13 +21,13 @@ PREFILTER = re.compile(
     r"prototyp\w*|front[\s-]?ends?|ui|screens?|mock[\s-]?ups?|wireframes?"
     r"|back[\s-]?ends?|event[\s-]?storm\w*|domain|design\w*"
     r"|stop\w*|park\w*|paus\w*|resum\w*|pick(?:\s+\S+){0,4}\s+back\s+up"
-    r"|switch\w*|focus\w*|let[’']?s"
+    r"|switch\w*|focus\w*|let[’']?s|updat\w*|refresh\w*"
     r"|existing|repo\w*|codebase|extend\w*"
     r")\b",
     re.IGNORECASE,
 )
 
-COMMANDS = ("start_ui", "start_board", "focus_ui", "focus_board", "pause", "resume", "nudge")
+COMMANDS = ("start_ui", "start_board", "focus_ui", "focus_board", "pause", "resume", "nudge", "update")
 
 SCHEMA: dict = {
     "type": "object",
@@ -54,6 +54,7 @@ Commands:
 - resume: someone picks it back up ("let's pick the prototype back up")
 - nudge: an explicit instruction aimed at the prototype or board ("make that table sortable", "add a filter", "add a payment-failed event"); text = the instruction, rewritten as a short imperative. Only when a canvas is active.
 - codebase: when start_ui asks to build on an existing app/frontend/repo ("today we're working on Atlas, use our existing frontend"), the name of that app as spoken ("Atlas frontend"); otherwise null. Only for start_ui.
+- update: someone asks the assistant to apply what was discussed now, or complains it isn't updating ("please do the update as we discussed", "update it", "show me that", "why aren't you updating?"). canvas = the one named, else null.
 - none: everything else — discussion, small talk, or words like "design" or "screen" mentioned without anyone wanting the assistant to act.
 
 This is speech-to-text, so judge intent, not wording:
@@ -124,6 +125,10 @@ def detect(
     text = data.get("text") if isinstance(data.get("text"), str) else None
     if name in _DEFAULT_CANVAS:
         canvas = _DEFAULT_CANVAS[name]
+    elif name == "update":
+        canvas = canvas if canvas in ("ui", "board") else focus
+        if canvas is None or states.get(canvas) not in ("active", "paused"):
+            return None
     elif name in ("pause", "resume") and canvas is None:
         canvas = "both" if name == "pause" else focus
     elif name == "nudge":

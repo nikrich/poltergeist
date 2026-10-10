@@ -144,3 +144,16 @@ def test_schema_and_prompt_mention_codebase():
 ])
 def test_prefilter_matches_codebase_phrases(text):
     assert commands.PREFILTER.search(text)
+
+
+def test_update_command_defaults_to_the_focused_active_canvas():
+    run = fake_run({"command": "update", "canvas": None, "text": None, "codebase": None}, [])
+    cmd = commands.detect("", "please do the update as we discussed", focus="ui",
+                          states={"ui": "active", "board": "off"}, run=run)
+    assert cmd == Command("update", "ui", None)
+    assert commands.detect("", "update it", focus=None, states={"ui": "off"}, run=run) is None
+
+
+def test_prefilter_catches_update_complaints():
+    assert commands.PREFILTER.search("Why are you not updating?")
+    assert commands.PREFILTER.search("please do the update")
