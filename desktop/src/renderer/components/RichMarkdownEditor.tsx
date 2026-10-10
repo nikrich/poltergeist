@@ -45,10 +45,12 @@ export interface EditorHandle {
   /** Full document as markdown. */
   getMarkdown: () => string;
   /** Open inline AI on the current selection and run `action` at once (the
-   * docs panel hands selection-level actions here). False when inline AI is
-   * unavailable: source mode, read-only, no target, or a cell selection.
+   * docs panel hands selection-level actions here); with no action it opens
+   * the empty popover, like ⌘J / ✦ (true without restarting when already
+   * open). False when inline AI is unavailable: source mode, read-only, no
+   * target, or a cell selection (refused silently; the caller decides).
    * This is the entry point other UI (e.g. an Insert-menu "Ask AI") calls. */
-  startInlineAssist?: (action: InlineAction) => boolean;
+  startInlineAssist?: (action?: InlineAction) => boolean;
 }
 
 // Regex matching Obsidian-style wikilinks: [[path]] or [[path|alias]]
@@ -358,7 +360,8 @@ export function RichMarkdownEditor({
   function openInline(initial?: InlineAction): boolean {
     if (!editor || editor.isDestroyed || mode !== 'rich' || readOnly || !inlineAssist) return false;
     if (editor.state.selection instanceof CellSelection) {
-      toast.error('select text inside one table cell for inline ai');
+      // Only ⌘J / ✦ explain themselves; a hand-off caller gets a silent false.
+      if (!initial) toast.error('select text inside one table cell for inline ai');
       return false;
     }
     if (inline) {
@@ -458,7 +461,7 @@ export function RichMarkdownEditor({
       getMarkdown(): string {
         return current.current;
       },
-      startInlineAssist(action: InlineAction): boolean {
+      startInlineAssist(action?: InlineAction): boolean {
         return openInlineRef.current(action);
       },
     };

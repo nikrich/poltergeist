@@ -243,6 +243,47 @@ describe('RichMarkdownEditor inline ai', () => {
     );
   });
 
+  it('a cell selection handed over by startInlineAssist is refused without a toast', () => {
+    const { editor, handleRef } = setup('| a | b |\n| --- | --- |\n| one | two |');
+    useToasts.setState({ toasts: [] });
+    const cells: number[] = [];
+    editor().state.doc.descendants((n, pos) => {
+      if (n.type.name === 'tableCell' || n.type.name === 'tableHeader') cells.push(pos);
+    });
+    act(() => {
+      editor().view.dispatch(
+        editor().state.tr.setSelection(CellSelection.create(editor().state.doc, cells[2]!, cells[3]!)),
+      );
+    });
+    let ok = true;
+    act(() => {
+      ok = handleRef.current!.startInlineAssist!({ mode: 'polish' });
+    });
+    expect(ok).toBe(false);
+    expect(useToasts.getState().toasts).toEqual([]);
+    expect(screen.queryByRole('dialog', { name: 'inline ai' })).toBeNull();
+    expect(assist).not.toHaveBeenCalled();
+  });
+
+  it('startInlineAssist() without an action opens the empty popover (Insert-menu "Ask AI")', async () => {
+    const { editor, handleRef } = setup();
+    select(editor(), 'beta');
+    let ok = false;
+    act(() => {
+      ok = handleRef.current!.startInlineAssist!();
+    });
+    expect(ok).toBe(true);
+    expect(await screen.findByRole('dialog', { name: 'inline ai' })).toBeInTheDocument();
+    expect(assist).not.toHaveBeenCalled();
+    // Already open: still true, and nothing restarts.
+    act(() => {
+      ok = handleRef.current!.startInlineAssist!();
+    });
+    expect(ok).toBe(true);
+    expect(screen.getAllByRole('dialog', { name: 'inline ai' })).toHaveLength(1);
+    expect(assist).not.toHaveBeenCalled();
+  });
+
   it('switching to source mode clears an open suggestion', async () => {
     const { editor, onSave } = setup();
     select(editor(), 'beta');
