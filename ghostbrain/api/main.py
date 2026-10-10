@@ -31,6 +31,7 @@ from ghostbrain.api.routes import scheduler as scheduler_routes
 from ghostbrain.api.routes import search as search_routes
 from ghostbrain.api.routes import settings as settings_routes
 from ghostbrain.api.routes import suggestions as suggestions_routes
+from ghostbrain.api.routes import templates as templates_routes
 from ghostbrain.api.routes import vault as vault_routes
 from ghostbrain.api.routes import whatsapp as whatsapp_routes
 from ghostbrain.api.vault_http import install_vault_write_errors
@@ -114,6 +115,7 @@ def create_app(token: str) -> FastAPI:
     app.include_router(suggestions_routes.router)
     app.include_router(projects_routes.router)
     app.include_router(library_routes.router)
+    app.include_router(templates_routes.router)
     app.include_router(connector_auth_routes.router)
     import ghostbrain.api.auth.providers.register_all  # noqa: F401  (registers providers, Task D6)
     return app
