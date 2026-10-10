@@ -153,4 +153,36 @@ describe('table pipe safety', () => {
     expect(markdownOf(editor)).toBe(md);
     expect(columnCounts(markdownOf(editor))).toEqual([2, 2, 2]);
   });
+
+  it('a hard break inside a cell is written as a space, never [hardBreak]', () => {
+    const editor = makeEditor('');
+    editor.commands.setContent(
+      {
+        type: 'doc',
+        content: [
+          {
+            type: 'table',
+            content: [
+              { type: 'tableRow', content: [
+                { type: 'tableHeader', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'h' }] }] },
+              ] },
+              { type: 'tableRow', content: [
+                { type: 'tableCell', content: [
+                  { type: 'paragraph', content: [
+                    { type: 'text', text: 'a' },
+                    { type: 'hardBreak' },
+                    { type: 'text', text: 'b' },
+                  ] },
+                ] },
+              ] },
+            ],
+          },
+        ],
+      },
+      false,
+    );
+    const md = markdownOf(editor);
+    expect(md).not.toContain('[hardBreak]');
+    expect(md).toBe('| h |\n| --- |\n| a b |');
+  });
 });

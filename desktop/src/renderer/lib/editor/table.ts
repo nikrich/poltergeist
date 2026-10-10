@@ -74,15 +74,36 @@ function imageMarkdown(node: PMNode): string {
   return `![${alt}${width}](${(node.attrs.src as string | null) ?? ''})`;
 }
 
+/**
+ * A textblock split at its hard breaks. tiptap-markdown's hardBreak serializer
+ * writes the `[hardBreak]` HTML fallback while `state.inTable` is set, so line
+ * breaks never reach it: each segment is rendered on its own and joined with a space.
+ */
+function inlineSegments(block: PMNode): PMNode[] {
+  const out: PMNode[] = [];
+  let from = 0;
+  const push = (to: number): void => {
+    if (to > from) out.push(block.copy(block.content.cut(from, to)));
+  };
+  block.forEach((child, offset) => {
+    if (child.type.name !== 'hardBreak') return;
+    push(offset);
+    from = offset + child.nodeSize;
+  });
+  push(block.content.size);
+  return out;
+}
+
 function renderCell(state: TableState, cell: PMNode): void {
   const start = state.out.length;
   let written = 0;
   cell.forEach((child) => {
     if (child.isTextblock) {
-      if (child.childCount === 0) return;
-      if (written) state.write(' ');
-      state.renderInline(child);
-      written++;
+      for (const segment of inlineSegments(child)) {
+        if (written) state.write(' ');
+        state.renderInline(segment);
+        written++;
+      }
     } else if (child.type.name === 'image') {
       // Block image (JotImage is inline: false) — textContent would drop it.
       if (!child.attrs.src) return;
