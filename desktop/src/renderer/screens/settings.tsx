@@ -1232,8 +1232,9 @@ export function ProjectsSettings() {
               key={p.id}
               project={p}
               onUpdate={(vars) =>
-                updateProject.mutate(vars, {
-                  onError: (e) => toast.error(e instanceof Error ? e.message : 'update failed'),
+                updateProject.mutateAsync(vars).catch((e: unknown) => {
+                  toast.error(e instanceof Error ? e.message : 'update failed');
+                  throw e;
                 })
               }
             />
@@ -1260,9 +1261,11 @@ function ProjectRow({
   onUpdate,
 }: {
   project: Project;
-  onUpdate: (vars: { context: string; slug: string } & UpdateProjectRequest) => void;
+  /** Rejects (after toasting) when the PATCH fails. */
+  onUpdate: (vars: { context: string; slug: string } & UpdateProjectRequest) => Promise<unknown>;
 }) {
   const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [name, setName] = useState(project.name);
   const [description, setDescription] = useState(project.description);
   const label = `${project.context}/${project.slug}`;
@@ -1272,20 +1275,29 @@ function ProjectRow({
     setDescription(project.description);
     setEditing(true);
   };
-  const save = () => {
+  // Close only once the PATCH lands: a 409 (busy, name taken, concurrent
+  // edit) keeps the editor open with the draft so the user can retry.
+  const save = async () => {
     const trimmed = name.trim();
-    if (!trimmed) return;
-    onUpdate({
-      context: project.context,
-      slug: project.slug,
-      name: trimmed,
-      description: description.trim(),
-    });
-    setEditing(false);
+    if (!trimmed || saving) return;
+    setSaving(true);
+    try {
+      await onUpdate({
+        context: project.context,
+        slug: project.slug,
+        name: trimmed,
+        description: description.trim(),
+      });
+      setEditing(false);
+    } catch {
+      // already toasted by the caller; keep the draft
+    } finally {
+      setSaving(false);
+    }
   };
   const onKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') save();
-    if (e.key === 'Escape') setEditing(false);
+    if (e.key === 'Enter') void save();
+    if (e.key === 'Escape' && !saving) setEditing(false);
   };
 
   if (editing) {
@@ -1312,12 +1324,18 @@ function ProjectRow({
         />
         {renamesFolder && <div className="text-11 text-ink-2">renames the folder too</div>}
         <div className="flex gap-3">
-          <button type="button" className="text-11 text-ink-0" disabled={!name.trim()} onClick={save}>
-            save
+          <button
+            type="button"
+            className="text-11 text-ink-0 disabled:text-ink-3"
+            disabled={!name.trim() || saving}
+            onClick={() => void save()}
+          >
+            {saving ? 'saving…' : 'save'}
           </button>
           <button
             type="button"
             className="text-11 text-ink-2 hover:text-ink-0"
+            disabled={saving}
             onClick={() => setEditing(false)}
           >
             cancel
@@ -1356,6 +1374,8 @@ function ProjectRow({
             context: project.context,
             slug: project.slug,
             archived: !project.archived,
+          }).catch(() => {
+            /* already toasted by the caller */
           })
         }
       >

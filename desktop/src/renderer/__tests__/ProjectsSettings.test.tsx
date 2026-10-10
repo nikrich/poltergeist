@@ -178,4 +178,54 @@ describe('ProjectsSettings', () => {
       ).toBe(true),
     );
   });
+  it('keeps the editor open with the draft when the PATCH is rejected', async () => {
+    renderSection();
+    vi.mocked(client.patch).mockRejectedValue(
+      new Error('project busy: a doc is still being indexed or summarised'),
+    );
+    await screen.findByText('Paymnets');
+    fireEvent.click(screen.getByRole('button', { name: 'edit work/paymnets' }));
+    fireEvent.change(screen.getByLabelText('project name work/paymnets'), {
+      target: { value: 'Payments' },
+    });
+    fireEvent.change(screen.getByLabelText('project description work/paymnets'), {
+      target: { value: 'card + EFT rails' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'save' }));
+    await waitFor(() =>
+      expect(
+        useToasts.getState().toasts.some((t) => t.message.startsWith('project busy')),
+      ).toBe(true),
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'save' })).toBeTruthy());
+    expect(
+      (screen.getByLabelText('project name work/paymnets') as HTMLInputElement).value,
+    ).toBe('Payments');
+    expect(
+      (screen.getByLabelText('project description work/paymnets') as HTMLInputElement).value,
+    ).toBe('card + EFT rails');
+  });
+
+  it('disables save while the PATCH is pending and closes on success', async () => {
+    renderSection();
+    let resolve!: (p: Project) => void;
+    vi.mocked(client.patch).mockReturnValue(
+      new Promise<Project>((r) => {
+        resolve = r;
+      }) as never,
+    );
+    await screen.findByText('Paymnets');
+    fireEvent.click(screen.getByRole('button', { name: 'edit work/paymnets' }));
+    fireEvent.change(screen.getByLabelText('project name work/paymnets'), {
+      target: { value: 'Payments' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'save' }));
+    const pending = await screen.findByRole('button', { name: 'saving…' });
+    expect((pending as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByLabelText('project name work/paymnets')).toBeTruthy();
+    fireEvent.keyDown(screen.getByLabelText('project name work/paymnets'), { key: 'Enter' });
+    expect(vi.mocked(client.patch)).toHaveBeenCalledTimes(1);
+    resolve({ ...projects[1], slug: 'payments', id: 'work/payments', name: 'Payments' });
+    await waitFor(() => expect(screen.queryByLabelText('project name work/paymnets')).toBeNull());
+  });
 });
