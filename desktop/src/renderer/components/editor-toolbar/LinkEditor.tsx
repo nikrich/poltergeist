@@ -49,7 +49,7 @@ export function LinkEditor({ editor }: { editor: Editor }) {
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => (open ? setOpen(false) : show())}
         className={`flex h-7 w-7 items-center justify-center rounded-sm transition-colors duration-100 hover:bg-fog hover:text-ink-0 ${FOCUS_RING} ${
-          active || open ? 'bg-fog text-ink-0' : 'text-ink-2'
+          active || open ? 'bg-hairline-2 text-ink-0' : 'text-ink-2'
         }`}
       >
         <Lucide name="link" size={14} />
@@ -93,7 +93,7 @@ export function LinkEditor({ editor }: { editor: Editor }) {
             />
           </div>
           {error && (
-            <div role="alert" className="mt-[6px] px-[2px] text-11 text-oxblood">
+            <div role="alert" className="mt-[6px] px-[2px] text-11 text-pill-oxblood-fg">
               {error}
             </div>
           )}

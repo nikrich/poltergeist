@@ -24,9 +24,13 @@ interface Props {
   items: ToolbarMenuItem[];
   radio?: boolean;
   disabled?: boolean;
-  /** Classes for the trigger button (width, emphasis). */
+  /** Classes for the trigger button (width, emphasis). A `text-*` colour here
+   * replaces the resting `text-ink-1` (same-property utilities don't stack). */
   triggerClassName?: string;
 }
+
+/** A Tailwind text-colour utility (`text-ink-0`), not a size (`text-13`). */
+const TEXT_COLOUR_RE = /(?:^|\s)text-(?:ink|neon|paper|oxblood|pill)\b/;
 
 const GAP = 4;
 const EDGE = 8;
@@ -82,7 +86,7 @@ export const PANEL_CLASS =
   'z-40 rounded-md border border-hairline-2 bg-vellum shadow-float';
 
 export const FOCUS_RING =
-  'outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ink-3';
+  'outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ink-2';
 
 /** Toolbar dropdown. Esc closes it and is preventDefault-ed, so NoteView's
  * Esc-to-close and A4's Esc-to-leave-focus both skip it. */
@@ -136,7 +140,8 @@ export function ToolbarMenu({
       e.preventDefault();
       setActive(items.length - 1);
     } else if (e.key === 'Tab') {
-      setOpen(false);
+      e.preventDefault();
+      closeToTrigger();
     }
   };
 
@@ -159,8 +164,8 @@ export function ToolbarMenu({
           setActive(checked >= 0 ? checked : 0);
           setOpen((o) => !o);
         }}
-        className={`flex h-7 items-center gap-[6px] rounded-sm px-2 text-ink-1 transition-colors duration-100 hover:bg-fog hover:text-ink-0 disabled:cursor-default disabled:text-ink-3 disabled:hover:bg-transparent ${FOCUS_RING} ${
-          open ? 'bg-fog text-ink-0' : ''
+        className={`flex h-7 items-center gap-[6px] rounded-sm px-2 transition-colors duration-100 hover:bg-fog hover:text-ink-0 disabled:cursor-default disabled:text-ink-3 disabled:hover:bg-transparent ${FOCUS_RING} ${
+          open ? 'bg-hairline-2 text-ink-0' : TEXT_COLOUR_RE.test(triggerClassName) ? '' : 'text-ink-1'
         } ${triggerClassName}`}
       >
         {trigger}

@@ -31,7 +31,7 @@ const Rule = () => <span aria-hidden className="mx-[6px] h-5 w-px flex-shrink-0 
 
 const ICON_BUTTON = `flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-sm transition-colors duration-100 hover:bg-fog hover:text-ink-0 disabled:cursor-default disabled:text-ink-3 disabled:hover:bg-transparent ${FOCUS_RING}`;
 
-const iconButtonClass = (on: boolean) => `${ICON_BUTTON} ${on ? 'bg-fog text-ink-0' : 'text-ink-2'}`;
+const iconButtonClass = (on: boolean) => `${ICON_BUTTON} ${on ? 'bg-hairline-2 text-ink-0' : 'text-ink-2'}`;
 
 /** Each text-style row previews its style, stepping down like the page's headings. */
 const STYLE_PREVIEW: Record<TextStyle['id'], string> = {

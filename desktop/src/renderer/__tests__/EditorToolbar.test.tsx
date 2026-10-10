@@ -111,6 +111,37 @@ describe('EditorToolbar (A7)', () => {
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
+  it('Tab closes a menu and returns focus to its trigger', () => {
+    setup();
+    openInsert();
+    const item = screen.getAllByRole('menuitem')[0]!;
+    const tab = createEvent.keyDown(item, { key: 'Tab' });
+    fireEvent(item, tab);
+    expect(tab.defaultPrevented).toBe(true);
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(screen.getByRole('button', { name: 'insert' })).toHaveFocus();
+  });
+
+  it('the Insert trigger reads ink-0 at rest and when open; open triggers use the hairline-2 fill', () => {
+    setup();
+    const insert = screen.getByRole('button', { name: 'insert' });
+    expect(insert).toHaveClass('text-ink-0');
+    expect(insert).not.toHaveClass('text-ink-1');
+    openInsert();
+    expect(insert).toHaveClass('bg-hairline-2', 'text-ink-0');
+    expect(insert).not.toHaveClass('bg-fog');
+  });
+
+  it('active marks and the open link form use the hairline-2 fill (visible on light paper)', () => {
+    setup();
+    editor.commands.selectAll();
+    fireEvent.click(screen.getByRole('button', { name: 'bold' }));
+    expect(screen.getByRole('button', { name: 'bold' })).toHaveClass('bg-hairline-2', 'text-ink-0');
+    expect(screen.getByRole('button', { name: 'bold' })).not.toHaveClass('bg-fog');
+    fireEvent.click(screen.getByRole('button', { name: 'link' }));
+    expect(screen.getByRole('button', { name: 'link' })).toHaveClass('bg-hairline-2', 'text-ink-0');
+  });
+
   it('arrow keys move through the menu and wrap', () => {
     setup();
     openInsert();
