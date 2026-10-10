@@ -86,10 +86,16 @@ def _root(walk: _Walk, target: str) -> str:
     if walk.index.exists(focus):
         return focus
     key = link_key(focus)
-    if walk.index.inbound(key):
-        walk.ghost_titles[key] = PurePosixPath(focus).stem
-        return key
-    raise FocusNotFound(focus)
+    inbound = walk.index.inbound(key)
+    if not inbound:
+        raise FocusNotFound(focus)
+    # The UI recentres with the lower-cased key; the title keeps the case of
+    # the first inbound link's written target.
+    entry = walk.index.get(inbound[0].source)
+    links = entry.links if entry is not None else ()
+    written = next((link.target for link in links if link_key(link.target) == key), focus)
+    walk.ghost_titles[key] = PurePosixPath(written).stem
+    return key
 
 
 def ego_graph(

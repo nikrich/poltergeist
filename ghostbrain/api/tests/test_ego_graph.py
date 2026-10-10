@@ -74,6 +74,14 @@ def test_a_ghost_can_be_the_focus(tmp_path: Path):
     assert _hops(g2) == {"20-contexts/work/missing.md": 0, A: 1, "20-contexts/work/e.md": 1}
 
 
+def test_a_ghost_focused_by_its_link_key_keeps_its_written_title(tmp_path: Path):
+    # The UI recentres with node.path, which for a ghost is the lower-cased link key.
+    _write(tmp_path, A, "[[Someday Idea]]")
+    g = _graph(tmp_path, "someday idea.md", depth=1)
+    assert g["focus"] == "someday idea.md"
+    assert g["nodes"][0]["title"] == "Someday Idea"
+
+
 def test_unknown_focus_and_bad_paths_raise(tmp_path: Path):
     _write(tmp_path, A, "a")
     with pytest.raises(FocusNotFound):
