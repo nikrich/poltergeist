@@ -697,3 +697,20 @@ describe('JotsScreen focus mode', () => {
     expect(screen.getByRole('button', { name: 'history' })).toBeInTheDocument();
   });
 });
+
+describe('JotsScreen templates tab', () => {
+  it('switches to the templates panel and back', async () => {
+    apiRequest.mockImplementation(withConnectors(async (_m, path) => {
+      if (path.includes('source=manual')) return { ok: true, status: 200, data: page };
+      if (path === '/v1/templates') return { ok: true, status: 200, data: { templates: [] } };
+      return { ok: true, status: 200, data: detail };
+    }));
+    render(withQuery(<JotsScreen />));
+    await screen.findByText('first jot');
+    fireEvent.click(screen.getByRole('button', { name: 'templates' }));
+    expect(await screen.findByRole('heading', { name: 'templates' })).toBeInTheDocument();
+    expect(screen.getByText(/pick a template to edit/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'back to jots' }));
+    expect(await screen.findByRole('heading', { name: 'jots' })).toBeInTheDocument();
+  });
+});
