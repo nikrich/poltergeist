@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { lineDiff } from '../lib/line-diff';
 import type { Conflict } from '../lib/use-guarded-save';
 import { Btn } from './Btn';
+import { LineDiffView } from './LineDiffView';
 import { Lucide } from './Lucide';
 
 interface Props {
@@ -10,13 +10,6 @@ interface Props {
   onKeepMine: () => void;
   onKeepTheirs: () => void;
 }
-
-const lineClass = {
-  same: 'text-ink-2',
-  del: 'bg-oxblood/10 text-oxblood',
-  add: 'bg-neon/10 text-ink-0',
-} as const;
-const prefix = { same: '  ', del: '- ', add: '+ ' } as const;
 
 /** Spec B §7: autosave is paused; the user picks how to resolve. */
 export function ConflictBanner({ conflict, resolving, onKeepMine, onKeepTheirs }: Props) {
@@ -48,18 +41,13 @@ export function ConflictBanner({ conflict, resolving, onKeepMine, onKeepTheirs }
         </div>
       )}
       {showDiff && !unread && (
-        <pre
-          data-testid="conflict-diff"
-          className="mt-2 max-h-64 overflow-auto rounded-sm border border-hairline bg-paper p-2 font-mono text-11"
-        >
-          <div className="mb-1 text-ink-3">- theirs (on disk) · + yours (in the editor)</div>
-          {lineDiff(conflict.theirs, conflict.mine).map((line, i) => (
-            <div key={i} className={lineClass[line.kind]}>
-              {prefix[line.kind]}
-              {line.text}
-            </div>
-          ))}
-        </pre>
+        <LineDiffView
+          testId="conflict-diff"
+          className="mt-2 max-h-64"
+          oldText={conflict.theirs}
+          newText={conflict.mine}
+          legend="- theirs (on disk) · + yours (in the editor)"
+        />
       )}
     </div>
   );
