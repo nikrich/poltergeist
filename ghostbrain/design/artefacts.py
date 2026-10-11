@@ -462,9 +462,18 @@ def _link_meeting(wav: Path, note_path: Path) -> bool:
 
     try:
         pointer = json.loads(design_session.pointer_path(wav).read_text(encoding="utf-8"))
-        folder = Path(pointer["prototype_dir"])
-    except (OSError, ValueError, KeyError, TypeError):
+        folders = [Path(p) for p in [*(pointer.get("previous") or []), pointer["prototype_dir"]] if p]
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return False
+    linked = False
+    for folder in folders:
+        linked = _link_folder(wav, folder, note_path) or linked
+    return linked
+
+
+def _link_folder(wav: Path, folder: Path, note_path: Path) -> bool:
+    from ghostbrain.design import session as design_session
+
     data = load(folder)
     if data is None:
         return False

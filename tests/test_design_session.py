@@ -1326,3 +1326,59 @@ def test_a_command_in_a_backlog_keeps_the_rest_as_design_talk(tmp_path, fakes):
     s._process([seg(1, "we need a claims list", t0=0, t1=3),
                 seg(2, "let's kick off a frontend prototype", t0=40, t1=43)])
     assert s.snapshot()["canvases"]["ui"]["state"] == "active"
+
+
+# -- a repo named after a scratch prototype exists ------------------------------------------
+
+def _scratch_with_a_rev(tmp_path, fakes):
+    s = make(tmp_path)
+    fakes.detect_answer = Command("start_ui", "ui", None)
+    s.on_segment(seg(1, "okay let's kick off the front end prototype", t0=0, t1=3))
+    s.run_pending()
+    assert s.snapshot()["canvases"]["ui"]["rev"] == 1
+    return s
+
+
+def test_naming_a_repo_after_scratch_started_forks_to_the_repo(tmp_path, fakes, wt_fakes):
+    s = _scratch_with_a_rev(tmp_path, fakes)
+    scratch_dir = Path(s.prototype_dir)
+    events = collect(s)
+    fakes.detect_answer = Command("start_ui", "ui", None, "Acme FE v2")
+    # well beyond the 45 s window: the fork's first run must still get it
+    fakes.relevant_answer = (False, "")
+    s.on_segment(seg(2, "the claims list needs a status filter", t0=10, t1=13))
+    s.on_segment(seg(3, "it should be the existing Acme FE v2 project", t0=120, t1=124))
+    snap = s.snapshot()
+    assert snap["ui_kind"] == "worktree" and snap["codebase_confirmed"] is False
+    assert snap["canvases"]["ui"]["rev"] == 0
+    assert any("the scratch prototype is kept" in e.get("label", "") for e in events())
+    assert scratch_dir.exists()                       # the scratch artefact stays
+    s.set_codebase(snap["codebase"]["repo"])          # confirm
+    s.run_pending()
+    assert wt_fakes.created and "/artefacts/" in s.prototype_dir
+    first_real = [c for c in fakes.ui_calls if c.get("mode") == "worktree"]
+    excerpt = first_real[0]["excerpt"] if first_real else ""
+    assert "status filter" in excerpt and "kick off the front end prototype" in excerpt
+    pointer = json.loads(ds.pointer_path(s.wav).read_text())
+    assert pointer["previous"] == [str(scratch_dir)] and pointer["prototype_dir"] == s.prototype_dir
+
+
+def test_scratch_instead_puts_the_scratch_prototype_back(tmp_path, fakes, wt_fakes):
+    s = _scratch_with_a_rev(tmp_path, fakes)
+    scratch_dir = s.prototype_dir
+    fakes.detect_answer = Command("start_ui", "ui", None, "Acme FE v2")
+    s.on_segment(seg(2, "use the existing Acme FE v2 frontend", t0=20, t1=23))
+    assert s.snapshot()["codebase_confirmed"] is False
+    s.set_codebase(None)
+    snap = s.snapshot()
+    assert snap["ui_kind"] == "scratch" and snap["canvases"]["ui"]["rev"] == 1
+    assert snap["prototype_dir"] == scratch_dir and wt_fakes.created == []
+
+
+def test_picker_can_move_a_scratch_prototype_onto_a_repo(tmp_path, fakes, wt_fakes):
+    s = _scratch_with_a_rev(tmp_path, fakes)
+    scratch_dir = s.prototype_dir
+    s.set_codebase(str(wt_fakes.repo))
+    s.run_pending()
+    assert s.snapshot()["ui_kind"] == "worktree" and wt_fakes.created
+    assert Path(scratch_dir).exists() and s.prototype_dir != scratch_dir

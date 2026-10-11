@@ -266,10 +266,26 @@ describe('DesignPanel', () => {
       );
     });
 
-    it('is locked once the prototype has a revision', () => {
+    it('stays open for a scratch prototype with revisions (it can move onto a repo)', () => {
       setSession(makeSession({ focus: 'ui', ui: { state: 'active', rev: 1 } }));
       renderPanel();
-      const chip = screen.getByRole('button', { name: /codebase: scratch/i });
+      expect(screen.getByRole('button', { name: /codebase: scratch/i })).not.toBeDisabled();
+    });
+
+    it('is locked once a repo prototype has a revision', () => {
+      setSession(
+        makeSession({
+          focus: 'ui',
+          ui_kind: 'worktree',
+          codebase: {
+            repo: '/code/acme/web-app', name: 'web-app', app_dir: '/code/acme/web-app-poltergeist-x',
+            worktree: '/code/acme/web-app-poltergeist-x', branch: 'poltergeist/x', base: 'origin/main',
+          },
+          ui: { state: 'active', rev: 1 },
+        }),
+      );
+      renderPanel();
+      const chip = screen.getByRole('button', { name: /codebase:/i });
       expect(chip).toBeDisabled();
       expect(chip).toHaveAttribute('title', expect.stringMatching(/start a new session/i));
     });

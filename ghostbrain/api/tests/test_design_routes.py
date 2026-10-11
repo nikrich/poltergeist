@@ -232,7 +232,9 @@ def test_session_codebase_switches_and_validates(client: TestClient, auth_header
     assert res.status_code == 200 and res.json()["session"]["ui_kind"] == "scratch"
 
 
-def test_session_codebase_409_after_revs(client: TestClient, auth_headers, session, repos):
+def test_session_codebase_409_switching_repos_after_revs(client: TestClient, auth_headers, session, repos):
+    session.ui_kind = "worktree"
+    session._choice = {"repo": str(repos["bff"].path), "name": "bff"}
     session.canvases["ui"].rev = 1
     res = client.post("/v1/design/session/codebase", json={"path": str(repos["web"].path)}, headers=auth_headers)
     assert res.status_code == 409

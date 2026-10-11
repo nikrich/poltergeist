@@ -53,7 +53,7 @@ Commands:
 - pause: someone stops or parks design work ("let's stop prototyping", "park the design stuff"); canvas = "both" unless they clearly name only one ("pause the board", "stop the UI prototype but keep the board going") — generic words like prototyping/design/mocking mean "both"
 - resume: someone picks it back up ("let's pick the prototype back up")
 - nudge: an explicit instruction aimed at the prototype or board ("make that table sortable", "add a filter", "add a payment-failed event"); text = the instruction, rewritten as a short imperative. Only when a canvas is active.
-- codebase: when start_ui asks to build on an existing app/frontend/repo ("today we're working on Atlas, use our existing frontend"), the name of that app as spoken ("Atlas frontend"); otherwise null. Only for start_ui.
+- codebase: the name of an existing app/frontend/repo the prototype should be built on, as spoken ("Atlas frontend", "Atlas FE v2"); otherwise null. Only with start_ui. Also when it comes AFTER the prototype started, as a correction or clarification ("no, there should be an existing project, the Atlas FE v2 or something", "work off our existing Atlas frontend") — answer start_ui with that codebase even though the UI is already active.
 - update: someone asks the assistant to apply what was discussed now, or complains it isn't updating ("please do the update as we discussed", "update it", "show me that", "why aren't you updating?"). canvas = the one named, else null.
 - none: everything else — discussion, small talk, or words like "design" or "screen" mentioned without anyone wanting the assistant to act.
 

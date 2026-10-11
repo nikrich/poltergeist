@@ -59,6 +59,8 @@ WINDOW_S = 45.0
 JUDGE_S = 60.0
 # Cap on what a canvas keeps between runs (segments).
 HEARD_MAX = 400
+# Cap on the whole-meeting record used after a fork (segments).
+ALL_MAX = 3000
 # Whisper often splits one sentence over several segments ("let's start a
 # design session" / "a front-end prototype"): command detection judges the
 # speech since the last command, back to this many seconds, as one utterance.
@@ -274,6 +276,16 @@ class DesignSession:
         self._bootstrapped = False
         self._protected: dict | None = None
         self._codebase_gen = 0
+        # A repo named after a scratch prototype already exists forks the
+        # session: the scratch artefact stays (its folder is remembered so
+        # the meeting links it too) and the UI restarts on the repo with the
+        # whole meeting so far. Undone if the user picks scratch instead.
+        self._previous_dirs: list[str] = []
+        self._fork_backup: dict | None = None
+        self._catch_up_all = False
+        # Every segment of the meeting (capped): the first run after a fork
+        # needs more than the 45 s window.
+        self._all: list[Segment] = []
         self._planned = self._plan_dir()
 
         self._threaded = threaded
@@ -388,6 +400,8 @@ class DesignSession:
                 if seg[0] <= self._last_seq or self.ended or self._ending:
                     continue
                 self._last_seq = seg[0]
+                self._all.append(seg)
+                self._all = self._all[-ALL_MAX:]
                 self._window.append(seg)
                 self._window = [s for s in self._window if s[3] >= seg[3] - WINDOW_S]
             if seg[1]:
@@ -837,8 +851,9 @@ class DesignSession:
         if cmd.command != "start_ui" or not cmd.codebase:
             return _UNSET
         with self._lock:
-            ui = self.canvases["ui"]
-            if ui.rev or ui.state == "active" or self._choice is not None or self.codebase is not None:
+            # A repo is only picked up while the UI is (or will be) scratch;
+            # switching between repos stays a panel action.
+            if self._choice is not None or self.codebase is not None:
                 return _UNSET
         try:
             return codebases.resolve(cmd.codebase, codebases.scan())
@@ -850,12 +865,59 @@ class DesignSession:
         """Start the UI on the spoken repo — pending until the user confirms
         it, since installing and running it executes the repo's code — or as
         scratch when it is not found. Returns the toast label."""
+        # A scratch prototype exists once the UI has a revision; before that
+        # (even with the board's folder made) the repo simply takes over.
+        started = self.canvases["ui"].rev > 0
         if cand is None:
             self._dispatch(cmd)
-            return f"Couldn't find '{cmd.codebase}' — using a scratch prototype"
+            return (f"Couldn't find '{cmd.codebase}' — keeping the scratch prototype" if started
+                    else f"Couldn't find '{cmd.codebase}' — using a scratch prototype")
+        if started:
+            self._fork_scratch()
         self._switch_codebase(cand, confirmed=False)
         self._dispatch(cmd)
+        if started:
+            return f"Use {cand.name}? Confirm in the panel — the scratch prototype is kept"
         return f"Use {cand.name}? Confirm in the panel"
+
+    def _fork_scratch(self) -> None:
+        """Keep the scratch prototype as its own artefact and restart the UI
+        canvas so it can be built on a repo. Caller holds the lock."""
+        ui = self.canvases["ui"]
+        if self._dir is not None:
+            self._save_artefact()
+        self._fork_backup = {
+            "dir": self._dir, "planned": self._planned, "canvas": ui.persist(),
+            "ui_session_id": self.ui_session_id, "brief_sent_for": self._brief_sent_for,
+        }
+        if self._dir is not None:
+            self._previous_dirs.append(str(self._dir))
+        self._dir = None
+        ui.rev, ui.revs, ui.consumed_seq, ui.heard = 0, [], 0, []
+        ui.buffer.take()
+        ui.nudges, ui.fix_runs, ui.build_error, ui.last_error, ui.failures = [], 0, None, None, 0
+        self.ui_session_id = None
+        self._brief_sent_for = None
+        self._catch_up_all = True
+
+    def _unfork_scratch(self) -> None:
+        """The user chose scratch over the repo named mid-meeting: put the
+        scratch prototype back as it was. Caller holds the lock."""
+        backup, self._fork_backup = self._fork_backup, None
+        if backup is None:
+            return
+        ui = self.canvases["ui"]
+        saved = backup["canvas"]
+        if backup["dir"] is not None and self._previous_dirs and self._previous_dirs[-1] == str(backup["dir"]):
+            self._previous_dirs.pop()
+        self._dir, self._planned = backup["dir"], backup["planned"]
+        ui.rev, ui.revs = int(saved.get("rev") or 0), list(saved.get("revs") or [])
+        ui.consumed_seq = int(saved.get("consumed_seq") or 0)
+        self.ui_session_id = backup["ui_session_id"]
+        self._brief_sent_for = backup["brief_sent_for"]
+        self._catch_up_all = False
+        if self._dir is not None:
+            self._write_pointer()
 
     @staticmethod
     def _label(cmd: Command) -> str:
@@ -922,11 +984,19 @@ class DesignSession:
         # Skip talk the other canvas already used or is holding: switching
         # from the UI to the board must not model the screens just discussed.
         seen = {s[0] for s in cv.buffer.segments} | {s[0] for s in other.buffer.segments}
-        floor = max(cv.consumed_seq, other.consumed_seq)
-        cv.buffer.restore([s for s in self._window if s[0] > floor and s[0] not in seen])
+        if canvas == "ui" and self._catch_up_all:
+            # Restarted on a repo mid-meeting: everything said so far is the brief.
+            seen = {s[0] for s in cv.buffer.segments}
+            cv.buffer.restore([s for s in self._all if s[1] and s[0] not in seen])
+        else:
+            floor = max(cv.consumed_seq, other.consumed_seq)
+            cv.buffer.restore([s for s in self._window if s[0] > floor and s[0] not in seen])
         if pending:
             cv.reason = CONFIRM_REASON
             return
+        if canvas == "ui":
+            self._catch_up_all = False
+            self._fork_backup = None
         if cv.buffer.segments:
             cv.buffer.force()
             self._schedule_locked(canvas)
@@ -1148,6 +1218,15 @@ class DesignSession:
             if same and not retry and not confirm:
                 return
             restart = ui.state in ("active", "paused") or retry
+            if cand is None and self._fork_backup is not None:
+                # Scratch instead of the repo named mid-meeting: undo the fork.
+                self._switch_codebase(None)
+                self._unfork_scratch()
+                self._persist("codebase")
+                self._emit_snapshot()
+                return
+            if not same and self.ui_kind == "scratch" and cand is not None and ui.rev > 0:
+                self._fork_scratch()
             if not same:
                 self._switch_codebase(cand)
             elif confirm:
@@ -1341,13 +1420,18 @@ class DesignSession:
             scaffold.create(folder, self.pack_id, title=self.recording_title or "Meeting")
         self._dir = folder
         self._planned = folder
-        try:
-            _write_atomic(pointer_path(self.wav), json.dumps(
-                {"wav": str(self.wav), "prototype_dir": str(folder)}))
-        except Exception:
-            log.exception("could not remember the prototype folder for %s", self.wav.name)
+        self._write_pointer()
         self._persist("created")
         return folder
+
+    def _write_pointer(self) -> None:
+        """Remember this recording's artefact folders (current + forked-off)."""
+        try:
+            _write_atomic(pointer_path(self.wav), json.dumps(
+                {"wav": str(self.wav), "prototype_dir": str(self._dir),
+                 "previous": list(self._previous_dirs)}))
+        except Exception:
+            log.exception("could not remember the prototype folder for %s", self.wav.name)
 
     def _persist_state(self) -> dict:
         return {
@@ -1361,6 +1445,7 @@ class DesignSession:
             "codebase": self.codebase.to_dict() if self.codebase else None,
             "install": self.install, "bootstrapped": self._bootstrapped,
             "codebase_confirmed": self.codebase_confirmed,
+            "previous_dirs": list(self._previous_dirs),
         }
 
     def _persist(self, event: str) -> None:
@@ -1413,6 +1498,8 @@ class DesignSession:
             s.ended = bool(state.get("ended"))
             s._last_seq = int(state.get("last_seq") or 0)
             s._board_history.update(history)
+            prev = state.get("previous_dirs")
+            s._previous_dirs = [str(p) for p in prev] if isinstance(prev, list) else []
             if state.get("ui_kind") == "worktree":
                 s.ui_kind = "worktree"
                 choice = state.get("codebase_choice")

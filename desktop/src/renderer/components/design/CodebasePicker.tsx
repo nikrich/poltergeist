@@ -6,7 +6,7 @@ import { designSession, useDesignSession } from '../../stores/design-session';
 import { toast } from '../../stores/toast';
 import type { DesignSessionSnapshot } from '../../../shared/design-types';
 
-const LOCKED_HINT = 'The prototype already has revisions — start a new session to switch codebase';
+const LOCKED_HINT = 'The prototype already has revisions on this repo — start a new session to switch codebase';
 
 function chipLabel(session: DesignSessionSnapshot): string {
   if (session.codebase) return `${session.codebase.name} · ${session.codebase.branch}`;
@@ -21,7 +21,9 @@ export function CodebasePicker({ session }: { session: DesignSessionSnapshot }) 
   const setOpen = useDesignSession((s) => s.setPickerOpen);
   const [q, setQ] = useState('');
   const root = useRef<HTMLDivElement>(null);
-  const locked = session.canvases.ui.rev > 0;
+  // A scratch prototype can still move onto a repo (it stays as its own
+  // artefact); once built on a repo, switching needs a new session.
+  const locked = session.ui_kind === 'worktree' && session.canvases.ui.rev > 0;
   const results = useCodebases(q.trim(), { enabled: open && !locked });
 
   useEffect(() => {
