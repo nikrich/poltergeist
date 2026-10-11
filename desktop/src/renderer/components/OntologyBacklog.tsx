@@ -10,7 +10,8 @@ import { ScopeCard } from './ScopeCard';
 import { toast } from '../stores/toast';
 import { useNoteView } from '../stores/note-view';
 import {
-  useOntologyAction, useOntologyBacklog, useOntologyExtractStatus, useStartOntologyExtract,
+  useOntologyAction, useOntologyBacklog, useOntologyExtractStatus, useOntologyGraph, useOntologyTopics,
+  useStartOntologyExtract,
 } from '../lib/api/ontology-hooks';
 import type { OntologyItem } from '../../shared/api-types';
 
@@ -19,6 +20,10 @@ export function OntologyBacklog({ project, projectName }: { project: string; pro
   const extract = useOntologyExtractStatus(project);
   const start = useStartOntologyExtract(project);
   const running = extract.data?.running ?? false;
+  const topics = useOntologyTopics(project);
+  const counts = useOntologyGraph(project, null, 1).data?.counts;
+  const topicsIn = (topics.data ?? []).filter((t) => t.status === 'in').length;
+  const topicsOut = (topics.data ?? []).filter((t) => t.status === 'out').length;
   const qc = useQueryClient();
   const wasRunning = useRef(false);
   useEffect(() => {
@@ -31,7 +36,12 @@ export function OntologyBacklog({ project, projectName }: { project: string; pro
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex flex-shrink-0 items-center gap-3 border-b border-hairline px-6 py-3">
+      <div className="flex flex-shrink-0 flex-wrap items-center gap-3 border-b border-hairline px-6 py-3">
+        {counts && (
+          <span className="font-mono text-11 text-ink-2">
+            {`Boundary: ${topicsIn} in · ${topicsOut} out · ${counts.sources} sources · ${counts.facts} facts`}
+          </span>
+        )}
         <Btn variant="secondary" size="sm" disabled={running || start.isPending}
              icon={<Lucide name="sparkles" size={13} />}
              onClick={() => start.mutate(25, { onError: (e) => toast.error(e instanceof Error ? e.message : String(e)) })}>

@@ -9,6 +9,7 @@ import {
   KIND_COLORS,
   LABEL_COLOR,
   LABEL_FONT,
+  REJECTED_EDGE_COLOR,
 } from './kinds';
 import type { Scene } from './layout';
 
@@ -45,7 +46,7 @@ export interface FramePlan {
 export type DrawContext = Pick<
   CanvasRenderingContext2D,
   | 'setTransform' | 'fillRect' | 'beginPath' | 'moveTo' | 'lineTo' | 'arc' | 'rect' | 'fill' | 'stroke' | 'fillText'
-  | 'fillStyle' | 'strokeStyle' | 'lineWidth' | 'font' | 'textAlign' | 'textBaseline' | 'globalAlpha'
+  | 'setLineDash' | 'fillStyle' | 'strokeStyle' | 'lineWidth' | 'font' | 'textAlign' | 'textBaseline' | 'globalAlpha'
 >;
 
 export function isHidden(scene: Scene, i: number, hidden: ReadonlySet<GraphKind>): boolean {
@@ -138,8 +139,8 @@ export function drawFrame(
     ctx.beginPath();
     let any = false;
     for (const k of plan.edges) {
-      if (highlighted(k) !== hi) continue;
       const e = scene.edges[k]!;
+      if (e.rejected || highlighted(k) !== hi) continue;
       ctx.moveTo(plan.sx[e.a]!, plan.sy[e.a]!);
       ctx.lineTo(plan.sx[e.b]!, plan.sy[e.b]!);
       any = true;
@@ -148,6 +149,22 @@ export function drawFrame(
     ctx.strokeStyle = hi ? EDGE_HI_COLOR : EDGE_COLOR;
     ctx.lineWidth = hi ? 1.4 : 0.8;
     ctx.stroke();
+  }
+
+  // Rejected links (ontology only): dashed red, never highlighted.
+  const rejected = plan.edges.filter((k) => scene.edges[k]!.rejected);
+  if (rejected.length > 0) {
+    ctx.beginPath();
+    for (const k of rejected) {
+      const e = scene.edges[k]!;
+      ctx.moveTo(plan.sx[e.a]!, plan.sy[e.a]!);
+      ctx.lineTo(plan.sx[e.b]!, plan.sy[e.b]!);
+    }
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = REJECTED_EDGE_COLOR;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
 
   // Nodes: one filled path per kind; ghosts as grey rings.
