@@ -24,7 +24,7 @@ export function OntologyGraph({ project }: { project: string }) {
 
   if (graph.isError) return <PanelError message={String(graph.error)} onRetry={() => void graph.refetch()} />;
   if (!scene) return <SkeletonRows count={3} height={48} />;
-  const noFacts = graph.data?.counts?.facts === 0 && !showAllSources;
+  const noFacts = !focus && graph.data?.counts?.facts === 0 && !showAllSources;
   const empty = scene.nodes.length <= 1;
 
   return (

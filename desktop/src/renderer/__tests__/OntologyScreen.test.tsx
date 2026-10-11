@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { OntologyScreen } from '../screens/ontology';
 import { useNoteView } from '../stores/note-view';
@@ -217,6 +217,16 @@ describe('OntologyScreen', () => {
       expect(screen.queryByLabelText('ontology graph')).toBeNull();
       fireEvent.click(screen.getByRole('button', { name: 'go to backlog' }));
       expect(useOntologyView.getState().tab).toBe('backlog');
+    });
+
+    it('keeps the canvas when a node is focused even with zero facts', async () => {
+      withData({ graph: { ...GRAPH, counts: COUNTS } });
+      renderScreen();
+      fireEvent.click(await screen.findByRole('tab', { name: 'graph' }));
+      await screen.findByText(/No facts yet/);
+      act(() => useOntologyView.getState().setFocus('n2'));
+      expect(await screen.findByLabelText('ontology graph')).toBeInTheDocument();
+      expect(screen.queryByText(/No facts yet/)).toBeNull();
     });
 
     it('shows the boundary status line on the backlog', async () => {

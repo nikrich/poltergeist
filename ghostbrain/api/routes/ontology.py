@@ -166,7 +166,7 @@ def graph(project: str = Query(...), focus: str | None = None, depth: int = Quer
             skip = set() if include_rejected else g.out_of_scope_topics(project)
             nodes, edges, truncated = g.neighbourhood(
                 focus or project, depth, skip=skip, evidence_only=not all_sources)
-            facts = len(g.domain_nodes(project, limit=1_000_000))
+            facts = g.count_domain_nodes(project)
     except GraphUnavailable as e:
         raise _unavailable(e) from None
     degree = Counter([e["src"] for e in edges] + [e["dst"] for e in edges])

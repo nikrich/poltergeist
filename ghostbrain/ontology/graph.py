@@ -264,6 +264,7 @@ class GoldGraph:
         `skip` uids are never admitted, so they do not consume the cap. With `evidence_only`,
         an artefact is admitted only when an admitted node cites it via EVIDENCED_BY.
         """
+        skip = set(skip) - {focus}  # a focused node is always shown, with its edges
         hops: dict[str, int] = {}
         if self.node(focus) is None:
             return [], [], False
@@ -325,6 +326,12 @@ class GoldGraph:
         ]
         nodes.sort(key=lambda n: (n["hop"], n["uid"]))
         return nodes, [{"src": s, "type": t, "dst": d} for s, t, d in sorted(edges)], truncated
+
+    def count_domain_nodes(self, project_uid: str) -> int:
+        rows = self._rows(
+            "MATCH (n)-[:PART_OF]->(p) WHERE p.uid = $p RETURN labels(n) AS labels, count(n) AS c",
+            {"p": project_uid})
+        return sum(int(r["c"] or 0) for r in rows if self._label(r["labels"]) in DOMAIN_KINDS)
 
     def domain_nodes(self, project_uid: str, limit: int = 500) -> list[dict]:
         rows = self._rows(

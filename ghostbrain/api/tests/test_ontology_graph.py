@@ -142,3 +142,27 @@ def test_delete_edge_removes_only_that_edge(graph):
     with pytest.raises(ValueError):
         with graph.transaction():
             graph.delete_edge("BOGUS", "r1", "a1")
+
+
+def test_count_domain_nodes_counts_only_project_domain_nodes(graph):
+    _seed(graph)
+    with graph.transaction():
+        graph.upsert_node("p2", "Project", {"name": "Other"})
+        graph.upsert_node("r2", "Rule", {"name": "x"})
+        graph.upsert_edge("PART_OF", "r2", "p2", {})
+        graph.upsert_edge("ABOUT", "a1", "p1", {})
+    assert graph.count_domain_nodes("p1") == 1
+    assert graph.count_domain_nodes("p2") == 1
+    assert graph.count_domain_nodes("missing") == 0
+
+
+def test_focus_in_skip_is_exempt_from_the_filter(graph):
+    _seed(graph)
+    with graph.transaction():
+        graph.upsert_node("t1", "Topic", {"name": "billing"})
+        graph.upsert_edge("OUT_OF_SCOPE", "t1", "p1", {})
+    nodes, edges, _ = graph.neighbourhood("p1", 1, skip={"t1"})
+    assert "t1" not in {n["uid"] for n in nodes}
+    nodes, edges, _ = graph.neighbourhood("t1", 1, skip={"t1"})
+    assert {n["uid"] for n in nodes} == {"t1", "p1"}
+    assert {"src": "t1", "type": "OUT_OF_SCOPE", "dst": "p1"} in edges
