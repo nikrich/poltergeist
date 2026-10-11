@@ -438,7 +438,7 @@ const conversation: Conversation = {
   created_at: now() / 1000 - 3600,
   updated_at: now() / 1000 - 1800,
   claude_session_id: 'demo-session',
-  project: null,
+  project: null, context: null, folder: null, auto_filed: 'skipped',
   messages: [
     {
       role: 'user',
@@ -459,7 +459,7 @@ export function listConversations(): ConversationSummary[] {
       title: conversation.title,
       created_at: conversation.created_at,
       updated_at: conversation.updated_at,
-      project: null,
+      project: null, context: null, folder: null, auto_filed: 'skipped',
       message_count: conversation.messages.length,
     },
   ];

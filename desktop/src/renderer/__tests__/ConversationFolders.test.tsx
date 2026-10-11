@@ -30,9 +30,9 @@ const projects: Project[] = [
 ];
 
 const summaries: ConversationSummary[] = [
-  { id: 'c1', title: 'filed thread', created_at: 1, updated_at: 5, message_count: 2, project: 'personal/site' },
-  { id: 'c2', title: 'loose thread', created_at: 1, updated_at: 4, message_count: 1, project: null },
-  { id: 'c3', title: 'ghost thread', created_at: 1, updated_at: 3, message_count: 1, project: 'work/gone' },
+  { id: 'c1', title: 'filed thread', created_at: 1, updated_at: 5, message_count: 2, project: 'personal/site', context: null, folder: null, auto_filed: 'skipped' },
+  { id: 'c2', title: 'loose thread', created_at: 1, updated_at: 4, message_count: 1, project: null, context: null, folder: null, auto_filed: 'skipped' },
+  { id: 'c3', title: 'ghost thread', created_at: 1, updated_at: 3, message_count: 1, project: 'work/gone', context: null, folder: null, auto_filed: 'skipped' },
 ];
 
 const conversation: Conversation = {
@@ -41,7 +41,7 @@ const conversation: Conversation = {
   created_at: 1,
   updated_at: 5,
   claude_session_id: null,
-  project: 'personal/site',
+  project: 'personal/site', context: null, folder: null, auto_filed: 'skipped',
   messages: [{ role: 'user', text: 'hi' }],
 };
 

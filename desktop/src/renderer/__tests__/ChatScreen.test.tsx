@@ -50,7 +50,7 @@ const summaries: ConversationSummary[] = [
     created_at: 1,
     updated_at: 2,
     message_count: 2,
-    project: null,
+    project: null, context: null, folder: null, auto_filed: 'skipped',
   },
 ];
 
@@ -60,7 +60,7 @@ const conversation: Conversation = {
   created_at: 1,
   updated_at: 2,
   claude_session_id: null,
-  project: null,
+  project: null, context: null, folder: null, auto_filed: 'skipped',
   messages: [
     { role: 'user', text: 'how does auth work?' },
     {

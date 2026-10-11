@@ -459,15 +459,33 @@ export interface ChatMessage {
   attachments?: ChatAttachment[];
 }
 
+export type AutoFiled = 'pending' | 'done' | 'skipped';
+
 export interface ConversationSummary {
   id: string;
   title: string;
   created_at: number;
   updated_at: number;
   message_count: number;
-  /** context/slug key from the project registry, or null when unfiled. */
+  context: string | null;
+  /** bare project slug within `context`, or null. */
   project: string | null;
+  folder: string | null;
+  auto_filed: AutoFiled;
 }
+
+export interface ChatTreeChat extends ConversationSummary { unknown_location: boolean }
+export interface ChatFolderNode { name: string; path: string; folders: ChatFolderNode[]; chats: ChatTreeChat[] }
+export interface ChatScope {
+  context: string;
+  project: string | null;
+  name: string;
+  archived: boolean;
+  folders: ChatFolderNode[];
+  chats: ChatTreeChat[];
+}
+export interface ChatTree { unfiled: ChatTreeChat[]; scopes: ChatScope[] }
+export interface ChatLocation { context: string | null; project: string | null; folder: string | null }
 
 export interface Conversation {
   id: string;
@@ -475,7 +493,10 @@ export interface Conversation {
   created_at: number;
   updated_at: number;
   claude_session_id: string | null;
+  context: string | null;
   project: string | null;
+  folder: string | null;
+  auto_filed: AutoFiled;
   messages: ChatMessage[];
 }
 

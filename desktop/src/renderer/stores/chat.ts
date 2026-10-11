@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ChatStreamEvent, ChatToolUse, ChatAttachment } from '../../shared/api-types';
+import type { ChatLocation, ChatStreamEvent, ChatToolUse, ChatAttachment } from '../../shared/api-types';
 
 export interface StreamState {
   /** The user message this turn answers — rendered optimistically until the
@@ -48,6 +48,10 @@ interface ChatState {
   exporting: Record<string, true>;
   beginExport: (id: string) => void;
   endExport: (id: string) => void;
+  /** convId → where auto-filing put it (drives the "Filed under…" notice). */
+  filed: Record<string, ChatLocation>;
+  setFiled: (convId: string, loc: ChatLocation) => void;
+  clearFiled: (convId: string) => void;
 }
 
 export const useChat = create<ChatState>((set, get) => ({
@@ -130,5 +134,13 @@ export const useChat = create<ChatState>((set, get) => ({
       const exporting = { ...s.exporting };
       delete exporting[id];
       return { exporting };
+    }),
+  filed: {},
+  setFiled: (convId, loc) => set((s) => ({ filed: { ...s.filed, [convId]: loc } })),
+  clearFiled: (convId) =>
+    set((s) => {
+      const filed = { ...s.filed };
+      delete filed[convId];
+      return { filed };
     }),
 }));

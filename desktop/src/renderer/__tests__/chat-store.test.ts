@@ -119,3 +119,13 @@ describe('pending ask', () => {
     expect(useChat.getState().takeAsk('c1')).toBeNull();
   });
 });
+
+describe('filed notice', () => {
+  it('stores and clears where auto-filing put a chat', () => {
+    const loc = { context: 'work', project: 'alpha', folder: null };
+    useChat.getState().setFiled('c1', loc);
+    expect(useChat.getState().filed['c1']).toEqual(loc);
+    useChat.getState().clearFiled('c1');
+    expect(useChat.getState().filed['c1']).toBeUndefined();
+  });
+});
