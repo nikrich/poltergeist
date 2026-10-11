@@ -119,7 +119,7 @@ New chats are created with `auto_filed="pending"`. A chat returned by
 
 | Route | Body | Behaviour |
 |---|---|---|
-| `GET /tree` | — | `{unfiled: ChatSummary[], contexts: [{context, folders, chats, projects: [{slug, name, archived, folders, chats}]}]}`. Folder node: `{name, path, folders, chats}` — same shape as `LibraryTree` nodes. Contexts listed in routing.yaml order; empty contexts included so they are drop targets. |
+| `GET /tree` | — | `{unfiled: ChatSummary[], scopes: [{context, project, name, archived, folders, chats}]}` — a flat scope list (bare context, then its projects) mirroring `LibraryTree.scopes`. Folder node: `{name, path, folders, chats}`. Contexts in routing.yaml order; empty contexts included so they are drop targets; empty archived projects omitted. |
 | `PATCH /{id}` | `{title?, context?, project?, folder?}` | Title renames. Location fields move; `context: null` unfiles (clears project + folder). Validates context exists, project active; 422 otherwise. Moving to a folder path that doesn't exist creates it. Location change sets `auto_filed="done"`. Omitted vs explicit null distinguished as today. |
 | `POST /folders` | `{context, project?, path}` | Create; 409 if exists, 422 on invalid path/location. |
 | `PATCH /folders` | `{from: FolderRef, to: FolderRef}` | Rename and/or move, including across locations. Rewrites contained chats' location + folder prefix and registry entries for the subtree. 409 if destination exists, 422 if moving into itself. |
@@ -202,11 +202,4 @@ empty folders persist.
 
 ## Delivery
 
-Two PRs:
-
-1. **Backend + minimal UI** — data model, legacy read, folder registry, API,
-   auto-filing, polling + filed notice, `rename_project` hook. Sidebar keeps
-   its current grouped list, updated to group by context/project from the new
-   fields.
-2. **Tree UI** — extract shared tree, `ChatTree`, drag/drop folders, "Move
-   to…" menu.
+One PR (the user asked for build + release in one go): backend, API, auto-filing, shared tree extraction, chat tree UI.
