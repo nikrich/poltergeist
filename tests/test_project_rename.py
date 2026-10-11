@@ -427,3 +427,16 @@ def test_md_library_original_keeps_its_bytes(vault: Path):
     assert (other_docs / "Notes.md").read_bytes() == other
     assert _front(vault / NEW / "docs/readme-aaaaaa.md")["project"] == "payments"
     assert _front(vault / NEW / "manual-1-jot.md")["project"] == "payments"
+
+
+def test_chat_folder_and_registry_follow_rename(vault: Path):
+    from ghostbrain.api.repo import chat_folders, chat_store
+    conv = chat_store.create()
+    chat_store.append_user_message(conv, "hi")
+    chat_folders.move_chat(conv["id"], context="work", project="paymnets", folder="plans/q4")
+    chat_folders.create("work", "paymnets", "empty")
+    projects.rename_project("work", "paymnets", name="Payments")
+    got = chat_store.get(conv["id"])
+    assert (got["context"], got["project"], got["folder"]) == ("work", "payments", "plans/q4")
+    assert ("work", "payments", "empty") in chat_folders._registry()
+    assert ("work", "paymnets", "empty") not in chat_folders._registry()

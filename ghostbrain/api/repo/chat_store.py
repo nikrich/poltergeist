@@ -51,6 +51,13 @@ def normalize(conv: dict) -> dict:
     return conv
 
 
+RESERVED_FILES = frozenset({"folders.json"})  # chat_folders' registry shares the dir
+
+
+def _chat_files(d: Path) -> list[Path]:
+    return [p for p in d.glob("*.json") if p.name not in RESERVED_FILES]
+
+
 def _conv_path(conv_id: str) -> Path:
     return chats_dir() / f"{conv_id}.json"
 
@@ -101,7 +108,7 @@ def _newest_empty() -> dict | None:
     if not d.exists():
         return None
     best: dict | None = None
-    for p in d.glob("*.json"):
+    for p in _chat_files(d):
         try:
             conv = json.loads(p.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
@@ -157,7 +164,7 @@ def iter_all() -> list[dict]:
     if not d.exists():
         return []
     out: list[dict] = []
-    for p in d.glob("*.json"):
+    for p in _chat_files(d):
         try:
             conv = json.loads(p.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
@@ -239,7 +246,7 @@ def rewrite_all(fn: Callable[[dict], bool]) -> int:
         d = chats_dir()
         if not d.exists():
             return 0
-        for p in list(d.glob("*.json")):
+        for p in list(_chat_files(d)):
             conv = _read_raw(p.stem)
             if conv is None:
                 continue
