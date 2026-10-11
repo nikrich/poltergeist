@@ -17,6 +17,7 @@ import type {
   Capture,
   CapturesPage,
   CaptureSummary,
+  ChatTree,
   Connector,
   ConnectorDetail,
   Conversation,
@@ -376,6 +377,7 @@ export function handleDemoApi(method: string, path: string, body?: unknown): Api
       break;
     case 'GET /v1/chat':
       if (seg.length === 1) return ok(listConversations());
+      if (s1 === 'tree') return ok(chatTree());
       return ok(getConversation(decodeURIComponent(s1)));
     case 'POST /v1/chat':
       // "new chat" — hand back the single demo conversation.
@@ -438,7 +440,7 @@ const conversation: Conversation = {
   created_at: now() / 1000 - 3600,
   updated_at: now() / 1000 - 1800,
   claude_session_id: 'demo-session',
-  project: null,
+  project: null, context: null, folder: null, auto_filed: 'skipped',
   messages: [
     {
       role: 'user',
@@ -459,10 +461,22 @@ export function listConversations(): ConversationSummary[] {
       title: conversation.title,
       created_at: conversation.created_at,
       updated_at: conversation.updated_at,
-      project: null,
+      project: null, context: null, folder: null, auto_filed: 'skipped',
       message_count: conversation.messages.length,
     },
   ];
+}
+
+/** Sidebar tree: the demo chat filed in a folder, so the tree isn't empty. */
+export function chatTree(): ChatTree {
+  const filed = { ...listConversations()[0]!, context: 'product', folder: 'launches', auto_filed: 'done' as const, unknown_location: false };
+  return {
+    unfiled: [],
+    scopes: [
+      { context: 'product', project: null, name: 'product', archived: false, chats: [], folders: [{ name: 'launches', path: 'launches', folders: [], chats: [filed] }] },
+      { context: 'personal', project: null, name: 'personal', archived: false, chats: [], folders: [] },
+    ],
+  };
 }
 
 export function getConversation(id: string): Conversation {

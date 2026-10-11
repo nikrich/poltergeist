@@ -12,6 +12,8 @@ import type {
   DocFolderNode,
   DocSummary,
   FolderRef,
+  ChatLocation,
+  ChatTree,
   LibraryTree,
   UploadDocRequest,
   UploadDocResponse,
@@ -577,14 +579,46 @@ export function useCreateConversation() {
   });
 }
 
-export function useUpdateConversation() {
+export function useChatTree() {
+  return useQuery({
+    queryKey: ['chat', 'tree'],
+    queryFn: () => get<ChatTree>('/v1/chat/tree'),
+    staleTime: 5_000,
+  });
+}
+
+export function useMoveChat() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { id: string; title?: string; project?: string | null }) => {
-      const body: Record<string, unknown> = {};
-      if (vars.title !== undefined) body.title = vars.title;
-      if (vars.project !== undefined) body.project = vars.project;
-      return patch<Conversation>(`/v1/chat/${encodeURIComponent(vars.id)}`, body);
+    mutationFn: ({ id, ...loc }: { id: string } & ChatLocation) =>
+      patch<Conversation>(`/v1/chat/${encodeURIComponent(id)}`, loc),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['chat'] }),
+  });
+}
+
+export function useCreateChatFolder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ref: FolderRef) => post<FolderRef>('/v1/chat/folders', ref),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['chat'] }),
+  });
+}
+
+export function useMoveChatFolder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { from: FolderRef; to: FolderRef }) => patch<FolderRef>('/v1/chat/folders', vars),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['chat'] }),
+  });
+}
+
+export function useDeleteChatFolder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ref: FolderRef) => {
+      const params = new URLSearchParams({ context: ref.context, path: ref.path });
+      if (ref.project) params.set('project', ref.project);
+      return del(`/v1/chat/folders?${params.toString()}`);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['chat'] }),
   });

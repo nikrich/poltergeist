@@ -126,20 +126,19 @@ def test_create_makes_fresh_conversation_once_previous_has_messages(chats: Path)
 def test_project_field_round_trips(chats: Path):
     conv = chat_store.create()
     assert conv["project"] is None
-    updated = chat_store.update(conv["id"], project="personal/site")
-    assert updated["project"] == "personal/site"
-    assert chat_store.get(conv["id"])["project"] == "personal/site"
+    moved = chat_store.move(conv["id"], context="personal", project="site", folder=None)
+    assert (moved["context"], moved["project"]) == ("personal", "site")
+    got = chat_store.get(conv["id"])
+    assert (got["context"], got["project"]) == ("personal", "site")
 
 
-def test_update_partial_semantics(chats: Path):
+def test_update_title_keeps_location(chats: Path):
     conv = chat_store.create()
-    chat_store.update(conv["id"], project="personal/site")
-    chat_store.update(conv["id"], title="renamed")  # project untouched
+    chat_store.move(conv["id"], context="personal", project="site", folder=None)
+    chat_store.update(conv["id"], title="renamed")
     got = chat_store.get(conv["id"])
     assert got["title"] == "renamed"
-    assert got["project"] == "personal/site"
-    chat_store.update(conv["id"], project=None)  # explicit clear
-    assert chat_store.get(conv["id"])["project"] is None
+    assert (got["context"], got["project"]) == ("personal", "site")
 
 
 def test_update_missing_conversation_returns_none(chats: Path):
@@ -148,8 +147,9 @@ def test_update_missing_conversation_returns_none(chats: Path):
 
 def test_list_summaries_carry_project(chats: Path):
     conv = chat_store.create()
-    chat_store.update(conv["id"], project="work/api")
-    assert chat_store.list_all()[0]["project"] == "work/api"
+    chat_store.move(conv["id"], context="work", project="api", folder=None)
+    s = chat_store.list_all()[0]
+    assert (s["context"], s["project"]) == ("work", "api")
 
 
 def test_legacy_file_without_project_reads_null(chats: Path):
@@ -159,3 +159,134 @@ def test_legacy_file_without_project_reads_null(chats: Path):
     (chats / f"{conv['id']}.json").write_text(json.dumps(raw))
     assert chat_store.get(conv["id"]).get("project") is None
     assert chat_store.list_all()[0]["project"] is None
+
+
+def _raw_write(chats_dir, conv):
+    chats_dir.mkdir(parents=True, exist_ok=True)
+    (chats_dir / f"{conv['id']}.json").write_text(json.dumps(conv))
+
+
+def _legacy(conv_id="legacy1", project="work/atlas"):
+    return {
+        "id": conv_id, "title": "old", "created_at": 1.0, "updated_at": 2.0,
+        "claude_session_id": None, "project": project, "messages": [],
+    }
+
+
+def test_legacy_project_is_split_on_read(chats):
+    _raw_write(chats, _legacy())
+    conv = chat_store.get("legacy1")
+    assert (conv["context"], conv["project"], conv["folder"]) == ("work", "atlas", None)
+    assert conv["auto_filed"] == "skipped"
+
+
+def test_legacy_unfiled_reads_clean(chats):
+    _raw_write(chats, _legacy(project=None))
+    conv = chat_store.get("legacy1")
+    assert conv["context"] is None and conv["project"] is None and conv["folder"] is None
+
+
+def test_legacy_project_without_slash_is_dropped(chats):
+    _raw_write(chats, _legacy(project="nonsense"))
+    conv = chat_store.get("legacy1")
+    assert conv["context"] is None and conv["project"] is None
+
+
+def test_list_all_includes_location(chats):
+    _raw_write(chats, _legacy())
+    [s] = chat_store.list_all()
+    assert s["context"] == "work" and s["project"] == "atlas"
+    assert s["folder"] is None and s["auto_filed"] == "skipped"
+
+
+def test_create_starts_pending_and_unfiled(chats):
+    conv = chat_store.create()
+    assert conv["auto_filed"] == "pending"
+    assert conv["context"] is None and conv["project"] is None and conv["folder"] is None
+
+
+def test_move_sets_location_and_done(chats):
+    conv = chat_store.create()
+    before = conv["updated_at"]
+    moved = chat_store.move(conv["id"], context="work", project="atlas", folder="q4")
+    assert (moved["context"], moved["project"], moved["folder"]) == ("work", "atlas", "q4")
+    assert moved["auto_filed"] == "done"
+    assert chat_store.get(conv["id"])["updated_at"] == before
+
+
+def test_move_context_none_clears_everything(chats):
+    conv = chat_store.create()
+    chat_store.move(conv["id"], context="work", project="atlas", folder="q4")
+    moved = chat_store.move(conv["id"], context=None, project="ignored", folder="ignored")
+    assert moved["context"] is None and moved["project"] is None and moved["folder"] is None
+
+
+def test_move_missing_returns_none(chats):
+    assert chat_store.move("nope", context=None, project=None, folder=None) is None
+
+
+def test_apply_auto_file_only_when_pending(chats):
+    conv = chat_store.create()
+    filed = chat_store.apply_auto_file(conv["id"], "work", "atlas")
+    assert filed["context"] == "work" and filed["auto_filed"] == "done"
+    assert chat_store.apply_auto_file(conv["id"], "personal", None) is None
+    assert chat_store.get(conv["id"])["context"] == "work"
+
+
+def test_apply_auto_file_none_marks_done_unfiled(chats):
+    conv = chat_store.create()
+    out = chat_store.apply_auto_file(conv["id"], None, None)
+    assert out["context"] is None and out["auto_filed"] == "done"
+
+
+def test_apply_auto_file_loses_to_manual_move(chats):
+    conv = chat_store.create()
+    chat_store.move(conv["id"], context="personal", project=None, folder=None)
+    assert chat_store.apply_auto_file(conv["id"], "work", "atlas") is None
+    assert chat_store.get(conv["id"])["context"] == "personal"
+
+
+def test_turn_write_preserves_location_moved_on_disk(chats):
+    conv = chat_store.create()
+    stale = chat_store.get(conv["id"])          # what the stream handler holds
+    chat_store.move(conv["id"], context="work", project="atlas", folder="q4")
+    chat_store.append_user_message(stale, "hello")
+    chat_store.append_assistant_message(stale, "hi", [])
+    chat_store.set_session_id(stale, "sess-1", "claude")
+    disk = chat_store.get(conv["id"])
+    assert (disk["context"], disk["project"], disk["folder"]) == ("work", "atlas", "q4")
+    assert disk["auto_filed"] == "done"
+    assert [m["text"] for m in disk["messages"]] == ["hello", "hi"]
+    assert stale["context"] == "work"            # caller's dict is refreshed too
+
+
+def test_rewrite_all_writes_only_changed(chats):
+    a = chat_store.create()
+    chat_store.append_user_message(a, "x")       # so create() doesn't reuse it
+    b = chat_store.create()
+
+    def fn(conv):
+        if conv["id"] == a["id"]:
+            conv["folder"] = "z"
+            conv["context"] = "work"
+            return True
+        return False
+
+    assert chat_store.rewrite_all(fn) == 1
+    assert chat_store.get(a["id"])["folder"] == "z"
+    assert chat_store.get(b["id"])["folder"] is None
+
+
+def test_update_title_only(chats):
+    conv = chat_store.create()
+    out = chat_store.update(conv["id"], title="renamed")
+    assert out["title"] == "renamed"
+
+
+def test_reserved_registry_file_is_not_a_chat(chats):
+    chats.mkdir(parents=True, exist_ok=True)
+    reg = chats / "folders.json"
+    reg.write_text('{"folders": []}')
+    assert chat_store.get("folders") is None
+    assert chat_store.delete("folders") is False
+    assert reg.exists()

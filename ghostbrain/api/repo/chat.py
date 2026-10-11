@@ -10,7 +10,7 @@ import logging
 import threading
 from typing import Iterator
 
-from ghostbrain.api.repo import chat_attachments, chat_store
+from ghostbrain.api.repo import chat_attachments, chat_autofile, chat_store
 from ghostbrain.api.repo.settings import ProviderUnavailable, require_provider
 from ghostbrain.llm import agent
 
@@ -169,6 +169,7 @@ def _stream_turn(
             chat_store.append_assistant_message(
                 conv, event["text"] or "".join(parts), tools
             )
+            chat_autofile.maybe_schedule(conv)
         elif event["type"] == "error":
             partial = "".join(parts)
             if partial:

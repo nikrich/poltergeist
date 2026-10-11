@@ -29,7 +29,35 @@ class ConversationSummary(BaseModel):
     created_at: float
     updated_at: float
     message_count: int
+    context: str | None = None
     project: str | None = None
+    folder: str | None = None
+    auto_filed: Literal["pending", "done", "skipped"] = "skipped"
+
+
+class ChatTreeChat(ConversationSummary):
+    unknown_location: bool = False
+
+
+class ChatFolderNode(BaseModel):
+    name: str
+    path: str
+    folders: list["ChatFolderNode"] = []
+    chats: list[ChatTreeChat] = []
+
+
+class ChatScope(BaseModel):
+    context: str
+    project: str | None = None
+    name: str
+    archived: bool = False
+    folders: list[ChatFolderNode] = []
+    chats: list[ChatTreeChat] = []
+
+
+class ChatTree(BaseModel):
+    unfiled: list[ChatTreeChat] = []
+    scopes: list[ChatScope] = []
 
 
 class Conversation(BaseModel):
@@ -38,7 +66,10 @@ class Conversation(BaseModel):
     created_at: float
     updated_at: float
     claude_session_id: str | None = None
+    context: str | None = None
     project: str | None = None
+    folder: str | None = None
+    auto_filed: Literal["pending", "done", "skipped"] = "skipped"
     messages: list[ChatMessage] = []
 
 
@@ -57,19 +88,22 @@ class ChatMessageRequest(BaseModel):
 
 
 class UpdateConversationRequest(BaseModel):
-    """Partial update: fields absent from the payload stay untouched.
+    """Partial update; absent fields stay untouched (model_fields_set).
 
-    ``project`` is a ``context/slug`` registry key; explicit null unfiles.
-    ``model_fields_set`` distinguishes omitted from null at the route.
+    Location: send ``context`` (null unfiles) with optional ``project`` slug
+    and ``folder``. Legacy clients send only ``project`` as ``context/slug``
+    (null unfiles) — still accepted.
     """
 
     title: str | None = Field(None, min_length=1, max_length=200)
+    context: str | None = Field(None, max_length=200)
     project: str | None = Field(None, max_length=200)
+    folder: str | None = Field(None, max_length=500)
 
     @model_validator(mode="after")
     def _something_to_update(self) -> "UpdateConversationRequest":
         if not self.model_fields_set:
-            raise ValueError("nothing to update — pass title and/or project")
+            raise ValueError("nothing to update — pass title and/or a location")
         return self
 
 

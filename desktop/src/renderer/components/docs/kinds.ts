@@ -1,4 +1,4 @@
-import type { DocKind, DocSummary, FolderRef } from '../../../shared/api-types';
+import type { DocKind, DocSummary } from '../../../shared/api-types';
 
 export const KIND_META: Record<DocKind, { fg: string; bg: string }> = {
   pdf: { fg: 'var(--pill-oxblood-fg)', bg: 'rgba(255,107,90,.14)' },
@@ -35,9 +35,7 @@ export function docUrl(originalPath: string, version?: string): string {
   return version ? `${url}?v=${encodeURIComponent(version)}` : url;
 }
 
-export function folderKey(ref: FolderRef): string {
-  return `${ref.context}/${ref.project ?? '_'}/${ref.path}`;
-}
+export { folderKey } from '../tree/tree-types';
 
 export function formatSize(bytes: number): string {
   if (bytes < 1000) return `${bytes} B`;

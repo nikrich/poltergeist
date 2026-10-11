@@ -126,7 +126,7 @@ def test_export_routes_to_conversation_project_when_filed(env, monkeypatch):
 
     project = projects.create_project("personal", "Site Rebuild")
     conv = _conv_with_messages()
-    chat_store.update(conv["id"], project=f"personal/{project['slug']}")
+    chat_store.move(conv["id"], context="personal", project=project["slug"], folder=None)
 
     monkeypatch.setattr(chat_export.llm, "run", lambda *a, **kw: FakeLLMResult())
     auto_router_called = []
@@ -154,3 +154,24 @@ def test_export_without_project_still_auto_routes(env, monkeypatch):
     res = chat_export.export_conversation(conv["id"])
     assert seen  # auto-router used
     assert res["routingStatus"] == "routed"
+
+
+def test_export_context_only_chat_routes_to_context(env, monkeypatch):
+    conv = _conv_with_messages()
+    chat_store.move(conv["id"], context="work", project=None, folder=None)
+    monkeypatch.setattr(chat_export.llm, "run", lambda *a, **kw: FakeLLMResult())
+    monkeypatch.setattr(
+        chat_export, "route_existing_jot",
+        lambda jot_id: pytest.fail("router must not run for a filed chat"),
+    )
+    moved = []
+
+    def fake_move(jot_id, **kw):
+        moved.append(kw)
+        return {"path": "p", "context": kw["to_context"], "project": kw["to_project"]}
+
+    monkeypatch.setattr(chat_export, "move_jot", fake_move)
+    res = chat_export.export_conversation(conv["id"])
+    assert moved[0]["to_context"] == "work" and moved[0]["to_project"] is None
+    assert moved[0]["method"] == "chat-project"
+    assert res["context"] == "work" and res["routingStatus"] == "routed"

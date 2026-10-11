@@ -3,21 +3,16 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { Btn } from '../components/Btn';
 import { Lucide } from '../components/Lucide';
-import { Eyebrow } from '../components/Eyebrow';
 import { TopBar } from '../components/TopBar';
 import { ProviderSwitcher } from '../components/ProviderSwitcher';
 import { MarkdownBody } from '../components/MarkdownBody';
 import { SkeletonRows } from '../components/SkeletonRows';
 import { PanelError } from '../components/PanelError';
-import {
-  useConversations,
-  useConversation,
-  useCreateConversation,
-  useProjects,
-  useRenameConversation,
-  useUpdateConversation,
-  useDeleteConversation,
-} from '../lib/api/hooks';
+import { ChatTree } from '../components/chat/ChatTree';
+import { FiledNotice } from '../components/chat/FiledNotice';
+import { useConversations, useConversation, useCreateConversation } from '../lib/api/hooks';
+import { get } from '../lib/api/client';
+import { waitForAutoFile } from '../lib/chat-autofile';
 import { exportConversationToJot } from '../lib/chat-export';
 import { toast } from '../stores/toast';
 import { uploadAttachments, isAccepted, maxBytesFor, MAX_FILES } from '../lib/chat-attachments';
@@ -27,7 +22,7 @@ import type {
   ChatAttachment,
   ChatMessage,
   ChatToolUse,
-  ConversationSummary,
+  Conversation,
 } from '../../shared/api-types';
 
 export function ChatScreen() {
@@ -85,16 +80,31 @@ export function ChatScreen() {
           return;
         }
       }
-      beginStream(activeId, text, attachments);
+      const convId = activeId;
+      // Read before sending: the post-turn refetch may already see the filer's result.
+      // An empty cache (e.g. the "ask about this doc" flow) counts as possibly pending;
+      // waitForAutoFile returns immediately for chats that aren't.
+      const cached = qc.getQueryData<Conversation>(['chat', convId]);
+      const pendingFile = cached?.auto_filed !== 'done' && cached?.auto_filed !== 'skipped';
+      beginStream(convId, text, attachments);
       const paths = attachments.map((a) => a.path);
-      void window.gb.chat.send(activeId, text, paths).then((res) => {
+      void window.gb.chat.send(convId, text, paths).then(async (res) => {
         if (!res.ok) {
-          applyEvent(activeId, { type: 'error', message: res.error });
+          applyEvent(convId, { type: 'error', message: res.error });
         }
         // Finalizer: covers user-stop / relay teardown where no terminal event
         // arrives. No-op when done/error already cleared the stream. Same
         // cosmetic flicker window as the done|error path above applies here.
-        endStream(activeId);
+        endStream(convId);
+        qc.invalidateQueries({ queryKey: ['chat'] });
+        if (!pendingFile || !res.ok) return;
+        // Auto-filing runs in the background after the first reply; wait for it
+        // so the sidebar moves the chat and the "Filed under…" notice shows.
+        const filed = await waitForAutoFile(convId, (id) => get<Conversation>(`/v1/chat/${encodeURIComponent(id)}`));
+        // A manual move during the turn/poll also reads back as `done`; the user's choice wins.
+        if (filed?.context && !useChat.getState().manualMoved[convId]) {
+          useChat.getState().setFiled(convId, { context: filed.context, project: filed.project, folder: filed.folder });
+        }
         qc.invalidateQueries({ queryKey: ['chat'] });
       });
     })();
@@ -112,12 +122,7 @@ export function ChatScreen() {
 
   return (
     <div className="flex flex-1 overflow-hidden bg-paper">
-      <ConversationList
-        conversations={conversations.data ?? []}
-        isLoading={conversations.isLoading}
-        activeId={activeId}
-        onSelect={setActive}
-      />
+      <ChatTree activeId={activeId} onSelect={setActive} />
 
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar
@@ -150,6 +155,7 @@ export function ChatScreen() {
           <NoConversation />
         ) : (
           <>
+            <FiledNotice convId={activeId} />
             <Thread
               conversation={conversation}
               stream={stream}
@@ -165,272 +171,6 @@ export function ChatScreen() {
         )}
       </div>
     </div>
-  );
-}
-
-// ── Conversation list ──────────────────────────────────────────────────────
-
-interface ConversationListProps {
-  conversations: ConversationSummary[];
-  isLoading: boolean;
-  activeId: string | null;
-  onSelect: (id: string | null) => void;
-}
-
-const UNFILED = '__unfiled__';
-
-/** Group conversations by project key: unfiled first, then project groups by
- *  most-recent activity. Rows keep their incoming (newest-first) order. */
-function groupConversations(conversations: ConversationSummary[]) {
-  const groups = new Map<string, ConversationSummary[]>();
-  for (const c of conversations) {
-    const key = c.project ?? UNFILED;
-    const list = groups.get(key) ?? [];
-    list.push(c);
-    groups.set(key, list);
-  }
-  const keys = [...groups.keys()].sort((a, b) => {
-    if (a === UNFILED) return -1;
-    if (b === UNFILED) return 1;
-    const newest = (k: string) => Math.max(...groups.get(k)!.map((c) => c.updated_at));
-    return newest(b) - newest(a);
-  });
-  return keys.map((key) => ({ key, conversations: groups.get(key)! }));
-}
-
-function ConversationList({
-  conversations,
-  isLoading,
-  activeId,
-  onSelect,
-}: ConversationListProps) {
-  const create = useCreateConversation();
-  const projects = useProjects({ includeArchived: true });
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-
-  const newChat = () => {
-    create.mutate(undefined, {
-      onSuccess: (conv) => onSelect(conv.id),
-    });
-  };
-
-  const groups = groupConversations(conversations);
-  const projectLabel = (key: string) => {
-    if (key === UNFILED) return 'unfiled';
-    const [context, slug] = key.split('/');
-    const p = projects.data?.find((x) => x.context === context && x.slug === slug);
-    if (!p) return key;
-    return p.archived ? `${p.name} (archived)` : p.name;
-  };
-
-  return (
-    <aside className="flex w-[240px] flex-shrink-0 flex-col border-r border-hairline bg-vellum">
-      <div className="flex items-center justify-between px-[14px] pb-2 pt-[14px]">
-        <Eyebrow>conversations</Eyebrow>
-        <button
-          type="button"
-          onClick={newChat}
-          aria-label="new chat"
-          disabled={create.isPending}
-          className="flex h-[22px] w-[22px] items-center justify-center rounded-sm text-ink-2 transition-colors hover:bg-fog hover:text-ink-0 disabled:opacity-50"
-        >
-          <Lucide name="plus" size={14} />
-        </button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-2 pb-3">
-        {isLoading && <SkeletonRows count={4} />}
-        {!isLoading && conversations.length === 0 && (
-          <div className="px-3 py-6 text-center font-mono text-10 text-ink-3">
-            no conversations yet
-          </div>
-        )}
-        {groups.map(({ key, conversations: convs }) => {
-          const label = projectLabel(key);
-          const isCollapsed = collapsed[key] ?? false;
-          return (
-            <div key={key} data-testid="chat-group" data-group={key} className="mb-1">
-              <button
-                type="button"
-                aria-label={`${isCollapsed ? 'expand' : 'collapse'} ${label}`}
-                onClick={() => setCollapsed((c) => ({ ...c, [key]: !isCollapsed }))}
-                className="flex w-full items-center gap-1 px-2 pb-1 pt-2 text-left font-mono text-10 uppercase tracking-[0.1em] text-ink-3 transition-colors hover:text-ink-1"
-              >
-                <Lucide name={isCollapsed ? 'chevron-right' : 'chevron-down'} size={10} />
-                <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-                  {label}
-                </span>
-                <span>{convs.length}</span>
-              </button>
-              {!isCollapsed &&
-                convs.map((c) => (
-                  <ConversationRow
-                    key={c.id}
-                    conversation={c}
-                    active={c.id === activeId}
-                    onSelect={() => onSelect(c.id)}
-                    onDeleted={() => {
-                      if (c.id === activeId) onSelect(null);
-                    }}
-                  />
-                ))}
-            </div>
-          );
-        })}
-      </div>
-    </aside>
-  );
-}
-
-interface ConversationRowProps {
-  conversation: ConversationSummary;
-  active: boolean;
-  onSelect: () => void;
-  onDeleted: () => void;
-}
-
-function ConversationRow({
-  conversation,
-  active,
-  onSelect,
-  onDeleted,
-}: ConversationRowProps) {
-  const rename = useRenameConversation();
-  const del = useDeleteConversation();
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(conversation.title);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (editing) inputRef.current?.select();
-  }, [editing]);
-
-  const commit = () => {
-    const next = draft.trim();
-    if (next && next !== conversation.title) {
-      rename.mutate({ id: conversation.id, title: next });
-    }
-    setEditing(false);
-  };
-
-  const remove = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    del.mutate(conversation.id, { onSuccess: onDeleted });
-  };
-
-  if (editing) {
-    return (
-      <input
-        ref={inputRef}
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            commit();
-          } else if (e.key === 'Escape') {
-            e.preventDefault();
-            setDraft(conversation.title);
-            setEditing(false);
-          }
-        }}
-        className="w-full rounded-r6 border border-hairline-2 bg-paper px-[10px] py-[7px] text-13 text-ink-0 focus:outline-none"
-      />
-    );
-  }
-
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onSelect}
-      onDoubleClick={() => {
-        setDraft(conversation.title);
-        setEditing(true);
-      }}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onSelect();
-        }
-      }}
-      className={`group flex w-full cursor-pointer items-center gap-2 rounded-r6 px-[10px] py-[7px] text-left text-13 transition-colors duration-[120ms] ${
-        active ? 'bg-neon/12 font-medium text-ink-0' : 'font-normal text-ink-1 hover:bg-fog'
-      }`}
-    >
-      <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-        {conversation.title}
-      </span>
-      <FileMenu conversation={conversation} />
-      <button
-        type="button"
-        onClick={remove}
-        aria-label="delete conversation"
-        disabled={del.isPending}
-        className="flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-xs text-ink-3 opacity-0 transition-opacity hover:text-oxblood group-hover:opacity-100 disabled:opacity-50"
-      >
-        <Lucide name="trash-2" size={12} />
-      </button>
-    </div>
-  );
-}
-
-/** Hover folder icon → menu of projects to file the conversation under. */
-function FileMenu({ conversation }: { conversation: ConversationSummary }) {
-  const update = useUpdateConversation();
-  const projects = useProjects();
-  const [open, setOpen] = useState(false);
-
-  const file = (project: string | null) => {
-    setOpen(false);
-    if (project === (conversation.project ?? null)) return;
-    update.mutate(
-      { id: conversation.id, project },
-      { onError: (e) => toast.error(e.message) },
-    );
-  };
-
-  return (
-    <span className="relative flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-      <button
-        type="button"
-        aria-label={`file ${conversation.title}`}
-        disabled={update.isPending}
-        onClick={() => setOpen((o) => !o)}
-        className="flex h-[18px] w-[18px] items-center justify-center rounded-xs text-ink-3 opacity-0 transition-opacity hover:text-ink-0 group-hover:opacity-100 disabled:opacity-50"
-      >
-        <Lucide name="folder" size={12} />
-      </button>
-      {open && (
-        <div
-          role="menu"
-          className="absolute right-0 top-[22px] z-20 max-h-[240px] w-[180px] overflow-y-auto rounded-r6 border border-hairline-2 bg-vellum py-1 shadow-lg"
-        >
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => file(null)}
-            className="block w-full px-3 py-[6px] text-left text-12 text-ink-1 hover:bg-fog hover:text-ink-0"
-          >
-            unfiled
-          </button>
-          {(projects.data ?? [])
-            .filter((p) => !p.archived)
-            .map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                role="menuitem"
-                onClick={() => file(`${p.context}/${p.slug}`)}
-                className="block w-full px-3 py-[6px] text-left text-12 text-ink-1 hover:bg-fog hover:text-ink-0"
-              >
-                {p.name}
-              </button>
-            ))}
-        </div>
-      )}
-    </span>
   );
 }
 
