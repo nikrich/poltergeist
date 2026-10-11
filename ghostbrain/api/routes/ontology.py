@@ -154,17 +154,27 @@ def act(item_id: int, payload: OntologyActionRequest) -> dict:
 
 
 @router.get("/graph", response_model=OntologyGraph)
-def graph(project: str = Query(...), focus: str | None = None, depth: int = Query(2, ge=1, le=3)) -> dict:
+def graph(project: str = Query(...), focus: str | None = None, depth: int = Query(2, ge=1, le=3),
+          include_rejected: bool = False, all_sources: bool = False) -> dict:
+    """The project's gold graph. By default out-of-scope topics and sources that no fact cites
+    are left out (and never count toward the node cap); the flags bring them back."""
     svc = get_service()
     p = projects_repo.get_project_by_uuid(project) or {}
+    topics = svc.store.topics(project)
     try:
         with svc.graph_session() as g:
-            nodes, edges, truncated = g.neighbourhood(focus or project, depth)
+            skip = set() if include_rejected else g.out_of_scope_topics(project)
+            nodes, edges, truncated = g.neighbourhood(
+                focus or project, depth, skip=skip, evidence_only=not all_sources)
+            facts = len(g.domain_nodes(project, limit=1_000_000))
     except GraphUnavailable as e:
         raise _unavailable(e) from None
     degree = Counter([e["src"] for e in edges] + [e["dst"] for e in edges])
     return {
         "focus": focus or project, "depth": depth, "truncated": truncated,
+        "counts": {"facts": facts, "sources": len(svc.store.bindings(project, "bound")),
+                   "topics_in": sum(1 for t in topics if t["status"] == "in"),
+                   "topics_out": sum(1 for t in topics if t["status"] == "out")},
         "nodes": [{"path": n["uid"], "title": n["name"], "context": p.get("name", ""),
                    "kind": ui_kind(n["kind"]), "degree": degree[n["uid"]], "ghost": False,
                    "hop": n["hop"], "note_path": n["note_path"]} for n in nodes],

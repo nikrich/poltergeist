@@ -32,7 +32,8 @@ def test_enable_scope_ratify_binding_and_graph(ontology_root, tmp_vault, client,
     assert r.status_code == 200 and r.json()["ok"] is True
     r = client.post(f"/v1/ontology/backlog/{items[0]['id']}/action", json={"action": "ratify"}, headers=auth_headers)
     assert r.status_code == 409
-    g = client.get("/v1/ontology/graph", params={"project": p["uuid"], "depth": 2}, headers=auth_headers).json()
+    g = client.get("/v1/ontology/graph", params={"project": p["uuid"], "depth": 2, "all_sources": True},
+                   headers=auth_headers).json()
     kinds = {n["path"]: n["kind"] for n in g["nodes"]}
     assert g["focus"] == p["uuid"] and kinds[p["uuid"]] == "project" and kinds["t1"] == "artefact"
     art = next(n for n in g["nodes"] if n["path"] == "t1")
@@ -205,3 +206,76 @@ def test_topic_note_counts_follow_the_decision(ontology_root, tmp_vault, client,
             svc.store.upsert_binding("p1", aid, f"{aid}.md", aid, state)
     topics = client.get("/v1/ontology/projects/p1/topics", headers=auth_headers).json()
     assert {t["name"]: t["notes"] for t in topics} == {"billing": 1, "claims triage": 1, "reporting": 1}
+
+
+def _clarity_fixture(svc, p, with_fact=True):
+    """A project with an in-scope topic, a rejected topic, two bound notes and (optionally) one fact."""
+    svc.seed()
+    store = svc.store
+    t_in, _ = store.ensure_topic_created(p["uuid"], "billing")
+    t_out, _ = store.ensure_topic_created(p["uuid"], "claims triage")
+    store.set_topic_status(t_in["uid"], "in")
+    store.set_topic_status(t_out["uid"], "out")
+    svc.commit("scope", {"project": p["uuid"], "topic_uid": t_in["uid"], "name": "billing", "decision": "in",
+                         "artefacts": [{"aid": "a1", "path": "n/a1.md", "title": "A1"},
+                                       {"aid": "a2", "path": "n/a2.md", "title": "A2"}], "excluded": []})
+    svc.commit("scope", {"project": p["uuid"], "topic_uid": t_out["uid"], "name": "claims triage",
+                         "decision": "out", "artefacts": [], "excluded": []})
+    for aid in ("a1", "a2"):
+        store.upsert_binding(p["uuid"], aid, f"n/{aid}.md", aid, "bound")
+    if with_fact:
+        _ratify_node(svc, p["uuid"], "r1bbbbbb-2", "Rule", "lapse day", "Lapse on day 31.",
+                     evidence=[{"aid": "a1", "quote": "day 31", "locator": "p1"}])
+    return t_in["uid"], t_out["uid"]
+
+
+def _graph(client, auth_headers, p, **params):
+    return client.get("/v1/ontology/graph", params={"project": p["uuid"], "depth": 2, **params},
+                      headers=auth_headers).json()
+
+
+def test_graph_default_hides_rejected_topics_and_non_evidence_sources(ontology_root, tmp_vault, client, auth_headers):
+    pytest.importorskip("arcadedb_embedded")
+    p = projects.create_project("work", "Orbit")
+    svc = service_mod.get_service()
+    t_in, t_out = _clarity_fixture(svc, p)
+    g = _graph(client, auth_headers, p)
+    ids = {n["path"] for n in g["nodes"]}
+    assert {p["uuid"], t_in, "r1bbbbbb-2", "a1"} <= ids
+    assert t_out not in ids and "a2" not in ids
+    assert all(e["source"] in ids and e["target"] in ids for e in g["edges"])
+    assert not any(e["kind"] == "out_of_scope" for e in g["edges"])
+
+
+def test_graph_flags_reveal_rejected_topics_and_all_sources(ontology_root, tmp_vault, client, auth_headers):
+    pytest.importorskip("arcadedb_embedded")
+    p = projects.create_project("work", "Orbit")
+    svc = service_mod.get_service()
+    t_in, t_out = _clarity_fixture(svc, p)
+    g = _graph(client, auth_headers, p, include_rejected=True)
+    ids = {n["path"] for n in g["nodes"]}
+    assert t_out in ids and "a2" not in ids
+    assert {"source": t_out, "target": p["uuid"], "weight": 1.0, "kind": "out_of_scope"} in g["edges"]
+    g = _graph(client, auth_headers, p, all_sources=True)
+    ids = {n["path"] for n in g["nodes"]}
+    assert {"a1", "a2"} <= ids and t_out not in ids
+
+
+def test_graph_counts_cover_the_whole_project(ontology_root, tmp_vault, client, auth_headers):
+    pytest.importorskip("arcadedb_embedded")
+    p = projects.create_project("work", "Orbit")
+    svc = service_mod.get_service()
+    _clarity_fixture(svc, p)
+    g = _graph(client, auth_headers, p, depth=1)
+    assert g["counts"] == {"facts": 1, "sources": 2, "topics_in": 1, "topics_out": 1}
+
+
+def test_graph_without_facts_is_project_and_in_scope_topics(ontology_root, tmp_vault, client, auth_headers):
+    pytest.importorskip("arcadedb_embedded")
+    p = projects.create_project("work", "Orbit")
+    svc = service_mod.get_service()
+    t_in, _ = _clarity_fixture(svc, p, with_fact=False)
+    g = _graph(client, auth_headers, p)
+    kinds = {n["path"]: n["kind"] for n in g["nodes"]}
+    assert {p["uuid"], t_in} <= set(kinds) and "artefact" not in kinds.values()
+    assert g["counts"]["facts"] == 0 and g["counts"]["sources"] == 2
