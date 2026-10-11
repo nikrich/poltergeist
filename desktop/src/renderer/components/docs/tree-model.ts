@@ -51,18 +51,4 @@ export function findDoc(tree: LibraryTree, docId: string): DocSummary | null {
   return null;
 }
 
-export function groupByContext(scopes: DocScope[]): Array<{ context: string; scopes: DocScope[] }> {
-  const out: Array<{ context: string; scopes: DocScope[] }> = [];
-  for (const s of scopes) {
-    let g = out.find((x) => x.context === s.context);
-    if (!g) out.push((g = { context: s.context, scopes: [] }));
-    g.scopes.push(s);
-  }
-  for (const g of out) g.scopes.sort((a, b) => (a.project === null ? -1 : b.project === null ? 1 : 0));
-  return out;
-}
-
-export function isInside(child: FolderRef, parent: FolderRef): boolean {
-  if (child.context !== parent.context || child.project !== parent.project) return false;
-  return child.path === parent.path || child.path.startsWith(`${parent.path}/`);
-}
+export { groupByContext, isInside } from '../tree/tree-types';
