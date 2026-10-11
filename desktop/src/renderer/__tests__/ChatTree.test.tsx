@@ -69,7 +69,7 @@ const leaf = (id: string) => JSON.stringify({ kind: 'leaf', id });
 
 beforeEach(() => {
   stubApi();
-  useChat.setState({ filed: {} });
+  useChat.setState({ filed: {}, manualMoved: {} });
 });
 
 describe('ChatTree', () => {
@@ -186,6 +186,32 @@ describe('ChatTree', () => {
     expect(mutations('DELETE')[0]?.path).toBe('/v1/chat/c2');
   });
 
+  it('a manual drop clears a stale filed notice and marks the chat as manually moved', async () => {
+    useChat.setState({ filed: { c1: { context: 'work', project: null, folder: 'plans' } } });
+    renderTree();
+    await screen.findByText('filed thread');
+    fireEvent.drop(screen.getByTestId('chat-unfiled'), { dataTransfer: dt({ [CHAT_DRAG_MIME]: leaf('c1') }) });
+    expect(useChat.getState().filed.c1).toBeUndefined();
+    expect(useChat.getState().manualMoved.c1).toBe(true);
+  });
+
+  it('a Move-to choice clears a stale filed notice and marks the chat as manually moved', async () => {
+    useChat.setState({ filed: { c2: { context: 'work', project: null, folder: null } } });
+    renderTree();
+    await screen.findByText('loose thread');
+    await userEvent.click(screen.getByRole('button', { name: 'move loose thread' }));
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Atlas' }));
+    expect(useChat.getState().filed.c2).toBeUndefined();
+    expect(useChat.getState().manualMoved.c2).toBe(true);
+  });
+
+  it('a tree drop marks the chat as manually moved', async () => {
+    renderTree();
+    await screen.findByText('loose thread');
+    fireEvent.drop(screen.getByTestId('folder-work/atlas/'), { dataTransfer: dt({ [CHAT_DRAG_MIME]: leaf('c2') }) });
+    expect(useChat.getState().manualMoved.c2).toBe(true);
+  });
+
   it('flags chats whose location no longer exists', async () => {
     renderTree();
     await screen.findByText('ghost thread');
@@ -211,6 +237,7 @@ describe('FiledNotice', () => {
     await waitFor(() => expect(mutations('PATCH')).toHaveLength(1));
     expect(mutations('PATCH')[0]).toMatchObject({ path: '/v1/chat/c1', body: { context: null, project: null, folder: null } });
     await waitFor(() => expect(screen.queryByText(/Filed under/)).not.toBeInTheDocument());
+    expect(useChat.getState().manualMoved.c1).toBe(true);
   });
 
   it('context-only shows just the context; dismiss clears it', async () => {

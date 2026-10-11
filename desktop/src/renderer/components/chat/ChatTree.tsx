@@ -11,6 +11,7 @@ import {
   useMoveChatFolder,
   useRenameConversation,
 } from '../../lib/api/hooks';
+import { useChat } from '../../stores/chat';
 import { toast } from '../../stores/toast';
 import { Eyebrow } from '../Eyebrow';
 import { Lucide } from '../Lucide';
@@ -254,7 +255,11 @@ export function ChatTree({ activeId, onSelect }: { activeId: string | null; onSe
     [data, activeId],
   );
 
-  const move = (id: string, loc: ChatLocation) => moveChat.mutate({ id, ...loc }, { onError });
+  // Every manual path (tree drop, unfiled drop, Move-to menu) lands here.
+  const move = (id: string, loc: ChatLocation) => {
+    useChat.getState().markManualMove(id);
+    moveChat.mutate({ id, ...loc }, { onError });
+  };
 
   const newChat = () => create.mutate(undefined, { onSuccess: (conv) => onSelect(conv.id), onError });
 

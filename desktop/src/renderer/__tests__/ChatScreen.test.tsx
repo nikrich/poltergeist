@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -379,48 +379,97 @@ describe('ChatScreen pending ask', () => {
 });
 
 describe('ChatScreen auto-file polling', () => {
-  it('after the first reply of a pending chat, polls until filed and records the location', async () => {
-    let polls = 0;
+  const filedConv = { ...conversation, auto_filed: 'done', context: 'work', project: 'atlas', folder: null };
+  const treeWithScope: ChatTree = {
+    ...chatTree,
+    scopes: [{ context: 'work', project: null, name: 'work', archived: false, folders: [], chats: [] }],
+  };
+
+  /** Routes GETs; `c1` answers `pending` until the turn is sent, then `after`. */
+  function stubPending(after: Conversation, tree: ChatTree = chatTree) {
     vi.mocked(client.get).mockImplementation((path: string) => {
       if (path === '/v1/chat') return Promise.resolve(summaries) as never;
-      if (path === '/v1/chat/tree') return Promise.resolve(chatTree) as never;
+      if (path === '/v1/chat/tree') return Promise.resolve(tree) as never;
       if (path === '/v1/settings/llm') return Promise.resolve(llmSettings) as never;
       if (path === '/v1/llm/providers') return Promise.resolve(llmProviders) as never;
       if (path.startsWith('/v1/projects')) return Promise.resolve([]) as never;
       if (path === '/v1/chat/c1') {
-        // The screen's own query sees 'pending'; once the turn has been sent
-        // the poll sees the background filer's result.
         const sent = vi.mocked(window.gb.chat.send).mock.calls.length > 0;
-        if (sent) polls += 1;
-        return Promise.resolve(
-          sent
-            ? { ...conversation, auto_filed: 'done', context: 'work', project: 'atlas', folder: null }
-            : { ...conversation, auto_filed: 'pending' },
-        ) as never;
+        return Promise.resolve(sent ? after : { ...conversation, auto_filed: 'pending' }) as never;
       }
       return Promise.reject(new Error(`unexpected path ${path}`)) as never;
     });
-    useChat.setState({ filed: {} });
-    render(wrap(<ChatScreen />));
+  }
+
+  const c1Fetches = () => vi.mocked(client.get).mock.calls.filter(([p]) => p === '/v1/chat/c1').length;
+
+  async function sendHello() {
     await screen.findByText('how does auth work?');
     const textarea = await screen.findByPlaceholderText(/message poltergeist/);
+    const before = c1Fetches();
     fireEvent.change(textarea, { target: { value: 'hello ghost' } });
-    fireEvent.keyDown(textarea, { key: 'Enter' });
+    // The send's finalizer runs in a microtask; flush it inside act.
+    await act(async () => {
+      fireEvent.keyDown(textarea, { key: 'Enter' });
+    });
+    return before;
+  }
+
+  const settle = () => act(() => new Promise<void>((r) => setTimeout(r, 50)));
+
+  beforeEach(() => {
+    useChat.setState({ filed: {}, manualMoved: {} });
+  });
+
+  it('after the first reply of a pending chat, polls until filed and records the location', async () => {
+    stubPending(filedConv as Conversation);
+    render(wrap(<ChatScreen />));
+    const before = await sendHello();
     await waitFor(() =>
       expect(useChat.getState().filed.c1).toEqual({ context: 'work', project: 'atlas', folder: null }),
     );
-    expect(polls).toBeGreaterThan(0);
+    await settle();
+    // After the send: 1 refetch from the post-turn invalidate, exactly 1 poll
+    // (it already reads `done`), and 1 refetch from the post-poll invalidate.
+    expect(c1Fetches() - before).toBe(3);
     expect(await screen.findByText('Filed under work / atlas')).toBeInTheDocument();
   });
 
   it('does not poll when the chat was already filed or skipped', async () => {
-    useChat.setState({ filed: {} });
     render(wrap(<ChatScreen />));
-    await screen.findByText('how does auth work?');
-    const textarea = await screen.findByPlaceholderText(/message poltergeist/);
-    fireEvent.change(textarea, { target: { value: 'hello ghost' } });
-    fireEvent.keyDown(textarea, { key: 'Enter' });
+    const before = await sendHello();
     await waitFor(() => expect(useChat.getState().streams.c1).toBeUndefined());
+    await settle();
+    // Only the post-turn invalidate refetch — no poll, no second invalidate.
+    expect(c1Fetches() - before).toBe(1);
     expect(useChat.getState().filed.c1).toBeUndefined();
+  });
+
+  it('a manual move while the turn is in flight never surfaces as auto-filed', async () => {
+    // The server marks the manual move `done`, so the poll reads back a context.
+    stubPending({ ...filedConv, context: 'work', project: null } as Conversation, treeWithScope);
+    vi.mocked(client.patch).mockResolvedValue({ ...conversation, context: 'work' } as never);
+    let finish!: (v: { ok: true }) => void;
+    window.gb.chat.send = vi.fn(
+      () => new Promise<{ ok: true }>((r) => { finish = r; }),
+    ) as unknown as typeof window.gb.chat.send;
+    render(wrap(<ChatScreen />));
+    await sendHello();
+    await waitFor(() => expect(window.gb.chat.send).toHaveBeenCalled());
+
+    await userEvent.click(screen.getByRole('button', { name: 'move auth thread' }));
+    await userEvent.click(screen.getByRole('menuitem', { name: 'work' }));
+    await waitFor(() =>
+      expect(client.patch).toHaveBeenCalledWith('/v1/chat/c1', { context: 'work', project: null, folder: null }),
+    );
+
+    await settle(); // let the move's own invalidate refetch land before the baseline
+    const before = c1Fetches();
+    finish({ ok: true });
+    // Post-turn refetch + poll + post-poll refetch, then confirm no notice.
+    await waitFor(() => expect(c1Fetches() - before).toBe(3));
+    await settle();
+    expect(useChat.getState().filed.c1).toBeUndefined();
+    expect(screen.queryByText(/Filed under/)).not.toBeInTheDocument();
   });
 });

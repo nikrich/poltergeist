@@ -52,6 +52,11 @@ interface ChatState {
   filed: Record<string, ChatLocation>;
   setFiled: (convId: string, loc: ChatLocation) => void;
   clearFiled: (convId: string) => void;
+  /** Chats the user moved by hand. The server marks any move `auto_filed: done`,
+   *  so the auto-file poll must not report these as auto-filed. */
+  manualMoved: Record<string, true>;
+  /** Record a manual move and drop any stale "Filed under…" notice. */
+  markManualMove: (convId: string) => void;
 }
 
 export const useChat = create<ChatState>((set, get) => ({
@@ -142,5 +147,12 @@ export const useChat = create<ChatState>((set, get) => ({
       const filed = { ...s.filed };
       delete filed[convId];
       return { filed };
+    }),
+  manualMoved: {},
+  markManualMove: (convId) =>
+    set((s) => {
+      const filed = { ...s.filed };
+      delete filed[convId];
+      return { filed, manualMoved: { ...s.manualMoved, [convId]: true } };
     }),
 }));

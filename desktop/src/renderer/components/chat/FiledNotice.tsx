@@ -20,7 +20,10 @@ export function FiledNotice({ convId }: { convId: string }) {
   const undo = () =>
     move.mutate(
       { id: convId, context: null, project: null, folder: null },
-      { onSuccess: () => clearFiled(convId), onError: (e) => toast.error(e.message) },
+      {
+        onSuccess: () => useChat.getState().markManualMove(convId),
+        onError: (e) => toast.error(e.message),
+      },
     );
 
   return (

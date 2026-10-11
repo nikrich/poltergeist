@@ -98,7 +98,8 @@ export function ChatScreen() {
         // Auto-filing runs in the background after the first reply; wait for it
         // so the sidebar moves the chat and the "Filed under…" notice shows.
         const filed = await waitForAutoFile(convId, (id) => get<Conversation>(`/v1/chat/${encodeURIComponent(id)}`));
-        if (filed?.context) {
+        // A manual move during the turn/poll also reads back as `done`; the user's choice wins.
+        if (filed?.context && !useChat.getState().manualMoved[convId]) {
           useChat.getState().setFiled(convId, { context: filed.context, project: filed.project, folder: filed.folder });
         }
         qc.invalidateQueries({ queryKey: ['chat'] });
