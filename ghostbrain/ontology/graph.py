@@ -252,7 +252,19 @@ class GoldGraph:
         return {**base, "project_uid": min((r["uid"] for r in proj), default=None),
                 "evidence": evidence, "relations": relations}
 
-    def neighbourhood(self, focus: str, depth: int, cap: int = 300) -> tuple[list[dict], list[dict], bool]:
+    def out_of_scope_topics(self, project_uid: str) -> set[str]:
+        rows = self._rows(
+            "MATCH (t)-[:OUT_OF_SCOPE]->(p) WHERE p.uid = $p RETURN t.uid AS uid", {"p": project_uid})
+        return {r["uid"] for r in rows}
+
+    def neighbourhood(self, focus: str, depth: int, cap: int = 300, *, skip: frozenset[str] | set[str] = frozenset(),
+                      evidence_only: bool = False) -> tuple[list[dict], list[dict], bool]:
+        """Nodes and edges within `depth` hops of focus, at most `cap` nodes.
+
+        `skip` uids are never admitted, so they do not consume the cap. With `evidence_only`,
+        an artefact is admitted only when an admitted node cites it via EVIDENCED_BY.
+        """
+        skip = set(skip) - {focus}  # a focused node is always shown, with its edges
         hops: dict[str, int] = {}
         if self.node(focus) is None:
             return [], [], False
@@ -271,7 +283,7 @@ class GoldGraph:
             kinds: dict[str, str] = {}
             for r in rows:
                 for x, labels in ((r["s"], r["sl"]), (r["d"], r["dl"])):
-                    if x not in hops:
+                    if x not in hops and x not in skip:
                         kinds[x] = self._label(labels)
             # Domain (and other non-Artefact) nodes win the cap; among artefacts,
             # evidence of admitted domain nodes comes before mere bindings.
@@ -279,7 +291,7 @@ class GoldGraph:
             room = max(cap - len(hops), 0)
             artefacts = [x for x, k in kinds.items() if k == "Artefact"]
             evidence_rows: list[dict] = []
-            if artefacts and len(domain) + len(artefacts) > room:
+            if artefacts and (evidence_only or len(domain) + len(artefacts) > room):
                 admitted = list(hops) + domain[:room]
                 evidence_rows = [
                     {**r, "t": "EVIDENCED_BY"} for r in self._rows(
@@ -289,12 +301,16 @@ class GoldGraph:
                     )
                 ]
             evidence = {r["d"] for r in evidence_rows}
+            if evidence_only:
+                artefacts = [x for x in artefacts if x in evidence]
             artefacts.sort(key=lambda x: (x not in evidence, x))
             nxt = (domain + artefacts)[:room]
             truncated = truncated or len(domain) + len(artefacts) > room
             for x in nxt:
                 hops[x] = hop
             for r in rows + evidence_rows:
+                if r["s"] in skip or r["d"] in skip:
+                    continue
                 if r["s"] in hops and r["d"] in hops:
                     edges.add((r["s"], r["t"], r["d"]))
             frontier = nxt
@@ -310,6 +326,12 @@ class GoldGraph:
         ]
         nodes.sort(key=lambda n: (n["hop"], n["uid"]))
         return nodes, [{"src": s, "type": t, "dst": d} for s, t, d in sorted(edges)], truncated
+
+    def count_domain_nodes(self, project_uid: str) -> int:
+        rows = self._rows(
+            "MATCH (n)-[:PART_OF]->(p) WHERE p.uid = $p RETURN labels(n) AS labels, count(n) AS c",
+            {"p": project_uid})
+        return sum(int(r["c"] or 0) for r in rows if self._label(r["labels"]) in DOMAIN_KINDS)
 
     def domain_nodes(self, project_uid: str, limit: int = 500) -> list[dict]:
         rows = self._rows(

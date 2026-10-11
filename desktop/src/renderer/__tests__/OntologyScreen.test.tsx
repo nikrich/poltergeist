@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { OntologyScreen } from '../screens/ontology';
 import { useNoteView } from '../stores/note-view';
@@ -170,6 +170,72 @@ describe('OntologyScreen', () => {
     expect(screen.queryByText(/recentre to explore/)).toBeNull();
   });
 
+  describe('boundary and graph clarity', () => {
+    const MANY_TOPICS = [
+      { uid: 'c', name: 'Orbit', status: 'in', notes: 3 },
+      ...Array.from({ length: 67 }, (_, i) => ({ uid: `o${i}`, name: `rejected ${i}`, status: 'out', notes: 1 })),
+    ];
+    const COUNTS = { facts: 0, sources: 263, topics_in: 5, topics_out: 67 };
+    const graphUrls = () => request.mock.calls.map((c) => c[1] as string).filter((u) => u.startsWith('/v1/ontology/graph?'));
+    const withData = (over: Record<string, unknown>) =>
+      request.mockImplementation(async (method: string, path: string) => ({
+        ok: true,
+        data: path === '/v1/ontology/projects/p1/topics' ? over.topics ?? TOPICS
+          : path.startsWith('/v1/ontology/graph?') ? over.graph ?? GRAPH : route(method, path),
+      }));
+
+    it('collapses rejected topics behind one toggle until expanded', async () => {
+      withData({ topics: MANY_TOPICS });
+      renderScreen();
+      const region = await screen.findByRole('region', { name: 'project boundary' });
+      expect(await screen.findByText('Orbit · 3')).toBeInTheDocument();
+      expect(screen.queryByText('rejected 0 · 1')).toBeNull();
+      const toggle = await screen.findByRole('button', { name: /67 out of scope/ });
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      fireEvent.click(toggle);
+      expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      expect(region).toHaveTextContent('rejected 0 · 1');
+      expect(region).toHaveTextContent('rejected 66 · 1');
+    });
+
+    it('adds the show-rejected and show-all-sources flags to the graph request', async () => {
+      renderScreen();
+      fireEvent.click(await screen.findByRole('tab', { name: 'graph' }));
+      await screen.findByLabelText('ontology graph');
+      expect(graphUrls().at(-1)).not.toMatch(/include_rejected|all_sources/);
+      fireEvent.click(screen.getByRole('button', { name: 'show rejected' }));
+      await waitFor(() => expect(graphUrls().at(-1)).toMatch(/&include_rejected=true/));
+      fireEvent.click(screen.getByRole('button', { name: 'show all sources' }));
+      await waitFor(() => expect(graphUrls().at(-1)).toMatch(/&include_rejected=true&all_sources=true/));
+    });
+
+    it('hints at extraction when there are no facts and switches to the backlog', async () => {
+      withData({ graph: { ...GRAPH, counts: COUNTS } });
+      renderScreen();
+      fireEvent.click(await screen.findByRole('tab', { name: 'graph' }));
+      expect(await screen.findByText('No facts yet — run extraction from the Backlog')).toBeInTheDocument();
+      expect(screen.queryByLabelText('ontology graph')).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'go to backlog' }));
+      expect(useOntologyView.getState().tab).toBe('backlog');
+    });
+
+    it('keeps the canvas when a node is focused even with zero facts', async () => {
+      withData({ graph: { ...GRAPH, counts: COUNTS } });
+      renderScreen();
+      fireEvent.click(await screen.findByRole('tab', { name: 'graph' }));
+      await screen.findByText(/No facts yet/);
+      act(() => useOntologyView.getState().setFocus('n2'));
+      expect(await screen.findByLabelText('ontology graph')).toBeInTheDocument();
+      expect(screen.queryByText(/No facts yet/)).toBeNull();
+    });
+
+    it('shows the boundary status line on the backlog', async () => {
+      withData({ topics: MANY_TOPICS.slice(0, 6), graph: { ...GRAPH, counts: COUNTS } });
+      renderScreen();
+      expect(await screen.findByText('Boundary: 1 in · 5 out · 263 sources · 0 facts')).toBeInTheDocument();
+    });
+  });
+
   describe('node panel', () => {
     async function select(name: string) {
       renderScreen();
@@ -243,6 +309,9 @@ describe('OntologyScreen', () => {
   it('shows the boundary', async () => {
     renderScreen();
     expect(await screen.findByText(/boundary/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Orbit · 3/)).toBeInTheDocument();
+    expect(screen.queryByText(/billing · 2/)).toBeNull();
+    fireEvent.click(await screen.findByRole('button', { name: /1 out of scope/ }));
     expect(await screen.findByText(/billing · 2/)).toBeInTheDocument();
   });
 });

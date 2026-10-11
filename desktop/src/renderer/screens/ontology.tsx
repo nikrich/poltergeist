@@ -82,12 +82,24 @@ function Boundary({ project }: { project: string }) {
   const topics = useOntologyTopics(project);
   const inScope = (topics.data ?? []).filter((t) => t.status === 'in');
   const out = (topics.data ?? []).filter((t) => t.status === 'out');
+  const [open, setOpen] = useState(false);
   if (inScope.length === 0 && out.length === 0) return null;
   return (
-    <div className="flex flex-shrink-0 flex-wrap items-center gap-[6px] border-b border-hairline px-6 py-2" aria-label="project boundary">
-      <span className="font-mono text-11 text-ink-3">boundary</span>
-      {inScope.map((t) => <Pill key={t.uid} tone="moss">{t.name} · {t.notes}</Pill>)}
-      {out.map((t) => <Pill key={t.uid} tone="oxblood" className="line-through">{t.name} · {t.notes}</Pill>)}
+    <div role="region" aria-label="project boundary" className="flex-shrink-0 border-b border-hairline px-6 py-2">
+      <div className="flex flex-wrap items-center gap-[6px]">
+        <span className="font-mono text-11 text-ink-3">boundary</span>
+        {inScope.map((t) => <Pill key={t.uid} tone="moss">{t.name} · {t.notes}</Pill>)}
+        {out.length > 0 && (
+          <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+            <Pill tone="oxblood">{out.length} out of scope {open ? '▾' : '▸'}</Pill>
+          </button>
+        )}
+      </div>
+      {open && (
+        <div className="mt-2 flex max-h-24 flex-wrap gap-[6px] overflow-y-auto">
+          {out.map((t) => <Pill key={t.uid} tone="oxblood" className="line-through">{t.name} · {t.notes}</Pill>)}
+        </div>
+      )}
     </div>
   );
 }

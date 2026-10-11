@@ -699,6 +699,15 @@ export interface OntologyGraph {
   nodes: OntologyGraphNode[];
   edges: OntologyGraphEdge[];
   truncated: boolean;
+  /** Whole-project totals, independent of what the response slice contains. */
+  counts?: OntologyGraphCounts;
+}
+
+export interface OntologyGraphCounts {
+  facts: number;
+  sources: number;
+  topics_in: number;
+  topics_out: number;
 }
 
 export interface EgoGraphNode {

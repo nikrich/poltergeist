@@ -61,4 +61,5 @@ export const LABEL_COLOR = '#B7BAC2'; // --ink-1
 export const GROUND_COLOR = '#090B14'; // the constellation's dark ground
 export const EDGE_COLOR = 'rgba(183, 186, 194, 0.16)';
 export const EDGE_HI_COLOR = 'rgba(197, 255, 61, 0.55)';
+export const REJECTED_EDGE_COLOR = 'rgba(214, 90, 80, 0.7)'; // oxblood-ish
 export const LABEL_FONT = '11px "JetBrains Mono", ui-monospace, monospace';

@@ -99,10 +99,19 @@ export function useStartOntologyExtract(project: string | null) {
   });
 }
 
-export function useOntologyGraph(project: string | null, focus: string | null, depth: number) {
-  const q = focus ? `&focus=${encodeURIComponent(focus)}` : '';
+export interface OntologyGraphOpts {
+  includeRejected?: boolean;
+  allSources?: boolean;
+}
+
+export function useOntologyGraph(project: string | null, focus: string | null, depth: number, opts: OntologyGraphOpts = {}) {
+  const includeRejected = opts.includeRejected ?? false;
+  const allSources = opts.allSources ?? false;
+  const q = (focus ? `&focus=${encodeURIComponent(focus)}` : '')
+    + (includeRejected ? '&include_rejected=true' : '')
+    + (allSources ? '&all_sources=true' : '');
   return useQuery({
-    queryKey: [...KEY, 'graph', project, focus, depth],
+    queryKey: [...KEY, 'graph', project, focus, depth, includeRejected, allSources],
     queryFn: () => get<OntologyGraph>(`/v1/ontology/graph?project=${encodeURIComponent(project!)}&depth=${depth}${q}`),
     enabled: project !== null,
     placeholderData: keepPreviousData,

@@ -29,6 +29,8 @@ export interface SceneEdge {
   a: number;
   b: number;
   weight: number;
+  /** drawn dashed red: a link the project rejected (ontology out-of-scope topics) */
+  rejected?: boolean;
 }
 
 export interface Scene {
@@ -57,7 +59,7 @@ function indexByPath(paths: readonly string[]): Map<string, number> {
 }
 
 function mapEdges(
-  edges: ReadonlyArray<{ source: string; target: string; weight: number }>,
+  edges: ReadonlyArray<{ source: string; target: string; weight: number; kind?: string }>,
   index: Map<string, number>,
 ): SceneEdge[] {
   const out: SceneEdge[] = [];
@@ -65,7 +67,7 @@ function mapEdges(
     const a = index.get(e.source);
     const b = index.get(e.target);
     if (a === undefined || b === undefined || a === b) continue;
-    out.push({ a, b, weight: e.weight });
+    out.push(e.kind === 'out_of_scope' ? { a, b, weight: e.weight, rejected: true } : { a, b, weight: e.weight });
   }
   return out;
 }
@@ -74,7 +76,7 @@ function mapEdges(
 export interface EgoLike {
   focus: string;
   nodes: ReadonlyArray<{ path: string; title: string; kind: GraphKind; degree: number; ghost: boolean; hop: number }>;
-  edges: ReadonlyArray<{ source: string; target: string; weight: number }>;
+  edges: ReadonlyArray<{ source: string; target: string; weight: number; kind?: string }>;
 }
 
 export function layoutEgo(graph: EgoLike, ticks: number = EGO_TICKS): Scene {

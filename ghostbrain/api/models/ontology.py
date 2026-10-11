@@ -132,12 +132,20 @@ class GraphEdge(BaseModel):
     kind: str
 
 
+class OntologyGraphCounts(BaseModel):
+    facts: int
+    sources: int
+    topics_in: int
+    topics_out: int
+
+
 class OntologyGraph(BaseModel):
     focus: str
     depth: int
     nodes: list[GraphNode]
     edges: list[GraphEdge]
     truncated: bool
+    counts: OntologyGraphCounts | None = None
 
 
 class RevertRequest(BaseModel):

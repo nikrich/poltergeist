@@ -167,3 +167,21 @@ describe('truncateLabel', () => {
     expect(t.endsWith('…')).toBe(true);
   });
 });
+
+describe('drawFrame rejected links', () => {
+  it('draws rejected edges dashed in their own path and restores the dash', () => {
+    const { ctx, ops } = recordingContext();
+    const dashes: number[][] = [];
+    (ctx as unknown as Record<string, unknown>).setLineDash = (d: number[]) => { dashes.push(d); };
+    const scene: Scene = {
+      mode: 'ego', focus: 0,
+      nodes: [0, 1].map((i) => ({ path: `n${i}`, title: `n${i}`, kind: 'topic', degree: 1, ghost: false, hop: i, x: i * 10, y: 0, r: 5 })),
+      edges: [{ a: 0, b: 1, weight: 1, rejected: true }],
+    };
+    const cam = { x: 0, y: 0, scale: 1 };
+    const plan = planFrame(scene, cam, 200, 200, { hidden: new Set(), hover: -1 });
+    drawFrame(ctx, scene, cam, 200, 200, 1, plan, -1);
+    expect(dashes).toEqual([[4, 4], []]);
+    expect(ops.filter((o) => o.op === 'lineTo')).toHaveLength(1);
+  });
+});
