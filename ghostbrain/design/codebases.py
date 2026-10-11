@@ -151,6 +151,17 @@ def _tokens(text: str) -> set[str]:
     return words | {SYNONYMS[w] for w in words if w in SYNONYMS}
 
 
+def _one_edit(a: str, b: str) -> bool:
+    """True when ``a`` and ``b`` differ by exactly one substitution,
+    insertion or deletion."""
+    if a == b or abs(len(a) - len(b)) > 1:
+        return False
+    if len(a) == len(b):
+        return sum(x != y for x, y in zip(a, b)) == 1
+    short, long_ = (a, b) if len(a) < len(b) else (b, a)
+    return any(long_[:i] + long_[i + 1:] == short for i in range(len(long_)))
+
+
 def search(query: str, *, limit: int = 30) -> list[Candidate]:
     """Candidates for the picker: substring or all-tokens match, frontends first."""
     q = query.strip().lower()
@@ -183,7 +194,13 @@ def resolve(
     for c in pool:
         if frontend and not c.frontend:
             continue
-        score = len(hint_tokens & (_tokens(c.rel) | _tokens(c.name)))
+        names = _tokens(c.rel) | _tokens(c.name)
+        exact = hint_tokens & names
+        # Speech-to-text misses a letter ("orbat" for "orbit"): a near word
+        # counts half, so an exact match still wins.
+        near = [h for h in hint_tokens - exact
+                if len(h) >= 4 and any(len(n) >= 4 and _one_edit(h, n) for n in names)]
+        score = len(exact) + 0.5 * len(near)
         if score:
             scored.append((score, c))
     if not scored:

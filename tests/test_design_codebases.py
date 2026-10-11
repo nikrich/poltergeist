@@ -153,3 +153,21 @@ def test_resolve_no_frontend_candidate_returns_none_when_frontend_wanted(tmp_pat
 def test_resolve_any_candidate_when_frontend_not_required(tmp_path):
     cands = [Candidate(tmp_path/"bff", "x/bff-orbit", "bff-orbit", False)]
     assert codebases.resolve("ORBIT", cands, frontend=False, run=_never).rel == "x/bff-orbit"
+
+
+def test_resolve_tolerates_a_one_letter_mishearing(tmp_path):
+    cands = [Candidate(tmp_path / "a", "work/acme-fe-orbit-v2", "acme-fe-orbit-v2", True),
+             Candidate(tmp_path / "b", "work/acme-fe-billing", "acme-fe-billing", True)]
+    # whisper heard "orbat" for "orbit"
+    assert codebases.resolve("orbat's front-end", cands, run=_never).rel == "work/acme-fe-orbit-v2"
+
+
+def test_exact_matches_still_beat_near_matches(tmp_path):
+    cands = [Candidate(tmp_path / "a", "work/orbit-web", "orbit-web", True),
+             Candidate(tmp_path / "b", "work/orbat-web", "orbat-web", True)]
+    assert codebases.resolve("orbat", cands, run=_never).rel == "work/orbat-web"
+
+
+def test_short_words_are_not_fuzzed(tmp_path):
+    cands = [Candidate(tmp_path / "a", "work/api-web", "api-web", True)]
+    assert codebases.resolve("app", cands, run=_never) is None

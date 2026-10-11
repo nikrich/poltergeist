@@ -480,3 +480,19 @@ def test_real_worktree_detail_and_remove_after_manual_delete(vault: Path, tmp_pa
     assert artefacts.detail(aid)["codebase"]["missing"] is True
     out = artefacts.remove_worktree(aid)
     assert out["removed"] is True and out["branch_kept"] is True  # unmerged rev 1 kept
+
+
+def test_link_meeting_links_a_forked_off_scratch_artefact_too(vault: Path, tmp_path: Path) -> None:
+    wav = tmp_path / "rec" / "meeting.wav"
+    scratch = _session_artefact(vault, wav)
+    current = _folder(vault, "20-contexts/personal/artefacts/2026-10-10-meeting-1015")
+    artefacts.write(current, DATA | {"kind": "worktree", "title": "Meeting"})
+    ds.pointer_path(wav).write_text(json.dumps(
+        {"wav": str(wav), "prototype_dir": str(current), "previous": [str(scratch)]}))
+    note = _meeting(vault)
+    assert artefacts.link_meeting(wav, note) is True
+    meta, _body = split_frontmatter(note.read_text())
+    assert meta["artefacts"] == ["20-contexts/personal/prototypes/2026-10-10-meeting-1015/README",
+                                 "20-contexts/personal/artefacts/2026-10-10-meeting-1015/README"]
+    assert artefacts.load(scratch)["meeting"] == "Login review"
+    assert artefacts.load(current)["meeting"] == "Login review"
