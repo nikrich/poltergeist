@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.15.0](https://github.com/nikrich/poltergeist/compare/v1.14.0...v1.15.0) (2026-10-11)
+
+
+### Features
+
+* feat(chat): auto-file chats into projects + folders like docs (#178)
+* feat(templates): AI-drafted templates held for approval (C4) (#175)
+
+### Bug Fixes
+
+* fix(ontology): calmer boundary strip and a graph that shows knowledge, not noise (#177)
+* fix(design): pick up a repo named after the prototype started (#176)
+* fix(release): run the sidecar smoke test against an absolute binary path (#173)
+
 ## [1.14.0](https://github.com/nikrich/poltergeist/compare/v1.13.0...v1.14.0) (2026-10-10)
 
 
