@@ -91,7 +91,7 @@ def export_conversation(conv_id: str) -> dict:
                 "chat_title": conv["title"],
             },
         )
-        # A conversation filed under a project routes there directly — the
+        # A filed conversation routes straight to its location — the
         # auto-router only decides for unfiled conversations.
         if conv.get("context"):
             moved = move_jot(
@@ -100,7 +100,7 @@ def export_conversation(conv_id: str) -> dict:
                 to_project=conv.get("project"),
                 confidence=1.0,
                 method="chat-project",
-                reasoning="conversation is filed under this project",
+                reasoning="conversation is filed here",
             )
             return {
                 "jot_id": jot["id"],

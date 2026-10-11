@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from ghostbrain.api.repo import chat as repo_chat
-from ghostbrain.api.repo import chat_store
+from ghostbrain.api.repo import chat_autofile, chat_store
 from ghostbrain.llm.agent import ResumeFailed
 
 
@@ -15,6 +15,13 @@ def chats(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     d = tmp_path / "chats"
     monkeypatch.setenv("GHOSTBRAIN_CHATS_DIR", str(d))
     return d
+
+
+@pytest.fixture(autouse=True)
+def _no_autofile_thread(monkeypatch):
+    monkeypatch.setattr(chat_autofile, "_spawn", lambda fn, *a: None)
+    # The provider probe would run the real CLI (absent on CI).
+    monkeypatch.setattr("ghostbrain.api.repo.chat.require_provider", lambda: None)
 
 
 def happy_turn(prompt, *, session_id=None, **kw):
@@ -255,3 +262,18 @@ def test_legacy_session_without_a_recorded_provider_counts_as_claude(chats, monk
     assert "session_provider" not in chat_store.get(conv["id"])
     list(repo_chat.send_message(conv["id"], "again"))
     assert calls == ["legacy-sess"]
+
+
+def test_done_turn_schedules_auto_file(chats, monkeypatch):
+    def turn(prompt, *, session_id=None, **kw):
+        yield {"type": "done", "text": "hi", "session_id": None}
+
+    monkeypatch.setattr(repo_chat.agent, "run_chat_turn", turn)
+    seen = []
+    monkeypatch.setattr(
+        "ghostbrain.api.repo.chat.chat_autofile.maybe_schedule",
+        lambda conv: seen.append(conv["id"]) or True,
+    )
+    conv = chat_store.create()
+    list(repo_chat.send_message(conv["id"], "hello"))
+    assert seen == [conv["id"]]

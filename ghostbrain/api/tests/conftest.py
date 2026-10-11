@@ -176,3 +176,11 @@ def ontology_root(tmp_path, monkeypatch):
     service.reset_service()
     yield root
     service.reset_service()
+
+
+@pytest.fixture(autouse=True)
+def _no_chat_autofile_thread(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Chat turns schedule auto-filing; never spawn a real router/LLM call."""
+    from ghostbrain.api.repo import chat_autofile
+
+    monkeypatch.setattr(chat_autofile, "_spawn", lambda fn, *a: None)
