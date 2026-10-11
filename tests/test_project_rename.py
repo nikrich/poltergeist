@@ -127,7 +127,7 @@ def test_failure_in_registry_write_rolls_back_links_and_chats(vault: Path, monke
     _note(vault / OLD / "n.md", {"project": "paymnets"})
     _note(vault / "20-contexts/personal/l.md", {}, f"[[{OLD}/n.md]]")
     conv = chat_store.create()
-    chat_store.update(conv["id"], project="work/paymnets")
+    chat_store.move(conv["id"], context="work", project="paymnets", folder=None)
     before = {p: p.read_bytes() for p in vault.rglob("*") if p.is_file()}
 
     def boom(items):
@@ -138,15 +138,17 @@ def test_failure_in_registry_write_rolls_back_links_and_chats(vault: Path, monke
         projects.rename_project("work", "paymnets", name="Payments")
     assert {p: p.read_bytes() for p in vault.rglob("*") if p.is_file()} == before
     assert not (vault / NEW).exists()
-    assert chat_store.get(conv["id"])["project"] == "work/paymnets"
+    got = chat_store.get(conv["id"])
+    assert (got["context"], got["project"]) == ("work", "paymnets")
 
 
 def test_chat_conversations_are_repointed(vault: Path):
     from ghostbrain.api.repo import chat_store
     conv = chat_store.create()
-    chat_store.update(conv["id"], project="work/paymnets")
+    chat_store.move(conv["id"], context="work", project="paymnets", folder=None)
     projects.rename_project("work", "paymnets", name="Payments")
-    assert chat_store.get(conv["id"])["project"] == "work/payments"
+    got = chat_store.get(conv["id"])
+    assert (got["context"], got["project"]) == ("work", "payments")
 
 
 def test_unarchive_and_unknown(vault: Path):

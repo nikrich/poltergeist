@@ -470,9 +470,15 @@ def rename_project(
         from ghostbrain.api.repo import chat_store
 
         for conv in chat_store.list_all():
-            if conv.get("project") == old_id:
-                chat_store.update(conv["id"], project=new_id)
-                undo.append(lambda cid=conv["id"]: chat_store.update(cid, project=old_id))
+            if conv.get("context") == context and conv.get("project") == slug:
+                chat_store.move(
+                    conv["id"], context=context, project=new_slug, folder=conv.get("folder")
+                )
+                undo.append(
+                    lambda cid=conv["id"], f=conv.get("folder"): chat_store.move(
+                        cid, context=context, project=slug, folder=f
+                    )
+                )
 
         # 4. Registry last.
         items = _read()

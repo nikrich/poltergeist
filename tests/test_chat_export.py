@@ -126,7 +126,7 @@ def test_export_routes_to_conversation_project_when_filed(env, monkeypatch):
 
     project = projects.create_project("personal", "Site Rebuild")
     conv = _conv_with_messages()
-    chat_store.update(conv["id"], project=f"personal/{project['slug']}")
+    chat_store.move(conv["id"], context="personal", project=project["slug"], folder=None)
 
     monkeypatch.setattr(chat_export.llm, "run", lambda *a, **kw: FakeLLMResult())
     auto_router_called = []
