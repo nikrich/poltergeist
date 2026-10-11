@@ -579,19 +579,6 @@ export function useCreateConversation() {
   });
 }
 
-export function useUpdateConversation() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (vars: { id: string; title?: string; project?: string | null }) => {
-      const body: Record<string, unknown> = {};
-      if (vars.title !== undefined) body.title = vars.title;
-      if (vars.project !== undefined) body.project = vars.project;
-      return patch<Conversation>(`/v1/chat/${encodeURIComponent(vars.id)}`, body);
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['chat'] }),
-  });
-}
-
 export function useChatTree() {
   return useQuery({
     queryKey: ['chat', 'tree'],

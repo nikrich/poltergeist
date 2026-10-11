@@ -8,6 +8,7 @@ import { ChatScreen } from '../screens/chat';
 import { useChat } from '../stores/chat';
 import * as client from '../lib/api/client';
 import type {
+  ChatTree,
   Conversation,
   ConversationSummary,
   ChatExportResponse,
@@ -54,6 +55,11 @@ const summaries: ConversationSummary[] = [
   },
 ];
 
+const chatTree: ChatTree = {
+  unfiled: summaries.map((c) => ({ ...c, unknown_location: false })),
+  scopes: [],
+};
+
 const conversation: Conversation = {
   id: 'c1',
   title: 'auth thread',
@@ -86,6 +92,7 @@ function renderChat() {
 function stubGet() {
   vi.mocked(client.get).mockImplementation((path: string) => {
     if (path === '/v1/chat') return Promise.resolve(summaries) as never;
+    if (path === '/v1/chat/tree') return Promise.resolve(chatTree) as never;
     if (path === '/v1/settings/llm') return Promise.resolve(llmSettings) as never;
     if (path === '/v1/llm/providers') return Promise.resolve(llmProviders) as never;
     if (path.startsWith('/v1/chat/')) {
@@ -101,6 +108,7 @@ function stubGet() {
 function renderChatWithMessages(messages: Conversation['messages']) {
   vi.mocked(client.get).mockImplementation((path: string) => {
     if (path === '/v1/chat') return Promise.resolve(summaries) as never;
+    if (path === '/v1/chat/tree') return Promise.resolve(chatTree) as never;
     if (path === '/v1/settings/llm') return Promise.resolve(llmSettings) as never;
     if (path === '/v1/llm/providers') return Promise.resolve(llmProviders) as never;
     if (path.startsWith('/v1/chat/')) {
@@ -367,5 +375,52 @@ describe('ChatScreen pending ask', () => {
     rerender(ui);
     await screen.findAllByText('auth thread');
     expect(window.gb.chat.send).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ChatScreen auto-file polling', () => {
+  it('after the first reply of a pending chat, polls until filed and records the location', async () => {
+    let polls = 0;
+    vi.mocked(client.get).mockImplementation((path: string) => {
+      if (path === '/v1/chat') return Promise.resolve(summaries) as never;
+      if (path === '/v1/chat/tree') return Promise.resolve(chatTree) as never;
+      if (path === '/v1/settings/llm') return Promise.resolve(llmSettings) as never;
+      if (path === '/v1/llm/providers') return Promise.resolve(llmProviders) as never;
+      if (path.startsWith('/v1/projects')) return Promise.resolve([]) as never;
+      if (path === '/v1/chat/c1') {
+        // The screen's own query sees 'pending'; once the turn has been sent
+        // the poll sees the background filer's result.
+        const sent = vi.mocked(window.gb.chat.send).mock.calls.length > 0;
+        if (sent) polls += 1;
+        return Promise.resolve(
+          sent
+            ? { ...conversation, auto_filed: 'done', context: 'work', project: 'atlas', folder: null }
+            : { ...conversation, auto_filed: 'pending' },
+        ) as never;
+      }
+      return Promise.reject(new Error(`unexpected path ${path}`)) as never;
+    });
+    useChat.setState({ filed: {} });
+    render(wrap(<ChatScreen />));
+    await screen.findByText('how does auth work?');
+    const textarea = await screen.findByPlaceholderText(/message poltergeist/);
+    fireEvent.change(textarea, { target: { value: 'hello ghost' } });
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+    await waitFor(() =>
+      expect(useChat.getState().filed.c1).toEqual({ context: 'work', project: 'atlas', folder: null }),
+    );
+    expect(polls).toBeGreaterThan(0);
+    expect(await screen.findByText('Filed under work / atlas')).toBeInTheDocument();
+  });
+
+  it('does not poll when the chat was already filed or skipped', async () => {
+    useChat.setState({ filed: {} });
+    render(wrap(<ChatScreen />));
+    await screen.findByText('how does auth work?');
+    const textarea = await screen.findByPlaceholderText(/message poltergeist/);
+    fireEvent.change(textarea, { target: { value: 'hello ghost' } });
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+    await waitFor(() => expect(useChat.getState().streams.c1).toBeUndefined());
+    expect(useChat.getState().filed.c1).toBeUndefined();
   });
 });
