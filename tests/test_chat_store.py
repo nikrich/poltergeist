@@ -281,3 +281,12 @@ def test_update_title_only(chats):
     conv = chat_store.create()
     out = chat_store.update(conv["id"], title="renamed")
     assert out["title"] == "renamed"
+
+
+def test_reserved_registry_file_is_not_a_chat(chats):
+    chats.mkdir(parents=True, exist_ok=True)
+    reg = chats / "folders.json"
+    reg.write_text('{"folders": []}')
+    assert chat_store.get("folders") is None
+    assert chat_store.delete("folders") is False
+    assert reg.exists()

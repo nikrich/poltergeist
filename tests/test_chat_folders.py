@@ -175,3 +175,11 @@ def test_repoint_project(env):
     cf.repoint_project("work", env["atlas"], "atlas-2")
     assert chat_store.get(c["id"])["project"] == "atlas-2"
     assert ("work", "atlas-2", "plans") in cf._registry()   # registry entry moved too
+
+
+def test_move_chat_registers_parent_folders(env):
+    c = _chat()
+    cf.move_chat(c["id"], context="work", project=env["atlas"], folder="a/b")
+    chat_store.move(c["id"], context=None, project=None, folder=None)
+    assert ("work", env["atlas"], "a") in cf._registry()
+    assert ("work", env["atlas"], "a/b") in cf._registry()

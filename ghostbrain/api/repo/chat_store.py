@@ -64,6 +64,8 @@ def _conv_path(conv_id: str) -> Path:
 
 def _read_raw(conv_id: str) -> dict | None:
     path = _conv_path(conv_id)
+    if path.name in RESERVED_FILES:
+        return None
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -264,7 +266,7 @@ def rename(conv_id: str, title: str) -> dict | None:
 def delete(conv_id: str) -> bool:
     with lock:
         path = _conv_path(conv_id)
-        if not path.exists():
+        if path.name in RESERVED_FILES or not path.exists():
             return False
         path.unlink()
         return True

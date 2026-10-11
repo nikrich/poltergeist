@@ -1,7 +1,7 @@
 """Chat API: conversation CRUD + streaming agentic messages over SSE."""
 import json
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
 from ghostbrain.api.models.chat import (
@@ -9,6 +9,7 @@ from ghostbrain.api.models.chat import (
     AttachmentUploadResponse,
     ChatExportResponse,
     ChatMessageRequest,
+    ChatTree,
     Conversation,
     ConversationSummary,
     UpdateConversationRequest,
@@ -17,7 +18,8 @@ from ghostbrain.api.repo import chat as repo_chat
 from ghostbrain.api.repo import chat_attachments
 from ghostbrain.api.repo import chat_export as repo_chat_export
 from ghostbrain.api.repo import chat_store
-from ghostbrain.api.repo import projects as projects_repo
+from ghostbrain.api.repo import chat_folders
+from ghostbrain.api.models.library import FolderRef, MoveFolderRequest
 from ghostbrain.llm.client import LLMError
 
 router = APIRouter(prefix="/v1/chat", tags=["chat"])
@@ -35,6 +37,37 @@ def create_conversation() -> dict:
     return chat_store.create()
 
 
+def _folder_call(fn, *args, **kwargs):
+    try:
+        return fn(*args, **kwargs)
+    except chat_folders.ChatFolderError as e:
+        raise HTTPException(status_code=e.status, detail=str(e))
+
+
+@router.get("/tree", response_model=ChatTree)
+def chat_tree() -> dict:
+    return chat_folders.tree()
+
+
+@router.post("/folders", response_model=FolderRef)
+def create_chat_folder(payload: FolderRef) -> dict:
+    return _folder_call(chat_folders.create, payload.context, payload.project, payload.path)
+
+
+@router.patch("/folders", response_model=FolderRef)
+def move_chat_folder(payload: MoveFolderRequest) -> dict:
+    src, dst = payload.from_, payload.to
+    return _folder_call(
+        chat_folders.move, (src.context, src.project, src.path), (dst.context, dst.project, dst.path)
+    )
+
+
+@router.delete("/folders")
+def delete_chat_folder(context: str, path: str, project: str | None = Query(None)) -> dict:
+    _folder_call(chat_folders.delete, context, project, path)
+    return {"deleted": True}
+
+
 @router.get("/{conv_id}", response_model=Conversation)
 def get_conversation(conv_id: str) -> dict:
     conv = chat_store.get(conv_id)
@@ -45,21 +78,27 @@ def get_conversation(conv_id: str) -> dict:
 
 @router.patch("/{conv_id}", response_model=Conversation)
 def update_conversation(conv_id: str, payload: UpdateConversationRequest) -> dict:
-    kwargs: dict = {}
-    if "title" in payload.model_fields_set:
-        kwargs["title"] = payload.title
-    if "project" in payload.model_fields_set:
-        if payload.project is not None:
+    fields = payload.model_fields_set
+    if chat_store.get(conv_id) is None:
+        raise HTTPException(status_code=404, detail="conversation not found")
+    conv = None
+    if "context" in fields:
+        conv = _folder_call(
+            chat_folders.move_chat, conv_id,
+            context=payload.context, project=payload.project, folder=payload.folder,
+        )
+    elif "project" in fields:  # legacy: project = "context/slug" | null
+        if payload.project is None:
+            conv = _folder_call(chat_folders.move_chat, conv_id, context=None, project=None, folder=None)
+        else:
             context, _, slug = payload.project.partition("/")
-            known = (
-                projects_repo.get_project(context, slug) if context and slug else None
-            )
-            if known is None:
-                raise HTTPException(
-                    status_code=422, detail=f"unknown project: {payload.project}"
-                )
-        kwargs["project"] = payload.project
-    conv = chat_store.update(conv_id, **kwargs)
+            if not context or not slug:
+                raise HTTPException(status_code=422, detail=f"unknown project: {payload.project}")
+            conv = _folder_call(chat_folders.move_chat, conv_id, context=context, project=slug, folder=None)
+    elif "folder" in fields:
+        raise HTTPException(status_code=422, detail="context is required to move a conversation")
+    if "title" in fields:
+        conv = chat_store.update(conv_id, title=payload.title)
     if conv is None:
         raise HTTPException(status_code=404, detail="conversation not found")
     return conv

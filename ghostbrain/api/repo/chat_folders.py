@@ -185,7 +185,7 @@ def move_chat(conv_id: str, *, context: str | None, project: str | None, folder:
         check_location(context, project)
         cleaned = clean_path(folder) or None
         if cleaned and (context, project, cleaned) not in _all_folders():
-            _save_registry(_registry() | {(context, project, cleaned)})
+            _save_registry(_registry() | _with_parents({(context, project, cleaned)}))
         return chat_store.move(conv_id, context=context, project=project, folder=cleaned)
 
 
