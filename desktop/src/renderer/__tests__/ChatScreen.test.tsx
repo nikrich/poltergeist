@@ -445,6 +445,16 @@ describe('ChatScreen auto-file polling', () => {
     expect(useChat.getState().filed.c1).toBeUndefined();
   });
 
+  it('polls when the conversation is not in the cache yet (ask-about-doc flow)', async () => {
+    stubPending(filedConv as Conversation);
+    // The queued ask is sent on mount, before useConversation resolves.
+    useChat.setState({ activeId: 'c1', pendingAsk: { convId: 'c1', text: 'q', attachments: [] } });
+    render(wrap(<ChatScreen />));
+    await waitFor(() =>
+      expect(useChat.getState().filed.c1).toEqual({ context: 'work', project: 'atlas', folder: null }),
+    );
+  });
+
   it('a manual move while the turn is in flight never surfaces as auto-filed', async () => {
     // The server marks the manual move `done`, so the poll reads back a context.
     stubPending({ ...filedConv, context: 'work', project: null } as Conversation, treeWithScope);

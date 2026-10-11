@@ -82,7 +82,10 @@ export function ChatScreen() {
       }
       const convId = activeId;
       // Read before sending: the post-turn refetch may already see the filer's result.
-      const pendingFile = qc.getQueryData<Conversation>(['chat', convId])?.auto_filed === 'pending';
+      // An empty cache (e.g. the "ask about this doc" flow) counts as possibly pending;
+      // waitForAutoFile returns immediately for chats that aren't.
+      const cached = qc.getQueryData<Conversation>(['chat', convId]);
+      const pendingFile = cached?.auto_filed !== 'done' && cached?.auto_filed !== 'skipped';
       beginStream(convId, text, attachments);
       const paths = attachments.map((a) => a.path);
       void window.gb.chat.send(convId, text, paths).then(async (res) => {
