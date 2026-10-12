@@ -3,13 +3,14 @@ from pathlib import Path
 
 import pytest
 
+from ghostbrain.api.repo import attachment_extract
 from ghostbrain.api.repo.doc_library import ops, search
 from tests.doc_library_helpers import lib_vault  # noqa: F401
 
 
 @pytest.fixture(autouse=True)
 def seeded(lib_vault: Path, monkeypatch):
-    monkeypatch.setattr(ops.attachment_extract, "extract_text", lambda *a: "body")
+    monkeypatch.setattr(attachment_extract, "extract_text", lambda *a: "body")
     ops.upload("work", "payments", "specs", "Rate card Q4.xlsx", "", b"1")
     ops.upload("work", "claims", "", "Interchange rates 2026.pdf", "", b"2")
     ops.upload("personal", None, "rates", "Mortgage.pdf", "", b"3")

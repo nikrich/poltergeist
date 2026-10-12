@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from ghostbrain.api.repo import projects
+from ghostbrain.api.repo import attachment_extract
 from ghostbrain.api.repo.doc_library import folders, index, notes, ops
 from ghostbrain.api.repo.doc_library.errors import Conflict, InvalidPath, InvalidRequest, NotFound
 from tests.doc_library_helpers import lib_vault  # noqa: F401
@@ -13,7 +14,7 @@ W = "20-contexts/work/docs"
 
 @pytest.fixture(autouse=True)
 def fake_extract(monkeypatch):
-    monkeypatch.setattr(ops.attachment_extract, "extract_text", lambda *a: "body")
+    monkeypatch.setattr(attachment_extract, "extract_text", lambda *a: "body")
 
 
 def test_create_with_keep_and_conflict(lib_vault: Path):

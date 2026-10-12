@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from ghostbrain.api.repo import attachment_extract
 from ghostbrain.api.repo.doc_library import index, ops
 from ghostbrain.api.repo.doc_library.errors import Conflict, NotFound
 from tests.doc_library_helpers import lib_vault  # noqa: F401
@@ -10,7 +11,7 @@ from tests.doc_library_helpers import lib_vault  # noqa: F401
 
 @pytest.fixture(autouse=True)
 def fake_extract(monkeypatch):
-    monkeypatch.setattr(ops.attachment_extract, "extract_text", lambda *a: "body")
+    monkeypatch.setattr(attachment_extract, "extract_text", lambda *a: "body")
 
 
 def test_adopt_unclaimed_original(lib_vault: Path):

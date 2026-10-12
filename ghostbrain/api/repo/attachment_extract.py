@@ -17,6 +17,10 @@ class ExtractionError(RuntimeError):
     """The document couldn't be read, or held no extractable text."""
 
 
+class NoTextError(ExtractionError):
+    """The document opened fine but has no text layer (scanned or image-only)."""
+
+
 def _source(content: bytes | Path):
     """pypdf / python-docx / openpyxl all take a path or a binary stream; a
     path lets large Drive downloads stay on disk."""
@@ -45,7 +49,7 @@ def extract_text(filename: str, mime: str, content: bytes | Path) -> str:
     else:
         raise ExtractionError(f"not an extractable document: {filename} ({mime})")
     if not text.strip():
-        raise ExtractionError(
+        raise NoTextError(
             f"no extractable text in {filename} (scanned or image-only?)"
         )
     return text

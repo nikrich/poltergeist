@@ -264,3 +264,24 @@ def test_image_over_cap_rejected(tmp_vault, monkeypatch):
     big = PNG_1x1 + b"\x00" * (repo.MAX_IMAGE_BYTES)
     with pytest.raises(repo.AttachmentTooLarge):
         repo.save_attachment("c", "big.png", "image/png", big)
+
+
+def _image_only_pdf() -> bytes:
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (400, 300), (200, 30, 30)).save(buf, "PDF")
+    return buf.getvalue()
+
+
+def test_image_only_pdf_saved_with_caption(tmp_vault, monkeypatch):
+    monkeypatch.setattr(attachment_caption, "caption_image", lambda p: "a journey map")
+    result = repo.save_attachment("c", "map.pdf", "application/pdf", _image_only_pdf())
+    assert result["kind"] == "pdf"
+    assert "a journey map" in (tmp_vault / result["path"]).read_text(encoding="utf-8")
+
+
+def test_image_only_pdf_rejected_when_caption_fails(tmp_vault, monkeypatch):
+    monkeypatch.setattr(attachment_caption, "caption_image", lambda p: "")
+    with pytest.raises(repo.UnsupportedAttachment):
+        repo.save_attachment("c", "map.pdf", "application/pdf", _image_only_pdf())

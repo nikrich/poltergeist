@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from ghostbrain.api.repo import projects
+from ghostbrain.api.repo import attachment_extract
 from ghostbrain.api.repo.doc_library import index, notes, ops
 from ghostbrain.api.repo.doc_library.errors import Conflict, InvalidPath, TooLarge
 from tests.doc_library_helpers import lib_vault  # noqa: F401
@@ -13,7 +14,7 @@ PROOT = "20-contexts/work/projects/payments/docs"
 
 @pytest.fixture
 def fake_extract(monkeypatch):
-    monkeypatch.setattr(ops.attachment_extract, "extract_text", lambda name, mime, src: f"text of {name}")
+    monkeypatch.setattr(attachment_extract, "extract_text", lambda name, mime, src: f"text of {name}")
     monkeypatch.setattr(ops, "_pdf_pages", lambda path: 24)
 
 
@@ -65,7 +66,7 @@ def test_hostile_filename_stays_in_folder(lib_vault: Path, fake_extract):
 def test_extraction_failure_keeps_original(lib_vault: Path, monkeypatch):
     def boom(*a):
         raise RuntimeError("corrupt")
-    monkeypatch.setattr(ops.attachment_extract, "extract_text", boom)
+    monkeypatch.setattr(attachment_extract, "extract_text", boom)
     s = ops.upload("work", None, "", "bad.pdf", "", b"%PDF-broken")
     assert s["index_status"] == "failed"
     assert (lib_vault / s["original_path"]).read_bytes() == b"%PDF-broken"
@@ -111,7 +112,7 @@ def test_in_flight_upload_is_pending_doc_not_unclaimed(lib_vault: Path, monkeypa
             ops.adopt("work", None, "", "a.pdf")
         return "text"
 
-    monkeypatch.setattr(ops.attachment_extract, "extract_text", extract)
+    monkeypatch.setattr(attachment_extract, "extract_text", extract)
     s = ops.upload("work", None, "", "a.pdf", "application/pdf", b"%PDF")
     assert seen == {"attention": [], "status": ["pending"]}
     assert s["index_status"] == "ok"
@@ -134,7 +135,7 @@ def test_rename_during_extraction_is_kept(lib_vault: Path, monkeypatch):
         ops.rename(doc_id, "Renamed")
         return "text"
 
-    monkeypatch.setattr(ops.attachment_extract, "extract_text", extract)
+    monkeypatch.setattr(attachment_extract, "extract_text", extract)
     s = ops.upload("work", None, "", "a.pdf", "", b"%PDF")
     assert s["title"] == "Renamed" and s["original"] == "Renamed.pdf" and s["index_status"] == "ok"
 
