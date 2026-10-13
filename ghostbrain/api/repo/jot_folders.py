@@ -84,6 +84,55 @@ def delete(context: str, project: str | None, path: str) -> None:
         _save_registry(_registry() - {(context, project, cleaned)})
 
 
+def move_folder(src: tuple, dst: tuple, *, actor: Actor = USER) -> dict:
+    """Rename or move a folder with every jot inside it. Jots that fail to move
+    are reported after the rest have moved; each move is its own atomic write."""
+    s_ctx, s_proj, s_raw = src
+    d_ctx, d_proj, d_raw = dst
+    s_path, d_path = sf.clean_path(s_raw), sf.clean_path(d_raw)
+    if not s_path or not d_path:
+        raise sf.InvalidLocation("folder path is required")
+    with lock:
+        rows = _jots()
+        existing = _all_folders(rows)
+        if (s_ctx, s_proj, s_path) not in existing:
+            raise sf.FolderNotFound(f"folder not found: {s_path}")
+        sf.check_location(d_ctx, d_proj)
+        if (s_ctx, s_proj) == (d_ctx, d_proj) and sf.under(d_path, s_path):
+            raise sf.InvalidLocation("cannot move a folder into itself")
+        if (d_ctx, d_proj, d_path) in existing:
+            raise sf.FolderExists(f"folder already exists: {d_path}")
+
+        def remap(path: str) -> str:
+            return d_path + path[len(s_path):]
+
+        reg = set()
+        for c, p, path in _registry():
+            if (c, p) == (s_ctx, s_proj) and sf.under(path, s_path):
+                reg.add((d_ctx, d_proj, remap(path)))
+            else:
+                reg.add((c, p, path))
+        reg |= sf.with_parents({(d_ctx, d_proj, d_path)})  # keep the moved folder even if it was only implied
+        _save_registry(reg)
+
+        failed: list[str] = []
+        for r in rows:
+            f = _folder_of(r)
+            if not (_filed(r) and (r["context"], r.get("project")) == (s_ctx, s_proj) and f and sf.under(f, s_path)):
+                continue
+            try:
+                notes_manual.move_jot(
+                    r["id"], to_context=d_ctx, to_project=d_proj, folder=remap(f),
+                    confidence=1.0, method="user", reasoning="moved with its folder", actor=actor,
+                )
+            except Exception:
+                log.exception("jot %s did not move with folder %s", r["id"], s_path)
+                failed.append(r["id"])
+        if failed:
+            raise FolderMoveIncomplete(f"{len(failed)} jot(s) did not move: {', '.join(failed)}")
+    return {"context": d_ctx, "project": d_proj, "path": d_path}
+
+
 def move_jot_to(jot_id: str, *, context: str, project: str | None, folder: str | None, actor: Actor = USER) -> dict:
     """File a jot at (context, project, folder). Files pending / manual-review jots too."""
     with lock:

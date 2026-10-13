@@ -120,3 +120,61 @@ def test_failed_move_does_not_register_folder(env):
     with pytest.raises(jf.JotMissing):
         jf.move_jot_to("manual-19000101T000000-nope", context="work", project=None, folder="ghost")
     assert ("work", None, "ghost") not in jf._all_folders()
+
+
+def test_rename_folder_same_location(env):
+    jid = _jot()
+    jf.move_jot_to(jid, context="work", project=None, folder="q4/plans")
+    jf.create("work", None, "q4/empty")
+    path_before = nm.read_jot(jid)["path"]
+    assert jf.move_folder(("work", None, "q4"), ("work", None, "2026q4")) == {"context": "work", "project": None, "path": "2026q4"}
+    assert _fm(env, jid)["folder"] == "2026q4/plans"
+    assert nm.read_jot(jid)["path"] == path_before
+    assert ("work", None, "2026q4/empty") in jf._registry()
+    assert not any(p.startswith("q4") for c, _, p in jf._all_folders())
+
+
+def test_move_folder_across_locations_moves_files(env):
+    a, b = _jot("a"), _jot("b", 1)
+    jf.move_jot_to(a, context="work", project=None, folder="q4")
+    jf.move_jot_to(b, context="work", project=None, folder="q4/deep")
+    jf.move_folder(("work", None, "q4"), ("work", env["atlas"], "q4"))
+    for jid, folder in ((a, "q4"), (b, "q4/deep")):
+        fm = _fm(env, jid)
+        assert (fm["context"], fm["project"], fm["folder"]) == ("work", env["atlas"], folder)
+        assert f"projects/{env['atlas']}/" in nm.read_jot(jid)["path"]
+
+
+def test_move_folder_errors(env):
+    jf.create("work", None, "a/b")
+    jf.create("work", None, "c")
+    with pytest.raises(jf.sf.FolderNotFound):
+        jf.move_folder(("work", None, "zzz"), ("work", None, "y"))
+    with pytest.raises(jf.sf.InvalidLocation):
+        jf.move_folder(("work", None, "a"), ("work", None, "a/b/x"))
+    with pytest.raises(jf.sf.FolderExists):
+        jf.move_folder(("work", None, "a"), ("work", None, "c"))
+    projects.update_project("work", env["atlas"], archived=True)
+    with pytest.raises(jf.sf.InvalidLocation):
+        jf.move_folder(("work", None, "a"), ("work", env["atlas"], "a"))
+
+
+def test_move_folder_partial_failure_reports_ids(env, monkeypatch):
+    good, bad = _jot("good"), _jot("bad", 1)
+    jf.move_jot_to(good, context="work", project=None, folder="q4")
+    jf.move_jot_to(bad, context="work", project=None, folder="q4")
+    real = nm.move_jot
+
+    def flaky(jot_id, **kw):
+        if jot_id == bad:
+            raise nm.JotNotFound(jot_id)
+        return real(jot_id, **kw)
+
+    monkeypatch.setattr(nm, "move_jot", flaky)
+    with pytest.raises(jf.FolderMoveIncomplete) as ei:
+        jf.move_folder(("work", None, "q4"), ("work", env["atlas"], "q4"))
+    assert bad in str(ei.value)
+    assert _fm(env, good)["project"] == env["atlas"]
+    t = jf.tree()
+    old = next(f for f in _scope(t, "work")["folders"] if f["path"] == "q4")
+    assert [j["id"] for j in old["jots"]] == [bad]
