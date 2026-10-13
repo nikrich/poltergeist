@@ -30,6 +30,40 @@ class NoteListItem(BaseModel):
     created: str  # ISO8601
     updated: str  # ISO8601
     project: str | None = None
+    folder: str | None = None
+
+
+class JotTreeItem(NoteListItem):
+    thumbnail: str | None = None
+    unknownLocation: bool = False
+
+
+class JotFolderNode(BaseModel):
+    name: str
+    path: str
+    folders: list["JotFolderNode"] = []
+    jots: list[JotTreeItem] = []
+
+
+class JotScope(BaseModel):
+    context: str
+    project: str | None = None
+    name: str
+    archived: bool = False
+    folders: list[JotFolderNode] = []
+    jots: list[JotTreeItem] = []
+
+
+class JotTree(BaseModel):
+    inbox: list[JotTreeItem] = []
+    unrouted: list[JotTreeItem] = []
+    scopes: list[JotScope] = []
+
+
+class MoveJotRequest(BaseModel):
+    context: str
+    project: str | None = None
+    folder: str | None = None
 
 
 class NotesPage(BaseModel):

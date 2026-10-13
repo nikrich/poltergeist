@@ -7,95 +7,31 @@ parents, so losing the registry only loses empty folders.
 """
 from __future__ import annotations
 
-import json
-import logging
-
-from ghostbrain import routing_config
 from ghostbrain.api.repo import chat_store
-from ghostbrain.api.repo import projects as projects_repo
-from ghostbrain.api.repo.doc_library.scope import InvalidPath, clean_rel
+from ghostbrain.api.repo import scoped_folders as sf
+from ghostbrain.api.repo.scoped_folders import (  # re-exported: callers import these from here
+    Entry,
+    FolderExists,
+    FolderNotEmpty,
+    FolderNotFound,
+    InvalidLocation,
+    check_location,
+    clean_path,
+)
 from ghostbrain.paths import chats_dir
 
-log = logging.getLogger("ghostbrain.chat.folders")
-
-Entry = tuple[str, "str | None", str]  # (context, project, path)
-
-
-class ChatFolderError(Exception):
-    status = 422
-
-
-class InvalidLocation(ChatFolderError):
-    status = 422
-
-
-class FolderNotFound(ChatFolderError):
-    status = 404
-
-
-class FolderExists(ChatFolderError):
-    status = 409
-
-
-class FolderNotEmpty(ChatFolderError):
-    status = 409
+ChatFolderError = sf.FolderError
 
 
 class ChatNotFound(ChatFolderError):
     status = 404
 
 
-def clean_path(path: str | None) -> str:
-    try:
-        return clean_rel(path or "")
-    except InvalidPath as e:
-        raise InvalidLocation(str(e)) from None
-
-
-def check_location(context: str, project: str | None, *, for_write: bool = True) -> None:
-    if context not in routing_config.contexts():
-        raise InvalidLocation(f"unknown context: {context}")
-    if project is None:
-        return
-    p = projects_repo.get_project(context, project)
-    if p is None:
-        raise InvalidLocation(f"unknown project: {context}/{project}")
-    if for_write and p.get("archived"):
-        raise InvalidLocation(f"project is archived: {context}/{project}")
-
-
-def _registry_path():
-    return chats_dir() / "folders.json"
-
-
-def _registry() -> set[Entry]:
-    try:
-        raw = json.loads(_registry_path().read_text(encoding="utf-8"))
-        return {(f["context"], f.get("project"), f["path"]) for f in raw.get("folders", [])}
-    except FileNotFoundError:
-        return set()
-    except (json.JSONDecodeError, OSError, KeyError, TypeError, AttributeError):
-        log.warning("unreadable chat folder registry %s; treating as empty", _registry_path())
-        return set()
-
-
-def _save_registry(entries: set[Entry]) -> None:
-    d = chats_dir()
-    d.mkdir(parents=True, exist_ok=True)
-    target = _registry_path()
-    tmp = target.with_name(target.name + ".tmp")
-    rows = [{"context": c, "project": p, "path": path} for c, p, path in sorted(entries, key=lambda e: (e[0], e[1] or "", e[2]))]
-    tmp.write_text(json.dumps({"folders": rows}, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(target)
-
-
-def _with_parents(entries) -> set[Entry]:
-    out: set[Entry] = set()
-    for c, p, path in entries:
-        parts = path.split("/")
-        for i in range(1, len(parts) + 1):
-            out.add((c, p, "/".join(parts[:i])))
-    return out
+_REGISTRY = sf.Registry(lambda: chats_dir() / "folders.json", "chat")
+_registry = _REGISTRY.load
+_save_registry = _REGISTRY.save
+_with_parents = sf.with_parents
+_under = sf.under
 
 
 def _all_folders(convs: list[dict] | None = None) -> set[Entry]:
@@ -106,10 +42,6 @@ def _all_folders(convs: list[dict] | None = None) -> set[Entry]:
 
 def folder_exists(context: str, project: str | None, path: str) -> bool:
     return (context, project, clean_path(path)) in _all_folders()
-
-
-def _under(path: str, root: str) -> bool:
-    return path == root or path.startswith(root + "/")
 
 
 def create(context: str, project: str | None, path: str) -> dict:
@@ -198,7 +130,7 @@ def repoint_project(context: str, old_slug: str, new_slug: str) -> None:
             return False
 
         chat_store.rewrite_all(fn)
-        _save_registry({(c, new_slug if (c == context and p == old_slug) else p, path) for c, p, path in _registry()})
+        _REGISTRY.repoint(context, old_slug, new_slug)
 
 
 def _summary(conv: dict, unknown: bool = False) -> dict:
@@ -210,24 +142,11 @@ def _summary(conv: dict, unknown: bool = False) -> dict:
     }
 
 
-def _node(name: str, path: str, entries: set[str], chats_by_folder: dict[str, list[dict]]) -> dict:
-    prefix = f"{path}/" if path else ""
-    child_names = sorted({e[len(prefix):].split("/", 1)[0] for e in entries if e.startswith(prefix) and e != path and e})
-    return {
-        "name": name,
-        "path": path,
-        "folders": [_node(n, f"{prefix}{n}", entries, chats_by_folder) for n in child_names],
-        "chats": sorted(chats_by_folder.get(path, []), key=lambda s: s["updated_at"], reverse=True),
-    }
-
-
 def tree() -> dict:
     with chat_store.lock:
         convs = chat_store.iter_all()
         folders = _all_folders(convs)
-    contexts = routing_config.contexts()
-    projs = projects_repo.list_projects(include_archived=True)
-    known = {(p["context"], p["slug"]): p for p in projs}
+    contexts, known = sf.known_locations()
     unfiled: list[dict] = []
     by_loc: dict[tuple, dict[str, list[dict]]] = {}
     for c in convs:
@@ -240,18 +159,4 @@ def tree() -> dict:
             by_loc.setdefault((ctx, proj), {}).setdefault(c["folder"] or "", []).append(_summary(c))
     unfiled.sort(key=lambda s: s["updated_at"], reverse=True)
 
-    def scope(ctx: str, proj: str | None, name: str, archived: bool) -> dict:
-        entries = {path for c, p, path in folders if (c, p) == (ctx, proj)}
-        root = _node(name, "", entries, by_loc.get((ctx, proj), {}))
-        return {"context": ctx, "project": proj, "name": name, "archived": archived,
-                "folders": root["folders"], "chats": root["chats"]}
-
-    scopes = []
-    for ctx in contexts:
-        scopes.append(scope(ctx, None, ctx, False))
-        for p in sorted((p for p in projs if p["context"] == ctx), key=lambda p: p["name"].lower()):
-            s = scope(ctx, p["slug"], p["name"], bool(p.get("archived")))
-            if s["archived"] and not s["chats"] and not s["folders"]:
-                continue
-            scopes.append(s)
-    return {"unfiled": unfiled, "scopes": scopes}
+    return {"unfiled": unfiled, "scopes": sf.build_scopes(folders, by_loc, leaf_key="chats", sort_key="updated_at")}

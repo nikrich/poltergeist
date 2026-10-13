@@ -6,14 +6,18 @@ from fastapi import Path as PathParam
 from fastapi.responses import JSONResponse, Response
 
 from ghostbrain import routing_config
+from ghostbrain.api.models.library import FolderRef, MoveFolderRequest
 from ghostbrain.api.models.note import (
     CreateNoteRequest,
     ExtractPhotoRequest,
+    JotTree,
+    MoveJotRequest,
     RouteNoteRequest,
     UpdateNoteBodyRequest,
     UpdateNoteRequest,
     UpsertNoteRequest,
 )
+from ghostbrain.api.repo import jot_folders
 from ghostbrain.api.repo.note import (
     NoteInvalidPath,
     NoteNotFound,
@@ -58,6 +62,50 @@ def _known_contexts() -> set[str]:
     return set(routing_config.contexts())
 
 router = APIRouter(prefix="/v1/notes", tags=["notes"])
+
+
+def _folder_call(fn, *args, **kwargs):
+    try:
+        return fn(*args, **kwargs)
+    except jot_folders.JotFolderError as e:
+        raise HTTPException(status_code=e.status, detail=str(e)) from e
+
+
+@router.get("/tree", response_model=JotTree)
+def jot_tree() -> dict:
+    return jot_folders.tree()
+
+
+@router.post("/folders", response_model=FolderRef)
+def create_jot_folder(payload: FolderRef) -> dict:
+    return _folder_call(jot_folders.create, payload.context, payload.project, payload.path)
+
+
+@router.patch("/folders", response_model=FolderRef)
+def move_jot_folder(payload: MoveFolderRequest, actor: Actor = Depends(request_actor)) -> dict:
+    src, dst = payload.from_, payload.to
+    return _folder_call(
+        jot_folders.move_folder, (src.context, src.project, src.path), (dst.context, dst.project, dst.path),
+        actor=actor,
+    )
+
+
+@router.delete("/folders")
+def delete_jot_folder(context: str, path: str, project: str | None = Query(None)) -> dict:
+    _folder_call(jot_folders.delete, context, project, path)
+    return {"deleted": True}
+
+
+@router.patch("/{jot_id}/location")
+def move_jot_location(
+    req: MoveJotRequest,
+    jot_id: str = PathParam(..., min_length=8, max_length=128),
+    actor: Actor = Depends(request_actor),
+) -> dict:
+    """File a jot at a context / project / folder (drag in the jot tree)."""
+    return _folder_call(
+        jot_folders.move_jot_to, jot_id, context=req.context, project=req.project, folder=req.folder, actor=actor,
+    )
 
 
 @router.get("")
