@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -9,7 +9,7 @@ from ghostbrain.api.repo.notes_manual import write_inbox_jot
 @pytest.fixture
 def jot(tmp_vault):
     (tmp_vault / "00-inbox" / "raw" / "manual").mkdir(parents=True, exist_ok=True)
-    return write_inbox_jot("folder me", captured_at=datetime(2026, 5, 14, 9, tzinfo=timezone.utc))
+    return write_inbox_jot("folder me", captured_at=datetime(2026, 5, 14, 9, tzinfo=UTC))
 
 
 @pytest.fixture

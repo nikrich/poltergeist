@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from ghostbrain import routing_config
 from ghostbrain.api.repo import projects as projects_repo

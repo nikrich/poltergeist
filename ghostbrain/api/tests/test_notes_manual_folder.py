@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import frontmatter
 
@@ -7,7 +7,7 @@ from ghostbrain.api.repo import notes_manual as nm
 
 def _routed(vault, ctx="work", folder=None):
     (vault / "00-inbox" / "raw" / "manual").mkdir(parents=True, exist_ok=True)
-    rec = nm.write_inbox_jot("hello there", captured_at=datetime(2026, 5, 14, 9, tzinfo=timezone.utc))
+    rec = nm.write_inbox_jot("hello there", captured_at=datetime(2026, 5, 14, 9, tzinfo=UTC))
     nm.move_jot(rec["id"], to_context=ctx, confidence=1.0, method="user", reasoning="t", folder=folder)
     return rec["id"]
 

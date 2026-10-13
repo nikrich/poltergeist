@@ -6,6 +6,7 @@ from fastapi import Path as PathParam
 from fastapi.responses import JSONResponse, Response
 
 from ghostbrain import routing_config
+from ghostbrain.api.models.library import FolderRef, MoveFolderRequest
 from ghostbrain.api.models.note import (
     CreateNoteRequest,
     ExtractPhotoRequest,
@@ -16,7 +17,6 @@ from ghostbrain.api.models.note import (
     UpdateNoteRequest,
     UpsertNoteRequest,
 )
-from ghostbrain.api.models.library import FolderRef, MoveFolderRequest
 from ghostbrain.api.repo import jot_folders
 from ghostbrain.api.repo.note import (
     NoteInvalidPath,

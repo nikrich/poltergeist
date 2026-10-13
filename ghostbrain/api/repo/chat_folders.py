@@ -7,16 +7,18 @@ parents, so losing the registry only loses empty folders.
 """
 from __future__ import annotations
 
-import logging
-
 from ghostbrain.api.repo import chat_store
 from ghostbrain.api.repo import scoped_folders as sf
 from ghostbrain.api.repo.scoped_folders import (  # re-exported: callers import these from here
-    Entry, FolderExists, FolderNotEmpty, FolderNotFound, InvalidLocation, check_location, clean_path,
+    Entry,
+    FolderExists,
+    FolderNotEmpty,
+    FolderNotFound,
+    InvalidLocation,
+    check_location,
+    clean_path,
 )
 from ghostbrain.paths import chats_dir
-
-log = logging.getLogger("ghostbrain.chat.folders")
 
 ChatFolderError = sf.FolderError
 

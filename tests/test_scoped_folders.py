@@ -1,8 +1,8 @@
-import json
 
 import pytest
 
-from ghostbrain.api.repo import projects, scoped_folders as sf
+from ghostbrain.api.repo import projects
+from ghostbrain.api.repo import scoped_folders as sf
 
 
 @pytest.fixture

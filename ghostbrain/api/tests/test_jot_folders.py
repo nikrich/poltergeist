@@ -1,12 +1,13 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import frontmatter
 import pytest
 
-from ghostbrain.api.repo import jot_folders as jf, notes_manual as nm, projects
+from ghostbrain.api.repo import jot_folders as jf
+from ghostbrain.api.repo import notes_manual as nm
+from ghostbrain.api.repo import projects
 
-
-T0 = datetime(2026, 5, 14, 9, tzinfo=timezone.utc)
+T0 = datetime(2026, 5, 14, 9, tzinfo=UTC)
 
 
 @pytest.fixture
