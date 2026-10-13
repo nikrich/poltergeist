@@ -311,8 +311,11 @@ describe('JotsScreen', () => {
     await waitFor(() => expect(screen.getByLabelText('jot tree')).toBeInTheDocument());
     fireEvent.change(screen.getByPlaceholderText('search jots…'), { target: { value: 'first' } });
     await waitFor(() => expect(screen.queryByLabelText('jot tree')).not.toBeInTheDocument());
-    expect(apiRequest.mock.calls.some((a: unknown[]) => typeof a[1] === 'string' && a[1].includes('q=first'))).toBe(true);
-    expect(screen.getAllByText('first jot').length).toBeGreaterThan(0);
+    // The search query only starts once a query is typed, so its results land after the tree unmounts.
+    await waitFor(() =>
+      expect(apiRequest.mock.calls.some((a: unknown[]) => typeof a[1] === 'string' && a[1].includes('q=first'))).toBe(true),
+    );
+    expect((await screen.findAllByText('first jot')).length).toBeGreaterThan(0);
   });
 
   it('does not poll the full jot list unless searching', async () => {
