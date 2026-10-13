@@ -117,7 +117,7 @@ def _build_body(
     if kind == "image":
         return _image_body(filename, mime, content, note_id, target_dir)
     try:
-        return attachment_extract.extract_text(filename, mime, content)
+        return attachment_caption.extract_or_caption(filename, mime, content)
     except attachment_extract.ExtractionError as e:
         raise UnsupportedAttachment(str(e)) from e
 

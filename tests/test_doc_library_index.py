@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from ghostbrain.api.repo import attachment_extract
 from ghostbrain.api.repo.doc_library import index, notes
 from ghostbrain.api.repo.doc_library.errors import NotFound
 from tests.doc_library_helpers import lib_vault  # noqa: F401
@@ -238,7 +239,7 @@ def test_reindex_recovers_stale_pending(lib_vault: Path, monkeypatch):
 
     proot = lib_vault / "20-contexts/work/projects/payments/docs"
     _seed(proot, "a.pdf", "aaaaaaaaaaaa", project="payments", status="pending")
-    monkeypatch.setattr(ops.attachment_extract, "extract_text", lambda *a: "recovered")
+    monkeypatch.setattr(attachment_extract, "extract_text", lambda *a: "recovered")
     index.invalidate()
     assert ops.reindex("aaaaaaaaaaaa")["index_status"] == "ok"
     assert index.attention() == []

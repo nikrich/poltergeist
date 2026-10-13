@@ -11,7 +11,7 @@ from pathlib import Path
 
 from send2trash import send2trash
 
-from ghostbrain.api.repo import attachment_caption, attachment_extract, file_kinds
+from ghostbrain.api.repo import attachment_caption, file_kinds
 from ghostbrain.api.repo.doc_library import ai_summary, index, notes, scope
 from ghostbrain.api.repo.doc_library.errors import Conflict, InvalidRequest, NotFound, TooLarge
 
@@ -45,7 +45,7 @@ def _extract(kind: str, filename: str, mime: str, path: Path) -> tuple[str, str,
             if not caption:
                 return _NO_TEXT_IMAGE, "failed", None
             return caption, "ok", None
-        body = attachment_extract.extract_text(filename, mime, path)
+        body = attachment_caption.extract_or_caption(filename, mime, path)
         return body, "ok", _pdf_pages(path) if kind == "pdf" else None
     except Exception as e:  # noqa: BLE001 — a broken file must never lose the original
         log.warning("indexing %s failed: %s", path.name, e)

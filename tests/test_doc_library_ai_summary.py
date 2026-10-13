@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from ghostbrain.api.repo import attachment_extract
 from ghostbrain.api.repo.doc_library import ai_summary, index, notes, ops
 from tests.doc_library_helpers import lib_vault  # noqa: F401
 
@@ -25,7 +26,7 @@ def calls(monkeypatch):
 
     monkeypatch.setattr(ai_summary.llm_client, "run", fake_run)
     monkeypatch.setattr(ai_summary, "enqueue", lambda doc_id: False)  # uploads must not start real jobs
-    monkeypatch.setattr(ops.attachment_extract, "extract_text", lambda *a: "body " * 5000)
+    monkeypatch.setattr(attachment_extract, "extract_text", lambda *a: "body " * 5000)
     return seen
 
 
@@ -100,7 +101,7 @@ def test_skipped_and_deleted_docs_do_not_call_llm(lib_vault: Path, calls, monkey
 def test_enqueue_dedupes_in_flight(lib_vault: Path, calls, monkeypatch):
     # Restore the real enqueue (fixtures stub it) but never run jobs: fake executor.
     # Don't use monkeypatch.undo() — it would also undo lib_vault's VAULT_PATH patch.
-    monkeypatch.setattr(ops.attachment_extract, "extract_text", lambda *a: "text")
+    monkeypatch.setattr(attachment_extract, "extract_text", lambda *a: "text")
     submitted = []
 
     monkeypatch.setattr(ai_summary, "_submit", lambda doc_id: submitted.append(doc_id))
@@ -236,7 +237,7 @@ def test_failed_extraction_submits_nothing(real_enqueue_spy, monkeypatch):
     def boom(*a):
         raise RuntimeError("corrupt")
 
-    monkeypatch.setattr(ops.attachment_extract, "extract_text", boom)
+    monkeypatch.setattr(attachment_extract, "extract_text", boom)
     ops.upload("work", None, "", "bad.pdf", "", b"%PDF-bad")
     assert real_enqueue_spy == []
 
@@ -258,7 +259,7 @@ def test_reindex_drops_stale_summary_when_body_changes(lib_vault: Path, calls, m
     assert "summary" in notes.read_note(path)[0]
     ops.reindex(s["doc_id"])  # same extracted body: summary kept
     assert "summary" in notes.read_note(path)[0]
-    monkeypatch.setattr(ops.attachment_extract, "extract_text", lambda *a: "new content")
+    monkeypatch.setattr(attachment_extract, "extract_text", lambda *a: "new content")
     ops.reindex(s["doc_id"])
     assert "summary" not in notes.read_note(path)[0]
 
@@ -270,7 +271,7 @@ def test_reindex_drops_summary_when_status_not_ok(lib_vault: Path, calls, monkey
     def boom(*a):
         raise RuntimeError("corrupt")
 
-    monkeypatch.setattr(ops.attachment_extract, "extract_text", boom)
+    monkeypatch.setattr(attachment_extract, "extract_text", boom)
     ops.reindex(s["doc_id"])
     front = notes.read_note(lib_vault / s["note_path"])[0]
     assert front["index_status"] == "failed" and "summary" not in front

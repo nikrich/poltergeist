@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from ghostbrain.api.main import create_app
+from ghostbrain.api.repo import attachment_extract
 from ghostbrain.api.repo.doc_library import ops
 from tests.doc_library_helpers import lib_vault  # noqa: F401
 
@@ -14,7 +15,7 @@ H = {"Authorization": "Bearer t"}
 
 @pytest.fixture
 def client(lib_vault: Path, monkeypatch):
-    monkeypatch.setattr(ops.attachment_extract, "extract_text", lambda *a: "body text")
+    monkeypatch.setattr(attachment_extract, "extract_text", lambda *a: "body text")
     return TestClient(create_app("t"))
 
 

@@ -3,15 +3,17 @@ from pathlib import Path
 
 import pytest
 
-from ghostbrain.api.repo import projects
+from ghostbrain.api.repo import attachment_extract, projects
 from ghostbrain.api.repo.doc_library import index, notes, ops
 from ghostbrain.api.repo.doc_library.errors import Conflict, InvalidRequest
 from tests.doc_library_helpers import lib_vault  # noqa: F401
 
+_REAL_EXTRACT_TEXT = attachment_extract.extract_text  # before fake_extract patches it
+
 
 @pytest.fixture(autouse=True)
 def fake_extract(monkeypatch):
-    monkeypatch.setattr(ops.attachment_extract, "extract_text", lambda n, m, s: "body")
+    monkeypatch.setattr(attachment_extract, "extract_text", lambda n, m, s: "body")
     monkeypatch.setattr(ops, "_pdf_pages", lambda p: 3)
 
 
@@ -76,10 +78,10 @@ def test_delete_sends_both_files_to_trash(lib_vault: Path, monkeypatch):
 
 
 def test_reindex_recovers_failed(lib_vault: Path, monkeypatch):
-    monkeypatch.setattr(ops.attachment_extract, "extract_text", lambda *a: (_ for _ in ()).throw(RuntimeError()))
+    monkeypatch.setattr(attachment_extract, "extract_text", lambda *a: (_ for _ in ()).throw(RuntimeError()))
     s = ops.upload("work", None, "", "a.pdf", "", b"one")
     assert s["index_status"] == "failed"
-    monkeypatch.setattr(ops.attachment_extract, "extract_text", lambda *a: "fixed")
+    monkeypatch.setattr(attachment_extract, "extract_text", lambda *a: "fixed")
     r = ops.reindex(s["doc_id"])
     assert r["index_status"] == "ok" and r["pages"] == 3
     assert notes.read_note(lib_vault / r["note_path"])[1].strip() == "fixed"
@@ -163,3 +165,20 @@ def test_rename_sanitises_filename_but_keeps_title(lib_vault: Path):
     stem = long["original"][: -len(".pdf")]
     assert len(stem.encode("utf-8")) <= 200 and long["original"].endswith(".pdf")
     assert stem == "é" * 100
+
+
+def test_image_only_pdf_indexes_via_caption(lib_vault: Path, monkeypatch):
+    import io
+
+    from PIL import Image
+
+    from ghostbrain.api.repo import attachment_caption
+
+    monkeypatch.setattr(attachment_extract, "extract_text", _REAL_EXTRACT_TEXT)
+    monkeypatch.setattr(attachment_caption, "caption_image", lambda p: "QUARTERLY ROADMAP INFOGRAPHIC")
+    buf = io.BytesIO()
+    Image.new("RGB", (400, 300)).save(buf, "PDF")
+    s = ops.upload("work", None, "", "map.pdf", "", buf.getvalue())
+    assert s["index_status"] == "ok"
+    _, body = notes.read_note(lib_vault / s["note_path"])
+    assert "QUARTERLY ROADMAP INFOGRAPHIC" in body
