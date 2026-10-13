@@ -114,3 +114,9 @@ def test_invalid_folder_field_shows_at_root(env):
     work = _scope(t, "work")
     assert [j["id"] for j in work["jots"]] == [jid]
     assert work["folders"] == []
+
+
+def test_failed_move_does_not_register_folder(env):
+    with pytest.raises(jf.JotMissing):
+        jf.move_jot_to("manual-19000101T000000-nope", context="work", project=None, folder="ghost")
+    assert ("work", None, "ghost") not in jf._all_folders()

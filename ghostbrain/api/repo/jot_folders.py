@@ -89,15 +89,16 @@ def move_jot_to(jot_id: str, *, context: str, project: str | None, folder: str |
     with lock:
         sf.check_location(context, project)
         cleaned = sf.clean_path(folder) or None
-        if cleaned and (context, project, cleaned) not in _all_folders():
-            _save_registry(_registry() | sf.with_parents({(context, project, cleaned)}))
         try:
-            return notes_manual.move_jot(
+            result = notes_manual.move_jot(
                 jot_id, to_context=context, to_project=project, folder=cleaned,
                 confidence=1.0, method="user", reasoning="moved by user", actor=actor,
             )
         except notes_manual.JotNotFound:
             raise JotMissing(f"jot not found: {jot_id}") from None
+        if cleaned and (context, project, cleaned) not in _registry():
+            _save_registry(_registry() | sf.with_parents({(context, project, cleaned)}))
+        return result
 
 
 def repoint_project(context: str, old_slug: str, new_slug: str) -> None:
