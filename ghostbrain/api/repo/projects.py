@@ -466,11 +466,16 @@ def rename_project(
             etags[rel] = wrote.etag
             undo.append(lambda r=rel, b=original: _restore(r, b, etags=etags, reason=f"undo {reason}"))
 
-        # 3. Chats (and their folders) scoped to the project.
+        # 3. Chats and jot folders scoped to the project.
         from ghostbrain.api.repo import chat_folders
 
         chat_folders.repoint_project(context, slug, new_slug)
         undo.append(lambda: chat_folders.repoint_project(context, new_slug, slug))
+
+        from ghostbrain.api.repo import jot_folders
+
+        jot_folders.repoint_project(context, slug, new_slug)
+        undo.append(lambda: jot_folders.repoint_project(context, new_slug, slug))
 
         # 4. Registry last.
         items = _read()

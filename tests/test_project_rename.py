@@ -440,3 +440,24 @@ def test_chat_folder_and_registry_follow_rename(vault: Path):
     assert (got["context"], got["project"], got["folder"]) == ("work", "payments", "plans/q4")
     assert ("work", "payments", "empty") in chat_folders._registry()
     assert ("work", "paymnets", "empty") not in chat_folders._registry()
+
+
+def test_jot_folder_registry_follows_rename(vault: Path):
+    from ghostbrain.api.repo import jot_folders
+    jot_folders.create("work", "paymnets", "empty")
+    projects.rename_project("work", "paymnets", name="Payments")
+    assert ("work", "payments", "empty") in jot_folders._registry()
+    assert ("work", "paymnets", "empty") not in jot_folders._registry()
+
+
+def test_failed_rename_restores_jot_folder_registry(vault: Path, monkeypatch):
+    from ghostbrain.api.repo import jot_folders
+    jot_folders.create("work", "paymnets", "empty")
+
+    def boom(items):
+        raise OSError("registry write failed")
+
+    monkeypatch.setattr(projects, "_write", boom)
+    with pytest.raises(OSError):
+        projects.rename_project("work", "paymnets", name="Payments")
+    assert ("work", "paymnets", "empty") in jot_folders._registry()
