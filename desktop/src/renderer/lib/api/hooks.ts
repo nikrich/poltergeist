@@ -649,17 +649,21 @@ export function useDeleteConversation() {
 
 const JOTS_KEY = ['jots'] as const;
 
-export function useJots(params: { q?: string; context?: string; tag?: string; project?: string } = {}) {
+export function useJots(
+  params: { q?: string; context?: string; tag?: string; project?: string; enabled?: boolean } = {},
+) {
+  const { enabled = true, ...filters } = params;
   return useQuery({
-    queryKey: [...JOTS_KEY, params],
+    queryKey: [...JOTS_KEY, filters],
     queryFn: async () => {
       const search = new URLSearchParams({ source: 'manual' });
-      if (params.q) search.set('q', params.q);
-      if (params.context) search.set('context', params.context);
-      if (params.tag) search.set('tag', params.tag);
-      if (params.project) search.set('project', params.project);
+      if (filters.q) search.set('q', filters.q);
+      if (filters.context) search.set('context', filters.context);
+      if (filters.tag) search.set('tag', filters.tag);
+      if (filters.project) search.set('project', filters.project);
       return get<JotsPage>(`/v1/notes?${search.toString()}`);
     },
+    enabled,
     refetchInterval: 5000,  // pick up overlay-captured jots
   });
 }

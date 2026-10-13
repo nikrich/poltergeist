@@ -315,6 +315,17 @@ describe('JotsScreen', () => {
     expect(screen.getAllByText('first jot').length).toBeGreaterThan(0);
   });
 
+  it('does not poll the full jot list unless searching', async () => {
+    stubTwoJots();
+    render(withQuery(<JotsScreen />));
+    await waitFor(() => expect(screen.getByLabelText('jot tree')).toBeInTheDocument());
+    const manualCalls = () =>
+      apiRequest.mock.calls.filter((a: unknown[]) => typeof a[1] === 'string' && a[1].includes('source=manual'));
+    expect(manualCalls()).toHaveLength(0);
+    fireEvent.change(screen.getByPlaceholderText('search jots…'), { target: { value: 'first' } });
+    await waitFor(() => expect(manualCalls().length).toBeGreaterThan(0));
+  });
+
   it('keeps the selected jot when searching', async () => {
     stubTwoJots();
     render(withQuery(<JotsScreen />));

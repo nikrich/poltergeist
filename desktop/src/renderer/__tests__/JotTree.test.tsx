@@ -139,8 +139,8 @@ describe('helpers', () => {
 
   it('formats short dates', () => {
     const now = new Date('2026-10-13T12:00:00Z');
-    expect(shortDate('2026-05-14T09:00:00Z', now)).toBe('May 14');
-    expect(shortDate('2025-05-14T09:00:00Z', now)).toBe('May 14, 2025');
+    expect(shortDate('2026-05-14T12:00:00Z', now)).toBe('May 14');
+    expect(shortDate('2025-05-14T12:00:00Z', now)).toBe('May 14, 2025');
     expect(shortDate('', now)).toBe('');
   });
 });

@@ -44,9 +44,11 @@ export function JotsScreen() {
   const [q, setQ] = useState('');
   const openNote = useNoteView((s) => s.open);
   const showInGraph = useGraphView((s) => s.showInGraph);
-  const list = useJots({ q: q || undefined });
-  const treeQ = useJotTree();
   const searching = q.trim() !== '';
+  // The flat list only backs search results; the tree owns the idle sidebar,
+  // so don't scan the whole vault every 5s while it is shown.
+  const list = useJots({ q: q || undefined, enabled: searching });
+  const treeQ = useJotTree();
   // Every jot the screen knows about, newest first — the tree is the source of
   // truth; search results only add rows while a query is typed.
   const allItems = useMemo(() => (treeQ.data ? flattenJotTree(treeQ.data) : []), [treeQ.data]);
