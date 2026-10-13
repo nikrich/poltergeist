@@ -52,3 +52,9 @@ def test_mark_manual_review_clears_folder(tmp_vault):
 def test_list_rows_default_folder_none(tmp_vault):
     _routed(tmp_vault)
     assert nm.list_jots()["items"][0]["folder"] is None
+
+
+def test_empty_folder_string_is_root_and_does_not_write(tmp_vault):
+    jid = _routed(tmp_vault)
+    res = nm.move_jot(jid, to_context="work", confidence=1.0, method="user", reasoning="t", folder="")
+    assert "etag" not in res

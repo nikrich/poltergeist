@@ -61,3 +61,13 @@ def test_move_jot_location_errors(client, auth_headers, jot):
                         json={"context": "work"}).status_code == 404
     assert client.patch(f"/v1/notes/{jot['id']}/location", headers=auth_headers,
                         json={"context": "nope"}).status_code == 422
+
+
+def test_tree_survives_non_string_folder(client, auth_headers, tmp_vault, jot):
+    from ghostbrain.api.repo import notes_manual as nm
+
+    path = tmp_vault / nm.read_jot(jot["id"])["path"]
+    path.write_text(path.read_text(encoding="utf-8").replace("\n---\n", "\nfolder: 2024\n---\n", 1), encoding="utf-8")
+    r = client.get("/v1/notes/tree", headers=auth_headers)
+    assert r.status_code == 200
+    assert r.json()["inbox"][0]["folder"] is None

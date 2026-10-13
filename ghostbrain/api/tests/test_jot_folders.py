@@ -178,3 +178,66 @@ def test_move_folder_partial_failure_reports_ids(env, monkeypatch):
     t = jf.tree()
     old = next(f for f in _scope(t, "work")["folders"] if f["path"] == "q4")
     assert [j["id"] for j in old["jots"]] == [bad]
+
+
+@pytest.mark.parametrize("bad", ["2024", "[a, b]"])
+def test_non_string_folder_field_shows_at_root(env, bad):
+    jid = _jot()
+    jf.move_jot_to(jid, context="work", project=None, folder=None)
+    path = env["vault"] / nm.read_jot(jid)["path"]
+    text = path.read_text(encoding="utf-8")
+    path.write_text(text.replace("\n---\n", f"\nfolder: {bad}\n---\n", 1), encoding="utf-8")
+    assert nm.list_jots()["items"][0]["folder"] is None
+    work = _scope(jf.tree(), "work")
+    assert [j["id"] for j in work["jots"]] == [jid]
+    assert work["folders"] == []
+
+
+def test_row_with_non_string_folder_is_root():
+    assert jf._folder_of({"folder": 2024}) == ""
+    assert jf._folder_of({"folder": ["a"]}) == ""
+
+
+def test_routing_does_not_overwrite_a_user_filing(env, monkeypatch):
+    from ghostbrain.worker.router import RoutingDecision
+
+    jid = _jot()
+
+    def slow_router(event, **kw):
+        jf.move_jot_to(jid, context="personal", project=None, folder="mine")
+        return RoutingDecision(context="work", confidence=0.9, reasoning="r", method="llm", secondary_contexts=[])
+
+    monkeypatch.setattr(nm, "route_event", slow_router)
+    nm.route_existing_jot(jid)
+    fm = _fm(env, jid)
+    assert fm["context"] == "personal" and fm["folder"] == "mine" and fm["routingMethod"] == "user"
+
+
+def test_routing_review_mark_does_not_overwrite_a_user_filing(env, monkeypatch):
+    from ghostbrain.worker.router import RoutingDecision
+
+    jid = _jot()
+
+    def slow_router(event, **kw):
+        jf.move_jot_to(jid, context="personal", project=None, folder="mine")
+        return RoutingDecision(context="needs_review", confidence=0.1, reasoning="r", method="llm",
+                               secondary_contexts=[])
+
+    monkeypatch.setattr(nm, "route_event", slow_router)
+    nm.route_existing_jot(jid)
+    fm = _fm(env, jid)
+    assert fm["routingStatus"] == "routed" and fm["folder"] == "mine"
+
+
+def test_move_jot_conflict_maps_to_409(env, monkeypatch):
+    from ghostbrain.vault_write import WriteConflict
+
+    jid = _jot()
+
+    def boom(*a, **kw):
+        raise WriteConflict("stale")
+
+    monkeypatch.setattr(nm, "move_jot", boom)
+    with pytest.raises(jf.JotConflict) as ei:
+        jf.move_jot_to(jid, context="work", project=None, folder=None)
+    assert ei.value.status == 409

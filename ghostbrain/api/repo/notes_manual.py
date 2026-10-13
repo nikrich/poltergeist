@@ -95,6 +95,11 @@ class JotIdConflict(Exception):
     pass
 
 
+def _str_or_none(value: Any) -> str | None:
+    """Hand-edited frontmatter may hold any YAML type; keep only non-empty strings."""
+    return value if isinstance(value, str) and value else None
+
+
 def _random_suffix() -> str:
     return secrets.token_hex(2)  # 4 hex chars
 
@@ -278,6 +283,7 @@ def move_jot(
     base_etag: str | None = None,
     folder: str | None = None,
 ) -> dict:
+    folder = folder or None
     src = _find_file(jot_id)
     if to_project:
         # Callers validate the project first, but the router does so before a
@@ -490,7 +496,7 @@ def list_jots(
             "created": post.get("created") or "",
             "updated": post.get("updated") or "",
             "project": post.get("project"),
-            "folder": post.get("folder") or None,
+            "folder": _str_or_none(post.get("folder")),
             "thumbnail": first_image_path(body),
         }
         if context is not None and item["context"] != context:
@@ -528,10 +534,26 @@ def _audit_safe(event_type: str, **fields: Any) -> None:
         log.warning("audit_log failed event_type=%s: %s", event_type, exc)
 
 
+def _superseded_by_user(jot_id: str) -> dict | None:
+    """If the jot was filed/handled while the (slow) router ran, return its
+    current state so the router leaves it alone; None when still routable."""
+    path = _find_file(jot_id)
+    post = frontmatter.load(path)
+    status = post.get("routingStatus") or "pending"
+    if status in ("pending", "manual_review") and post.get("routingMethod") != "user":
+        return None
+    return {
+        "id": jot_id, "path": _vault_rel(path), "routingStatus": status,
+        "context": post.get("context"), "project": post.get("project"),
+    }
+
+
 def _mark_review_safe(jot_id: str, reasoning: str) -> None:
     """mark_manual_review that never raises — the file may have vanished
     (vault is watched/synced) between the inbox write and this update."""
     try:
+        if _superseded_by_user(jot_id) is not None:
+            return
         mark_manual_review(jot_id, reasoning=reasoning)
     except Exception:
         log.exception("mark_manual_review failed id=%s", jot_id)
@@ -556,6 +578,15 @@ def _route_jot_core(jot_id: str, body: str, *, path_hint: str) -> dict:
         log.exception("jot routing failed id=%s", jot_id)
         _mark_review_safe(jot_id, reasoning=f"router error: {exc}")
         return {"exc": exc}  # sentinel — callers inspect this key
+
+    try:
+        current = _superseded_by_user(jot_id)
+    except Exception:
+        log.exception("could not re-check jot %s after routing", jot_id)
+        current = None
+    if current is not None:
+        log.info("jot %s was filed while routing; leaving it as is", jot_id)
+        return current
 
     if decision.context == "needs_review" or decision.confidence < REJECT_BELOW:
         _mark_review_safe(jot_id, reasoning=decision.reasoning)

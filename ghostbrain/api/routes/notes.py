@@ -68,7 +68,7 @@ def _folder_call(fn, *args, **kwargs):
     try:
         return fn(*args, **kwargs)
     except jot_folders.JotFolderError as e:
-        raise HTTPException(status_code=e.status, detail=str(e))
+        raise HTTPException(status_code=e.status, detail=str(e)) from e
 
 
 @router.get("/tree", response_model=JotTree)

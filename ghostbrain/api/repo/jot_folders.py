@@ -13,7 +13,7 @@ import threading
 from ghostbrain.api.repo import notes_manual
 from ghostbrain.api.repo import scoped_folders as sf
 from ghostbrain.paths import state_dir
-from ghostbrain.vault_write import USER, Actor
+from ghostbrain.vault_write import USER, Actor, WriteConflict
 
 log = logging.getLogger("ghostbrain.jot.folders")
 
@@ -24,6 +24,10 @@ JotFolderError = sf.FolderError
 
 class JotMissing(JotFolderError):
     status = 404
+
+
+class JotConflict(JotFolderError):
+    status = 409
 
 
 class FolderMoveIncomplete(JotFolderError):
@@ -41,8 +45,11 @@ def _jots() -> list[dict]:
 
 def _folder_of(row: dict) -> str:
     """The row's folder, cleaned; a hand-edited invalid value counts as the root."""
+    value = row.get("folder")
+    if not isinstance(value, str):
+        return ""
     try:
-        return sf.clean_path(row.get("folder"))
+        return sf.clean_path(value)
     except sf.InvalidLocation:
         return ""
 
@@ -145,6 +152,8 @@ def move_jot_to(jot_id: str, *, context: str, project: str | None, folder: str |
             )
         except notes_manual.JotNotFound:
             raise JotMissing(f"jot not found: {jot_id}") from None
+        except WriteConflict as e:
+            raise JotConflict(f"jot changed underneath the move: {jot_id}") from e
         if cleaned and (context, project, cleaned) not in _registry():
             _save_registry(_registry() | sf.with_parents({(context, project, cleaned)}))
         return result
