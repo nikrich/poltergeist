@@ -47,6 +47,23 @@ afterAll(() => {
 });
 
 describe('bundlePrototype', () => {
+  it('inlines design-pack assets imported from src/ and referenced from css', async () => {
+    const dir = makeProto('pack-assets', {
+      'src/main.tsx': MAIN,
+      'src/App.tsx': `import logo from '../design-pack/assets/logo.svg';
+export function App() { return <img alt="Brand" src={logo} />; }
+`,
+      'src/styles.css': ".search { background: url('../design-pack/assets/icons/search.svg'); }",
+      'design-pack/tokens.css': ':root { --accent: red; }',
+      'design-pack/assets/logo.svg': '<svg xmlns="http://www.w3.org/2000/svg"><title>PACK_LOGO</title></svg>',
+      'design-pack/assets/icons/search.svg': '<svg xmlns="http://www.w3.org/2000/svg"><title>PACK_ICON</title></svg>',
+    });
+    const res = await bundlePrototype(dir, 1);
+    expect(res.ok).toBe(true);
+    expect(readFileSync(join(dir, 'dist/app.js'), 'utf8')).toContain('data:image/svg+xml');
+    expect(readFileSync(join(dir, 'dist/app.css'), 'utf8')).toContain('data:image/svg+xml');
+  });
+
   it('bundles a React prototype with css, assets and the pack tokens', async () => {
     const dir = makeProto('ok', {
       'src/main.tsx': MAIN,

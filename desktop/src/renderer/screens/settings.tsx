@@ -1624,7 +1624,11 @@ function DesignSystemLibrary({ packs }: { packs: DesignPack[] }) {
               <Lucide name="loader" size={12} style={{ animation: 'gb-spin 0.9s linear infinite' }} />
             )}
             {status === 'running' && <span>Importing {job.data.source}… {job.data.message ?? ''}</span>}
-            {status === 'done' && <span>Imported {job.data.source}.</span>}
+            {status === 'done' && (
+              <span>
+                Imported {job.data.source}.{job.data.message ? ` ${job.data.message}` : ''}
+              </span>
+            )}
             {status === 'error' && (
               <span>Import failed: {job.data.message ?? 'unknown error'}</span>
             )}
