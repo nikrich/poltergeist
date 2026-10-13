@@ -30,6 +30,7 @@ class NoteListItem(BaseModel):
     created: str  # ISO8601
     updated: str  # ISO8601
     project: str | None = None
+    folder: str | None = None
 
 
 class NotesPage(BaseModel):

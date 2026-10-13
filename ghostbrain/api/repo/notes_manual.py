@@ -276,6 +276,7 @@ def move_jot(
     reasoning: str,
     actor: Actor = USER,
     base_etag: str | None = None,
+    folder: str | None = None,
 ) -> dict:
     src = _find_file(jot_id)
     if to_project:
@@ -301,7 +302,18 @@ def move_jot(
     else:
         dst = _guard_inside_vault(_context_dir(to_context) / f"{jot_id}.md")
     if src.resolve() == dst:
-        return {"id": jot_id, "path": _vault_rel(dst), "context": to_context, "project": to_project}
+        current = frontmatter.load(src).get("folder") or None
+        if current == folder:
+            return {"id": jot_id, "path": _vault_rel(dst), "context": to_context, "project": to_project}
+        res = vault_write.write(
+            _vault_rel(src), fields={"folder": folder or DELETE_FIELD, "updated": _now_iso()},
+            actor=actor, reason="moved jot to a folder" if folder else "moved jot out of its folder",
+            base_etag=base_etag,
+        )
+        return {
+            "id": jot_id, "path": res.path, "context": to_context, "project": to_project,
+            "etag": res.etag, "status": res.status, "changeId": res.change_id,
+        }
     fields: dict[str, Any] = {
         "context": to_context,
         "routingStatus": "routed",
@@ -310,6 +322,7 @@ def move_jot(
         "routingReasoning": reasoning,
         "updated": _now_iso(),
         "project": to_project if to_project else DELETE_FIELD,
+        "folder": folder or DELETE_FIELD,
     }
     log.info("moving jot id=%s: %s -> %s", jot_id, src, dst)
     res = vault_write.write(
@@ -328,7 +341,8 @@ def mark_manual_review(jot_id: str, reasoning: str, *, actor: Actor = ROUTER_ACT
     path = _find_file(jot_id)
     res = vault_write.write(
         _vault_rel(path),
-        fields={"routingStatus": "manual_review", "routingReasoning": reasoning, "updated": _now_iso()},
+        fields={"routingStatus": "manual_review", "routingReasoning": reasoning, "updated": _now_iso(),
+                "folder": DELETE_FIELD},
         actor=actor,
         reason="kept for manual review",
     )
@@ -476,6 +490,7 @@ def list_jots(
             "created": post.get("created") or "",
             "updated": post.get("updated") or "",
             "project": post.get("project"),
+            "folder": post.get("folder") or None,
             "thumbnail": first_image_path(body),
         }
         if context is not None and item["context"] != context:
