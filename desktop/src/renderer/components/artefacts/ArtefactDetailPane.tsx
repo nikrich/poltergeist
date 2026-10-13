@@ -5,6 +5,7 @@ import { Pill } from '../Pill';
 import { PanelError } from '../PanelError';
 import { SkeletonRows } from '../SkeletonRows';
 import { ArchitectureView } from '../design/ArchitectureView';
+import { BoardModeToggle, type BoardMode } from '../design/BoardModeToggle';
 import { EventStormBoard } from '../design/EventStormBoard';
 import { ArtefactPrototype, ArtefactWorktree } from './ArtefactPreview';
 import { KIND_ICON, KIND_LABEL } from './kinds';
@@ -42,7 +43,7 @@ function Detail({ detail }: { detail: ArtefactDetail }) {
     'revisions',
   ];
   const [tab, setTab] = useState<Tab>(tabs[0]!);
-  const [boardMode, setBoardMode] = useState<'stickies' | 'architecture'>('stickies');
+  const [boardMode, setBoardMode] = useState<BoardMode>('stickies');
 
   const codebase = detail.codebase;
   const liveWorktree = detail.kind === 'worktree' && codebase && !codebase.missing ? codebase.worktree : null;
@@ -169,21 +170,7 @@ function Detail({ detail }: { detail: ArtefactDetail }) {
           </button>
         ))}
         {tab === 'board' && (
-          <div className="ml-auto flex items-center gap-[2px] pb-1">
-            {(['stickies', 'architecture'] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                aria-pressed={boardMode === m}
-                onClick={() => setBoardMode(m)}
-                className={`cursor-pointer rounded-sm px-2 py-[2px] font-mono text-11 ${
-                  boardMode === m ? 'bg-neon/15 text-neon-ink' : 'text-ink-2 hover:text-ink-0'
-                }`}
-              >
-                {m === 'stickies' ? 'Stickies' : 'Architecture'}
-              </button>
-            ))}
-          </div>
+          <BoardModeToggle mode={boardMode} onChange={setBoardMode} className="ml-auto pb-1" />
         )}
       </div>
 

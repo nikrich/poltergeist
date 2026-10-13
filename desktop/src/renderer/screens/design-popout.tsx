@@ -1,3 +1,6 @@
+import { useState } from 'react';
+import { ArchitectureView } from '../components/design/ArchitectureView';
+import { BoardModeToggle, type BoardMode } from '../components/design/BoardModeToggle';
 import { EventStormBoard } from '../components/design/EventStormBoard';
 import { PrototypeFrame } from '../components/design/PrototypeFrame';
 import { useDesignSession, useDesignSessionStream } from '../stores/design-session';
@@ -15,6 +18,8 @@ export function DesignPopout() {
   const session = useDesignSession((s) => s.session);
   const canvas = session?.focus ?? 'ui';
   const snapshot = session?.canvases[canvas];
+  const [boardMode, setBoardMode] = useState<BoardMode>('stickies');
+  const showBoard = canvas === 'board' && !!snapshot && snapshot.state !== 'off';
 
   return (
     <div className="flex h-full flex-col bg-paper text-ink-0">
@@ -38,6 +43,7 @@ export function DesignPopout() {
             <span>Paused</span>
           </>
         )}
+        {showBoard && <BoardModeToggle mode={boardMode} onChange={setBoardMode} className="ml-auto" />}
       </div>
       <div className="min-h-0 flex-1 p-2">
         {!session || !snapshot || snapshot.state === 'off' ? (
@@ -46,6 +52,8 @@ export function DesignPopout() {
           </div>
         ) : canvas === 'ui' ? (
           <PrototypeFrame session={session} reportErrors={false} />
+        ) : boardMode === 'architecture' && session.board ? (
+          <ArchitectureView model={session.board} />
         ) : (
           <EventStormBoard model={session.board ?? { contexts: [], items: [], links: [] }} />
         )}
