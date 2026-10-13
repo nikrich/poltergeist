@@ -95,6 +95,8 @@ def fakes(monkeypatch, vault) -> Fakes:
         (Path(prototype_dir) / "src").mkdir(parents=True)
         (Path(prototype_dir) / "design-pack").mkdir()
         (Path(prototype_dir) / "design-pack" / "README.md").write_text("Use tokens")
+        (Path(prototype_dir) / "design-pack" / "assets").mkdir()
+        (Path(prototype_dir) / "design-pack" / "assets" / "logo.svg").write_text("<svg/>")
 
     def commit(prototype_dir, message):
         f.commits.append(message)
@@ -196,6 +198,7 @@ def test_spoken_start_ui_scaffolds_seeds_and_runs(tmp_path, fakes, vault):
     assert "we need a list of open claims" in fakes.ui_calls[0]["excerpt"]
     assert "let's kick off a frontend prototype" in fakes.ui_calls[0]["excerpt"]
     assert fakes.ui_calls[0]["pack_readme"] == "Use tokens"
+    assert fakes.ui_calls[0]["pack_assets"] == ["assets/logo.svg"]
     assert fakes.ui_calls[0]["session_id"] is None
     assert fakes.commits == ["rev 1: Built the list"]
     snap = s.snapshot()

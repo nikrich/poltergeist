@@ -132,4 +132,16 @@ describe('LiveDesignSettings', () => {
     fireEvent.click(screen.getByRole('button', { name: /^import$/i }));
     expect(await screen.findByText(/no tokens found/i)).toBeInTheDocument();
   });
+
+  it('shows the importer note when a finished import lacks assets', async () => {
+    const note = 'Imported, but no logo or icon files came through — prototypes will lack them.';
+    vi.mocked(client.post).mockResolvedValue({ ...job, status: 'done', message: note, pack_id: 'mine' } as never);
+    job = { ...job, status: 'done', message: note, pack_id: 'mine' };
+    renderSection();
+    fireEvent.change(await screen.findByPlaceholderText(/claude design url/i), {
+      target: { value: 'https://claude.ai/design/p/x' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^import$/i }));
+    expect(await screen.findByText(/no logo or icon files came through/i)).toBeInTheDocument();
+  });
 });

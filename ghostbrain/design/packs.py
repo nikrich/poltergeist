@@ -127,6 +127,31 @@ def pack_dir(pack_id: str) -> Path:
     return found[0]
 
 
+def asset_files(pack: Path, limit: int = 80) -> list[str]:
+    """Pack-relative paths of the files under ``<pack>/assets``, sorted;
+    dotfiles skipped, capped at ``limit``."""
+    root = Path(pack) / "assets"
+    if not root.is_dir():
+        return []
+    found = sorted(
+        p.relative_to(pack).as_posix() for p in root.rglob("*")
+        if p.is_file() and not p.is_symlink() and not any(part.startswith(".") for part in p.relative_to(root).parts)
+    )
+    return found[:limit]
+
+
+def _missing_assets_note(staging: Path) -> str | None:
+    """A warning when the README talks about a logo or icons but no asset
+    files came through (an import that read the source but skipped them)."""
+    if asset_files(staging):
+        return None
+    readme = (staging / "README.md").read_text(encoding="utf-8", errors="replace").lower()
+    if not re.search(r"\blogo|\bicons?\b", readme):
+        return None
+    return ("Imported, but no logo or icon files came through — prototypes will lack them. "
+            "Re-import, or add SVGs to the pack's assets/ folder.")
+
+
 def copy_into(pack_id: str, dest: Path) -> None:
     """Replace ``dest`` with a copy of the pack's files."""
     src = pack_dir(pack_id)
@@ -174,8 +199,16 @@ step, no preprocessors.
 - README.md: a guide an AI agent will follow when building screens: brand \
 rules (voice, colour usage, typography scale, spacing rhythm), a component \
 catalogue with short HTML/CSS snippets that use the tokens, and do/don't \
-lists. Start with a "# <design system name>" heading.
-- assets/ (optional): logos and icons as .svg or .png files.
+lists. Start with a "# <design system name>" heading. It must include a \
+"## Assets & icons" section listing every file in assets/ by path with when \
+to use it, and how icons are drawn (the icon font's class with a snippet, or \
+which SVG files).
+- assets/: every logo, icon and illustration the source provides, as files. \
+Required whenever the source has any. Prefer SVG and copy SVG markup \
+verbatim. A raster image you cannot copy is named in the README section as \
+missing instead.
+- Icons from an icon font (e.g. Material Symbols): @import the font from \
+Google Fonts at the top of tokens.css so the icons render.
 - reference/ (optional): one short markdown file per key screen describing \
 its layout and purpose.
 
@@ -326,7 +359,7 @@ def _unique_id(name: str) -> str:
     return candidate
 
 
-def _import(job_id: str, source: str, name: str | None) -> str:
+def _import(job_id: str, source: str, name: str | None) -> tuple[str, str | None]:
     claude = _find_claude_binary()
     if not claude:
         raise ImportFailed("claude CLI not found — install Claude Code to import design systems")
@@ -342,6 +375,7 @@ def _import(job_id: str, source: str, name: str | None) -> str:
                 problem = f"{reason}. {message}".strip()
         if problem:
             raise ImportFailed(problem)
+        note = _missing_assets_note(staging)
         display = (name or "").strip() or _derive_name(source, staging)
         pack_id = _unique_id(display)
         (staging / "pack.json").write_text(json.dumps({
@@ -351,7 +385,7 @@ def _import(job_id: str, source: str, name: str | None) -> str:
             "imported_at": datetime.now(UTC).isoformat(timespec="seconds"),
         }, ensure_ascii=False, indent=2), encoding="utf-8")
         os.replace(staging, library_dir() / pack_id)
-        return pack_id
+        return pack_id, note
     finally:
         if staging.exists():
             shutil.rmtree(staging, ignore_errors=True)
@@ -364,12 +398,12 @@ def _set(job_id: str, **fields) -> None:
 
 def _run_import(job_id: str, source: str, name: str | None) -> None:
     try:
-        pack_id = _import(job_id, source, name)
+        pack_id, note = _import(job_id, source, name)
     except Exception as exc:  # noqa: BLE001 — every failure becomes the job's message
         log.warning("design pack import %s failed: %s", job_id, exc)
         _set(job_id, status="error", message=str(exc) or type(exc).__name__)
     else:
-        _set(job_id, status="done", pack_id=pack_id)
+        _set(job_id, status="done", pack_id=pack_id, message=note)
 
 
 def start_import(source: str, name: str | None = None) -> dict:

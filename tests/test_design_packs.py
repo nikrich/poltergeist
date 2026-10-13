@@ -349,3 +349,40 @@ def test_figma_import_keeps_mcp_servers_but_no_web(tmp_path):
     assert "WebFetch" not in tools
     assert "--strict-mcp-config" not in cmd
     assert any(t.lower().startswith("mcp__") and "figma" in t.lower() for t in tools)
+
+
+def test_import_rules_require_assets_and_an_assets_section():
+    rules = packs._IMPORT_RULES
+    assert "assets/ (optional)" not in rules
+    assert "## Assets & icons" in rules
+    assert "icon font" in rules
+
+
+def test_import_without_assets_warns_when_readme_mentions_a_logo(vault: Path, fake_claude, monkeypatch):
+    monkeypatch.setattr(packs, "_run_agent", _agent({
+        "tokens.css": ":root { --ds-color-primary: #123456; }",
+        "README.md": "# Brand\n\nPut the logo top left.\n",
+    }))
+    done = _wait(packs.start_import("https://claude.ai/design/p/abc123", name="Brand")["id"])
+    assert done["status"] == "done" and done["pack_id"] == "brand"
+    assert "no logo or icon files" in done["message"]
+
+
+def test_import_without_assets_or_logo_mention_has_no_warning(vault: Path, fake_claude, monkeypatch):
+    monkeypatch.setattr(packs, "_run_agent", _agent({
+        "tokens.css": ":root { --ds-color-primary: #123456; }",
+        "README.md": "# Plain\n\nCalm colours.\n",
+    }))
+    done = _wait(packs.start_import("https://claude.ai/design/p/abc123", name="Plain")["id"])
+    assert done["status"] == "done" and done["message"] is None
+
+
+def test_asset_files_lists_pack_assets(tmp_path: Path):
+    pack = tmp_path / "design-pack"
+    (pack / "assets" / "icons").mkdir(parents=True)
+    (pack / "assets" / "logo.svg").write_text("<svg/>")
+    (pack / "assets" / "icons" / "search.svg").write_text("<svg/>")
+    (pack / "assets" / ".DS_Store").write_text("x")
+    (pack / "tokens.css").write_text("--a: 1;")
+    assert packs.asset_files(pack) == ["assets/icons/search.svg", "assets/logo.svg"]
+    assert packs.asset_files(tmp_path / "missing") == []

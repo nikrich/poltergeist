@@ -304,3 +304,26 @@ def test_reading_is_limited_to_the_agents_folder_and_never_env_files():
         allowed, disallowed, _ = ui_agent._tools(mode, web=True)
         assert "Read(./**)" in allowed.split(",") and "Read" not in allowed.split(",")
         assert "Read(**/.env*)" in disallowed
+
+
+def test_prompt_lists_pack_assets_with_their_served_path():
+    from ghostbrain.design import ui_agent
+
+    prompt = ui_agent.build_prompt(excerpt="a header", nudges=[], pack_readme="", build_error=None,
+                                   pack_assets=["assets/logo.svg", "assets/icons/search.svg"])
+    assert "../design-pack/assets/logo.svg" in prompt
+    assert "../design-pack/assets/icons/search.svg" in prompt
+    assert prompt.index("logo.svg") < prompt.index("a header")
+
+
+def test_prompt_without_pack_assets_mentions_none():
+    from ghostbrain.design import ui_agent
+
+    prompt = ui_agent.build_prompt(excerpt="a header", nudges=[], pack_readme="", build_error=None)
+    assert "../design-pack/" not in prompt
+
+
+def test_scratch_rules_tell_the_agent_to_use_the_pack_logo_and_icons():
+    from ghostbrain.design import ui_agent
+
+    assert "logo" in ui_agent.RULES and "icon" in ui_agent.RULES

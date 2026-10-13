@@ -30,6 +30,7 @@ Rules:
 - Routing: use the hash router in src/router.tsx (Link, navigate, useRoute). Do not replace it.
 - Mock data and app state live in src/data.ts (useStore). Keep data realistic for the domain.
 - Style only with the CSS variables from design-pack/tokens.css and follow the conventions in design-pack/README.md. Never edit anything in design-pack/.
+- Use the design system's own logo, icons and icon font (see design-pack/README.md and the assets list). From src/ files import them by relative path, e.g. import logo from '../design-pack/assets/logo.svg' (CSS url() takes the same path). Never draw a placeholder logo when the pack has one.
 - Imports allowed: react, react-dom/client and relative files. No other npm packages.
 - Make it a real working multi-screen app: forms validate, lists filter and sort, buttons do things, navigation works.
 - Keep the existing screens and change incrementally; do not start over.
@@ -127,7 +128,7 @@ PROJECT_BRIEF_MAX_CHARS = 24_000
 
 
 def build_prompt(*, excerpt: str, nudges: list[str], pack_readme: str, build_error: str | None,
-                 project_brief: str = "") -> str:
+                 project_brief: str = "", pack_assets: list[str] | None = None) -> str:
     if build_error:
         return (
             "The prototype failed to build. Fix this build error with the smallest change "
@@ -145,6 +146,11 @@ def build_prompt(*, excerpt: str, nudges: list[str], pack_readme: str, build_err
         )
     if pack_readme.strip():
         parts.append(f"Design system conventions (design-pack/README.md):\n{pack_readme.strip()[:README_MAX_CHARS]}")
+    if pack_assets:
+        parts.append(
+            "Design system assets — use these rather than drawing your own logos or icons "
+            "(paths as written from src/ files):\n" + "\n".join(f"- ../design-pack/{a}" for a in pack_assets)
+        )
     parts.append(
         "New meeting transcript about the app (update the prototype to reflect it):\n"
         + (excerpt.strip() or "(no new discussion)")
@@ -244,6 +250,7 @@ def run_ui(
     mode: str = "scratch",
     project_brief: str = "",
     web: bool = False,
+    pack_assets: list[str] | None = None,
 ) -> dict:
     """One prototype revision. Returns ``{session_id, summary, cost_usd}``;
     raises :class:`UiAgentError`. ``prototype_dir`` is the app dir in the
@@ -262,7 +269,7 @@ def run_ui(
         prompt = BOOTSTRAP.replace("{HOST_SNIPPET}", HOST_SNIPPET)
     else:
         prompt = build_prompt(excerpt=excerpt, nudges=nudges, pack_readme=pack_readme, build_error=build_error,
-                              project_brief=project_brief)
+                              project_brief=project_brief, pack_assets=pack_assets)
     env = {**os.environ, "CLAUDE_CODE_NO_TELEMETRY": "1"}
 
     def command(sid: str | None) -> list[str]:

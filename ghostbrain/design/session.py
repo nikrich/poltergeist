@@ -43,6 +43,7 @@ from ghostbrain.design import (
     board_agent,
     codebases,
     commands,
+    packs,
     relevance,
     scaffold,
     ui_agent,
@@ -647,6 +648,7 @@ class DesignSession:
         brief, brief_pid = self._brief_for_ui()
         result = ui_agent.run_ui(
             folder, excerpt=excerpt, nudges=nudges, pack_readme=self._pack_readme(folder),
+            pack_assets=packs.asset_files(folder / "design-pack"),
             session_id=self.ui_session_id, budget_usd=_budget(), build_error=build_error,
             project_brief=brief, web=_web(),
         )
