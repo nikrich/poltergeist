@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.16.0](https://github.com/nikrich/poltergeist/compare/v1.15.0...v1.16.0) (2026-10-13)
+
+
+### Features
+
+* feat(design): zoomable architecture view + Stickies/Architecture toggle in the pop-out (#181)
+* feat(jots): folders for jots, like chats and docs (#179)
+
+### Bug Fixes
+
+* fix(design): carry design-system logos and icons into prototypes (#182)
+* fix(docs): index image-only PDFs by captioning their embedded images (#180)
+
 ## [1.15.0](https://github.com/nikrich/poltergeist/compare/v1.14.0...v1.15.0) (2026-10-11)
 
 
