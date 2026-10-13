@@ -12,6 +12,8 @@ import type {
   DocFolderNode,
   DocSummary,
   FolderRef,
+  JotLocation,
+  JotTree,
   ChatLocation,
   ChatTree,
   LibraryTree,
@@ -741,6 +743,61 @@ export function useExtractPhoto() {
       qc.invalidateQueries({ queryKey: ['note-by-path'] });
       qc.invalidateQueries({ queryKey: ['vault', 'backlinks'] });
     },
+  });
+}
+
+function invalidateJotMoves(qc: QueryClient) {
+  return Promise.all([
+    qc.invalidateQueries({ queryKey: JOTS_KEY }),
+    // A move can change the jot's path — the open detail view's path is stale.
+    qc.invalidateQueries({ queryKey: ['note-by-path'] }),
+    qc.invalidateQueries({ queryKey: ['vault', 'backlinks'] }),
+  ]);
+}
+
+export function useJotTree() {
+  return useQuery({
+    queryKey: [...JOTS_KEY, 'tree'],
+    queryFn: () => get<JotTree>('/v1/notes/tree'),
+    refetchInterval: 5000, // pick up overlay-captured jots
+  });
+}
+
+export function useMoveJot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...loc }: { id: string } & JotLocation) =>
+      patch<{ id: string; path: string }>(`/v1/notes/${encodeURIComponent(id)}/location`, loc),
+    onSuccess: () => invalidateJotMoves(qc),
+  });
+}
+
+export function useCreateJotFolder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ref: FolderRef) => post<FolderRef>('/v1/notes/folders', ref),
+    onSuccess: () => invalidateJotMoves(qc),
+  });
+}
+
+export function useMoveJotFolder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { from: FolderRef; to: FolderRef }) => patch<FolderRef>('/v1/notes/folders', vars),
+    // A partial move (409) still moved some jots: refresh either way.
+    onSettled: () => invalidateJotMoves(qc),
+  });
+}
+
+export function useDeleteJotFolder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ref: FolderRef) => {
+      const params = new URLSearchParams({ context: ref.context, path: ref.path });
+      if (ref.project) params.set('project', ref.project);
+      return del(`/v1/notes/folders?${params.toString()}`);
+    },
+    onSuccess: () => invalidateJotMoves(qc),
   });
 }
 

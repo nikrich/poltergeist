@@ -565,6 +565,7 @@ export interface JotListItem {
   created: string;
   updated: string;
   project?: string | null;
+  folder?: string | null;
   thumbnail?: string | null;
 }
 
@@ -572,6 +573,19 @@ export interface JotsPage {
   items: JotListItem[];
   total: number;
 }
+
+export interface JotTreeItem extends JotListItem { folder: string | null; unknownLocation: boolean }
+export interface JotFolderNode { name: string; path: string; folders: JotFolderNode[]; jots: JotTreeItem[] }
+export interface JotScope {
+  context: string;
+  project: string | null;
+  name: string;
+  archived: boolean;
+  folders: JotFolderNode[];
+  jots: JotTreeItem[];
+}
+export interface JotTree { inbox: JotTreeItem[]; unrouted: JotTreeItem[]; scopes: JotScope[] }
+export interface JotLocation { context: string; project: string | null; folder: string | null }
 
 export interface CreateJotRequest {
   body: string;
