@@ -1,179 +1,190 @@
 import { useMemo, useState } from 'react';
-import type { JotListItem } from '../../shared/api-types';
+import type { FolderRef, JotFolderNode, JotListItem, JotScope, JotTree as JotTreeData, JotTreeItem } from '../../shared/api-types';
+import { useCreateJotFolder, useDeleteJotFolder, useMoveJot, useMoveJotFolder } from '../lib/api/hooks';
+import { toast } from '../stores/toast';
 import { Lucide } from './Lucide';
+import { ScopeTree } from './tree/ScopeTree';
+import { folderKey } from './tree/tree-types';
+import type { LeafRowProps, TreeDragCodec, TreeDrop, TreeFolderNode, TreeScope } from './tree/tree-types';
 
-interface Props {
-  items: JotListItem[];
-  selectedId: string | null;
-  onSelect: (id: string) => void;
-}
+export const JOT_DRAG_MIME = 'application/x-gb-jot';
 
-interface ContextGroup {
-  /** project slug → month → items */
-  projects: Record<string, Record<string, JotListItem[]>>;
-  /** month → items (project-less, original behavior) */
-  months: Record<string, JotListItem[]>;
-}
-
-function groupItems(items: JotListItem[]): Record<string, ContextGroup> {
-  const tree: Record<string, ContextGroup> = {};
-  for (const item of items) {
-    const ctx =
-      item.routingStatus === 'manual_review'
-        ? 'unrouted'
-        : item.routingStatus === 'pending'
-          ? 'inbox (pending)'
-          : item.context ?? 'unrouted';
-    const month = (item.created || '').slice(0, 7) || 'unknown';
-    if (!tree[ctx]) tree[ctx] = { projects: {}, months: {} };
-    const ctxGroup = tree[ctx]!;
-    if (item.project) {
-      if (!ctxGroup.projects[item.project]) ctxGroup.projects[item.project] = {};
-      const projMonths = ctxGroup.projects[item.project]!;
-      if (!projMonths[month]) projMonths[month] = [];
-      projMonths[month]!.push(item);
-    } else {
-      if (!ctxGroup.months[month]) ctxGroup.months[month] = [];
-      ctxGroup.months[month]!.push(item);
+const JOT_CODEC: TreeDragCodec = {
+  mime: JOT_DRAG_MIME,
+  encodeLeaf: (id) => JSON.stringify({ kind: 'leaf', id }),
+  encodeFolder: (ref) => JSON.stringify({ kind: 'folder', ref }),
+  decode: (raw) => {
+    try {
+      const p = JSON.parse(raw) as TreeDrop;
+      if (p?.kind === 'leaf' && typeof p.id === 'string') return p;
+      if (p?.kind === 'folder' && p.ref && typeof p.ref.context === 'string') return p;
+    } catch {
+      /* not ours */
     }
+    return null;
+  },
+};
+
+const onError = (e: Error) => toast.error(e.message);
+
+export function shortDate(iso: string, now: Date = new Date()): string {
+  const d = new Date(iso);
+  if (!iso || Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    ...(d.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {}),
+  });
+}
+
+function collect(nodes: JotFolderNode[], out: JotTreeItem[]) {
+  for (const f of nodes) {
+    collect(f.folders, out);
+    out.push(...f.jots);
   }
-  return tree;
 }
 
-interface MonthListProps {
-  ctx: string;
-  byMonth: Record<string, JotListItem[]>;
-  collapsed: Record<string, boolean>;
-  toggle: (key: string) => void;
-  selectedId: string | null;
-  onSelect: (id: string) => void;
-  indent?: string;
+export function flattenJotTree(tree: JotTreeData): JotTreeItem[] {
+  const out: JotTreeItem[] = [...tree.inbox, ...tree.unrouted];
+  for (const s of tree.scopes) {
+    collect(s.folders, out);
+    out.push(...s.jots);
+  }
+  return out.sort((a, b) => b.created.localeCompare(a.created));
 }
 
-function MonthList({ ctx, byMonth, collapsed, toggle, selectedId, onSelect, indent = 'ml-3' }: MonthListProps) {
+function toTreeFolder(n: JotFolderNode): TreeFolderNode<JotTreeItem> {
+  return { name: n.name, path: n.path, folders: n.folders.map(toTreeFolder), leaves: n.jots };
+}
+
+function toTreeScope(s: JotScope): TreeScope<JotTreeItem> {
+  return { context: s.context, project: s.project, name: s.name, archived: s.archived, folders: s.folders.map(toTreeFolder), leaves: s.jots };
+}
+
+/** Keys ScopeTree must expand so the selected jot is visible. */
+function revealKeysFor(j: JotTreeItem | undefined): string[] {
+  if (!j?.context || j.routingStatus !== 'routed') return [];
+  const base = { context: j.context, project: j.project ?? null };
+  const keys = [`ctx:${j.context}`, folderKey({ ...base, path: '' })];
+  const parts = (j.folder ?? '').split('/').filter(Boolean);
+  parts.forEach((_, i) => keys.push(folderKey({ ...base, path: parts.slice(0, i + 1).join('/') })));
+  return keys;
+}
+
+type RowChrome = Pick<LeafRowProps, 'draggable' | 'onDragStart' | 'className' | 'style'> & Partial<LeafRowProps>;
+
+function JotRow({ jot, row, active, onSelect }: { jot: JotListItem & { unknownLocation?: boolean }; row: RowChrome; active: boolean; onSelect: (id: string) => void }) {
   return (
-    <>
-      {Object.entries(byMonth)
-        .sort(([a], [b]) => b.localeCompare(a))
-        .map(([month, leaves]) => {
-          const monthKey = `m:${ctx}:${month}`;
-          const monthOpen = !collapsed[monthKey];
-          return (
-            <div key={month} className={indent}>
-              <button
-                type="button"
-                onClick={() => toggle(monthKey)}
-                className="flex w-full items-center gap-1 px-1 py-1 text-ink-2 hover:bg-vellum"
-              >
-                <Lucide
-                  name={monthOpen ? 'chevron-down' : 'chevron-right'}
-                  size={11}
-                />
-                <span className="font-mono">{month}</span>
-              </button>
-              {monthOpen && (
-                <div className="ml-4 flex flex-col">
-                  {leaves
-                    .slice()
-                    .sort((a, b) => b.created.localeCompare(a.created))
-                    .map((leaf) => (
-                      <button
-                        key={leaf.id}
-                        type="button"
-                        onClick={() => onSelect(leaf.id)}
-                        className={`flex items-center gap-1.5 rounded-sm px-2 py-[3px] text-left ${
-                          selectedId === leaf.id
-                            ? 'bg-neon/12 text-ink-0'
-                            : 'text-ink-1 hover:bg-vellum'
-                        }`}
-                      >
-                        <span className="truncate">{leaf.title}</span>
-                      </button>
-                    ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
-    </>
+    <div
+      role="button"
+      tabIndex={0}
+      {...row}
+      onClick={() => onSelect(jot.id)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect(jot.id);
+        }
+      }}
+      className={`${row.className} cursor-pointer transition-colors duration-[120ms] ${
+        active ? 'bg-neon/12 font-medium text-ink-0' : 'font-normal text-ink-1 hover:bg-fog'
+      }`}
+    >
+      <span className="min-w-0 flex-1 truncate">{jot.title}</span>
+      {jot.unknownLocation && (
+        <span title="its project or context no longer exists" className="flex-shrink-0 text-ink-3">
+          <Lucide name="circle-help" size={11} />
+        </span>
+      )}
+      <span className="flex-shrink-0 font-mono text-10 text-ink-3">{shortDate(jot.created)}</span>
+    </div>
   );
 }
 
-export function JotTree({ items, selectedId, onSelect }: Props) {
-  const tree = useMemo(() => groupItems(items), [items]);
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+const FLAT_ROW = 'group flex w-full items-center gap-[7px] rounded-md px-1.5 py-[5px] text-left text-13';
 
-  function toggle(key: string) {
-    setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
-  }
+function dragRow(id: string, paddingLeft: number): RowChrome {
+  return {
+    draggable: true,
+    onDragStart: (e) => {
+      e.dataTransfer.setData(JOT_DRAG_MIME, JOT_CODEC.encodeLeaf(id));
+      e.dataTransfer.effectAllowed = 'move';
+    },
+    className: FLAT_ROW,
+    style: { paddingLeft },
+  };
+}
+
+function Section({ testId, icon, label, items, selectedId, onSelect }: {
+  testId: string; icon: string; label: string; items: JotTreeItem[]; selectedId: string | null; onSelect: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(true);
+  if (items.length === 0) return null;
+  return (
+    <div className="mb-1">
+      <button
+        type="button"
+        data-testid={testId}
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center gap-[7px] rounded-md px-1.5 py-1 font-mono text-[10.5px] uppercase tracking-[0.1em] text-ink-2 hover:bg-fog"
+      >
+        <Lucide name={open ? 'chevron-down' : 'chevron-right'} size={11} />
+        <Lucide name={icon} size={12} className="opacity-70" />
+        <span>{label}</span>
+        <span className="ml-auto text-10 text-ink-3">{items.length}</span>
+      </button>
+      {open && items.map((j) => (
+        <JotRow key={j.id} jot={j} row={dragRow(j.id, 24)} active={j.id === selectedId} onSelect={onSelect} />
+      ))}
+    </div>
+  );
+}
+
+export function JotList({ items, selectedId, onSelect }: { items: JotListItem[]; selectedId: string | null; onSelect: (id: string) => void }) {
+  return (
+    <div className="flex flex-col px-2 py-2">
+      {items.map((j) => (
+        <JotRow key={j.id} jot={j} row={dragRow(j.id, 8)} active={j.id === selectedId} onSelect={onSelect} />
+      ))}
+    </div>
+  );
+}
+
+export function JotTree({ tree, selectedId, onSelect }: { tree: JotTreeData; selectedId: string | null; onSelect: (id: string) => void }) {
+  const moveJot = useMoveJot();
+  const createFolder = useCreateJotFolder();
+  const moveFolder = useMoveJotFolder();
+  const deleteFolder = useDeleteJotFolder();
+
+  const scopes = useMemo(() => tree.scopes.map(toTreeScope), [tree]);
+  const revealKeys = useMemo(
+    () => (selectedId ? revealKeysFor(flattenJotTree(tree).find((j) => j.id === selectedId)) : []),
+    [tree, selectedId],
+  );
+  const moveFolderTo = (from: FolderRef, to: FolderRef) => moveFolder.mutate({ from, to }, { onError });
 
   return (
-    <div className="flex flex-col gap-1 overflow-y-auto px-2 py-2 text-12">
-      {Object.entries(tree)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([ctx, group]) => {
-          const ctxKey = `ctx:${ctx}`;
-          const open = !collapsed[ctxKey];
-          const sortedProjects = Object.keys(group.projects).sort((a, b) => a.localeCompare(b));
-          return (
-            <div key={ctx}>
-              <button
-                type="button"
-                onClick={() => toggle(ctxKey)}
-                className="flex w-full items-center gap-1 px-1 py-1 text-ink-1 hover:bg-vellum"
-              >
-                <Lucide name={open ? 'chevron-down' : 'chevron-right'} size={12} />
-                <span className="font-mono">{ctx}</span>
-              </button>
-              {open && (
-                <>
-                  {/* Project nodes (alphabetical) above loose months */}
-                  {sortedProjects.map((slug) => {
-                    const projKey = `proj:${ctx}:${slug}`;
-                    const projOpen = !collapsed[projKey];
-                    return (
-                      <div key={slug} className="ml-3">
-                        <button
-                          type="button"
-                          onClick={() => toggle(projKey)}
-                          className="flex w-full items-center gap-1 px-1 py-1 text-ink-2 hover:bg-vellum"
-                        >
-                          <Lucide
-                            name={projOpen ? 'chevron-down' : 'chevron-right'}
-                            size={11}
-                          />
-                          <Lucide name="folder" size={11} className="opacity-60" />
-                          <span className="font-mono">{slug}</span>
-                        </button>
-                        {projOpen && (
-                          <MonthList
-                            ctx={`${ctx}:${slug}`}
-                            byMonth={group.projects[slug]!}
-                            collapsed={collapsed}
-                            toggle={toggle}
-                            selectedId={selectedId}
-                            onSelect={onSelect}
-                            indent="ml-3"
-                          />
-                        )}
-                      </div>
-                    );
-                  })}
-
-                  {/* Loose months (project-less jots) */}
-                  <MonthList
-                    ctx={ctx}
-                    byMonth={group.months}
-                    collapsed={collapsed}
-                    toggle={toggle}
-                    selectedId={selectedId}
-                    onSelect={onSelect}
-                  />
-                </>
-              )}
-            </div>
-          );
-        })}
-    </div>
+    <ScopeTree<JotTreeItem>
+      scopes={scopes}
+      ariaLabel="jot tree"
+      codec={JOT_CODEC}
+      leafId={(j) => j.id}
+      leafRef={(j) => ({ context: j.context!, project: j.project ?? null, path: j.folder ?? '' })}
+      selectedFolderKey={null}
+      rootIcon="notebook-pen"
+      revealKeys={revealKeys}
+      onMoveLeaf={(id, to) => moveJot.mutate({ id, context: to.context, project: to.project, folder: to.path || null }, { onError })}
+      onMoveFolder={moveFolderTo}
+      onCreateFolder={(ref) => createFolder.mutate(ref, { onError })}
+      onRenameFolder={moveFolderTo}
+      onDeleteFolder={(ref) => deleteFolder.mutate(ref, { onError })}
+      header={
+        <>
+          <Section testId="jot-inbox" icon="inbox" label="inbox" items={tree.inbox} selectedId={selectedId} onSelect={onSelect} />
+          <Section testId="jot-unrouted" icon="circle-help" label="unrouted" items={tree.unrouted} selectedId={selectedId} onSelect={onSelect} />
+        </>
+      }
+      renderLeaf={(j, row) => <JotRow jot={j} row={row} active={j.id === selectedId} onSelect={onSelect} />}
+    />
   );
 }
