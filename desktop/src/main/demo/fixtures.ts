@@ -318,6 +318,22 @@ export function handleDemoApi(method: string, path: string, body?: unknown): Api
   const s1 = seg[1] ?? '';
 
   // Notes endpoint is overloaded: ?path= → single note; ?source=manual → jots.
+  if (method === 'GET' && rawPath === '/v1/notes/tree') {
+    const item = (j: (typeof JOTS)[number], folder: string | null = null) => ({ ...j, project: null, folder, unknownLocation: false });
+    const byCtx = new Map<string, ReturnType<typeof item>[]>();
+    for (const j of JOTS) byCtx.set(j.context!, [...(byCtx.get(j.context!) ?? []), item(j)]);
+    return ok({
+      inbox: [],
+      unrouted: [],
+      scopes: [...byCtx].map(([context, jots]) => ({
+        context, project: null, name: context, archived: false,
+        folders: context === 'aurora'
+          ? [{ name: 'launch', path: 'launch', folders: [], jots: jots.map((j) => ({ ...j, folder: 'launch' })) }]
+          : [],
+        jots: context === 'aurora' ? [] : jots,
+      })),
+    });
+  }
   if (rawPath === '/v1/notes') {
     if (method === 'GET' && params.get('path')) return ok(note(params.get('path')!));
     if (method === 'GET') {

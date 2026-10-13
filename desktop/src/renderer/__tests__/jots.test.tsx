@@ -10,7 +10,23 @@ import { toast } from '../stores/toast';
 import { useSettings } from '../stores/settings';
 import { useFocusSurfaces } from '../lib/focus-mode';
 import { useNoteView } from '../stores/note-view';
-import type { JotsPage, Note, AutoRouteResponse, Project, Connector, TemplateSummary } from '../../shared/api-types';
+import type { JotsPage, JotListItem, JotTree as JotTreeData, JotTreeItem, Note, AutoRouteResponse, Project, Connector, TemplateSummary } from '../../shared/api-types';
+
+/** Shape a flat jots page the way GET /v1/notes/tree would. */
+function treeOf(page: { items: JotListItem[]; total?: number }): JotTreeData {
+  const tree: JotTreeData = { inbox: [], unrouted: [], scopes: [] };
+  for (const raw of page.items) {
+    const j: JotTreeItem = { ...raw, folder: raw.folder ?? null, unknownLocation: false };
+    if (j.routingStatus === 'pending') tree.inbox.push(j);
+    else if (j.routingStatus !== 'routed' || !j.context) tree.unrouted.push(j);
+    else {
+      let s = tree.scopes.find((x) => x.context === j.context && x.project === (j.project ?? null));
+      if (!s) tree.scopes.push((s = { context: j.context, project: j.project ?? null, name: j.project ?? j.context, archived: false, folders: [], jots: [] }));
+      s.jots.push(j);
+    }
+  }
+  return tree;
+}
 
 const apiRequest = vi.fn();
 
@@ -116,8 +132,9 @@ const twoJotPage: JotsPage = {
       context: 'work',
       routingStatus: 'routed',
       tags: [],
-      created: '2026-05-14T09:30:15+02:00',
-      updated: '2026-05-14T09:30:15+02:00',
+      // Newest first, as the API (and the tree's flatten order) returns them.
+      created: '2026-05-14T15:00:00+02:00',
+      updated: '2026-05-14T15:00:00+02:00',
     },
     {
       id: 'manual-20260514T120000-b',
@@ -151,6 +168,7 @@ const detailB: Note = {
 describe('JotsScreen', () => {
   it('renders the tree and loads the first jot on select', async () => {
     apiRequest.mockImplementation(withConnectors(async (_m, path) => {
+      if (path === '/v1/notes/tree') return { ok: true, status: 200, data: treeOf(page) };
       if (path.includes('source=manual')) return { ok: true, status: 200, data: page };
       return { ok: true, status: 200, data: detail };
     }));
@@ -165,6 +183,7 @@ describe('JotsScreen', () => {
 
   it('shows empty state when there are no jots', async () => {
     apiRequest.mockImplementation(withConnectors(async (_m, path) => {
+      if (path === '/v1/notes/tree') return { ok: true, status: 200, data: treeOf({ items: [], total: 0 }) };
       if (path.includes('source=manual'))
         return { ok: true, status: 200, data: { items: [], total: 0 } satisfies JotsPage };
       return { ok: true, status: 200, data: detail };
@@ -178,6 +197,7 @@ describe('JotsScreen', () => {
 
   it('auto-selects the first jot when the list loads', async () => {
     apiRequest.mockImplementation(withConnectors(async (_m, path) => {
+      if (path === '/v1/notes/tree') return { ok: true, status: 200, data: treeOf(page) };
       if (path.includes('source=manual')) return { ok: true, status: 200, data: page };
       return { ok: true, status: 200, data: detail };
     }));
@@ -189,6 +209,7 @@ describe('JotsScreen', () => {
 
   it('renders the rich editor with the source-mode escape hatch and copy button', async () => {
     apiRequest.mockImplementation(withConnectors(async (_m, path) => {
+      if (path === '/v1/notes/tree') return { ok: true, status: 200, data: treeOf(page) };
       if (path.includes('source=manual')) return { ok: true, status: 200, data: page };
       return { ok: true, status: 200, data: detail };
     }));
@@ -209,6 +230,7 @@ describe('JotsScreen', () => {
       routingStatus: 'pending',
     };
     apiRequest.mockImplementation(withConnectors(async (method, path) => {
+      if (path === '/v1/notes/tree') return { ok: true, status: 200, data: treeOf({ items: [], total: 0 }) };
       if (path.includes('source=manual')) return { ok: true, status: 200, data: { items: [], total: 0 } satisfies JotsPage };
       if (method === 'POST' && path === '/v1/notes')
         return { ok: true, status: 200, data: createResponse };
@@ -241,6 +263,7 @@ describe('JotsScreen', () => {
     };
 
     apiRequest.mockImplementation(withConnectors(async (method, path) => {
+      if (path === '/v1/notes/tree') return { ok: true, status: 200, data: treeOf(twoJotPage) };
       if (path.includes('source=manual')) return { ok: true, status: 200, data: twoJotPage };
       if (path.includes('manual-20260514T093015-a') && !path.includes('route'))
         return { ok: true, status: 200, data: detailA };
@@ -272,8 +295,42 @@ describe('JotsScreen', () => {
     });
   });
 
+  function stubTwoJots() {
+    apiRequest.mockImplementation(withConnectors(async (_m, path) => {
+      if (path === '/v1/notes/tree') return { ok: true, status: 200, data: treeOf(twoJotPage) };
+      if (path.includes('source=manual')) return { ok: true, status: 200, data: twoJotPage };
+      if (path.includes('manual-20260514T093015-a')) return { ok: true, status: 200, data: detailA };
+      if (path.includes('manual-20260514T120000-b')) return { ok: true, status: 200, data: detailB };
+      return { ok: true, status: 200, data: detailA };
+    }));
+  }
+
+  it('shows a flat result list while searching', async () => {
+    stubTwoJots();
+    render(withQuery(<JotsScreen />));
+    await waitFor(() => expect(screen.getByLabelText('jot tree')).toBeInTheDocument());
+    fireEvent.change(screen.getByPlaceholderText('search jots…'), { target: { value: 'first' } });
+    await waitFor(() => expect(screen.queryByLabelText('jot tree')).not.toBeInTheDocument());
+    expect(apiRequest.mock.calls.some((a: unknown[]) => typeof a[1] === 'string' && a[1].includes('q=first'))).toBe(true);
+    expect(screen.getAllByText('first jot').length).toBeGreaterThan(0);
+  });
+
+  it('keeps the selected jot when searching', async () => {
+    stubTwoJots();
+    render(withQuery(<JotsScreen />));
+    await waitFor(() => expect(screen.getByText(/full body here/)).toBeInTheDocument());
+    const search = screen.getByPlaceholderText('search jots…');
+    fireEvent.change(search, { target: { value: 'first' } });
+    await waitFor(() => expect(screen.queryByLabelText('jot tree')).not.toBeInTheDocument());
+    expect(screen.getByText(/full body here/)).toBeInTheDocument();
+    fireEvent.change(search, { target: { value: '' } });
+    await waitFor(() => expect(screen.getByLabelText('jot tree')).toBeInTheDocument());
+    expect(screen.getByText(/full body here/)).toBeInTheDocument();
+  });
+
   it('arriving at an unrouted jot does NOT fire route-auto (double-fire regression)', async () => {
     apiRequest.mockImplementation(withConnectors(async (_m, path) => {
+      if (path === '/v1/notes/tree') return { ok: true, status: 200, data: treeOf(twoJotPage) };
       if (path.includes('source=manual')) return { ok: true, status: 200, data: twoJotPage };
       if (path.includes('manual-20260514T093015-a') && !path.includes('route'))
         return { ok: true, status: 200, data: detailA };
@@ -299,6 +356,7 @@ describe('JotsScreen', () => {
 
   it('"route now" button is visible for unrouted jot and absent for routed jot', async () => {
     apiRequest.mockImplementation(withConnectors(async (_m, path) => {
+      if (path === '/v1/notes/tree') return { ok: true, status: 200, data: treeOf(twoJotPage) };
       if (path.includes('source=manual')) return { ok: true, status: 200, data: twoJotPage };
       if (path.includes('manual-20260514T093015-a') && !path.includes('route'))
         return { ok: true, status: 200, data: detailA };
@@ -345,6 +403,7 @@ describe('JotsScreen', () => {
     };
 
     apiRequest.mockImplementation(withConnectors(async (method, path) => {
+      if (path === '/v1/notes/tree') return { ok: true, status: 200, data: treeOf(pendingPage) };
       if (path.includes('source=manual')) return { ok: true, status: 200, data: pendingPage };
       if (method === 'POST' && path.includes('route-auto'))
         return { ok: true, status: 200, data: routeAutoResponse };
@@ -371,6 +430,7 @@ describe('JotsScreen', () => {
 
   it('shows backlinks under the selected jot', async () => {
     apiRequest.mockImplementation(withConnectors(async (_m, path) => {
+      if (path === '/v1/notes/tree') return { ok: true, status: 200, data: treeOf(page) };
       if (path.includes('source=manual')) return { ok: true, status: 200, data: page };
       return { ok: true, status: 200, data: detail };
     }));
@@ -389,6 +449,7 @@ describe('JotsScreen', () => {
 
   it('backlinks collapse again when another jot is selected', async () => {
     apiRequest.mockImplementation(withConnectors(async (_m, path) => {
+      if (path === '/v1/notes/tree') return { ok: true, status: 200, data: treeOf(twoJotPage) };
       if (path.includes('source=manual')) return { ok: true, status: 200, data: twoJotPage };
       if (path.includes('manual-20260514T120000-b')) return { ok: true, status: 200, data: detailB };
       return { ok: true, status: 200, data: detailA };
@@ -423,6 +484,7 @@ describe('JotsScreen', () => {
     };
     useNoteView.getState().close();
     apiRequest.mockImplementation(withConnectors(async (method, path) => {
+      if (path === '/v1/notes/tree') return { ok: true, status: 200, data: treeOf({ items: [], total: 0 }) };
       if (path.includes('source=manual')) return { ok: true, status: 200, data: { items: [], total: 0 } satisfies JotsPage };
       if (path === '/v1/templates') return { ok: true, status: 200, data: { templates: [MEETING] } };
       if (path === '/v1/projects') return { ok: true, status: 200, data: [] };
@@ -448,6 +510,7 @@ describe('JotsScreen', () => {
 
   it('"show in graph" centres the vault graph on the selected jot', async () => {
     apiRequest.mockImplementation(withConnectors(async (_m, path) => {
+      if (path === '/v1/notes/tree') return { ok: true, status: 200, data: treeOf(page) };
       if (path.includes('source=manual')) return { ok: true, status: 200, data: page };
       return { ok: true, status: 200, data: detail };
     }));
@@ -464,6 +527,7 @@ describe('JotsScreen', () => {
 
   it('shows the jot as a page: breadcrumb, first-line title, byline with history', async () => {
     apiRequest.mockImplementation(withConnectors(async (_m, path) => {
+      if (path === '/v1/notes/tree') return { ok: true, status: 200, data: treeOf(page) };
       if (path.includes('source=manual')) return { ok: true, status: 200, data: page };
       return { ok: true, status: 200, data: detail };
     }));
@@ -479,6 +543,7 @@ describe('JotsScreen', () => {
 
   it('renaming the jot rewrites its first line through the jot save', async () => {
     apiRequest.mockImplementation(withConnectors(async (_m, path) => {
+      if (path === '/v1/notes/tree') return { ok: true, status: 200, data: treeOf(page) };
       if (path.includes('source=manual')) return { ok: true, status: 200, data: page };
       return { ok: true, status: 200, data: detail };
     }));
@@ -512,6 +577,7 @@ const projectsData: Project[] = [
 describe('JotsScreen re-route picker', () => {
   it('re-route select offers project destinations', async () => {
     apiRequest.mockImplementation(withConnectors(async (_m, path) => {
+      if (path === '/v1/notes/tree') return { ok: true, status: 200, data: treeOf(page) };
       if (path.includes('source=manual')) return { ok: true, status: 200, data: page };
       if (path === '/v1/projects') return { ok: true, status: 200, data: projectsData };
       return { ok: true, status: 200, data: detail };
@@ -548,6 +614,7 @@ const confluenceConnectorOff: Connector = {
 
 function makeApiMock(connectors: Connector[]) {
   return async (_m: string, path: string) => {
+    if (path === '/v1/notes/tree') return { ok: true, status: 200, data: treeOf(page) };
     if (path.includes('source=manual')) return { ok: true, status: 200, data: page };
     if (path === '/v1/connectors') return { ok: true, status: 200, data: connectors };
     return { ok: true, status: 200, data: detail };
@@ -646,6 +713,7 @@ describe('JotsScreen conflict navigation guard', () => {
   function mockJotApi() {
     let patched = false;
     apiRequest.mockImplementation(withConnectors(async (method, path) => {
+      if (path === '/v1/notes/tree') return { ok: true, status: 200, data: treeOf(page) };
       if (path.includes('source=manual')) return { ok: true, status: 200, data: page };
       if (method === 'PATCH') {
         patched = true;
@@ -717,6 +785,7 @@ describe('JotsScreen focus mode', () => {
     useFocusSurfaces.setState({ count: 0 });
     apiRequest.mockImplementation(
       withConnectors(async (_m, path) => {
+        if (path === '/v1/notes/tree') return { ok: true, status: 200, data: treeOf(page) };
         if (path.includes('source=manual')) return { ok: true, status: 200, data: page };
         return { ok: true, status: 200, data: detail };
       }),
@@ -760,6 +829,7 @@ describe('JotsScreen focus mode', () => {
 describe('JotsScreen templates tab', () => {
   it('switches to the templates panel and back', async () => {
     apiRequest.mockImplementation(withConnectors(async (_m, path) => {
+      if (path === '/v1/notes/tree') return { ok: true, status: 200, data: treeOf(page) };
       if (path.includes('source=manual')) return { ok: true, status: 200, data: page };
       if (path === '/v1/templates') return { ok: true, status: 200, data: { templates: [] } };
       return { ok: true, status: 200, data: detail };

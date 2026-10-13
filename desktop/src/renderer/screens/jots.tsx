@@ -5,7 +5,7 @@ import { Btn } from '../components/Btn';
 import { ConfluenceExportDialog } from '../components/ConfluenceExportDialog';
 import { Lucide } from '../components/Lucide';
 import { Pill } from '../components/Pill';
-import { JotTree } from '../components/JotTree';
+import { JotList, JotTree, flattenJotTree } from '../components/JotTree';
 import { TemplateMenu } from '../components/TemplatePicker';
 import { GuardedNoteEditor, confirmLeave, type GuardHandle } from '../components/GuardedNoteEditor';
 import type { EditorHandle } from '../components/RichMarkdownEditor';
@@ -26,6 +26,7 @@ import {
   useDeleteJot,
   useExtractPhoto,
   useJot,
+  useJotTree,
   useJots,
   useProjects,
   useRouteJot,
@@ -44,6 +45,11 @@ export function JotsScreen() {
   const openNote = useNoteView((s) => s.open);
   const showInGraph = useGraphView((s) => s.showInGraph);
   const list = useJots({ q: q || undefined });
+  const treeQ = useJotTree();
+  const searching = q.trim() !== '';
+  // Every jot the screen knows about, newest first — the tree is the source of
+  // truth; search results only add rows while a query is typed.
+  const allItems = useMemo(() => (treeQ.data ? flattenJotTree(treeQ.data) : []), [treeQ.data]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showConfluenceDialog, setShowConfluenceDialog] = useState(false);
   const [cameraSignal, setCameraSignal] = useState(0);
@@ -61,8 +67,11 @@ export function JotsScreen() {
   const toggleAssist = useDocsAssist((s) => s.toggleOpen);
 
   const selectedItem = useMemo(
-    () => list.data?.items.find((i) => i.id === selectedId) ?? null,
-    [list.data, selectedId],
+    () =>
+      allItems.find((i) => i.id === selectedId) ??
+      list.data?.items.find((i) => i.id === selectedId) ??
+      null,
+    [allItems, list.data, selectedId],
   );
 
   const detail = useJot(selectedItem?.path ?? null);
@@ -124,10 +133,10 @@ export function JotsScreen() {
 
   // Auto-select the newest jot when the list first loads.
   useEffect(() => {
-    if (selectedId === null && list.data?.items.length) {
-      setSelectedId(list.data.items[0]!.id);
+    if (selectedId === null && allItems.length) {
+      setSelectedId(allItems[0]!.id);
     }
-  }, [list.data, selectedId]);
+  }, [allItems, selectedId]);
 
   // Auto-route on leave: when the user moves away from an unrouted jot, fire
   // route-auto in the background.
@@ -179,7 +188,7 @@ export function JotsScreen() {
     prevIdRef.current = selectedId;
 
     if (prevId && prevId !== selectedId) {
-      const prevItem = list.data?.items.find((i) => i.id === prevId);
+      const prevItem = allItems.find((i) => i.id === prevId);
       if (
         prevItem &&
         prevItem.routingStatus !== 'routed' &&
@@ -285,7 +294,7 @@ export function JotsScreen() {
       ) : (
         <TopBar
           title="jots"
-          subtitle={list.data ? `${list.data.total} total` : '…'}
+          subtitle={treeQ.data ? `${allItems.length} total` : '…'}
           right={
             <div className="flex gap-2">
               <Btn
@@ -363,16 +372,16 @@ export function JotsScreen() {
       <div className="flex flex-1 overflow-hidden">
         {!focusActive && (
           <aside className="w-[260px] flex-shrink-0 overflow-y-auto border-r border-hairline">
-            {list.data?.items.length === 0 && !list.isLoading && (
+            {treeQ.data && allItems.length === 0 && !searching && (
               <div className="flex flex-1 items-center justify-center px-4 py-8 text-center text-12 text-ink-3">
                 no jots yet — press ⌥-J to create one
               </div>
             )}
-            <JotTree
-              items={list.data?.items ?? []}
-              selectedId={selectedId}
-              onSelect={selectJot}
-            />
+            {searching ? (
+              <JotList items={list.data?.items ?? []} selectedId={selectedId} onSelect={selectJot} />
+            ) : (
+              treeQ.data && <JotTree tree={treeQ.data} selectedId={selectedId} onSelect={selectJot} />
+            )}
           </aside>
         )}
         <main className="flex min-w-0 flex-1 flex-col">
@@ -555,7 +564,7 @@ export function JotsScreen() {
             </>
           ) : (
             <div className="flex flex-1 items-center justify-center text-13 text-ink-3">
-              {list.data?.items.length === 0
+              {treeQ.data && allItems.length === 0 && !searching
                 ? 'no jots yet — press ⌥-J to create one'
                 : 'select a jot'}
             </div>
