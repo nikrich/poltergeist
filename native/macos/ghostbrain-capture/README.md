@@ -211,7 +211,7 @@ Audio input devices (`AVCaptureDevice`), text `id<TAB>name[<TAB>(default)]` or
 | 6 | SCStream failed to start (or `SCShareableContent` failed) |
 | 7 | output I/O error (WAV / frames dir) |
 | 8 | no display to capture |
-| 9 | stream stopped unexpectedly — WAV finalised, recording is partial |
+| 9 | audio stream stopped and could not be restarted for 120 s — WAV finalised, recording is partial (shorter outages are restarted automatically and recorded as silence) |
 
 Permission failures (3/4/5) always exit **before** `READY`; `run` never blocks
 on a TCC prompt.
