@@ -65,6 +65,8 @@ final class CaptureSession {
     private var maxDurationTimer: DispatchSourceTimer?
     private var signalSources: [DispatchSourceSignal] = []
     private var wavFailed = false
+    private var recovery = StreamRecovery()
+    private var recovering = false
 
     init(options: RunOptions, log: Logger) {
         self.options = options
@@ -181,15 +183,9 @@ final class CaptureSession {
         guard let display = currentDisplay else {
             exit(ExitCode.noDisplay.rawValue)
         }
-        let filter = SCContentFilter(display: display, excludingWindows: [])
-        let config = makeAudioConfiguration()
-        let stream = SCStream(filter: filter, configuration: config, delegate: out)
+        let stream: SCStream
         do {
-            try stream.addStreamOutput(out, type: .audio, sampleHandlerQueue: out.audioQueue)
-            if options.micDevice != .none {
-                try stream.addStreamOutput(out, type: .microphone, sampleHandlerQueue: out.micQueue)
-            }
-            try await StreamBox(stream).start()
+            stream = try await startAudioStream(display: display, output: out)
         } catch {
             let ns = error as NSError
             log.error("SCStream failed to start: \(ns.localizedDescription) (domain=\(ns.domain) code=\(ns.code))")
@@ -210,6 +206,29 @@ final class CaptureSession {
         readyFields.append(("mic", options.micDevice == .none ? "off" : "on"))
         emitter.emit("READY", readyFields)
         log.info("capturing: display=\(display.displayID) video=\(videoModeLabel) mic=\(options.micDevice != .none)")
+        #if DEBUG
+        // Smoke hook: simulate macOS stopping the audio stream after N seconds.
+        if let n = ProcessInfo.processInfo.environment["GHOSTBRAIN_CAPTURE_SIMULATE_STOP_S"].flatMap(Double.init) {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(n))
+                if let s = self.stream { try? await StreamBox(s).stop() }
+                self.streamDidStop(nil)
+            }
+        }
+        #endif
+    }
+
+    /// Audio stream (system audio scoped to `display` + optional mic). Used at
+    /// start and again whenever macOS stops the stream mid-recording.
+    private func startAudioStream(display: SCDisplay, output out: StreamOutput) async throws -> SCStream {
+        let filter = SCContentFilter(display: display, excludingWindows: [])
+        let stream = SCStream(filter: filter, configuration: makeAudioConfiguration(), delegate: out)
+        try stream.addStreamOutput(out, type: .audio, sampleHandlerQueue: out.audioQueue)
+        if options.micDevice != .none {
+            try stream.addStreamOutput(out, type: .microphone, sampleHandlerQueue: out.micQueue)
+        }
+        try await StreamBox(stream).start()
+        return stream
     }
 
     // Static handle so the non-Sendable delegate callback can reach us.
@@ -671,11 +690,51 @@ final class CaptureSession {
         Task { @MainActor in await self.stop(reason: "wav_io_error") }
     }
 
+    /// macOS stopped the audio stream (display gone, a meeting app started
+    /// screen sharing, "stopped by the system"). Keep the process, the WAV and
+    /// the wall-clock drain running — the outage becomes silence — and
+    /// rebuild the stream. Only a long continuous outage ends the recording.
     func streamDidStop(_ error: Error?) {
-        guard !stopping else { return }
-        log.error("stream stopped unexpectedly: \(error?.localizedDescription ?? "unknown")")
-        exitCodeOnStop = .streamStopped
-        Task { @MainActor in await self.stop(reason: "stream_stopped", skipStopCapture: true) }
+        guard !stopping, !recovering else { return }
+        log.warn("audio stream stopped: \(error?.localizedDescription ?? "unknown"); restarting")
+        stream = nil
+        recovering = true
+        Task { @MainActor in await self.recoverAudioStream() }
+    }
+
+    private func recoverAudioStream() async {
+        defer { recovering = false }
+        while !stopping {
+            guard let delay = recovery.nextDelay(now: ProcessInfo.processInfo.systemUptime) else {
+                log.error("stream stopped unexpectedly: audio could not be restarted for \(Int(recovery.maxDowntime))s")
+                exitCodeOnStop = .streamStopped
+                await stop(reason: "stream_stopped", skipStopCapture: true)
+                return
+            }
+            try? await Task.sleep(for: .seconds(delay))
+            guard !stopping, let out = output else { return }
+            do {
+                let shareable = try await ShareableContent.fetch()
+                displays = shareable.displays
+                lastShareable = shareable
+                let display = displays.first { $0.displayID == currentDisplay?.displayID }
+                    ?? ShareableContent.display(for: nil, in: displays)
+                guard let display else { throw CaptureRecoveryError.noDisplay }
+                let s = try await startAudioStream(display: display, output: out)
+                if stopping {
+                    try? await StreamBox(s).stop()
+                    return
+                }
+                stream = s
+                currentDisplay = display
+                recovery.recovered()
+                log.info("audio stream restarted: display=\(display.displayID) restarts=\(recovery.restarts)")
+                return
+            } catch {
+                let ns = error as NSError
+                log.warn("audio stream restart failed: \(ns.localizedDescription) (domain=\(ns.domain) code=\(ns.code)); retrying")
+            }
+        }
     }
 
     func stop(reason: String, skipStopCapture: Bool = false) async {
@@ -765,4 +824,9 @@ final class VideoStreamDelegate: NSObject, SCStreamDelegate, @unchecked Sendable
     private let onStop: @Sendable (Error?) -> Void
     init(onStop: @escaping @Sendable (Error?) -> Void) { self.onStop = onStop }
     func stream(_ stream: SCStream, didStopWithError error: Error) { onStop(error) }
+}
+
+enum CaptureRecoveryError: Error, CustomStringConvertible {
+    case noDisplay
+    var description: String { "no display available" }
 }
